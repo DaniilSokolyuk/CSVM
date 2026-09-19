@@ -163,7 +163,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 12. ☐ Fire, hit, damage and death events in the decoded order, scored by the host
 13. ☐ Host-owned spawn and respawn from `net.zrd` and the rotation, applied by guests
 14. ☐ Match state: clock, limits, end and scoreboard replicated
-15. ☐ The ENet transport, host and join by direct IP with UPnP, and the multiplayer door's join board (`BL-951`)
+15. ◐ The ENet transport, host and join by direct IP with UPnP, and the multiplayer door's join board (`BL-951`)
 
 ### Wave C, campaign co-op
 
@@ -642,7 +642,44 @@ asserting the hold on both peers>
 
 **⚠ Traps.** <TODO: none known yet>
 
-## B15 ☐ The ENet transport, host and join by direct IP with UPnP, and the multiplayer door's join board (`BL-951`)
+## B15 ◐ The ENet transport, host and join by direct IP with UPnP, and the multiplayer door's join board (`BL-951`)
+
+**Landed (transport half).** `CSVM/src/Net/EnetTransport.cs` implements A1's `INetTransport` over
+Godot's `ENetMultiplayerPeer`, and is the only file under `CSVM/` that names a Godot networking
+type. The peer wrapper was taken over `ENetConnection` for two reasons: its three transfer modes
+are exactly the three reliability classes (`Unreliable` is an unsequenced packet, `UnreliableOrdered`
+is ENet's sequenced unreliable one, which itself discards a payload older than the newest delivered
+on its channel, and `Reliable` is reliable ordered), and it settles peer ids across the whole mesh,
+which `NetSeat.PeerId` needs and which a raw `ENetConnection` would have made the transport invent
+a handshake for. Two static constructors: `Host(port, maxPeers, bindAddress = "*")` opens a listen
+server and is peer 1, `Join(address, port)` starts a join whose success arrives as
+`OnPeerConnected(1)` on a later step. `Send` picks the mode from `NetReliability` and passes the
+caller's channel through, with `MaxChannel = 8` asked for at connect so a channel above zero has a
+negotiated ENet channel to ride. `Step` makes one poll, from which every join, departure and
+payload is reported, so the seam's "nothing arrives between steps" rule holds here as on the
+loopback. `LinkState` (`Connecting`, `Up`, `Down`) is the join board's readout, named here so no
+caller learns Godot's own enum; `Close`/`Dispose` releases the socket.
+`CSVM/src/Net/UpnpPortMap.cs` is the optional door in the host's router: `Map(port, description)`
+returns `Mapped`, `NoGateway`, `Refused` or `TimedOut` with the external address when one was
+learned, `Unmap(port)` takes it down, neither throws, and both block for the gateway search, so
+they run when hosting opens and closes rather than on a frame or in a step.
+`CSVM/src/Testing/EnetTransportSuites.cs`'s `enet-transport` hosts and joins on `127.0.0.1` inside
+the test process and asserts the join on both ends, the ban on delivery without a step, a reliable
+round trip whole and on its own channel, a sequenced burst never delivered out of order, an
+unreliable payload, and a hang-up that empties both rosters and swallows the sends after it.
+`CSVM.Tests/EnetTransportTests.cs` pins the class-to-delivery mapping and the argument refusals;
+`CSVM.Tests/NetNamespaceDependencyTests.cs` now exempts the two carriers by full name from the
+no-engine-type rule and holds the networking half of that exemption to `EnetTransport` in a second
+fact.
+
+**The second half still owes:** the join board from `BL-951` (re-verify it still open first), the
+`LauncherContext` wiring that constructs `Host`/`Join` and hands the transport to `GameSession`,
+the UPnP result on the board, the headless second-instance smoke over loopback IP, and the
+amendments to `SECURITY.md`'s surface statement and `docs/PLAN-public-release.md`'s "no network
+code" grep, which this half makes false and deliberately left alone because a sibling agent owns
+`Launcher.cs` and `GameSession.cs`.
+
+**Verified.** <pending orchestrator run>
 
 **Goal.** One player hosts from the menu, another joins by address, and both land in a Dogfight
 that plays as it does on the harness.
@@ -661,12 +698,19 @@ required.
 
 **Model recommendation.** <TODO: not settled in the scoping session>
 
-**Verify.** <TODO: a smoke with a second headless instance on the same machine, joined over
-loopback IP; the LAN and WAN checks are at the controls, with a friend>
+**Verify.** The transport half is the `enet-transport` engine suite, both ends in one process over
+`127.0.0.1`, which settles that ENet hosts and joins itself inside a single Godot process
+(connected in under 10 ms, whole suite 0.23 s). A stale sequenced payload cannot be provoked there,
+because a loopback socket never reorders, so the discard rule stays asserted on the loopback
+carrier while the ENet side asserts the delivery class that implements it. Still owed: the second
+headless instance joined over loopback IP, and the LAN and WAN checks at the controls, with a
+friend.
 
 **⚠ Traps.** The public-release plan's "no network code" grep and `SECURITY.md`'s surface statement
-both become false with this item; amend both in the landing commit. Do not add a relay or NAT
-traversal here; that is the Steam or EOS decision this plan leaves open.
+are both false as of the transport half; the second half amends them in its landing commit. Do not
+add a relay or NAT traversal here; that is the Steam or EOS decision this plan leaves open. A
+wildcard bind is what makes Windows ask about the firewall, so anything scripted binds the loopback
+address instead.
 
 # Wave C, campaign co-op
 

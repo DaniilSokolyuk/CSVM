@@ -168,6 +168,7 @@
     "emitter-lifetime": 1.543,
     "emitter-prewarm": 0.447,
     "empty-stage-net": 0.384,
+    "enet-transport": 0.23,
     "engine-damage-phases": 0.05,
     "engine-note": 0.004,
     "fade-walk-bound": 0.032,

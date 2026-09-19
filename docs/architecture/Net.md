@@ -1,10 +1,11 @@
 # Net
 
-The network seam: what carries bytes between peers, and the in-process carrier the suites run on.
-No type here names an engine type beyond Godot's plain math structs, nor a socket, which is what
-lets one session run over the loopback in a plain unit test and over a real carrier in a match;
-the boundary is asserted over compiled metadata by `CSVM.Tests/NetNamespaceDependencyTests.cs`. Nothing about the world crosses
-this seam, and the message vocabulary sits entirely above it.
+The network seam: what carries bytes between peers, the in-process carrier the suites run on, and
+the ENet carrier a match ships over. Only the two carriers name an engine type beyond Godot's
+plain math structs, and nothing here names a socket API, which is what lets one session run over
+the loopback in a plain unit test and over ENet in a match; the boundary and its two exemptions
+are asserted over compiled metadata by `CSVM.Tests/NetNamespaceDependencyTests.cs`. Nothing about
+the world crosses this seam, and the message vocabulary sits entirely above it.
 
 One `## src/...` entry per module, body at most 8 lines.
 
@@ -36,6 +37,24 @@ The guarantees are enforced, not imitated: loss is drawn only for the unreliable
 reliable stream's deadlines are held monotonic per sender so jitter cannot reorder it, and a
 sequenced payload at or below the newest already delivered on its channel is discarded. Read
 `CSVM.Tests/LoopbackTransportTests.cs` for the contract in assertions.
+
+## src/Net/EnetTransport.cs
+The shipped carrier: the seam over Godot's ENet peer, UDP under ENet's own three delivery classes,
+and the one type under `CSVM/` allowed to name a Godot networking type. `Host` opens a listen
+server on a port, `Join` starts a join that reports success as the host joining the roster, and
+both ends address each other by the id ENet assigns, the host being 1. Every roster change and
+every payload comes out of `Step`, the single poll it makes, so "nothing arrives between steps"
+holds here as it does on the loopback. What ENet does differently is written on the members it
+binds: a hang-up finishes a round trip later, not inside the call. Read `UpnpPortMap.cs` next for
+the optional door in the host's own router.
+
+## src/Net/UpnpPortMap.cs
+A best-effort port mapping through Godot's UPnP client, so a host behind a router is reachable
+from outside it. `Map` returns one of four outcomes a board can show (mapped, no gateway, refused,
+timed out) with the external address when one was learned, `Unmap` takes it back down, and neither
+throws: a refused mapping costs a host nothing but a line on the board, and a guest on the same
+network still joins. Both calls block for the length of the gateway search, so they belong at the
+moment hosting opens and closes, never on a frame and never in a transport step.
 
 ## src/Net/NetMessages.cs
 The vocabulary: `NetMessageType` (one word per message), the death, spawn and match-end enums
