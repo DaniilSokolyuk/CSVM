@@ -425,9 +425,10 @@ internal static class NetSessionSuites
             $"a registered handler takes its typed message from inside the guest's own step ({seen} arrival(s), {got})");
 
         // ABLE-TO-FAIL CONTROL. The same path with no handler on the type counts the payload
-        // as unclaimed. The zero above is therefore a bound handler, not a silent wire.
+        // as unclaimed. The zero above is therefore a bound handler, not a silent wire. The
+        // director's transition is the unclaimed one: a guest in a match claims the match state.
         int unknownWas = far.DroppedUnknown;
-        link.Broadcast(new MatchStateMessage(60f, 300f, 5, NetMatchEnd.Running));
+        link.Broadcast(new DirectorTransitionMessage(3, 11));
         Lockstep(host, guest);
         ctx.Check(far.DroppedUnknown == unknownWas + 1 && seen == 1,
             $"ABLE-TO-FAIL CONTROL: a type no handler claims is counted, not dispatched (unknown {unknownWas} to {far.DroppedUnknown})");

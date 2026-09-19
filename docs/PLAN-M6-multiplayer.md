@@ -176,7 +176,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 11. ☑ Aircraft state replication: own aircraft broadcast at a fixed rate, remote aircraft interpolated
 12. ☑ Fire, hit, damage and death events in the decoded order, scored by the host
 13. ☑ Host-owned spawn and respawn from `net.zrd` and the rotation, applied by guests
-14. ☐ Match state: clock, limits, end and scoreboard replicated
+14. ☑ Match state: clock, limits, end and scoreboard replicated
 15. ☑ The ENet transport, host and join by direct IP with UPnP, and the multiplayer door's join board (`BL-951`)
 
 ### Wave C, campaign co-op
@@ -777,25 +777,83 @@ granted entry and not off three positions, because a seat flown elsewhere stands
 owner's latest pose puts it and an unreliable pose sent before the death can arrive after the
 grant.
 
-## B14 ☐ Match state: clock, limits, end and scoreboard replicated
+## B14 ☑ Match state: clock, limits, end and scoreboard replicated
 
-**Goal.** Every peer shows the same clock, the same scores and the same end, and the wrap-up board
-holds on every machine when the host's match ends.
+**Landed.** The host is the only writer of the match, and `GameSession.WireNetMatch` is the wiring,
+beside B12's `WireNetCombat` and B13's `WireNetSpawns` and inert with no seats on a wire. On a host
+it builds a `Net/MatchStateCadence`; on a guest it calls `VersusMatch.Replicate()` and registers the
+handler. A replicated match refuses to write itself: `Advance` moves no clock, no score completes
+it, and `ApplyState(killTarget, timeLimit, remainingSeconds, ended)` is the only thing that ends or
+re-arms one. `StepVersus` now runs `StepVersusMatch`, which advances the clock on the host and
+sends, and does neither on a guest. The scoreboard is not on the wire at all: every machine derives
+its standings from the per-seat scores B12 already sends.
+
+**The send rate.** Change-driven plus a clock tick, never per step. The changes are the ending
+(sent from `ScoreDeath` and from `StepVersusMatch`) and a rematch, and `MatchStateCadence` ticks
+every `TickStepInterval = 60` steps, one second at the fixed step, which is the rate the versus
+HUD's whole-second readout can show a difference at. TUNE under `BL-1025`. The first step ticks, so
+a guest holds the host's limits inside one step of its build and nothing is sent from the wire-up
+itself, which keeps the join the two payloads `net-two-session` counts. A round of an hour costs 60
+ticks a minute at 20 bytes.
+
+**The clock and the slew.** Yes, the tick feeds it. `MatchStateMessage` gains `float HostClock`,
+the host's session clock at send, widening the original's `0x17` from 16 to 20 bytes (the one
+original id the remake widens, recorded in `docs/org/multiplayer-messages.md`). A guest's handler
+calls `NetClockSlew.Observe(state.HostClock, ownClock)` before applying the state, so the periodic
+tick is what `BL-1018` is judged on. A float costs 2.4e-4 s of step at the hour mark, far under the
+slew's own `SettledSeconds`. Live reading from the harness: over a match the guests' slew reads a
+target of **6.000 s and `Snaps == 1`** on both, against the 6.000 s the host's clock was wound on
+by. ⚠ Both readings are 6 s and not a walk because a suite drives `_PhysicsProcess` alone and
+`GameClock.Time` advances in `BeginFrame`, so the only clock that moves is the one the suite calls
+`_Process` on (`docs/verification.md` INSTR-92).
+
+**The rematch** (owed by B13) is the host's alone: a guest's R returns without touching anything,
+which leaves a guest at a wrap-up board pressing a key that does nothing and is `BL-1026`. The
+host's rematch sends the running state BEFORE the zeroed scores, then grants every opening spawn.
+
+**Both limits still ride** even though the original arms exactly one (`FUN_004136e0`): the remake's
+Dogfight arms both, which is a remake decision the scoring doc already records, and carrying both
+rows leaves an exclusive lobby nothing to change on the wire.
+
+**Verified.** <pending orchestrator run> On this fork: `dotnet build` clean with zero warnings,
+4883 units passed with 2 skipped, `RunTests -Quick` green, and `net-match-state`,
+`net-two-session`, `net-combat-events`, `net-relay-star`, `net-spawn-rotation` and
+`net-aircraft-replication` each pass on their own. No golden was re-pinned: nothing that draws
+changed.
+
+**Verify.** `net-match-state` in `CSVM/src/Testing/NetCombatSuites.cs`, three sessions in one
+process with the guest-to-guest link cut and the two guests launched on limits of their own
+(9 kills / 9 minutes against the host's 2 / 1), so a limit a guest shows is one that crossed the
+wire. Seven phases: both guests hold the host's two limits and only the host holds a match it may
+write; the guests stepped without the host move no clock at all, against the control of the host
+moving its own over the same steps, and the host's clock then reaches both, at most one tick
+behind; the slew reading above, against the control of the same tick with both clocks at zero
+leaving the offset at zero; a guest that counts the target into its own match ends nothing and
+raises no board, against the control of the same calls into a match nobody replicates ending it;
+two real deaths take seat 1 to the kill limit and all three machines report the match over, the
+board holding, the reason `ScoreTarget` and one identical scoreboard; the guest's rematch key
+changes nothing anywhere and the host's zeroes every score on every machine; and the host's clock
+wound to half a second short of its limit then stepped over it ends the round again, with the
+reason `TimeLimit` this time. Weight 10.0 in `analysis/engine-suite-weights.json`. Off-engine:
+`CSVM.Tests/MatchStateCadenceTests.cs` and four cases in `VersusMatchTests`.
+
+**Original approach (kept for reference).** The host is the only writer of match state; a reliable
+match-state message carries the clock, the limits and the ending; `StepVersus` on a guest applies
+rather than advances. The scoreboard is derived from replicated scores, not sent.
 
 **Evidence (confidence: traced).** `docs/org/multiplayer-scoring.md` "How a match ends" and "The two
 limits are exclusive"; `VersusBoard` and `VersusHud` are the local presentation; the ending hold is
 `StepEndingHold` (`SessionSimulation.cs:13`).
 
-**Approach.** The host is the only writer of match state; a reliable match-state message carries
-the clock, the limits and the ending; `StepVersus` on a guest applies rather than advances. The
-scoreboard is derived from replicated scores, not sent.
-
-**Model recommendation.** <TODO: not settled in the scoping session>
-
-**Verify.** <TODO: a harness suite ending a match on the kill limit and on the time limit and
-asserting the hold on both peers>
-
-**⚠ Traps.** <TODO: none known yet>
+**⚠ Traps.** A guest must never advance the clock or arm a limit itself, and a guest that reaches
+the end locally must not hold early: both are one rule, `VersusMatch.Replicated`, because a guest
+that completed its own match would raise its board on a different frame from everybody else and
+freeze a world the host is still flying. ⚠ The ending must be sent AFTER the scores that settled
+the round and never from `MatchCompleted`, which fires before them: `ApplyScore` is a no-op on a
+completed match, so a guest told the end first drops the last kill and its board names a different
+winner. ⚠ Nothing may be sent from `WireNetMatch` itself; the join is counted as exactly two
+payloads. ⚠ A guest's rematch must not restart anything locally, or it flies a round nobody else
+is in.
 
 ## B15 ☑ The ENet transport, host and join by direct IP with UPnP, and the multiplayer door's join board (`BL-951`)
 

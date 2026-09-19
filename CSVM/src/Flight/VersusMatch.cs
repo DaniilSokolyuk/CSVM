@@ -49,12 +49,18 @@ public sealed class VersusMatch
     public int PlayerCount => _scores.Length;
 
     /// <summary>The score that ends the match, 0 = no kill target (time is then the only way to
-    /// end it). Named for the menu row that sets it; the original compares the same row against a
-    /// running score, so suicides push a pilot back from it.</summary>
-    public int KillTarget { get; }
+    /// end it). Named for the menu row that sets it. The original compares that row against a
+    /// running score, so suicides push a pilot back from it. A replicated match takes this from
+    /// the host, whose lobby row is the only one in the match.</summary>
+    public int KillTarget { get; private set; }
 
     /// <summary>Seconds on the match clock, 0 = no time limit (kills are then the only way to end it).</summary>
-    public float TimeLimit { get; }
+    public float TimeLimit { get; private set; }
+
+    /// <summary>True on a guest: the clock, the limits and the ending arrive from the host through
+    /// <see cref="ApplyState"/> and nothing local writes them. Scores still arrive as scores, so
+    /// the standings are derived here rather than sent.</summary>
+    public bool Replicated { get; private set; }
 
     /// <summary>Seconds of match clock consumed so far via <see cref="Advance"/>. Stops moving once
     /// <see cref="Completed"/>, a completed match's clock is frozen for display.</summary>
@@ -97,7 +103,7 @@ public sealed class VersusMatch
         var victimRow = RowOf(victim);
         if (victimRow != null)
             victimRow.Deaths++;
-        if (KillTarget > 0 && shooterRow != null && shooterRow.Score >= KillTarget)
+        if (Reached(shooterRow))
             Complete();
     }
 
@@ -130,20 +136,46 @@ public sealed class VersusMatch
         row.Score = score;
         row.Kills = kills;
         row.Deaths = deaths;
-        if (KillTarget > 0 && row.Score >= KillTarget)
+        if (Reached(row))
             Complete();
     }
 
     /// <summary>Advance the host-fed match clock by <paramref name="dt"/> seconds; completes the
-    /// match once it reaches <see cref="TimeLimit"/>. No-op once <see cref="Completed"/> or when
-    /// <see cref="TimeLimit"/> is disabled (an untimed match never times out).</summary>
+    /// match once it reaches <see cref="TimeLimit"/>. No-op once <see cref="Completed"/>, when
+    /// <see cref="TimeLimit"/> is disabled (an untimed match never times out), or on a
+    /// <see cref="Replicated"/> match, whose clock is the host's.</summary>
     public void Advance(float dt)
     {
-        if (Completed || TimeLimit <= 0f)
+        if (Completed || Replicated || TimeLimit <= 0f)
             return;
         Elapsed += dt;
         if (Elapsed >= TimeLimit)
             Complete();
+    }
+
+    /// <summary>Hands the clock, the limits and the ending to a remote host. From here
+    /// <see cref="Advance"/> moves nothing and no score can end the match. One way: a match never
+    /// takes them back.</summary>
+    public void Replicate() => Replicated = true;
+
+    /// <summary>The host's match state, applied whole on a <see cref="Replicated"/> match: both
+    /// its limits, its clock, and whether the round has ended. ⚠ This is the only thing that ends
+    /// one, so a guest that reached the target itself flies on until the host says otherwise. An
+    /// <paramref name="ended"/> of false re-arms a completed match, which is the host's rematch,
+    /// and leaves the scores for the host to rewrite. Ignored on a host, the only writer of its
+    /// own match.</summary>
+    public void ApplyState(int killTarget, float timeLimit, float remainingSeconds, bool ended)
+    {
+        if (!Replicated)
+            return;
+        KillTarget = Math.Max(0, killTarget);
+        TimeLimit = Math.Max(0f, timeLimit);
+        if (TimeLimit > 0f)
+            Elapsed = Math.Clamp(TimeLimit - remainingSeconds, 0f, TimeLimit);
+        if (ended)
+            Complete();
+        else
+            Completed = false;
     }
 
     /// <summary>Rematch: every score/kill/death zeroed, the clock back to zero, completion
@@ -184,6 +216,11 @@ public sealed class VersusMatch
             yield return new VersusStanding(index, _scores[index].Kills, _scores[index].Deaths, rank, score);
         }
     }
+
+    /// <summary>Whether this row has taken the match. Never on a <see cref="Replicated"/> one: a
+    /// guest arming the target itself would hold its board before the host's.</summary>
+    private bool Reached(Row? row) =>
+        !Replicated && KillTarget > 0 && row != null && row.Score >= KillTarget;
 
     private Row? RowOf(int playerIndex) =>
         playerIndex >= 0 && playerIndex < _scores.Length ? _scores[playerIndex] : null;

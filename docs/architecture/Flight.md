@@ -716,10 +716,10 @@ Dogfight deathmatch bookkeeping, engine-free: every pilot carries one signed sco
 and `SuicideScore` per death with no killer to the pilot who died, the original's own amounts. `RegisterKill`/`RegisterDeath`
 report those facts, `Advance(dt)` is the host-fed match clock, `MatchCompleted` fires once on a score reaching the target or
 on the time-out (leader wins, equal top scores draw), `Standings()` ranks by score with ties sharing a rank and carries kills
-and deaths for display, and `Restart()` zeroes everything and re-arms completion. `ApplyScore` writes a seat's row as the host
-reports it, which is how a guest mirrors the host's board instead of scoring the same kill again. Off-engine coverage:
-`CSVM.Tests/VersusMatchTests.cs`. Read `VersusHud` and `VersusBoard` for what it feeds, and
-`docs/org/multiplayer-scoring.md` for the decode.
+and deaths for display, and `Restart()` zeroes everything and re-arms completion. `ApplyScore` writes a seat's row as the host reports it,
+which is how a guest mirrors the host's board instead of scoring the same kill again. `Replicate()` hands the clock, both limits and the
+ending to that host as well: `Advance` then moves nothing, no score completes the match, and `ApplyState` is the only thing that ends or
+re-arms one. Off-engine coverage: `CSVM.Tests/VersusMatchTests.cs`. Read `VersusHud` and `VersusBoard` for what it feeds, and `docs/org/multiplayer-scoring.md` for the decode.
 
 ## src/Flight/VersusSpawnRotation.cs
 Where a Dogfight seat comes back, engine-free: it owns the per-seat spawn-list ledger the opening

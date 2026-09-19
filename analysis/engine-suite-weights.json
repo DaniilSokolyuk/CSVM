@@ -264,6 +264,7 @@
     "net-aircraft-replication": 6.5,
     "net-enet-join": 6.63,
     "net-combat-events": 7.0,
+    "net-match-state": 10.0,
     "net-relay-star": 10.0,
     "net-seats": 1.26,
     "net-spawn-rotation": 9.9,

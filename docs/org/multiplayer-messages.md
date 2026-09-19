@@ -165,6 +165,14 @@ given; the original needs none of the three, because it draws from no shared str
 out no seat. The ask carries a seat and nothing else: the original's client takes its own
 respawn, while here the host owns every placement and answers the ask with a spawn event.
 
+`0x17` is the one original id the remake widens. The original's twelve bytes carry a clock and a
+reason, which is all a client that runs its own countdown needs. The remake's twenty carry the
+remaining time, both limits, the reason and the host's session clock, because a guest here runs
+no countdown of its own: it is told the clock, and that field is also the reading its
+`NetClockSlew` takes an offset from, since the periodic tick is the only message a running match
+repeats. Both limits ride even though the original arms exactly one, which costs four bytes a
+second and leaves an exclusive lobby nothing to change on the wire.
+
 The remake does not take the batching: its hit and damage messages are reliable and separate, its
 score message is one seat rather than the whole table, and its roster carries the match seed,
 which the original has no need of because it never draws from a shared stream. The packed angle

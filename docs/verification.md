@@ -808,6 +808,13 @@ member, and it does not go here.
   comparison striding four reports every frame as wholly changed.** A tree card's occlusion pane
   read a card that drew 0 pixels and a ground quad that filled 6912 of 9216, both artifacts of this,
   before any of the three was accounted for.
+- **INSTR-92**, **A session's own clock stands still under a suite that drives `_PhysicsProcess`
+  alone, because `GameClock.Time` advances in `BeginFrame` and nothing but the frame callback calls
+  it: every timestamp two harness sessions exchange therefore reads zero, and a difference between
+  them can only be made by calling `_Process` on one of them.** The match-state tick carried a host
+  clock of zero to both guests over a whole harness match, so `NetClockSlew.Snaps` and `Target`
+  stayed at zero and said nothing about the feed; one `_Process(6.0)` on the host alone moved its
+  clock six seconds and the next ordinary tick landed a target of 6.000 s and one snap on both.
 
 ## SRC, sources and documents
 

@@ -147,6 +147,15 @@ module knows neither. `SendStepInterval` is accepted as measured; at the fixed s
 intervals inside the buffer's own read-behind, which is what lets one lost sample still leave a
 pair to read between.
 
+## src/Net/MatchStateCadence.cs
+When a host repeats the match state, counted in simulation steps. It exists only for the clock:
+every change that matters (the limits at the build, the rematch, the ending) is sent where it
+happens, and the tick is what refreshes the remaining time and gives `NetClockSlew` the one
+reading a running match repeats. `TickStepInterval` is 60, a second at the fixed step, which is
+the rate the versus HUD's whole-second readout can show a difference at. TUNE (`BL-1025`). The
+first step ticks, so a guest holds the host's limits inside one step of its build. What the
+message carries is `GameSession`'s to fill. Read `docs/architecture/Session.md`'s entry for it.
+
 ## src/Net/NetChannels.cs
 Which channel a message rides. Sequenced discard is per sender and channel, and a relayed sample
 carries the host's peer id rather than its sender's, so two guests sharing one channel would

@@ -195,7 +195,7 @@ public class NetMessagesTests
     {
         var sent = new MatchStateMessage(
             RemainingSeconds: 123.5f, TimeLimitSeconds: 300f, ScoreTarget: 10,
-            End: NetMatchEnd.TimeLimit);
+            End: NetMatchEnd.TimeLimit, HostClock: 176.5f);
 
         Span<byte> buffer = stackalloc byte[MatchStateMessage.Size];
         int written = sent.Write(buffer);
@@ -203,6 +203,7 @@ public class NetMessagesTests
         Assert.Equal(MatchStateMessage.Size, written);
         Assert.True(MatchStateMessage.TryRead(buffer, out var got));
         Assert.Equal(sent, got);
+        Assert.Equal(176.5f, got.HostClock);
     }
 
     [Fact]

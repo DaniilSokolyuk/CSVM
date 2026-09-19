@@ -525,13 +525,18 @@ public readonly record struct ScoreMessage(byte Seat, short Score, ushort Kills,
 /// <summary>
 /// The match clock, its limits and its ending, written only by the host. A guest applies this
 /// rather than advancing a clock of its own. That is what keeps two peers showing the same
-/// remaining time and the same end.</summary>
+/// remaining time and the same end. <c>HostClock</c> is the host's session time at send, the
+/// remake's one addition to the original's <c>0x17</c>. The periodic tick is the only message a
+/// running match repeats, so it is what <see cref="NetClockSlew"/> reads its offset from. A
+/// float, not a double, costs 2.4e-4 s of step at the hour mark, far under what the slew calls
+/// settled.</summary>
 public readonly record struct MatchStateMessage(
-    float RemainingSeconds, float TimeLimitSeconds, short ScoreTarget, NetMatchEnd End)
+    float RemainingSeconds, float TimeLimitSeconds, short ScoreTarget, NetMatchEnd End,
+    float HostClock = 0f)
     : INetMessage<MatchStateMessage>
 {
     /// <summary>The fixed width of the message, header included.</summary>
-    public const int Size = 16;
+    public const int Size = 20;
 
     /// <inheritdoc/>
     public static NetMessageType Type => NetMessageType.MatchState;
@@ -552,7 +557,7 @@ public readonly record struct MatchStateMessage(
         short target = reader.ReadInt16();
         var end = (NetMatchEnd)reader.ReadByte();
         _ = reader.ReadByte();
-        message = new MatchStateMessage(remaining, limit, target, end);
+        message = new MatchStateMessage(remaining, limit, target, end, reader.ReadSingle());
         return true;
     }
 
@@ -565,6 +570,7 @@ public readonly record struct MatchStateMessage(
         writer.WriteInt16(ScoreTarget);
         writer.WriteByte((byte)End);
         writer.WriteByte(0);
+        writer.WriteSingle(HostClock);
         return writer.Close();
     }
 }

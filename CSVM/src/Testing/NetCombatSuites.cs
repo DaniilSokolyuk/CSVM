@@ -48,6 +48,23 @@ internal static class NetCombatSuites
     // the multiplayer opening speed by the step its grant is seen to land.
     private const float EntryTolerance = 5f;
 
+    // The host's two lobby rows for the match-state suite. The kill target is two so one seat
+    // reaches it off two real deaths, and the clock is the shortest whole minute --vs-time= takes.
+    private const int HostKillTarget = 2;
+    private const int HostTimeMinutes = 1;
+
+    // What the two guests are launched on instead. Neither row is the host's, so a guest showing
+    // the host's row is showing something that crossed the wire.
+    private const int GuestKillTarget = 9;
+    private const int GuestTimeMinutes = 9;
+
+    // Steps that span a whole match-state tick whatever step the window opens on.
+    private const int TickSteps = MatchStateCadence.TickStepInterval + 1;
+
+    // How far one host frame is wound on for the slew reading, in seconds. Past
+    // NetClockSlew.SnapSeconds on purpose: a snap is countable and a walk is not.
+    private const double SlewLeadSeconds = 6.0;
+
     // The airframe order every peer reads a roster's airframe index against.
     private static readonly string[] Airframes = { "player_pfighter", "player_fbrand" };
 
@@ -200,6 +217,246 @@ internal static class NetCombatSuites
             ambient.Restore();
         }
     }
+
+    [Suite("net-match-state",
+        "three sessions in one process with the two guests unlinked from each other and launched "
+        + "on limits of their own: both guests take the host's kill target and time limit off the "
+        + "wire, neither moves a match clock when stepped without the host, the host's session "
+        + "clock reaches both slews through the same tick, a guest that counts the target locally "
+        + "neither ends its match nor raises its board, its own rematch key does nothing, and a "
+        + "match ended on the kill limit and then on the time limit holds all three machines with "
+        + "the same reason and the same scoreboard")]
+    internal static void MatchStateIsTheHostsAlone(TestContext ctx)
+    {
+        // The scripted climb the star suites fly. This suite is the longest of the three, and a
+        // seat that flies itself into the ground scores a suicide against the kill limit below.
+        var spec = MatchSpec(ctx, out var table, TrackedFlight,
+            $"--vs-kills={HostKillTarget}", $"--vs-time={HostTimeMinutes}");
+        // The guests are launched on limits that are not the host's. A limit one of them shows
+        // therefore crossed the wire, rather than being one its own command line held.
+        var guestSpec = MatchSpec(ctx, out _, TrackedFlight,
+            $"--vs-kills={GuestKillTarget}", $"--vs-time={GuestTimeMinutes}");
+        if (table.Count < 3)
+        {
+            throw new SuiteSkippedException($"{ctx.Chapter}/{MpMission} authors fewer than three spawns");
+        }
+
+        var mesh = LoopbackTransport.Mesh(3, LoopbackConditions.Perfect, new Random(5507));
+        // The star, cut before any session binds. A guest's state came from the host or from
+        // nowhere, since the two guests never see each other at all.
+        mesh[1].Disconnect(2);
+        var roster = Roster(3);
+
+        var ambient = Ambient.Save();
+        Ends? host = null;
+        Ends? first = null;
+        Ends? second = null;
+        try
+        {
+            host = Ends.Open(ctx, spec, mesh[0], isHost: true, HostSeed, roster);
+            first = Ends.Open(ctx, guestSpec, mesh[1], isHost: false, HostSeed + 1, null);
+            second = Ends.Open(ctx, guestSpec, mesh[2], isHost: false, HostSeed + 2, null);
+            ctx.Check(host.Built && first.Built && second.Built,
+                $"three sessions build in one process (host {host.Built}, first {first.Built}, second {second.Built})");
+            if (!host.Built || !first.Built || !second.Built)
+            {
+                return;
+            }
+
+            var peers = new[] { host.Session, first.Session, second.Session };
+            Lockstep(SettleSteps, peers);
+            Limits(ctx, peers);
+            ClockOwnership(ctx, peers);
+            Slew(ctx, peers);
+            NoEarlyHold(ctx, peers);
+            EndsOnTheKillLimit(ctx, peers);
+            Rematch(ctx, peers);
+            EndsOnTheTimeLimit(ctx, peers);
+        }
+        finally
+        {
+            second?.Close();
+            first?.Close();
+            host?.Close();
+            ambient.Restore();
+        }
+    }
+
+    // Both limits are the host's lobby rows on every machine, and only the host holds a match it
+    // may write. A guest was launched on other rows, so what it shows came off the wire.
+    private static void Limits(TestContext ctx, GameSession[] peers)
+    {
+        string reading = string.Join(" | ",
+            peers.Select(p => $"{p.Versus!.KillTarget} kills / {p.Versus!.TimeLimit:0} s"));
+        ctx.Check(peers.All(p => p.Versus!.KillTarget == HostKillTarget
+                                 && Mathf.IsEqualApprox(p.Versus!.TimeLimit, HostTimeMinutes * 60f)),
+            $"every machine runs the host's two limits, not the {GuestKillTarget} kills / {GuestTimeMinutes * 60} s the guests were launched on ({reading})");
+        ctx.Check(!peers[0].Versus!.Replicated && peers[1].Versus!.Replicated && peers[2].Versus!.Replicated,
+            $"and the match is the host's to write on the host alone (replicated: {string.Join(", ", peers.Select(p => p.Versus!.Replicated))})");
+    }
+
+    // ⚠ A guest may never advance the match clock itself. Stepped without the host it therefore
+    // stands still, and the host's clock is what moves it when the two run together again.
+    private static void ClockOwnership(TestContext ctx, GameSession[] peers)
+    {
+        var guests = new[] { peers[1], peers[2] };
+        float[] before = guests.Select(g => g.Versus!.Elapsed).ToArray();
+        Lockstep(TickSteps, guests);
+        float[] alone = guests.Select(g => g.Versus!.Elapsed).ToArray();
+        ctx.Check(alone.SequenceEqual(before),
+            $"a guest stepped without the host moves no match clock at all ({string.Join(", ", alone.Select(e => $"{e:0.000} s"))})");
+
+        // ABLE-TO-FAIL CONTROL. The same steps through the same phase on the host, whose clock
+        // does move. The stillness above is therefore the replication rule and not a dead path.
+        float hostWas = peers[0].Versus!.Elapsed;
+        Lockstep(TickSteps, peers[0]);
+        float hostMoved = peers[0].Versus!.Elapsed - hostWas;
+        ctx.Check(hostMoved > 0.5f,
+            $"ABLE-TO-FAIL CONTROL: the host's own clock moves {hostMoved:0.000} s over those same {TickSteps} steps");
+
+        Lockstep(TickSteps, peers);
+        float host = peers[0].Versus!.Elapsed;
+        float[] now = guests.Select(g => g.Versus!.Elapsed).ToArray();
+        string reading = $"host {host:0.00} s, guests {string.Join(", ", now.Select(e => $"{e:0.00} s"))}";
+        // Behind by at most one tick, which is the whole of the clock's replication error.
+        ctx.Check(now.All(e => e > alone[0] && host - e >= 0f
+                               && host - e <= MatchStateCadence.TickStepInterval * GameClock.FixedDt + 0.02f),
+            $"and the host's clock reaches both guests, no more than one tick behind it ({reading})");
+    }
+
+    // Whether the clock the tick carries is read. ⚠ Under this rig only the host's session clock
+    // can move. GameClock.Time advances in the frame callback and a suite drives the fixed step
+    // alone (docs/verification.md INSTR-92). One host frame is the whole of the difference.
+    private static void Slew(TestContext ctx, GameSession[] peers)
+    {
+        var guests = new[] { peers[1], peers[2] };
+        // ABLE-TO-FAIL CONTROL. Every tick so far carried a host clock of zero against a guest
+        // clock of zero, and left the offset alone. The reading below is the clock, not the
+        // arrival of a message.
+        ctx.Check(guests.All(g => g.NetClock!.Snaps == 0 && Math.Abs(g.NetClock!.Target) < 1e-6),
+            $"ABLE-TO-FAIL CONTROL: ticks with both clocks at zero leave the offset at zero ({string.Join(", ", guests.Select(g => $"{g.NetClock!.Target:0.000} s over {g.NetClock!.Snaps} snap(s)"))})");
+
+        // One frame of the host alone, which is the only thing in this rig that moves a session
+        // clock. Long enough that the reading is past the slew's snap threshold.
+        peers[0]._Process(SlewLeadSeconds);
+        Lockstep(TickSteps, peers);
+        string reading = string.Join(", ",
+            guests.Select(g => $"offset {g.NetClock!.Offset:0.000} s, target {g.NetClock!.Target:0.000} s over {g.NetClock!.Snaps} snap(s)"));
+        ctx.Check(guests.All(g => g.NetClock!.Snaps == 1
+                                  && g.NetClock!.Target > NetClockSlew.SnapSeconds
+                                  && Math.Abs(g.NetClock!.Target - SlewLeadSeconds) < 0.05),
+            $"the host's session clock reaches both guests' slew through the same tick ({reading})");
+        ctx.Note($"slew over a harness match: {reading}");
+    }
+
+    // ⚠ A guest that reaches the end locally must not hold early. Counting the target into its
+    // own match is the way it would, so the match refuses to complete on anything but the host.
+    private static void NoEarlyHold(TestContext ctx, GameSession[] peers)
+    {
+        var guest = peers[1];
+        for (int i = 0; i < HostKillTarget + 3; i++)
+        {
+            guest.Versus!.RegisterKill(shooter: 1, victim: 0);
+        }
+
+        Lockstep(SettleSteps, peers);
+        ctx.Check(!guest.Versus!.Completed && guest.Pause is { Ended: false }
+                  && !peers[0].Versus!.Completed,
+            $"a guest that counts {HostKillTarget + 3} kills of its own ends nothing and raises no board (completed {guest.Versus!.Completed}, held {guest.Pause!.Ended}, host completed {peers[0].Versus!.Completed})");
+
+        // ABLE-TO-FAIL CONTROL. The same calls into a match nobody replicates do end it. The
+        // refusal above is therefore the rule, not a scorekeeping that counts nothing.
+        var alone = new VersusMatch(3, HostKillTarget, HostTimeMinutes * 60f);
+        for (int i = 0; i < HostKillTarget + 3; i++)
+        {
+            alone.RegisterKill(shooter: 1, victim: 0);
+        }
+
+        ctx.Check(alone.Completed,
+            $"ABLE-TO-FAIL CONTROL: the same kills into a match of its own do end it ({alone.ScoreOf(1)} points against a target of {HostKillTarget})");
+    }
+
+    // The kill limit, reached by two real deaths reported from two different machines. The host
+    // is the only scorer, so the end it broadcasts is the only one any machine acts on.
+    private static void EndsOnTheKillLimit(TestContext ctx, GameSession[] peers)
+    {
+        // The crash camera cut short. The seat that is downed twice is then back in the fight in
+        // half a second rather than the match's own three.
+        foreach (var rig in peers.SelectMany(p => p.SeatRigs))
+        {
+            if (rig.Controller is { } pilot)
+            {
+                pilot.AutoRespawnAfter = QuickRespawn;
+            }
+        }
+
+        // Seat 1 downs the host's seat twice, a point each time. The victim is reported by the
+        // machine that flies it, which is the only one that may. The host alone turns those
+        // reports into a score.
+        peers[0].SeatRigs[0].Controller!.DebugForceCrash(peers[0].SeatRigs[1].Controller!.PlayerIndex);
+        Lockstep(GrantSteps, peers);
+        peers[0].SeatRigs[0].Controller!.DebugForceCrash(peers[0].SeatRigs[1].Controller!.PlayerIndex);
+        Lockstep(SettleSteps, peers);
+
+        ctx.Check(peers[0].Versus!.ScoreOf(1) >= HostKillTarget,
+            $"seat 1 reaches the host's kill target of {HostKillTarget} ({Scoreboard(peers[0])})");
+        Held(ctx, peers, "the kill limit", NetMatchEnd.ScoreTarget);
+    }
+
+    // The host's rematch, and the guest's own key before it. Only the host may call one: a guest
+    // that restarted here would fly a round nobody else is in (BL-1026).
+    private static void Rematch(TestContext ctx, GameSession[] peers)
+    {
+        peers[1].SeatRigs[1].Controller!.RestartMatch!();
+        Lockstep(SettleSteps, peers);
+        ctx.Check(peers.All(p => p.Versus!.Completed),
+            $"a guest's own rematch key restarts nothing, on its own machine or any other ({string.Join(", ", peers.Select(p => p.Versus!.Completed))})");
+
+        peers[0].SeatRigs[0].Controller!.RestartMatch!();
+        Lockstep(SettleSteps, peers);
+        string scores = string.Join(" | ",
+            peers.Select(p => string.Join(",", Enumerable.Range(0, 3).Select(s => p.Versus!.ScoreOf(s)))));
+        ctx.Check(peers.All(p => !p.Versus!.Completed && p.MatchEnd == NetMatchEnd.Running),
+            $"the host's rematch runs the round again on every machine ({string.Join(", ", peers.Select(p => p.MatchEnd))})");
+        ctx.Check(peers.All(p => Enumerable.Range(0, 3).All(s => p.Versus!.ScoreOf(s) == 0)),
+            $"and every score is zero on every machine, the host's rewrite rather than each machine's own ({scores})");
+    }
+
+    // The other way a match stops. The host's clock is wound to just short of the limit, then
+    // stepped over it through the phase a flown match runs. The end is therefore the real one.
+    private static void EndsOnTheTimeLimit(TestContext ctx, GameSession[] peers)
+    {
+        float limit = HostTimeMinutes * 60f;
+        peers[0].Versus!.Advance(limit - peers[0].Versus!.Elapsed - 0.5f);
+        ctx.Check(!peers[0].Versus!.Completed,
+            $"the host's clock stands half a second short of its limit ({peers[0].Versus!.TimeRemaining:0.00} s left)");
+
+        Lockstep(TickSteps, peers);
+        Held(ctx, peers, "the time limit", NetMatchEnd.TimeLimit);
+        ctx.Check(peers.All(p => p.Versus!.TimeRemaining <= 0f),
+            $"and no machine has time left on it ({string.Join(", ", peers.Select(p => $"{p.Versus!.TimeRemaining:0.00} s"))})");
+    }
+
+    // One ending, read on all three machines. The match over, the board holding the world, the
+    // host's own reason, and one ranked scoreboard derived from the scores each was sent.
+    private static void Held(TestContext ctx, GameSession[] peers, string what, NetMatchEnd reason)
+    {
+        ctx.Check(peers.All(p => p.Versus!.Completed),
+            $"{what}: the match is over on all three machines ({string.Join(", ", peers.Select(p => p.Versus!.Completed))})");
+        ctx.Check(peers.All(p => p.Pause is { Ended: true }),
+            $"and the wrap-up board holds every one of them ({string.Join(", ", peers.Select(p => p.Pause!.Ended))})");
+        ctx.Check(peers.All(p => p.MatchEnd == reason),
+            $"and each names the host's own reason, {reason} ({string.Join(", ", peers.Select(p => p.MatchEnd))})");
+
+        var boards = peers.Select(Scoreboard).ToArray();
+        ctx.Check(boards.All(b => b == boards[0]),
+            $"and the scoreboard is identical on all three, derived from the scores and never sent ({string.Join(" | ", boards)})");
+    }
+
+    // The ranked board as one line, which is what a results screen draws from.
+    private static string Scoreboard(GameSession session) =>
+        string.Join(" ", session.Versus!.Standings()
+            .Select(s => $"#{s.Rank}P{s.PlayerIndex + 1}:{s.Score}/{s.Kills}K/{s.Deaths}D"));
 
     // The opening placement, read before any session has stepped. Nothing has crossed the wire
     // but the join, so an agreement here is the shared seed's walk and can be nothing else.
@@ -522,9 +779,10 @@ internal static class NetCombatSuites
     }
 
     // One Dogfight launch, plus the spawn table both ends walk. Every peer is launched with the
-    // same arguments: what differs between them is the roster and the seed, which the join sets.
+    // same arguments unless a suite hands one its own. What otherwise differs between them is the
+    // roster and the seed, which the join sets.
     private static SessionSpec MatchSpec(TestContext ctx, out IReadOnlyList<SpawnPoint> table,
-        string? flight = null)
+        params string[] extraArgs)
     {
         ctx.RequireData(ctx.PlanesGamezPath, $"planes gamez");
         ctx.RequireData(ctx.ZrdrPath, $"zrdr archive");
@@ -537,11 +795,7 @@ internal static class NetCombatSuites
             "--vs", $"--chapter={ctx.Chapter}", $"--mission={MpMission}", "--players=1", "--mute",
             "--no-pads",
         };
-        if (flight != null)
-        {
-            args.Add(flight);
-        }
-
+        args.AddRange(extraArgs);
         var spec = SessionSpec.Parse(args.ToArray());
         var loaded = new SpawnPicker(spec).LoadSpawnList(missionZrdr, spec.Scenario);
         if (loaded is not { Count: >= 2 })

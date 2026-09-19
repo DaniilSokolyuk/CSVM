@@ -230,4 +230,82 @@ public class VersusMatchTests
         Assert.Equal(0, match.KillsOf(1));
         Assert.False(match.Completed); // a falling score can never reach the target
     }
+
+    // The guest side of a network match. Everything that could end a round locally has to stop
+    // deciding, or two machines show the wrap-up board on different frames.
+    [Fact]
+    public void AReplicatedMatchNeitherAdvancesItsClockNorArmsItsOwnLimits()
+    {
+        var match = new VersusMatch(playerCount: 2, killTarget: 2, timeLimit: 10f);
+        int completedCount = 0;
+        match.MatchCompleted += () => completedCount++;
+        match.Replicate();
+
+        match.Advance(100f);
+        Assert.Equal(0f, match.Elapsed);
+
+        match.RegisterKill(shooter: 0, victim: 1);
+        match.RegisterKill(shooter: 0, victim: 1);
+        match.ApplyScore(playerIndex: 1, score: 9, kills: 9, deaths: 0);
+
+        Assert.Equal(2, match.ScoreOf(0)); // the target reached, and the round runs on
+        Assert.Equal(9, match.ScoreOf(1));
+        Assert.False(match.Completed);
+        Assert.Equal(0, completedCount);
+    }
+
+    [Fact]
+    public void ApplyStateTakesTheHostsLimitsClockAndEnding()
+    {
+        var match = new VersusMatch(playerCount: 2, killTarget: 5, timeLimit: 300f);
+        int completedCount = 0;
+        match.MatchCompleted += () => completedCount++;
+        match.Replicate();
+
+        match.ApplyState(killTarget: 3, timeLimit: 120f, remainingSeconds: 90f, ended: false);
+
+        Assert.Equal(3, match.KillTarget); // the host's lobby row, not the one launched with
+        Assert.Equal(120f, match.TimeLimit);
+        Assert.Equal(30f, match.Elapsed);
+        Assert.Equal(90f, match.TimeRemaining);
+        Assert.False(match.Completed);
+
+        match.ApplyState(killTarget: 3, timeLimit: 120f, remainingSeconds: 0f, ended: true);
+
+        Assert.True(match.Completed);
+        Assert.Equal(1, completedCount);
+    }
+
+    // The host's rematch reaches a guest as a running state, and the zeroed scores follow it.
+    // Clearing completion has to come first or every one of those scores is dropped.
+    [Fact]
+    public void ARunningStateOnAnEndedGuestReArmsItWithoutTouchingTheScores()
+    {
+        var match = new VersusMatch(playerCount: 2, killTarget: 2, timeLimit: 0f);
+        match.Replicate();
+        match.ApplyScore(playerIndex: 0, score: 2, kills: 2, deaths: 0);
+        match.ApplyState(killTarget: 2, timeLimit: 0f, remainingSeconds: 0f, ended: true);
+        Assert.True(match.Completed);
+
+        match.ApplyState(killTarget: 2, timeLimit: 0f, remainingSeconds: 0f, ended: false);
+        Assert.False(match.Completed);
+        Assert.Equal(2, match.ScoreOf(0)); // still the host's to rewrite
+
+        match.ApplyScore(playerIndex: 0, score: 0, kills: 0, deaths: 0);
+        Assert.Equal(0, match.ScoreOf(0));
+        Assert.False(match.Completed);
+    }
+
+    [Fact]
+    public void AHostIgnoresMatchStateOutright()
+    {
+        var match = new VersusMatch(playerCount: 2, killTarget: 5, timeLimit: 300f);
+
+        match.ApplyState(killTarget: 1, timeLimit: 30f, remainingSeconds: 0f, ended: true);
+
+        Assert.False(match.Replicated);
+        Assert.Equal(5, match.KillTarget);
+        Assert.Equal(300f, match.TimeLimit);
+        Assert.False(match.Completed);
+    }
 }

@@ -1200,7 +1200,33 @@ usual.
   for that reason. A rising `Snaps` says the window or the threshold is wrong, not that the link
   is. *⚠ Traps:* do not raise the rate bound to make convergence quicker; host time running well
   off real time is the thing the walk exists to avoid. *Cross-refs:* `PLAN-M6-multiplayer` A4 and
-  B11 (send rate and interpolation buffer, judged in the same sitting).
+  B11 (send rate and interpolation buffer, judged in the same sitting). The feed now has a live
+  reading: `net-match-state` measures a target of 6.000 s and one snap on both guests off the
+  ordinary match-state tick, so the threshold can be judged against a real link rather than
+  against nothing.
+
+- `BL-1025` `[Tuning]` `[S]` `[Next: look]` `[Impact: low]` `[Evidence: trace]` **The host's
+  match-state tick rate is a guess at what the clock readout needs.** *Evidence:*
+  `Net/MatchStateCadence.cs` repeats the match state every `TickStepInterval = 60` simulation
+  steps, one second at the fixed step, chosen because the versus HUD prints whole seconds and a
+  faster tick spends the wire on digits nobody sees. Nothing in the original was decoded for it:
+  the original's client runs its own countdown and is told only the end. *Fix shape:* judge it on
+  a real link with the HUD clock in view. A guest's clock lags the host by up to one tick, so the
+  reading is whether the count-down ever visibly jumps or stalls; the same tick is what feeds
+  `NetClockSlew`, so `BL-1018`'s window and this rate are judged in one sitting. *⚠ Traps:* the
+  ending never waits for this tick (it is sent where it happens), so slowing the rate delays only
+  the clock, and the reading must not be taken from a match that ended.
+
+- `BL-1026` `[Feature]` `[S]` `[Next: decide]` `[Impact: low]` `[Evidence: trace]` **A guest's
+  rematch key does nothing in a network match.** *Evidence:* `GameSession.RestartMatch` refuses
+  outright off the host, because a guest that restarted would zero its own board and fly a round
+  nobody else is in; `net-match-state` asserts that refusal. The host's R restarts the round for
+  everybody. So a guest at a wrap-up board presses R and sees nothing happen, with no line saying
+  why. *Fix shape:* either a rematch request on the wire the host may answer (which needs a rule
+  for who may ask and what happens when two ask), or the guest's board dropping the Restart item
+  and saying the host calls the rematch. The second is a board change alone and settles the
+  silence; the first is a lobby question. *⚠ Traps:* do not let a guest's request restart the
+  match directly, the host is the only writer of match state.
 
 - `BL-284` `[Bug]` `[Blocked: CAP-34]` `[M]` `[Next: look]` `[Impact: low]` `[Evidence: footage]` **Wing-light flare: soft round glow vs the original's sharp star burst; view-dependence
   unproven.** Follow-up from `BL-119` (landed 2026-08-05): with the authored one-sided quad restored

@@ -189,6 +189,12 @@ public partial class GameSession : Node3D
     // How this guest reads the host's session clock, null on a host and outside a match. Built
     // from the handshake, whose seed is already in _masterSeed by then.
     private Net.NetClockSlew? _netClock;
+    // When the host repeats the match state, null on a guest and outside a match. A guest never
+    // holds one, which is what makes the host the only writer of the clock.
+    private Net.MatchStateCadence? _matchCadence;
+    // Why the match stopped, as the host named it. Written where the state is sent and where it
+    // is applied, so every machine holds one reason for an end screen to read.
+    private Net.NetMatchEnd _matchEnd;
 
     // Resolves each player's livery and spawn point against _spec;
     // see src/Session/LiveryResolver.cs and src/Session/SpawnPicker.cs.
@@ -467,6 +473,21 @@ public partial class GameSession : Node3D
     /// <summary>The Dogfight scorekeeping, null outside <c>--vs</c>. On a guest it is the mirror
     /// of the host's, written from the score messages rather than counted here.</summary>
     internal VersusMatch? Versus => _versus;
+
+    /// <summary>Why the match stopped, as the host named it, <c>Running</c> until one does. The
+    /// same value on every machine: the host writes it where it sends the state and a guest where
+    /// it applies one.</summary>
+    internal Net.NetMatchEnd MatchEnd => _matchEnd;
+
+    /// <summary>This guest's offset onto host time, null on a host and outside a network match.
+    /// A suite reads its counters to tell a live reading from an untouched opening offset.
+    /// </summary>
+    internal Net.NetClockSlew? NetClock => _netClock;
+
+    /// <summary>What is holding this session's world, null before the build. A results board's
+    /// wake raises <see cref="PauseState.Ended"/> here, so this is where a suite reads whether the
+    /// wrap-up board is holding a machine.</summary>
+    internal PauseState? Pause => _pauseState;
 
     /// <summary>How many host grants this session has placed an aircraft from, the host's own
     /// included. A suite reads it to tell a placement that came off the wire from one the shared
@@ -2761,6 +2782,10 @@ public partial class GameSession : Node3D
         // rotation it is granted from is built there.
         WireNetSpawns();
 
+        // The match clock, its limits and its ending, last of the three. It hands a guest's match
+        // over to the host, so the match has to stand first.
+        WireNetMatch();
+
         // --incoming: the incoming-fire test rig, a phantom shooter on every pilot's six, so both
         // cues and the shield are reachable with one player, no AI gunner needed.
         if (_spec.IncomingPass is float incomingPass)
@@ -4167,6 +4192,14 @@ public partial class GameSession : Node3D
         {
             SendScore(killer);
         }
+
+        // ⚠ The ending goes out AFTER the scores that settled the round, never from the match's
+        // completion event, which fires before them. A guest whose match already reads completed
+        // drops every score behind it, and its board would then name a different winner.
+        if (match.Completed && _matchEnd == Net.NetMatchEnd.Running)
+        {
+            SendMatchState();
+        }
     }
 
     // One seat's line as the host has it. Every guest shows this instead of counting, so a board
@@ -4190,6 +4223,88 @@ public partial class GameSession : Node3D
         if (_net is not { IsHost: true })
         {
             _versus?.ApplyScore(score.Seat, score.Score, score.Kills, score.Deaths);
+        }
+    }
+
+    // The match clock, its limits and its ending over the wire. The host is the only writer: it
+    // runs the clock, arms both limits and decides the end, then says so. A guest hands its own
+    // match over and advances or ends nothing. Two peers cannot then disagree about whether the
+    // round is over. The scoreboard is not sent at all. Every machine derives it from the scores
+    // that already arrive seat by seat.
+    private void WireNetMatch()
+    {
+        if (_net is not { } net || _netSeats.Count == 0 || _versus is not { } match)
+        {
+            return;
+        }
+
+        if (net.IsHost)
+        {
+            // Change-driven plus a clock tick, and ⚠ nothing is sent from here. The cadence's
+            // first step ticks, so the limits reach a guest inside one step of its build. The
+            // join then stays the two payloads it is counted as.
+            _matchCadence = new Net.MatchStateCadence();
+        }
+        else
+        {
+            match.Replicate();
+            net.On<Net.MatchStateMessage>((_, state) => TakeMatchState(state));
+        }
+
+        Log.Info("core", $"net match state: {(net.IsHost ? $"host (both limits, the clock every {Net.MatchStateCadence.TickStepInterval} steps, and the ending as it happens)" : "guest (applying the host's clock, limits and ending, advancing none of its own)")}");
+    }
+
+    // The host's match state as it stands now. The clock rides along because the tick is the one
+    // message a running match repeats, which makes it the reading a guest's slew can take.
+    private void SendMatchState()
+    {
+        if (_net is not { IsHost: true } net || _versus is not { } match)
+        {
+            return;
+        }
+
+        // Which of the original's end reasons this is. The remake arms both limits at once
+        // (docs/org/multiplayer-scoring.md). A completed match is therefore a time-out when the
+        // clock ran out, and a score target otherwise.
+        _matchEnd = !match.Completed ? Net.NetMatchEnd.Running
+            : match.TimeLimit > 0f && match.Elapsed >= match.TimeLimit ? Net.NetMatchEnd.TimeLimit
+            : Net.NetMatchEnd.ScoreTarget;
+        net.Broadcast(
+            new Net.MatchStateMessage(match.TimeRemaining, match.TimeLimit, (short)match.KillTarget,
+                _matchEnd, (float)(_clock?.Time ?? 0.0)),
+            Net.NetChannels.Events);
+    }
+
+    private void TakeMatchState(in Net.MatchStateMessage state)
+    {
+        if (_net is { IsHost: true })
+        {
+            return;
+        }
+
+        _matchEnd = state.End;
+        _netClock?.Observe(state.HostClock, _clock?.Time ?? 0.0);
+        _versus?.ApplyState(state.ScoreTarget, state.TimeLimitSeconds, state.RemainingSeconds,
+            state.End != Net.NetMatchEnd.Running);
+    }
+
+    // The match's own simulation step. A host advances the clock and ticks the state out. A
+    // guest's Advance is a no-op and its cadence is null, so it applies what arrived and no more.
+    // The ending is sent from here too. That covers the time-out, and leaves no way to end a
+    // match without saying so, at worst one step late.
+    private void StepVersusMatch(float dt)
+    {
+        _versus?.Advance(dt);
+        if (_matchCadence is not { } cadence)
+        {
+            return;
+        }
+
+        bool tick = cadence.StepSends();
+        bool unsentEnding = _versus is { Completed: true } && _matchEnd == Net.NetMatchEnd.Running;
+        if (tick || unsentEnding)
+        {
+            SendMatchState();
         }
     }
 
@@ -4575,6 +4690,15 @@ public partial class GameSession : Node3D
     // plane back to its own spawn. Mirrors RestartRace exactly.
     private void RestartMatch(VersusMatch match)
     {
+        // ⚠ On a wire the rematch is the host's alone. A guest restarting here would zero its own
+        // board and fly a round nobody else is in. Its R therefore does nothing, and it waits for
+        // the host's running state. Asking the host for one is BL-1026.
+        if (_netSeats.Count > 0 && _net is not { IsHost: true })
+        {
+            Log.Info("flight", $"dogfight: rematch is the host's to call, this guest waits for it");
+            return;
+        }
+
         Log.Info("flight", $"dogfight: rematch, scores and clock reset for every pilot");
         match.Restart();
         // A rematch is a fresh round, so it opens on the opening spawns rather than on wherever
@@ -4582,6 +4706,11 @@ public partial class GameSession : Node3D
         _versusSpawns?.Restart();
         if (_netSeats.Count > 0)
         {
+            // ⚠ The running state goes out BEFORE the zeroed scores. A guest whose match still
+            // reads completed drops every score. Both ride the one reliable ordered channel.
+            SendMatchState();
+            for (int seat = 0; seat < _seatRigs.Count; seat++)
+                SendScore(seat);
             // On a wire the whole field is put back by grant, seat by seat, so a rematch places
             // every aeroplane from the one rotation. A guest grants nothing and waits.
             for (int seat = 0; seat < _seatRigs.Count; seat++)
@@ -5217,7 +5346,7 @@ public partial class GameSession : Node3D
         public void StepSmokeScreens(float dt) => session._smokeScreens?.SimStep(dt);
         public void StepBeeperTags(float dt) => session._beeperTags?.SimStep(dt);
         public void StepAiVoice(float dt) => session._aiVoice?.Step(dt);
-        public void StepVersus(float dt) => session._versus?.Advance(dt);
+        public void StepVersus(float dt) => session.StepVersusMatch(dt);
     }
 
     // Per-build state threaded through StartSession's phase methods: the archives, world-build
