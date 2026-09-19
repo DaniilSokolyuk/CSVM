@@ -103,6 +103,12 @@ interactive menus (plane roster, chapter) and then `--fly`, flight flags prompt 
 missing, and the static views (`--plane=`, `--chapter=`, `--damage=`) pass through promptless
 apart from `--damage=`'s own plane prompt.
 
+**The Steam build flavour.** `dotnet build CSVM/CSVM.sln -p:CsvmSteam=true` defines `CSVM_STEAM`,
+which makes `CSVM/src/Net/NetCarrier.cs` select the Steam carrier instead of ENet and nothing
+else. The Steamworks SDK is not in this repo and cannot be, so that carrier throws at every way
+in; the flavour exists to keep the seam honest, and both flavours build clean and pass the unit
+suite. `RunTests.ps1` and every release build are the default flavour.
+
 **`RunTests.ps1`, the verification entry point.** One command, one summary block, one exit code.
 Stages, in order, each reported `PASS` / `FAIL` / `SKIP` / `TODO`:
 

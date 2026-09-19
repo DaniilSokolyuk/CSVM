@@ -176,7 +176,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 ### Wave D, hardening
 
 31. ☐ Latency and loss soaks, desync instruments and a `--debug-net` readout
-32. ☐ The Steam transport flag: a build-time gate with a stub, so the seam is proven before any SDK arrives
+32. ☑ The Steam transport flag: a build-time gate with a stub, so the seam is proven before any SDK arrives
 
 ## Dependency and parallelism notes
 
@@ -944,22 +944,57 @@ the HUD and the log.
 **⚠ Traps.** The file sink takes only `Log.*` lines and debug lines are flag-gated; absence of a
 line is not evidence.
 
-## D32 ☐ The Steam transport flag: a build-time gate with a stub, so the seam is proven before any SDK arrives
+## D32 ☑ The Steam transport flag: a build-time gate with a stub, so the seam is proven before any SDK arrives
+
+**Landed.** `CSVM/src/Net/SteamTransport.cs` is the Steam carrier's place in the seam: it
+implements `INetTransport`, and its `Host`, `Join` and private constructor all throw
+`InvalidOperationException` reading "not built with the Steamworks SDK", with one arm naming the
+missing define and the other naming the missing SDK. `SteamBuild` is the `CSVM_STEAM` define,
+set by the `CsvmSteam` MSBuild property added to `CSVM/CSVM.csproj` (appended to
+`DefineConstants`, never assigned over the Godot SDK's own symbols).
+`CSVM/src/Net/NetCarrier.cs` is the one place a carrier is chosen: `Host`, `Join`, `PortMap` and
+`PortUnmap`, selecting ENet or Steam off that define, with the router door null for a carrier
+that needs none. `CSVM/src/Session/Launcher.cs` registers the door through it and opens
+`--net-host`/`--net-join` through it, and its command-line link wait now reads `INetLink` and
+`IDisposable` instead of casting to `EnetTransport`, so nothing in the launcher names a carrier.
+`CSVM.Tests/NetNamespaceDependencyTests.cs` exempts the stub exactly as the two carriers are
+exempted and adds a third fact: over the whole assembly, no type outside `CSVM.Net.SteamTransport`
+may name `Steamworks.`, `Godot.Steam` or `GodotSteam`. `CSVM.Tests/SteamTransportTests.cs` is the
+unit fact on the throw and the selection, written so both flavours run it. The `enet-transport`
+suite gained one check that this build's selection is the ENet socket. Docs: new entries in
+`docs/architecture/Net.md` with their index bullets, the carrier clause in
+`docs/architecture/Session.md`'s `Launcher.cs` and `docs/architecture/UI.md`'s `NetPlayFeature.cs`
+entries, and the build flavour in `docs/tooling.md`. No CLI flag was added, so `docs/cli.md` is
+untouched.
+
+**Verified.** <pending orchestrator run>
+
+**Original approach (kept for reference).**
 
 **Goal.** A build with the Steam flag set constructs a Steam transport stub through A1's interface
 and everything above it is unchanged, proving the seam before the Steamworks SDK, which cannot be
 committed to this repo under its licence, is ever added.
 
 **Evidence (confidence: lead-only).** GodotSteam (GDExtension) and Facepunch.Steamworks (C#) both
-reach Steam Networking Sockets, the relay and lobbies from Godot; neither is evaluated here.
+reach Steam Networking Sockets, the relay and lobbies from Godot; neither is evaluated here, and
+naming them is the whole of what this item says about them.
 
 **Approach.** A `CSVM_STEAM` define, a `SteamTransport` that throws "not built" at construction
 without the SDK, and the transport selection in one place. No SDK, no app id, no store page in this
 plan.
 
-**Model recommendation.** <TODO: not settled in the scoping session>
+**Model recommendation.** Medium. The work is one stub, one selection point and a build property;
+the judgement in it is where the seam is cut, and A1 already cut it.
 
-**Verify.** <TODO: both build flavours compile and the test suite passes on both>
+**Verify.** Both flavours build clean with zero warnings and pass the unit suite:
+`dotnet build CSVM/CSVM.sln` and `dotnet build CSVM/CSVM.sln -p:CsvmSteam=true`, then
+`.\RunTests.ps1 -SkipEngine -SkipGoldens` and `dotnet test CSVM.Tests/CSVM.Tests.csproj
+-p:CsvmSteam=true`. The define is proven to reach the compiler by the folded message arm: the
+Steam-flavour `CSVM.dll` carries "CSVM_STEAM is defined but no SDK is linked" and the default one
+carries the other arm. The three network suites (`enet-transport`, `net-enet-join`,
+`menu-net-door`) run on the default flavour.
 
 **⚠ Traps.** The Steam listing itself is a legal and distribution decision (trademark, the "requires
-your own copy" model OpenTTD uses, Valve's review) and is not this plan's to take.
+your own copy" model OpenTTD uses, Valve's review) and is not this plan's to take. `SteamBuild` is
+a `const`, so a consumer inlines it: a stale `CSVM.Tests` build against a freshly reflavoured
+`CSVM.dll` would report the old flavour, which is why the flavoured unit run rebuilds both.

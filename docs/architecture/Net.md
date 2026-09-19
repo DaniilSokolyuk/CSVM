@@ -1,11 +1,13 @@
 # Net
 
-The network seam: what carries bytes between peers, the in-process carrier the suites run on, and
-the ENet carrier a match ships over. Only the two carriers name an engine type beyond Godot's
-plain math structs, and nothing here names a socket API, which is what lets one session run over
-the loopback in a plain unit test and over ENet in a match; the boundary and its two exemptions
-are asserted over compiled metadata by `CSVM.Tests/NetNamespaceDependencyTests.cs`. Nothing about
-the world crosses this seam, and the message vocabulary sits entirely above it.
+The network seam: what carries bytes between peers, the in-process carrier the suites run on, the
+ENet carrier a match ships over, and the one place a build picks between them. Only the ENet
+carrier and the port mapping name an engine type beyond Godot's plain math structs, and nothing
+here names a socket API, which is what lets one session run over the loopback in a plain unit test
+and over ENet in a match; the boundary and its exemptions are asserted over compiled metadata by
+`CSVM.Tests/NetNamespaceDependencyTests.cs`, which also holds every Steam name to the Steam
+carrier. Nothing about the world crosses this seam, and the message vocabulary sits entirely above
+it.
 
 One `## src/...` entry per module, body at most 8 lines.
 
@@ -47,6 +49,23 @@ every payload comes out of `Step`, the single poll it makes, so "nothing arrives
 holds here as it does on the loopback. `INetLink` is where a board and a launcher read the socket
 (`LinkState`, `PendingPayloads`), and a socket with no listener holds what lands and replays it on
 `Bind`. Read `UpnpPortMap.cs` next for the optional door in the host's own router.
+
+## src/Net/SteamTransport.cs
+The Steam carrier's place in the seam with nothing behind it: the Steamworks SDK cannot be
+committed here under its licence, so every way in throws "not built with the Steamworks SDK" and
+says which of the two cases the build is. `SteamBuild` is the `CSVM_STEAM` define, set by the
+`CsvmSteam` build property, and the only thing that define changes. The throw is an
+`InvalidOperationException`, the kind the door and the launcher already catch from a socket that
+will not open, so a Steam build reaches a board as a line of text rather than a crash. Read
+`NetCarrier.cs` for where it is chosen.
+
+## src/Net/NetCarrier.cs
+Which carrier a match runs over, chosen once: the menu door's registration in
+`Session/Launcher.cs` and the command line's own open both come through `Host` and `Join` here, so
+a build changes carrier without an edit above the seam. `UsesSteam` is the switch and `Name` is
+the word for a log line. `PortMap` and `PortUnmap` are the router door a direct-IP host asks for,
+and are null for a carrier that is reachable without one, which a door shows as no mapping.
+⚠ Nothing above the seam branches on the carrier.
 
 ## src/Net/UpnpPortMap.cs
 A best-effort port mapping through Godot's UPnP client, so a host behind a router is reachable

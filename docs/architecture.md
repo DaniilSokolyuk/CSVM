@@ -602,15 +602,18 @@ It holds no engine type, so it runs in a plain unit test; formats and evidence a
 
 ### `src/Net/`, the network seam
 
-What carries bytes between peers: the in-process carrier the suites run on and the ENet carrier a
-match ships over. Only those two name an engine type, so a session cannot learn what it is being
-carried by. The
+What carries bytes between peers: the in-process carrier the suites run on, the ENet carrier a
+match ships over, the Steam carrier behind a build define, and the one place a build picks between
+them. Only the ENet carrier and the port mapping name an engine type, so a session cannot learn
+what it is being carried by. The
 original's own message set, with ids and guarantees, is in [`org/multiplayer-messages.md`](org/multiplayer-messages.md).
 
 - `src/Net/INetTransport.cs`, the carrier a session sends bytes over: the peer roster, one send per payload with its reliability class and channel, and the listener arrivals are reported to.
 - `src/Net/LoopbackConditions.cs`, one direction's wire conditions as a value: a latency, a symmetric jitter about it and a loss probability, every draw from a caller-supplied `Random`.
 - `src/Net/LoopbackTransport.cs`, transports wired to each other in one process through delivery queues: nothing arrives until a step, so a suite owns delivery time and makes its own reorders.
 - `src/Net/EnetTransport.cs`, the shipped carrier: the seam over Godot's ENet peer, hosting on a port or joining by address, with every roster change and payload reported out of one poll.
+- `src/Net/SteamTransport.cs`, the Steam carrier's place in the seam with no SDK behind it: every way in throws "not built with the Steamworks SDK", and `SteamBuild` is the `CSVM_STEAM` define.
+- `src/Net/NetCarrier.cs`, which carrier a match runs over, chosen once: the door's registration and the command line both open through it, and a build define is the whole of the choice.
 - `src/Net/UpnpPortMap.cs`, a best-effort port mapping through Godot's UPnP client: four outcomes a host can show, never a throw, and never required for a match to be joinable.
 - `src/Net/NetMessages.cs`, the message vocabulary: one struct per message, each declaring its type word and reliability class, over a shared four-byte header.
 - `src/Net/NetMessageWriter.cs`, the writer and reader cursors every message is packed and unpacked through: little-endian primitives, quantised unit fields, fixed-width text.

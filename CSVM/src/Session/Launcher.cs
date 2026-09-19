@@ -1805,11 +1805,12 @@ public partial class Launcher : Node3D
             CSVM.Bindings.BindingStore.UserBindings().Save(player, profile)));
         // The multiplayer door. The carrier and the router arrive as delegates. That is what
         // keeps the feature, and every board over it, clear of the socket and the engine.
+        // Which carrier they open is `Net/NetCarrier.cs`'s, never this registration's.
         _netDoor = new NetPlayFeature(
-            (port, guests, bind) => Net.EnetTransport.Host(port, guests, bind),
-            (address, port) => Net.EnetTransport.Join(address, port),
-            port => Net.UpnpPortMap.Map(port),
-            port => Net.UpnpPortMap.Unmap(port));
+            (port, guests, bind) => Net.NetCarrier.Host(port, guests, bind),
+            (address, port) => Net.NetCarrier.Join(address, port),
+            Net.NetCarrier.PortMap,
+            Net.NetCarrier.PortUnmap);
         host.Features.Add(_netDoor);
         host.AddSeat(seat);
         string? reason = host.Select(_spec.ForceBuiltInPresentation, _spec.PresentationOverride);
@@ -2020,13 +2021,13 @@ public partial class Launcher : Node3D
         {
             if (_spec.NetHostPort is { } port)
             {
-                _netWire = Net.EnetTransport.Host(port, Net.NetSeats.MaxPlayers - 1, _spec.NetHostBind);
+                _netWire = Net.NetCarrier.Host(port, Net.NetSeats.MaxPlayers - 1, _spec.NetHostBind);
                 _netIsHost = true;
             }
             else
             {
                 var (address, joinPort) = SessionSpec.ParseJoin(_spec.NetJoin!);
-                _netWire = Net.EnetTransport.Join(address, joinPort);
+                _netWire = Net.NetCarrier.Join(address, joinPort);
                 _netIsHost = false;
             }
         }
@@ -2045,16 +2046,19 @@ public partial class Launcher : Node3D
     // before anything builds. A host waits for its first guest, a guest for its host.
     private void AwaitCliNetLink()
     {
-        if (_netWire is not Net.EnetTransport wire)
+        if (_netWire is not { } wire)
         {
             return;
         }
 
+        // The link readout is the socket's. A carrier without one counts as linked once a peer is
+        // on the roster, which is the door's own fallback rule.
+        var link = wire as Net.INetLink;
         var waited = System.Diagnostics.Stopwatch.StartNew();
         while (waited.Elapsed.TotalSeconds < NetLinkWaitSeconds)
         {
             wire.Step(0.001);
-            if (wire.Peers.Count > 0 && wire.LinkState == Net.EnetLinkState.Up)
+            if (wire.Peers.Count > 0 && (link == null || link.LinkState == Net.EnetLinkState.Up))
             {
                 Log.Info("core", $"net: linked as {(_netIsHost ? "host" : "guest")} after {waited.Elapsed.TotalSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)} s, {wire.Peers.Count} peer(s)");
                 BuildCliNetRoster();
@@ -2065,7 +2069,7 @@ public partial class Launcher : Node3D
         }
 
         Log.Error("core", $"net: nobody on the wire after {NetLinkWaitSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)} s, flying this session alone");
-        wire.Close();
+        (wire as System.IDisposable)?.Dispose();
         _netWire = null;
         _netIsHost = false;
     }

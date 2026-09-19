@@ -1184,7 +1184,7 @@ and `BuildExit` are the typed result. Nothing here reads a pad: `src/UI/MenuSeat
 The multiplayer door as a shared `IMenuFeature`, engine-free and carrier-free: the port and the
 address a board edits, the socket it opens, and the readouts a board draws (`Stage`, `Peers`,
 `Link`, `PortMap`, `Fault`, `HostStarted`). Both carrier factories and both port-mapping calls
-arrive as delegates, so the launcher passes `EnetTransport` and `UpnpPortMap` and a suite passes a
+arrive as delegates, so the launcher passes `Net/NetCarrier.cs`'s selection and a suite passes a
 loopback mesh and no router. `OpenHost`/`OpenJoin` open, `Step` carries the link (a join lands
 there, not in the press), `BuildLaunch` hands the wire to the launch as a `MenuNetLaunch` and
 keeps nothing, `Close` gives the router's port back. The map runs on its own thread because the

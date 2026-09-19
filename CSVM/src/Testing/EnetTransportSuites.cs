@@ -37,7 +37,8 @@ internal static class EnetTransportSuites
         + "delivery class the payload is sent under";
 
     [Suite("enet-transport",
-        "the shipped ENet carrier hosts and joins itself over 127.0.0.1 inside one process: each "
+        "the shipped ENet carrier hosts and joins itself over 127.0.0.1 inside one process: the "
+        + "carrier selection hands this build that socket, each "
         + "end is told the other joined, nothing arrives until a step runs, a reliable payload "
         + "round trips on its own channel with its bytes and its sender intact, an "
         + "unreliable-sequenced burst is never delivered behind a newer payload, a plain "
@@ -49,6 +50,11 @@ internal static class EnetTransportSuites
         EnetTransport? guest = null;
         try
         {
+            // What the door and the command line open through. Without the Steam define it has to
+            // be this carrier, or the rest of the run proves a socket nothing opens.
+            ctx.Check(!NetCarrier.UsesSteam && NetCarrier.Name == "enet",
+                $"the carrier selection hands this build the ENet socket (it hands it {NetCarrier.Name})");
+
             host = OpenHost(out int port, out string why);
             if (host == null)
             {
