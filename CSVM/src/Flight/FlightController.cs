@@ -362,6 +362,13 @@ public partial class FlightController : Node3D
     /// cannot disagree. A session fills it from received aircraft-state messages.</summary>
     public Net.RemotePoseBuffer? RemotePoses;
 
+    /// <summary>Set, every projectile strike on this airframe is offered here first. A true
+    /// answer means the round was dealt with elsewhere and nothing is spent locally. A networked
+    /// session uses it to send the shooter's claim to the machine that owns the victim, which is
+    /// the only one that applies damage. Unset (a mission, splitscreen, every AI rig), each hit
+    /// lands where it always did.</summary>
+    public Func<AircraftHit, bool>? HitRouter;
+
     /// <summary>The nitro boost lifecycle. <see cref="NitroSystem.Installed"/> is the build's
     /// (the hangar's nitrous engine pick, or the AI spawn's roster flag); the command arm, the
     /// AI maneuver arm, the tank and the animation edges run from <see cref="SimStep"/>.</summary>
@@ -716,6 +723,13 @@ public partial class FlightController : Node3D
     /// tiers and the player's WA-HighDmg crossing, and the shooter for the ally distress line.
     /// Terrain grazes do not raise it; the decoded distress sites are the combat hit path's.</summary>
     public event Action<FlightController, int?>? DamageApplied;
+
+    /// <summary>Raised once per round this aircraft puts into the world, with the weapon, the
+    /// muzzle point and the direction the round was given. That direction is the assist's answer,
+    /// not the barrel's axis. A carried turret's rounds come through <see cref="ReportWeaponFired"/> and
+    /// raise it too. A networked session sends the event; nothing else subscribes, so a round is
+    /// spawned here exactly as before.</summary>
+    public event Action<WeaponDef, Vector3, Vector3>? WeaponFired;
 
     /// <summary>This aircraft's team, everywhere "is this hostile" is asked reads this instead of
     /// deriving a team from <see cref="PlayerIndex"/> (shooter ids are not team ids). Unset, it
@@ -1777,6 +1791,20 @@ public partial class FlightController : Node3D
             : $"⚠ HIT HULL {Damage.SummaryHealthFraction * 100f:0}%");
     }
 
+    /// <summary>The death its owner reported over the wire, played out here. It runs the same
+    /// <see cref="DestroyDef"/>, wreck and camera cut a locally decided kill runs, at this
+    /// machine's own pose. The <paramref name="killer"/> value is the shooter id the owner named,
+    /// null for a death with nobody to charge. The <see cref="Downed"/> event still fires. A session that
+    /// scores only the seats it owns keeps that from being reported back.</summary>
+    public void TakeRemoteDeath(int? killer) =>
+        Destroy(_model.Position, "a remote kill", "center", killer);
+
+    /// <summary>Reports one round fired by something this aircraft carries, a turret's gun, whose
+    /// spawn this node does not perform. The turret spawns as it always did; this is only how the
+    /// round reaches <see cref="WeaponFired"/> so a networked session can send it.</summary>
+    public void ReportWeaponFired(WeaponDef weapon, Vector3 origin, Vector3 direction) =>
+        WeaponFired?.Invoke(weapon, origin, direction);
+
     /// <summary>The AI stun's entry for a struck aircraft (decoded: <c>FUN_004200d0</c>; a
     /// <c>SONIC</c>/<c>FLASH</c> burst passes <see cref="DisablingIntensity"/>'s stun seconds, the
     /// smoke screen <c>smokescreen_stun_interval</c>). The original's victim guards live here: never
@@ -2077,10 +2105,16 @@ public partial class FlightController : Node3D
         // shared pool, under this pilot's shooter id. The crash branch above already returned,
         // so a downed host's gunners take no further ticks.
         int turretShots = 0;
-        foreach (var turret in Turrets)
+
+        // ⚠ Silent on a remote airframe: its gunner runs on the machine that owns it. Those
+        // rounds arrive here as fire events, so running it here too would double every burst.
+        if (!RemoteOwned)
         {
-            turret.SimStep(dt);
-            turretShots += turret.ShotsFired;
+            foreach (var turret in Turrets)
+            {
+                turret.SimStep(dt);
+                turretShots += turret.ShotsFired;
+            }
         }
 
         // The original rumbles for the pilot's OWN gunner alone. Its turret effect is gated on the
@@ -2966,6 +3000,9 @@ public partial class FlightController : Node3D
             var muzzle = g.Muzzles[mi];
             var aimDir = AssistedGunDirection(g.Weapon, gi, mi, muzzle, planeBasis, inheritVel, aimNow);
             Projectiles!.Spawn(g.Weapon, muzzle.GlobalTransform, inheritVel, PlayerIndex, muzzle, aimDir, Team);
+            // The assisted direction, not the barrel's. Every other machine spawns the round this
+            // machine decided on rather than re-running a scan against its own world.
+            WeaponFired?.Invoke(g.Weapon, muzzle.GlobalPosition, aimDir);
             Shake?.FireBullet(g.Weapon.Caliber ?? 0f); // the firing buzz: factor × caliber (measured)
             // One of three effects by calibre, each restarted per round. The original's loop is
             // infinite and its own timer stops it 0.3 s after the last shot.
@@ -2997,6 +3034,10 @@ public partial class FlightController : Node3D
             {
                 Projectiles!.Spawn(hp.Weapon, hp.Pylon.GlobalTransform, inheritVel, PlayerIndex, hp.Pylon,
                     rocketAim, Team, launchTarget);
+                // The same fallback the spawn takes for a launch with no aim vector. The round
+                // another machine builds then leaves down the direction this one gave it.
+                WeaponFired?.Invoke(hp.Weapon, hp.Pylon.GlobalPosition,
+                    rocketAim ?? -hp.Pylon.GlobalTransform.Basis.Z.Normalized());
             }
             // After the spawn branch, so a SMOKE_SCREEN launch rumbles too. The cue hangs on the
             // pylon firing, where the original hangs it, not on a round appearing.

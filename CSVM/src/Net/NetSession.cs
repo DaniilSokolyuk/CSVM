@@ -18,8 +18,12 @@ public sealed class NetSession : INetTransportListener
     /// per session rather than one per send, since a send completes inside the call.</summary>
     public const int SendBufferBytes = 512;
 
+    /// <summary>What a peer lookup returns when nothing on the transport answers to it.</summary>
+    public const int NoPeer = -1;
+
     private readonly INetTransport _transport;
     private readonly Dictionary<NetMessageType, Handler> _handlers = new();
+    private readonly Dictionary<NetMessageType, Relay> _relays = new();
     private readonly List<NetSeat> _seats = new();
     private readonly List<NetSeatEntry> _received = new();
     private readonly IReadOnlyList<string> _airframes;
@@ -29,6 +33,7 @@ public sealed class NetSession : INetTransportListener
 
     private NetHandshake? _handshake;
     private bool _rosterArrived;
+    private int _hostPeer = NoPeer;
 
     private NetSession(INetTransport transport, bool isHost, ulong seed, Func<double>? clock,
         IReadOnlyList<NetSeat>? roster, IReadOnlyList<string>? airframes)
@@ -60,6 +65,10 @@ public sealed class NetSession : INetTransportListener
     /// delegate rather than a generic handler list because a span cannot be a type argument.
     /// </summary>
     private delegate void Handler(int peer, ReadOnlySpan<byte> payload);
+
+    /// <summary>One arrival offered to the star's relay before its own handler sees it. The
+    /// channel rides along because a forward keeps the one it arrived on.</summary>
+    private delegate void Relay(int from, int channel, ReadOnlySpan<byte> payload);
 
     /// <summary>Whether this peer owns the match: the seed, the roster and every host-authoritative
     /// rule. A guest holds the mirror of what it is told.</summary>
@@ -93,6 +102,14 @@ public sealed class NetSession : INetTransportListener
     /// <summary>Payloads the transport delivered here, malformed and unrouted ones included.
     /// </summary>
     public int Received { get; private set; }
+
+    /// <summary>Arrivals this host forwarded to another peer on the star. Counted apart from
+    /// <see cref="Sent"/>, which stays what this machine said itself.</summary>
+    public int Relayed { get; private set; }
+
+    /// <summary>The peer the host is reached through: a guest's link to it, or a host's own id.
+    /// <see cref="NoPeer"/> before a guest's join lands.</summary>
+    public int HostPeer => IsHost ? _transport.LocalPeer : _hostPeer;
 
     /// <summary>Payloads discarded because no handler claimed the type word, or because the header
     /// did not describe the buffer. The counter a suite reads to prove a handler is bound.</summary>
@@ -160,6 +177,84 @@ public sealed class NetSession : INetTransportListener
         }
     }
 
+    /// <summary>The peer <paramref name="seat"/> is reached through, <see cref="NoPeer"/> for a
+    /// seat this roster does not hold. A guest's every other seat reads as the host, which is what
+    /// makes a send to a seat a send into the relay.</summary>
+    public int PeerOfSeat(int seat)
+    {
+        foreach (var entry in _seats)
+        {
+            if (entry.SeatIndex == seat)
+            {
+                return entry.PeerId;
+            }
+        }
+
+        return NoPeer;
+    }
+
+    /// <summary>Sends one message to the machine that owns <paramref name="seat"/>, through the
+    /// host when that owner is not a peer of this end. False when the seat is flown here or is not
+    /// on the roster, which is the caller's cue that nothing left the machine.</summary>
+    /// <typeparam name="T">The message being sent.</typeparam>
+    public bool SendToSeat<T>(int seat, in T message, int channel = 0)
+        where T : struct, INetMessage<T>
+    {
+        int peer = PeerOfSeat(seat);
+        if (peer == NoPeer || peer == _transport.LocalPeer)
+        {
+            return false;
+        }
+
+        Send(peer, message, channel);
+        return true;
+    }
+
+    /// <summary>Forwards every arriving <typeparamref name="T"/> to the other guests, byte for
+    /// byte. The payload is untouched, so the seat inside it stays the sender's own. The peer
+    /// it came from is never sent its own message back.</summary>
+    /// <typeparam name="T">The message being relayed.</typeparam>
+    public void RelayToOthers<T>()
+        where T : struct, INetMessage<T>
+    {
+        RequireHostRelay();
+        _relays[T.Type] = (from, channel, payload) =>
+        {
+            var peers = _transport.Peers;
+            for (int i = 0; i < peers.Count; i++)
+            {
+                if (peers[i] != from)
+                {
+                    Forward(peers[i], T.Type, channel, payload);
+                }
+            }
+        };
+    }
+
+    /// <summary>Forwards every arriving <typeparamref name="T"/> to the one machine that owns the
+    /// seat <paramref name="seatOf"/> reads out of it, and to nobody else. Nothing is forwarded
+    /// when that seat is flown on the host or by the sender itself.</summary>
+    /// <typeparam name="T">The message being relayed.</typeparam>
+    public void RelayToSeatOwner<T>(Func<T, int> seatOf)
+        where T : struct, INetMessage<T>
+    {
+        ArgumentNullException.ThrowIfNull(seatOf);
+        RequireHostRelay();
+        _relays[T.Type] = (from, channel, payload) =>
+        {
+            if (!T.TryRead(payload, out var message))
+            {
+                return;
+            }
+
+            int peer = PeerOfSeat(seatOf(message));
+            if (peer != NoPeer && peer != from && peer != _transport.LocalPeer)
+            {
+                Forward(peer, T.Type, channel, payload);
+            }
+        };
+    }
+
     /// <summary>Advances the transport by <paramref name="dt"/> seconds, which is where every
     /// arrival is handed to its handler. The one place this session does anything on its own.
     /// </summary>
@@ -191,6 +286,13 @@ public sealed class NetSession : INetTransportListener
             return;
         }
 
+        // The relay runs before the handler, and on the bytes as they arrived. A host that also
+        // flies the message's subject still applies it below.
+        if (_relays.TryGetValue(type, out var relay))
+        {
+            relay(peer, channel, payload);
+        }
+
         if (!_handlers.TryGetValue(type, out var handler))
         {
             DroppedUnknown++;
@@ -198,6 +300,20 @@ public sealed class NetSession : INetTransportListener
         }
 
         handler(peer, payload);
+    }
+
+    private void Forward(int peer, NetMessageType type, int channel, ReadOnlySpan<byte> payload)
+    {
+        _transport.Send(peer, payload, NetMessage.ReliabilityOf(type), channel);
+        Relayed++;
+    }
+
+    private void RequireHostRelay()
+    {
+        if (!IsHost)
+        {
+            throw new InvalidOperationException("only the host relays; a guest talks to the host alone");
+        }
     }
 
     private void Route<T>(Action<int, T> handler)
@@ -272,6 +388,7 @@ public sealed class NetSession : INetTransportListener
     // through the peer that sent the roster, which in a listen server is the host for all of them.
     private void RebuildSeats(int from)
     {
+        _hostPeer = from;
         if (!_rosterArrived)
         {
             return;

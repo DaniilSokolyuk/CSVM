@@ -161,7 +161,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 ### Wave B, Dogfight over the wire
 
 11. ☑ Aircraft state replication: own aircraft broadcast at a fixed rate, remote aircraft interpolated
-12. ☐ Fire, hit, damage and death events in the decoded order, scored by the host
+12. ☑ Fire, hit, damage and death events in the decoded order, scored by the host
 13. ☐ Host-owned spawn and respawn from `net.zrd` and the rotation, applied by guests
 14. ☐ Match state: clock, limits, end and scoreboard replicated
 15. ☑ The ENet transport, host and join by direct IP with UPnP, and the multiplayer door's join board (`BL-951`)
@@ -613,8 +613,8 @@ it needs the lag fitted out before the residual means anything.
 user's rig has run at half wall time in late campaign runs. Do not replicate the render pose; the
 sample is the sim pose. `NetSession.Broadcast` reaches this peer's own peers, so on a listen server
 with three or more machines a guest's samples reach the host alone until the host relays them
-(Decision 9, the relay is B12's to build with the event forwarding); with two peers, which is what
-the suite measures, that gap is invisible.
+(Decision 9, the relay B12 registers over this handler); with two peers, which is what the suite
+measures, that gap is invisible.
 
 **Original approach (kept for reference).**
 
@@ -632,7 +632,54 @@ is position, attitude, velocity, throttle, control-surface deflections for the a
 nitro flag, with a sequence number; a stale sequence is dropped. TUNE entries for the three numbers
 go to `backlog.md`.
 
-## B12 ☐ Fire, hit, damage and death events in the decoded order, scored by the host
+## B12 ☑ Fire, hit, damage and death events in the decoded order, scored by the host
+
+**Landed.** `GameSession.WireNetCombat` is the whole wiring, registered at the build beside B11's
+state handler, and every part of it is inert in a session with no seats on a wire. A seat flown here
+announces each round it spawns through `FlightController.WeaponFired` (the gun and rocket spawns, and
+a carried turret's rounds through `TurretController`), and the session puts it on the wire as the
+unreliable sequenced `FireMessage`; every peer spawns that round locally from the event, so
+`StepProjectiles` and `StepIncomingFire` still see nothing but their own machine's projectiles. A
+strike is offered to the rig's new `HitRouter` before the local damage runs, which is where Decision
+8's fork sits: the machine flying the shooter's seat decides the hit, and the host stands in for
+every round no seat fired (AI pilots and world emplacements), so exactly one machine ever claims a
+strike and no damage is charged twice. When the victim is flown elsewhere the decider sends the
+reliable `HitMessage`, now 28 bytes carrying the struck shape and the impact in the victim's body
+space, and the victim's owner applies it through the same `TakeProjectileHit` a local round takes.
+That owner reports its own death as `DeathMessage` with killer and cause, the host alone runs
+`VersusMatch` and broadcasts the outcome as `ScoreMessage`, and a guest writes that board through
+`VersusMatch.ApplyScore` instead of scoring anything itself. A death with no seat to charge is
+`Suicide` and a turret's kill carries the turret cause, as the decoded table has them.
+
+**Decision 9, the relay.** `NetSession` carries it. `RelayToOthers` forwards an arrival to every peer
+but the one it came from, `RelayToSeatOwner` forwards it to the single peer that flies the seat the
+message names, and both forward the arrival's own bytes on the channel it arrived on, so a relayed
+message keeps its original sender's seat and never the host's. Only a host may register one, and the
+`Relayed` counter makes each forward countable from a suite. Channels are what make the star work:
+sequenced discard is per sender and channel and a relayed sample arrives under the host's peer id, so
+`NetChannels.ForSeat` gives every seat its own channel for its unreliable stream while `Events`
+carries everything reliable. The score is not relayed, because only the host ever writes it.
+
+**The two calls A3 left open.** A remote wreck runs its fall locally on every machine: the death
+crosses as one event and each peer plays the crash rig it already has, which keeps the fall smooth
+under loss and costs no further wire. A carried turret on an aeroplane flown elsewhere does not run
+its gunner here at all; its rounds arrive as the owner's fire events like any other shot, so two
+machines can never aim the same barrel at different targets.
+
+**Verified.** <pending orchestrator run>
+
+**Model recommendation.** High. The message shapes are small, but the authority fork is where this
+goes wrong invisibly: a hit decided on both ends charges the damage twice, a relay that rewrites the
+sender's seat scores the kill to the host, and both of those still look correct with two machines and
+fail only with three. The channel rule has the same shape, since two guests sharing one unreliable
+channel discard each other by sequence number and the symptom reads as packet loss.
+
+**⚠ Traps.** Shooter-side hits favour the shooter and are what players expect; do not add lag
+compensation, the original has none. The `DamageAt` log line prints only its first 12 hits, so its
+absence is not evidence. A round spends armour before health, so a single strike on a pristine
+airframe moves `WholeArmor` alone and an assertion reading health alone cannot fail.
+
+**Original approach (kept for reference).**
 
 **Goal.** A shot fired on one machine is seen on every machine, a hit the shooter's client decides
 lands as damage on the victim's client, the victim reports its own death with killer and cause, and
@@ -651,16 +698,6 @@ reliable from the shooter to the victim's owner; damage applied on the owner as 
 event reliable from the owner to the host in the `0x12` shape; the host runs `VersusMatch`'s
 scoring and broadcasts the score. Projectiles stay local on every peer, spawned from fire events, so
 `StepProjectiles` and `StepIncomingFire` need no wire.
-
-**Model recommendation.** <TODO: not settled in the scoping session>
-
-**Verify.** <TODO: a harness suite where the guest kills the host and the host kills the guest,
-asserting the score on both, plus the suicide and turret-kill causes; the exact assertions are
-unwritten>
-
-**⚠ Traps.** Shooter-side hits favour the shooter and are what players expect; do not add lag
-compensation, the original has none. The `DamageAt` log line prints only its first 12 hits, so its
-absence is not evidence.
 
 ## B13 ☐ Host-owned spawn and respawn from `net.zrd` and the rotation, applied by guests
 

@@ -105,7 +105,8 @@ public class NetMessagesTests
     [Fact]
     public void HitRoundTripsTheShootersClaim()
     {
-        var sent = new HitMessage(VictimSeat: 2, ShooterSeat: 0, Weapon: 5, Damage: 12.5f);
+        var sent = new HitMessage(VictimSeat: 2, ShooterSeat: 0, Weapon: 5, Damage: 0.75f,
+            Part: 3, LocalImpact: new Vector3(0.5f, -1.25f, 2f));
 
         Span<byte> buffer = stackalloc byte[HitMessage.Size];
         int written = sent.Write(buffer);
@@ -293,7 +294,7 @@ public class NetMessagesTests
     public void TheHeaderNamesTheTypeAndTheWholeLength()
     {
         Span<byte> buffer = stackalloc byte[HitMessage.Size];
-        new HitMessage(1, 2, 3, 4f).Write(buffer);
+        new HitMessage(1, 2, 3, 1f, -1, Vector3.Zero).Write(buffer);
 
         Assert.True(NetMessage.TryReadHeader(buffer, out var type, out int length));
         Assert.Equal(NetMessageType.Hit, type);

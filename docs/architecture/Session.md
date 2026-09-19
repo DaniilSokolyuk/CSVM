@@ -7,18 +7,18 @@ One `## src/...` entry per module, body at most 8 lines, 12 for the highest-traf
 Traps do not live here; the rule is in `docs/architecture.md`.
 
 ## src/Session/GameSession.cs
-The per-launch orchestrator: `Launcher` constructs it from `(SessionSpec, LauncherContext)` and `StartSession` runs ordered build phases over one
-local `BuildState`. It owns the session clock, world root, panes, seats, mode runtimes and resource lifetimes, delegating aircraft assembly and
-membership to `FlightRoster`, world construction to `WorldSession`, and effects staging to `WorldEffectsFactory`. `_rigs` is the pane list every
-camera-anchored system reads; `_seatRigs` is the whole field, a network match's guests included, and is what the roster, the spawn walk, the versus
-board, the respawn rotation and the human-aircraft step are sized by. A context transport opens a `Net.NetSession` in the constructor, before the
-world, so a host can answer a join it has not built for yet; `AwaitNetJoin` pumps that wire until the host's seed, seat and roster have landed,
-ahead of `Rng.Reset` and the seat sizing, and the handshake's clock opens the `NetClockSlew` advanced each frame. After the synchronous build it
-constructs one `SessionSimulation`, which owns the step order; both step paths step the wire before the step, so an arrival is applied on the step
-after it landed, and the human-aircraft phase then puts every seat flown here on the wire on the `AircraftStateCadence`, as the SIM pose, while a
-sample for a seat flown elsewhere reaches that seat's own pose buffer. `AllAircraft` combines the roster's AI view with the ordered rig controllers,
-and `OrderWaveAirframes` with `StepOwedLoad` puts the coming waves behind the load screen. Exit frees the session subtree atomically and releases
-only the non-node resources it owns; the prohibitions that keep these rules true sit on the members they bind. Read `SessionSimulation.cs` next.
+The per-launch orchestrator: `Launcher` constructs it from `(SessionSpec, LauncherContext)` and `StartSession` runs ordered build phases over one local `BuildState`. It owns
+the session clock, world root, panes, seats, mode runtimes and resource lifetimes, delegating aircraft assembly and membership to `FlightRoster`, world construction to
+`WorldSession`, and effects staging to `WorldEffectsFactory`. `_rigs` is the pane list every camera-anchored system reads; `_seatRigs` is the whole field, a network match's
+guests included, and sizes the roster, the spawn walk, the versus board, the respawn rotation and the human-aircraft step. A context transport opens a `Net.NetSession` in
+the constructor, before the world, so a host can answer a join it has not built for yet; `AwaitNetJoin` pumps that wire until the host's seed, seat and roster have landed,
+ahead of `Rng.Reset` and the seat sizing, and the handshake's clock opens the `NetClockSlew` advanced each frame. After the synchronous build it constructs one
+`SessionSimulation`, which owns the step order; both step paths step the wire first, so an arrival is applied on the step after it landed, and the human-aircraft phase
+puts every seat flown here on the wire on the `AircraftStateCadence` as the SIM pose, while a sample for a seat flown elsewhere reaches that seat's own pose buffer.
+`WireNetCombat` puts combat on the same wire: an owner's fire event spawns the round on every peer, the shooter's machine decides a hit and addresses the victim's owner,
+that owner applies the damage and reports its own death, and the host alone scores it and relays each of those between guests. `AllAircraft` combines the roster's AI view
+with the ordered rig controllers, and `OrderWaveAirframes` with `StepOwedLoad` puts the coming waves behind the load screen. Exit frees the session subtree atomically and
+releases only the non-node resources it owns; the prohibitions that keep these rules true sit on the members they bind. Read `SessionSimulation.cs` next.
 
 ## src/Session/SessionSimulation.cs
 The session simulation: one plain-C# module owning hold admission and the exact order of flight,

@@ -263,6 +263,8 @@
     "muzzle-light-first-person-point-term": 0.02,
     "net-aircraft-replication": 6.5,
     "net-enet-join": 6.63,
+    "net-combat-events": 7.0,
+    "net-relay-star": 10.0,
     "net-seats": 1.26,
     "net-two-session": 6.5,
     "nitro-ai-edges": 0.45,

@@ -257,12 +257,18 @@ public readonly record struct FireMessage(
 
 /// <summary>
 /// The shooter's claim that one of its rounds landed. Reliable, because the victim's client is
-/// the only place the damage is applied, and a lost claim is a hit that never happened.</summary>
+/// the only place the damage is applied, and a lost claim is a hit that never happened. The
+/// weapon is an index into the shared weapon catalogue. The <see cref="Damage"/> field is the
+/// share of that weapon's authored pair the round carries, 1 for a direct strike and the blast
+/// falloff otherwise. The struck collision shape is <see cref="Part"/>, or -1 for a shapeless one.
+/// The <see cref="LocalImpact"/> point is in the victim's own body space, so the victim resolves
+/// the same zone however far it has flown since.</summary>
 public readonly record struct HitMessage(
-    byte VictimSeat, byte ShooterSeat, ushort Weapon, float Damage) : INetMessage<HitMessage>
+    byte VictimSeat, byte ShooterSeat, ushort Weapon, float Damage, short Part, Vector3 LocalImpact)
+    : INetMessage<HitMessage>
 {
     /// <summary>The fixed width of the message, header included.</summary>
-    public const int Size = 12;
+    public const int Size = 28;
 
     /// <inheritdoc/>
     public static NetMessageType Type => NetMessageType.Hit;
@@ -278,8 +284,14 @@ public readonly record struct HitMessage(
         if (!reader.Is(Size) || reader.Type != Type)
             return false;
 
-        message = new HitMessage(
-            reader.ReadByte(), reader.ReadByte(), reader.ReadUInt16(), reader.ReadSingle());
+        byte victim = reader.ReadByte();
+        byte shooter = reader.ReadByte();
+        ushort weapon = reader.ReadUInt16();
+        short part = reader.ReadInt16();
+        _ = reader.ReadUInt16();
+        float damage = reader.ReadSingle();
+        var impact = new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+        message = new HitMessage(victim, shooter, weapon, damage, part, impact);
         return true;
     }
 
@@ -290,7 +302,12 @@ public readonly record struct HitMessage(
         writer.WriteByte(VictimSeat);
         writer.WriteByte(ShooterSeat);
         writer.WriteUInt16(Weapon);
+        writer.WriteInt16(Part);
+        writer.WriteUInt16(0);
         writer.WriteSingle(Damage);
+        writer.WriteSingle(LocalImpact.X);
+        writer.WriteSingle(LocalImpact.Y);
+        writer.WriteSingle(LocalImpact.Z);
         return writer.Close();
     }
 }

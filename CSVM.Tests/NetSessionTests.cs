@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CSVM.Net;
+using Godot;
 using Xunit;
 
 namespace CSVM.Tests;
@@ -178,11 +179,131 @@ public sealed class NetSessionTests
         Assert.Equal(1, guest.LocalSeat);
     }
 
+    // Decision 9's star. Two guests that cannot hear each other at all. Anything one of them
+    // learns about the other came through the host's relay and nowhere else.
+    [Fact]
+    public void A_guests_event_reaches_the_other_guest_carrying_its_own_seat()
+    {
+        var (host, first, second) = Star(19);
+        host.RelayToOthers<FireMessage>();
+        var reachedFirst = new List<FireMessage>();
+        var reachedSecond = new List<FireMessage>();
+        first.On<FireMessage>((_, fire) => reachedFirst.Add(fire));
+        second.On<FireMessage>((_, fire) => reachedSecond.Add(fire));
+        int sent = host.Sent;
+
+        first.Broadcast(new FireMessage(1, 7, 3, Vector3.Up, Vector3.Forward, NetMessage.NoSeat),
+            NetChannels.ForSeat(1));
+        host.Step(0.016);
+        second.Step(0.016);
+        first.Step(0.016);
+
+        Assert.Single(reachedSecond);
+        Assert.Equal(1, reachedSecond[0].Seat);
+        Assert.Equal(7, reachedSecond[0].Weapon);
+        Assert.Empty(reachedFirst);
+        Assert.Equal(1, host.Relayed);
+        Assert.Equal(sent, host.Sent);
+    }
+
+    // A forward is the bytes as they arrived, so the seat inside them is never rewritten to the
+    // host's own. Without the relay the second guest hears nothing at all.
+    [Fact]
+    public void Nothing_reaches_the_other_guest_while_the_relay_is_unregistered()
+    {
+        var (host, first, second) = Star(20);
+        int reached = 0;
+        second.On<FireMessage>((_, _) => reached++);
+
+        first.Broadcast(new FireMessage(1, 7, 3, Vector3.Up, Vector3.Forward, NetMessage.NoSeat),
+            NetChannels.ForSeat(1));
+        host.Step(0.016);
+        second.Step(0.016);
+
+        Assert.Equal(0, reached);
+        Assert.Equal(0, host.Relayed);
+    }
+
+    [Fact]
+    public void A_seat_addressed_message_is_forwarded_to_that_seats_owner_alone()
+    {
+        var (host, first, second) = Star(21);
+        host.RelayToSeatOwner<HitMessage>(hit => hit.VictimSeat);
+        var reachedFirst = new List<HitMessage>();
+        var reachedSecond = new List<HitMessage>();
+        first.On<HitMessage>((_, hit) => reachedFirst.Add(hit));
+        second.On<HitMessage>((_, hit) => reachedSecond.Add(hit));
+
+        Assert.True(first.SendToSeat(2, new HitMessage(2, 1, 5, 1f, 0, Vector3.Zero)));
+        host.Step(0.016);
+        second.Step(0.016);
+        first.Step(0.016);
+
+        Assert.Single(reachedSecond);
+        Assert.Equal(2, reachedSecond[0].VictimSeat);
+        Assert.Equal(1, reachedSecond[0].ShooterSeat);
+        Assert.Empty(reachedFirst);
+        Assert.Equal(1, host.Relayed);
+    }
+
+    // The host is the seat's owner, so the relay has nowhere to send it: the host's own handler
+    // is the whole delivery.
+    [Fact]
+    public void A_message_for_a_seat_the_host_flies_is_not_forwarded_anywhere()
+    {
+        var (host, first, second) = Star(22);
+        host.RelayToSeatOwner<HitMessage>(hit => hit.VictimSeat);
+        int reachedHost = 0;
+        int reachedSecond = 0;
+        host.On<HitMessage>((_, _) => reachedHost++);
+        second.On<HitMessage>((_, _) => reachedSecond++);
+
+        Assert.True(first.SendToSeat(0, new HitMessage(0, 1, 5, 1f, 0, Vector3.Zero)));
+        host.Step(0.016);
+        second.Step(0.016);
+
+        Assert.Equal(1, reachedHost);
+        Assert.Equal(0, reachedSecond);
+        Assert.Equal(0, host.Relayed);
+    }
+
+    // A guest talks to the host and to nobody else. It has no relay to register, and a send to
+    // its own seat leaves the machine as nothing at all.
+    [Fact]
+    public void A_guest_relays_nothing_and_never_addresses_itself()
+    {
+        var (_, first, _) = Star(23);
+
+        Assert.Throws<InvalidOperationException>(() => first.RelayToOthers<FireMessage>());
+        Assert.Throws<InvalidOperationException>(
+            () => first.RelayToSeatOwner<HitMessage>(hit => hit.VictimSeat));
+        Assert.False(first.SendToSeat(1, new HitMessage(1, 1, 5, 1f, 0, Vector3.Zero)));
+        Assert.False(first.SendToSeat(9, new HitMessage(9, 1, 5, 1f, 0, Vector3.Zero)));
+        Assert.Equal(first.HostPeer, first.PeerOfSeat(2));
+    }
+
     private static NetSeat[] Roster() => new NetSeat[]
     {
         new() { PeerId = 0, SeatIndex = 0, IsLocal = true, Callsign = "host", PlaneNode = Airframes[0] },
         new() { PeerId = 1, SeatIndex = 1, Callsign = "guest", PlaneNode = Airframes[1] },
     };
+
+    // Three sessions in a star: the two guests are unlinked before either binds, so neither ever
+    // sees the other as a peer. Both are past their join when this returns.
+    private static (NetSession Host, NetSession First, NetSession Second) Star(int seed)
+    {
+        var mesh = LoopbackTransport.Mesh(3, LoopbackConditions.Perfect, new Random(seed));
+        mesh[1].Disconnect(2);
+        var seats = Roster()
+            .Append(new NetSeat { PeerId = 2, SeatIndex = 2, Callsign = "second", PlaneNode = Airframes[0] })
+            .ToArray();
+        var host = NetSession.Host(mesh[0], seats, Seed, null, Airframes);
+        var first = NetSession.Guest(mesh[1], Airframes);
+        var second = NetSession.Guest(mesh[2], Airframes);
+        first.Step(0.016);
+        second.Step(0.016);
+        return (host, first, second);
+    }
 
     // A host and a guest past their join, the state every test above the join starts from.
     private static (NetSession Host, NetSession Guest) Joined(int seed)

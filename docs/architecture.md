@@ -623,7 +623,8 @@ original's own message set, with ids and guarantees, is in [`org/multiplayer-mes
 - `src/Net/NetSeats.cs`, the roster's rules: eight pilots admitted behind sixteen-wide tables, the original's authored seat colours, and what makes a roster well formed.
 - `src/Net/RemotePoseBuffer.cs`, one remote aircraft's received samples and the pose to draw it at now: interpolated a fixed delay behind, extrapolated along the newest velocity up to a cap, then held.
 - `src/Net/AircraftStateCadence.cs`, when an owner puts its own aeroplane on the wire, in simulation steps, and the per-seat sequence each sample carries.
-- `src/Net/NetSession.cs`, a session's own end of the wire: typed sends under each type's declared class, dispatch to per-type handlers, the join a host answers with, and the counters a suite reads.
+- `src/Net/NetChannels.cs`, which channel a message rides: one per seat for the unreliable streams, since sequenced discard is per sender and channel, and one for the join and every reliable event.
+- `src/Net/NetSession.cs`, a session's own end of the wire: typed sends under each type's declared class, dispatch to per-type handlers, the join a host answers with, the host's relay between guests, and the counters a suite reads.
 
 ### Session root and tests
 

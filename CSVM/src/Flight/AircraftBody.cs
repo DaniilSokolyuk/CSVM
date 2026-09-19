@@ -2,6 +2,15 @@ using Godot;
 
 namespace CSVM.Flight;
 
+/// <summary>One projectile strike on an aircraft, as the machine that fired the round sees it.
+/// It carries the struck plane, the round, the world impact point and the collision shape struck.
+/// The shooter id and the blast falloff share (1 for a direct round) come with it. What
+/// <see cref="FlightController.HitRouter"/> is offered, so a networked session can send the claim
+/// to the victim's owner instead of spending it here.</summary>
+public readonly record struct AircraftHit(
+    FlightController Victim, WeaponDef Weapon, Vector3 Impact, int ShapeIndex, int Shooter,
+    float DamageScale);
+
 /// <summary>The flying aircraft's physics body: the shared <see cref="PlaneCollider"/> hulls as
 /// real collision shapes on <see cref="CollisionLayers.Aircraft"/>, so a projectile's hit ray,
 /// and another plane's airframe sweep, can strike this plane. A child of its
@@ -78,8 +87,18 @@ public sealed partial class AircraftBody : AnimatableBody3D
     /// (<see cref="FlightController.TakeProjectileHit"/>). <paramref name="damageScale"/> is the
     /// blast falloff share for a splash hit; a direct round passes 1.</summary>
     public void TakeProjectileHit(WeaponDef weapon, Vector3 point, int shapeIdx, int shooter,
-        float damageScale = 1f) =>
+        float damageScale = 1f)
+    {
+        // Both projectile paths, the ray and the blast, come through here, which is why the
+        // router is asked here and nowhere else.
+        if (Rig.HitRouter is { } router
+            && router(new AircraftHit(Rig, weapon, point, shapeIdx, shooter, damageScale)))
+        {
+            return;
+        }
+
         Rig.TakeProjectileHit(weapon, point, PartName(shapeIdx), shooter, damageScale);
+    }
 
     /// <summary>The collision hull nearest a world point: its shape index (for
     /// <see cref="PartName"/>), the distance to its surface (0 inside), and that nearest surface

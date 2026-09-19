@@ -116,6 +116,24 @@ public sealed class VersusMatch
         }
     }
 
+    /// <summary>Writes one player's line as the host reports it, in place of deriving it from
+    /// events. A guest scores nothing of its own. It shows what the host counted, so a board reads
+    /// the same on every machine whatever each of them saw. The completion test runs as it does
+    /// after a kill, and a host that has ended the match sends nothing more.</summary>
+    public void ApplyScore(int playerIndex, int score, int kills, int deaths)
+    {
+        if (Completed)
+            return;
+        var row = RowOf(playerIndex);
+        if (row == null)
+            return;
+        row.Score = score;
+        row.Kills = kills;
+        row.Deaths = deaths;
+        if (KillTarget > 0 && row.Score >= KillTarget)
+            Complete();
+    }
+
     /// <summary>Advance the host-fed match clock by <paramref name="dt"/> seconds; completes the
     /// match once it reaches <see cref="TimeLimit"/>. No-op once <see cref="Completed"/> or when
     /// <see cref="TimeLimit"/> is disabled (an untimed match never times out).</summary>

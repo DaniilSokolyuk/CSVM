@@ -1,0 +1,448 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using CSVM.Flight;
+using CSVM.Net;
+using CSVM.Session;
+using CSVM.Utils;
+using Godot;
+
+namespace CSVM.Testing;
+
+/// <summary>Combat between whole sessions in one process: what one machine fires, claims and dies
+/// of, and what the others make of it. The rig is <see cref="NetSessionSuites"/>'s, one session
+/// per peer under its own <see cref="SubViewport"/> and <see cref="World3D"/>, so a rule asserted
+/// here is a rule between machines. The star suite adds a third session with the guest-to-guest
+/// link cut. That cut is the only way to tell a relayed message from a direct one.</summary>
+internal static class NetCombatSuites
+{
+    private const string MpMission = "MP1";
+
+    private const ulong HostSeed = 0xC0FFEE01UL;
+
+    // Steps both ends are driven through between one event and the assertion on it. A reliable
+    // payload crosses this link inside a handful; the rest is the damage and death path settling.
+    private const int SettleSteps = 20;
+
+    // How long the gun is held for the fire-event reading, in sim steps. It is also how long the
+    // last events are given to land after the trigger is released.
+    private const int BurstSteps = 60;
+
+    // The scripted flight the star's three owners fly. Each aeroplane is then somewhere its own,
+    // so a reconstruction can be told from the aeroplane beside it.
+    private const string TrackedFlight = "--hold=0.6,0.9,0,1";
+
+    private const int StarFlightSteps = 180;
+
+    // The airframe order every peer reads a roster's airframe index against.
+    private static readonly string[] Airframes = { "player_pfighter", "player_fbrand" };
+
+    [Suite("net-combat-events",
+        "a host session and a guest session in one process: the rounds one owner fires are spawned "
+        + "on the other from its fire events and nowhere else, a hit on an aeroplane flown "
+        + "elsewhere spends nothing locally and lands as damage on the machine that owns it, a "
+        + "guest kills the host and the host kills the guest with the score agreeing on both "
+        + "peers, and the suicide and turret-kill causes score as the decode says")]
+    internal static void CombatEventsCrossTheWire(TestContext ctx)
+    {
+        var spec = MatchSpec(ctx, out _);
+        // A clean link: every assertion below is about a rule, and a dropped round would read as
+        // a broken rule. The lossy link is asserted on in net-aircraft-replication.
+        var mesh = LoopbackTransport.Mesh(2, LoopbackConditions.Perfect, new Random(4211));
+        var roster = Roster(2);
+        var weapons = WeaponDefs.Load(ctx.ZrdrPath);
+        var gun = weapons.All.FirstOrDefault(w => w.IsCannon && w.HealthDamage is > 0f);
+        if (gun == null)
+        {
+            throw new SuiteSkippedException($"the weapon catalogue holds no cannon with health damage");
+        }
+
+        var ambient = Ambient.Save();
+        Ends? host = null;
+        Ends? guest = null;
+        try
+        {
+            host = Ends.Open(ctx, spec, mesh[0], isHost: true, HostSeed, roster);
+            guest = Ends.Open(ctx, spec, mesh[1], isHost: false, HostSeed + 1, null);
+            ctx.Check(host.Built && guest.Built,
+                $"both sessions build in one process (host {host.Built}, guest {guest.Built})");
+            if (!host.Built || !guest.Built)
+            {
+                return;
+            }
+
+            Lockstep(SettleSteps, host.Session, guest.Session);
+            FireEvents(ctx, host.Session, guest.Session);
+            HitRouting(ctx, host.Session, guest.Session, gun);
+            Kills(ctx, host.Session, guest.Session);
+            Causes(ctx, host.Session, guest.Session);
+        }
+        finally
+        {
+            guest?.Close();
+            host?.Close();
+            ambient.Restore();
+        }
+    }
+
+    [Suite("net-relay-star",
+        "three sessions in one process with the two guests unlinked from each other, so the host "
+        + "is their only path: each guest's aeroplane moves on the other guest's world and stays "
+        + "on its owner's own track rather than the third aeroplane's, a guest's gunfire spawns "
+        + "rounds under its own seat on the other guest, and the host forwards every arrival "
+        + "exactly once, never back to the peer it came from")]
+    internal static void TheHostRelaysBetweenGuests(TestContext ctx)
+    {
+        var spec = MatchSpec(ctx, out var table, TrackedFlight);
+        if (table.Count < 3)
+        {
+            throw new SuiteSkippedException($"{ctx.Chapter}/{MpMission} authors fewer than three spawns");
+        }
+
+        var mesh = LoopbackTransport.Mesh(3, LoopbackConditions.Perfect, new Random(8123));
+        // The star itself, cut before any session binds. Neither guest ever sees the other as a
+        // peer, so anything that reaches it came through the host.
+        mesh[1].Disconnect(2);
+        var roster = Roster(3);
+
+        var ambient = Ambient.Save();
+        Ends? host = null;
+        Ends? first = null;
+        Ends? second = null;
+        try
+        {
+            host = Ends.Open(ctx, spec, mesh[0], isHost: true, HostSeed, roster);
+            first = Ends.Open(ctx, spec, mesh[1], isHost: false, HostSeed + 1, null);
+            second = Ends.Open(ctx, spec, mesh[2], isHost: false, HostSeed + 2, null);
+            ctx.Check(host.Built && first.Built && second.Built,
+                $"three sessions build in one process (host {host.Built}, first {first.Built}, second {second.Built})");
+            if (!host.Built || !first.Built || !second.Built)
+            {
+                return;
+            }
+
+            ctx.Check(first.Session.NetLink!.Peers.Count == 1 && second.Session.NetLink!.Peers.Count == 1
+                      && host.Session.NetLink!.Peers.Count == 2,
+                $"the two guests hold one peer each and the host holds both ({first.Session.NetLink!.Peers.Count}, {second.Session.NetLink!.Peers.Count}, {host.Session.NetLink!.Peers.Count})");
+
+            Relay(ctx, host.Session, first.Session, second.Session);
+        }
+        finally
+        {
+            second?.Close();
+            first?.Close();
+            host?.Close();
+            ambient.Restore();
+        }
+    }
+
+    // What one owner's guns put in the world, counted on the far peer. The pool's own scored-shooter
+    // filter is the census, told on both ends to count seat 0 alone. The host's number is the
+    // rounds it fired and the guest's is the rounds its events built.
+    private static void FireEvents(TestContext ctx, GameSession host, GameSession guest)
+    {
+        var shooter = host.SeatRigs[0].Controller!;
+        var here = shooter.Projectiles!;
+        var there = guest.SeatRigs[0].Controller!.Projectiles!;
+        here.ScoredShooters.Add(shooter.PlayerIndex);
+        there.ScoredShooters.Add(guest.SeatRigs[0].Controller!.PlayerIndex);
+        int mineBefore = here.CannonRoundsFired;
+        int theirsBefore = there.CannonRoundsFired;
+
+        shooter.AutoFire = true;
+        Lockstep(BurstSteps, host, guest);
+        shooter.AutoFire = false;
+        Lockstep(SettleSteps, host, guest);
+
+        int mine = here.CannonRoundsFired - mineBefore;
+        int theirs = there.CannonRoundsFired - theirsBefore;
+        ctx.Check(mine > 0 && theirs == mine,
+            $"every round the host's guns fired was built again on the guest from its fire events ({mine} fired, {theirs} rebuilt)");
+
+        // ABLE-TO-FAIL CONTROL. The guest's own aeroplane held no trigger, and its copy on the
+        // host runs no fire control at all. The same counter for the other seat stays at zero.
+        var idle = host.SeatRigs[1].Controller!;
+        here.ScoredShooters.Add(idle.PlayerIndex);
+        int quiet = here.CannonRoundsFired;
+        Lockstep(SettleSteps, host, guest);
+        ctx.Check(here.CannonRoundsFired == quiet,
+            $"ABLE-TO-FAIL CONTROL: the seat flown elsewhere fires nothing of its own on this machine ({here.CannonRoundsFired - quiet} round(s))");
+    }
+
+    // Decision 8's fork. The shooter's machine decides the hit and spends nothing on its own copy
+    // of the victim; the victim's machine is where the ledger moves.
+    private static void HitRouting(TestContext ctx, GameSession host, GameSession guest, WeaponDef gun)
+    {
+        var shown = host.SeatRigs[1].Controller!;
+        var owned = guest.SeatRigs[1].Controller!;
+        float shownBefore = Ledger(shown);
+        float ownedBefore = Ledger(owned);
+
+        shown.Body!.TakeProjectileHit(gun, shown.WorldPosition, 0, host.SeatRigs[0].Controller!.PlayerIndex);
+        ctx.Check(Mathf.IsEqualApprox(Ledger(shown), shownBefore),
+            $"the shooter spends nothing on its own copy of the aeroplane it hit (pools {Ledger(shown):0.0} of {shownBefore:0.0})");
+
+        Lockstep(SettleSteps, host, guest);
+        ctx.Check(Ledger(owned) < ownedBefore,
+            $"and the machine that owns that aeroplane applied the claim ({ownedBefore:0.0} to {Ledger(owned):0.0} armour plus health)");
+
+        // The other side of the same fork. A round fired by a seat flown elsewhere is that
+        // machine's to decide. This machine's copy of it spends nothing on its own aeroplane
+        // either, and waits for the claim.
+        var mine = host.SeatRigs[0].Controller!;
+        float waiting = Ledger(mine);
+        mine.Body!.TakeProjectileHit(gun, mine.WorldPosition, 0, shown.PlayerIndex);
+        ctx.Check(Mathf.IsEqualApprox(Ledger(mine), waiting),
+            $"a round fired by a seat flown elsewhere spends nothing here, its owner decides it (pools {Ledger(mine):0.0} of {waiting:0.0})");
+
+        // ABLE-TO-FAIL CONTROL. The same call with a round this machine does own spends at once.
+        // The two silences above are the routing and not a call that does nothing.
+        mine.Body.TakeProjectileHit(gun, mine.WorldPosition, 0, mine.PlayerIndex);
+        ctx.Check(Ledger(mine) < waiting,
+            $"ABLE-TO-FAIL CONTROL: a round this machine owns spends at once on the same aeroplane ({waiting:0.0} to {Ledger(mine):0.0})");
+    }
+
+    // Both directions of a kill, each reported by the machine that owns the dying pilot and scored
+    // by the host alone. The board is read on both peers after each one.
+    private static void Kills(TestContext ctx, GameSession host, GameSession guest)
+    {
+        // The guest kills the host: the victim is flown here, so the host reports its own death.
+        host.SeatRigs[0].Controller!.DebugForceCrash(host.SeatRigs[1].Controller!.PlayerIndex);
+        Lockstep(SettleSteps, host, guest);
+        Board(ctx, host, guest, "the guest kills the host", (0, 1, 0), (1, 0, 1));
+        ctx.Check(guest.SeatRigs[0].Controller is { InPlay: false },
+            $"and the guest's copy of that aeroplane is out of the fight with it");
+
+        // The host kills the guest: the victim is flown on the guest, whose report crosses the
+        // wire to the scorer.
+        guest.SeatRigs[1].Controller!.DebugForceCrash(guest.SeatRigs[0].Controller!.PlayerIndex);
+        Lockstep(SettleSteps, host, guest);
+        Board(ctx, host, guest, "the host kills the guest", (1, 1, 1), (1, 1, 1));
+        ctx.Check(host.SeatRigs[1].Controller is { InPlay: false },
+            $"and the host's copy of that aeroplane is out of the fight with it");
+    }
+
+    // The two causes gameplay does not raise here: a death with nobody to charge, and a death
+    // charged to a turret's owner. Both are put on the wire as the dying client's own report.
+    private static void Causes(TestContext ctx, GameSession host, GameSession guest)
+    {
+        var link = guest.NetLink!;
+        link.Send(link.HostPeer, new DeathMessage(1, NetMessage.NoSeat, NetDeathCause.Suicide, 0u),
+            NetChannels.Events);
+        Lockstep(SettleSteps, host, guest);
+        Board(ctx, host, guest, "a death with nobody to charge", (1, 1, 1), (0, 2, 1));
+
+        link.Send(link.HostPeer, new DeathMessage(1, 0, NetDeathCause.TurretOwner, 0u),
+            NetChannels.Events);
+        Lockstep(SettleSteps, host, guest);
+        Board(ctx, host, guest, "a death charged to a turret's owner", (2, 1, 2), (0, 3, 1));
+    }
+
+    // One reading of the board on both peers: the expected (score, deaths, kills) per seat. The
+    // guest's copy is written from the host's score messages. An agreement here is the host's
+    // count reaching it rather than two machines counting alike.
+    private static void Board(TestContext ctx, GameSession host, GameSession guest, string what,
+        (int Score, int Deaths, int Kills) seat0, (int Score, int Deaths, int Kills) seat1)
+    {
+        var mine = host.Versus!;
+        var theirs = guest.Versus!;
+        string reading = $"host {Line(mine, 0)} / {Line(mine, 1)}, guest {Line(theirs, 0)} / {Line(theirs, 1)}";
+        bool right = Matches(mine, 0, seat0) && Matches(mine, 1, seat1);
+        ctx.Check(right, $"{what}: the host scores it as the decode says ({reading})");
+        ctx.Check(Matches(theirs, 0, seat0) && Matches(theirs, 1, seat1),
+            $"and the guest's board is the host's, seat for seat ({reading})");
+    }
+
+    // Both damage pools together. A round spends armour before health, so a single strike on a
+    // pristine airframe moves the armour alone. A health-only reading would call it silent.
+    private static float Ledger(FlightController rig) =>
+        rig.Damage!.WholeArmor + rig.Damage.WholeHealth;
+
+    private static bool Matches(VersusMatch match, int seat, (int Score, int Deaths, int Kills) want) =>
+        match.ScoreOf(seat) == want.Score && match.DeathsOf(seat) == want.Deaths
+        && match.KillsOf(seat) == want.Kills;
+
+    private static string Line(VersusMatch match, int seat) =>
+        $"P{seat + 1} {match.ScoreOf(seat)}pts {match.KillsOf(seat)}K/{match.DeathsOf(seat)}D";
+
+    // Decision 9. Two guests that cannot reach each other at all, flying and firing, with the
+    // host's forwarding the only thing between them.
+    private static void Relay(TestContext ctx, GameSession host, GameSession first, GameSession second)
+    {
+        var link = host.NetLink!;
+        int receivedBefore = link.Received;
+        int relayedBefore = link.Relayed;
+        var gun = first.SeatRigs[1].Controller!;
+        var pool = second.SeatRigs[1].Controller!.Projectiles!;
+        pool.ScoredShooters.Add(gun.PlayerIndex);
+        int roundsBefore = pool.CannonRoundsFired;
+
+        gun.AutoFire = true;
+        Lockstep(StarFlightSteps, host, first, second);
+        gun.AutoFire = false;
+        Lockstep(SettleSteps, host, first, second);
+
+        // The aeroplane one guest flies, as the other guest has it. The owner's own sim pose is
+        // what it is measured against, allowing for the buffer's deliberate read-behind.
+        var own = first.SeatRigs[1].Controller!.WorldPosition;
+        var shown = second.SeatRigs[1].Controller!.WorldPosition;
+        var third = second.SeatRigs[2].Controller!.WorldPosition;
+        float toOwner = shown.DistanceTo(own);
+        float toThird = shown.DistanceTo(third);
+        ctx.Check(toOwner < 50f,
+            $"a guest's aeroplane stands where its owner has it on the other guest's world, {toOwner:0.0} m out, with no link between the two");
+        // ABLE-TO-FAIL CONTROL. The same distance to the third aeroplane in that same world. A
+        // reading that cannot tell two aircraft apart would pass the line above over nothing.
+        ctx.Check(toThird > toOwner * 10f,
+            $"ABLE-TO-FAIL CONTROL: the third aeroplane in that world is {toThird:0} m away, against {toOwner:0.0} m for the right one");
+
+        int rounds = pool.CannonRoundsFired - roundsBefore;
+        ctx.Check(rounds > 0,
+            $"and the rounds one guest fired were built on the other under that guest's own seat ({rounds} round(s))");
+
+        // Every arrival is forwarded to exactly one machine, the other guest. An echo would
+        // forward it twice, and a relay that rewrote the sender would land it on the wrong seat.
+        int received = link.Received - receivedBefore;
+        int relayed = link.Relayed - relayedBefore;
+        ctx.Check(received > 0 && relayed == received,
+            $"and the host forwarded every one of its {received} arrivals exactly once, never back to the peer it came from ({relayed} forwarded)");
+    }
+
+    // Both or all three sessions through the same number of fixed steps, host first, the order a
+    // listen server runs in.
+    private static void Lockstep(int steps, params GameSession[] sessions)
+    {
+        for (int i = 0; i < steps; i++)
+        {
+            foreach (var session in sessions)
+            {
+                session._PhysicsProcess(GameClock.FixedDt);
+            }
+        }
+    }
+
+    // One Dogfight launch, plus the spawn table both ends walk. Every peer is launched with the
+    // same arguments: what differs between them is the roster and the seed, which the join sets.
+    private static SessionSpec MatchSpec(TestContext ctx, out IReadOnlyList<SpawnPoint> table,
+        string? flight = null)
+    {
+        ctx.RequireData(ctx.PlanesGamezPath, $"planes gamez");
+        ctx.RequireData(ctx.ZrdrPath, $"zrdr archive");
+        string missionZrdr = SessionPaths.MissionZrdr(ctx.DataRoot, ctx.Chapter, MpMission);
+        ctx.RequireData(SessionPaths.ChapterTextures(ctx.DataRoot, ctx.Chapter), $"{ctx.Chapter} textures");
+        ctx.RequireData(SessionPaths.ChapterGamez(ctx.DataRoot, ctx.Chapter), $"{ctx.Chapter} gamez");
+        ctx.RequireData(missionZrdr, $"{ctx.Chapter}/{MpMission} zrdr");
+        var args = new List<string>
+        {
+            "--vs", $"--chapter={ctx.Chapter}", $"--mission={MpMission}", "--players=1", "--mute",
+            "--no-pads",
+        };
+        if (flight != null)
+        {
+            args.Add(flight);
+        }
+
+        var spec = SessionSpec.Parse(args.ToArray());
+        var loaded = new SpawnPicker(spec).LoadSpawnList(missionZrdr, spec.Scenario);
+        if (loaded is not { Count: >= 2 })
+        {
+            throw new SuiteSkippedException($"{ctx.Chapter}/{MpMission} authors no usable net.zrd table");
+        }
+
+        table = loaded;
+        return spec;
+    }
+
+    // The field, seat 0 on the host and one seat per guest after it.
+    private static NetSeat[] Roster(int seats)
+    {
+        var roster = new NetSeat[seats];
+        for (int i = 0; i < seats; i++)
+        {
+            roster[i] = new NetSeat
+            {
+                PeerId = i,
+                SeatIndex = i,
+                IsLocal = i == 0,
+                Callsign = i == 0 ? "host" : $"guest{i}",
+                PlaneNode = Airframes[i % Airframes.Length],
+            };
+        }
+
+        NetSeats.Validate(roster);
+        return roster;
+    }
+
+    // The process-global state several sessions in one process share. Saved before the first is
+    // opened and put back after the last is freed. This suite cannot then shift the streams, or
+    // the ambient clock, of every suite after it in the shard.
+    private readonly record struct Ambient(ulong Master, bool Pinned, GameClock? Clock, StartupProfile? Profile)
+    {
+        public static Ambient Save() =>
+            new(Rng.Master, Rng.Pinned, GameClock.Current, StartupProfile.Current);
+
+        public void Restore()
+        {
+            StartupProfile.Current = Profile;
+            GameClock.Current = Clock;
+            Rng.Reset(Master, Pinned);
+        }
+    }
+
+    // One peer's whole rig: its own pane, its own world, its own session node.
+    private sealed record Ends(SubViewport Pane, GameSession Session, bool Built)
+    {
+        public static Ends Open(TestContext ctx, SessionSpec spec, INetTransport transport,
+            bool isHost, ulong seed, IReadOnlyList<NetSeat>? roster)
+        {
+            var pane = new SubViewport
+            {
+                Size = new Vector2I(640, 480),
+                OwnWorld3D = true,
+                World3D = new World3D(),
+                RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled,
+            };
+            var camera = new Camera3D { Fov = 60f, Far = 20000f };
+            var sun = new DirectionalLight3D { RotationDegrees = new Vector3(-45, 150, 0) };
+            pane.AddChild(camera);
+            pane.AddChild(sun);
+            ctx.Host.AddChild(pane);
+            var session = new GameSession(spec, new LauncherContext
+            {
+                RepoRoot = ctx.RepoRoot,
+                DataRoot = ctx.DataRoot,
+                PlanesGamezPath = ctx.PlanesGamezPath,
+                ZrdrPath = ctx.ZrdrPath,
+                SoundsPath = ctx.SoundsPath,
+                InterpPath = ctx.InterpPath,
+                MessagesPath = ctx.MessagesPath,
+                RofPath = System.IO.Path.Combine(ctx.DataRoot, "extracted", "rof"),
+                ProbeRunner = new ProbeRunner(ctx.RepoRoot, ctx.DataRoot, ctx.ZrdrPath, ctx.SoundsPath,
+                    ctx.InterpPath, ctx.MessagesPath, ctx.PlanesGamezPath),
+                CaptureDirector = new CaptureDirector(spec),
+                MasterSeed = seed,
+                Camera = camera,
+                Orbit = new UI.OrbitCamera(camera),
+                Sun = sun,
+                Env = new Godot.Environment(),
+                MenuDriven = false,
+                MenuPads = null,
+                Presentation = UI.Menu.PresentationId.BuiltIn,
+                ExitSession = () => { },
+                RestartSession = () => { },
+                NetSeats = isHost ? roster : null,
+                NetTransport = transport,
+                NetHost = isHost,
+                NetAirframes = Airframes,
+            });
+            pane.AddChild(session);
+            return new Ends(pane, session, session.StartSession());
+        }
+
+        public void Close()
+        {
+            Session.Free();
+            Pane.Free();
+        }
+    }
+}

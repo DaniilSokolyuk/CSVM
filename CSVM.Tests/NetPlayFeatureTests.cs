@@ -92,8 +92,10 @@ public class NetPlayFeatureTests
         Assert.True(door.CanLaunch);
 
         // The mapping is asked for away from the frame, so it lands on a step rather than inside
-        // the open. Stepping until it does is what a board does by drawing frames.
-        for (int i = 0; i < 500 && door.PortMap == null; i++)
+        // the open. The wait is a wall-clock deadline. The pool thread running the mapping
+        // starves under the parallel unit run, where a fixed step count failed.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+        while (door.PortMap == null && DateTime.UtcNow < deadline)
         {
             door.Step(0.016);
             System.Threading.Thread.Sleep(1);

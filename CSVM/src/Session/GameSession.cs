@@ -96,6 +96,10 @@ public partial class GameSession : Node3D
     // When the seats flown here go on the wire, and what sequence each sample carries. Advanced
     // once per simulation step by the human-aircraft phase, which is also the only sender.
     private readonly Net.AircraftStateCadence _stateCadence = new();
+    // The wire index of every weapon by its id, and the per-seat counter the fire events carry.
+    // Both stand empty outside a network match.
+    private readonly Dictionary<string, int> _weaponWire = new(StringComparer.Ordinal);
+    private readonly ushort[] _fireSequence = new ushort[Net.NetSeats.SeatCapacity];
     // Every pane's camera, bound once right after BuildRigs, the session-owned "what do the
     // cameras see" registry draw rules read instead of `_rigs[0]`/`GetViewport().GetCamera3D()`.
     // ProjectilePool.Viewers takes this same instance; B11/B13 are its next consumers.
@@ -247,6 +251,9 @@ public partial class GameSession : Node3D
     // Combat owners retained by this orchestrator and advanced through SessionSimulation.
     private ProjectilePool? _projectiles;
     private IncomingFire? _incomingFire;   // --incoming: the incoming-fire test rig
+    // The weapon catalogue a received fire or hit event is read against. Its file order IS the
+    // wire index, so both ends resolve the same round from one byte and no name crosses.
+    private WeaponDefs? _weaponDefs;
     // The flight roster builds the human field and introduces AI aircraft later. Every AI it
     // returns is stepped by SessionSimulation after the player rigs and freed with the world.
     private FlightRoster? _flightRoster;
@@ -444,6 +451,10 @@ public partial class GameSession : Node3D
     /// <summary>The whole match's roster in seat order, empty outside a network match.</summary>
     internal IReadOnlyList<Net.NetSeat> NetSeats => _netSeats;
 
+    /// <summary>The Dogfight scorekeeping, null outside <c>--vs</c>. On a guest it is the mirror
+    /// of the host's, written from the score messages rather than counted here.</summary>
+    internal VersusMatch? Versus => _versus;
+
     /// <summary>The campaign mission's director, null outside a <c>--campaign=</c> launch. The
     /// session layer reads its <see cref="CampaignDirector.ReturnToCabin"/> to know the mission is
     /// over and the player belongs back in the cabin.</summary>
@@ -523,6 +534,12 @@ public partial class GameSession : Node3D
         // Once, at the build, as soon as the seats exist. A sample that lands before its
         // aeroplane is assembled reaches a seat with no buffer and is dropped there.
         _net?.On<Net.AircraftStateMessage>((_, sample) => TakeAircraftState(sample));
+        // The star's first leg, armed with the handler. A guest is linked to the host alone, so
+        // its samples reach the other guests only by being forwarded here.
+        if (_net is { IsHost: true } relayHost)
+        {
+            relayHost.RelayToOthers<Net.AircraftStateMessage>();
+        }
         // ⚠ Do not let a draw-rule consumer re-derive its camera set from _rigs; every one shares
         // this single registration so they cannot disagree about what the cameras see.
         _viewers.Bind(_rigs.Count > 0 ? _rigs.Select(r => r.Camera)
@@ -2679,7 +2696,11 @@ public partial class GameSession : Node3D
                     {
                         if (victim >= 0 && victim < lastKiller.Length)
                             lastKiller[victim] = killer;
-                        if (killer is int k && k >= 0 && k < match.PlayerCount)
+                        // On the wire a death is a report, not a score. The seat's owner sends
+                        // it and the host alone counts it (Decision 8).
+                        if (_netSeats.Count > 0)
+                            ReportDeath(victim, killer);
+                        else if (killer is int k && k >= 0 && k < match.PlayerCount)
                             match.RegisterKill(k, victim);
                         else
                             match.RegisterDeath(victim);
@@ -2702,6 +2723,10 @@ public partial class GameSession : Node3D
             boardLayer.AddChild(board);
             _worldRoot!.AddChild(boardLayer);
         }
+
+        // Fire, hit, damage and death over the wire. It runs after the match so a death report
+        // has a scorer to reach, and after the rigs so every seat carries its router.
+        WireNetCombat(weaponDefs);
 
         // --incoming: the incoming-fire test rig, a phantom shooter on every pilot's six, so both
         // cues and the shield are reachable with one player, no AI gunner needed.
@@ -3858,11 +3883,301 @@ public partial class GameSession : Node3D
 
             int seat = _netSeats[i].SeatIndex;
             var stick = flown.LastCommand;
-            net.Broadcast(new Net.AircraftStateMessage(
-                (byte)seat, _stateCadence.Next(seat), flown.WorldPosition,
-                flown.Attitude.GetRotationQuaternion(), flown.WorldVelocity, flown.Throttle,
-                stick.Roll, stick.Pitch, stick.Yaw, flown.Nitro.Boosting));
+            // On the seat's own channel. A relayed sample carries the host's peer id, so two
+            // guests sharing one channel would discard each other by sequence number.
+            net.Broadcast(
+                new Net.AircraftStateMessage(
+                    (byte)seat, _stateCadence.Next(seat), flown.WorldPosition,
+                    flown.Attitude.GetRotationQuaternion(), flown.WorldVelocity, flown.Throttle,
+                    stick.Roll, stick.Pitch, stick.Yaw, flown.Nitro.Boosting),
+                Net.NetChannels.ForSeat(seat));
         }
+    }
+
+    // Combat over the wire, wired once the seats, the pool and the catalogue all stand. The three
+    // rules come from docs/PLAN-M6-multiplayer.md's Decisions 8 and 9. An owner reports what its
+    // own aeroplane fires, and the shooter decides its own rounds' hits for the victim's owner to
+    // apply. The host forwards each of those to the guests that are not linked to the sender.
+    private void WireNetCombat(WeaponDefs weaponDefs)
+    {
+        if (_net is not { } net || _netSeats.Count == 0)
+        {
+            return;
+        }
+
+        _weaponDefs = weaponDefs;
+        for (int i = 0; i < weaponDefs.All.Count; i++)
+        {
+            _weaponWire[weaponDefs.All[i].Id] = i;
+        }
+
+        net.On<Net.FireMessage>((_, fire) => TakeFire(fire));
+        net.On<Net.HitMessage>((_, hit) => TakeHit(hit));
+        net.On<Net.DamageMessage>((_, damage) => TakeDamage(damage));
+        net.On<Net.DeathMessage>((_, death) => TakeDeath(death));
+        net.On<Net.ScoreMessage>((_, score) => TakeScore(score));
+        if (net.IsHost)
+        {
+            // A hit is addressed to one machine, everything else is news for the whole field.
+            // The score needs no leg at all: the host is the only one that writes it.
+            net.RelayToOthers<Net.FireMessage>();
+            net.RelayToOthers<Net.DamageMessage>();
+            net.RelayToOthers<Net.DeathMessage>();
+            net.RelayToSeatOwner<Net.HitMessage>(hit => hit.VictimSeat);
+        }
+
+        for (int i = 0; i < _seatRigs.Count && i < _netSeats.Count; i++)
+        {
+            if (_seatRigs[i].Controller is not { } rig)
+            {
+                continue;
+            }
+
+            int seat = i;
+            rig.HitRouter = hit => RouteHit(seat, hit);
+            if (!_netSeats[i].IsLocal)
+            {
+                continue;
+            }
+
+            rig.WeaponFired += (weapon, origin, direction) => SendFire(seat, weapon, origin, direction);
+            rig.DamageApplied += (hurt, _) => SendDamage(seat, hurt);
+        }
+
+        Log.Info("core", $"net combat: {_seatRigs.Count} seats, {(net.IsHost ? "host (relaying fire, damage, death and every hit to its owner)" : "guest (talking to the host alone)")}");
+    }
+
+    // One round this machine fired, told to the field so every other copy of the aeroplane
+    // shoots too. The direction is the one the shooter's own assist chose, never re-derived
+    // elsewhere, and the seat's channel keeps the stream ordered against itself alone.
+    private void SendFire(int seat, WeaponDef weapon, Vector3 origin, Vector3 direction)
+    {
+        if (_net is not { } net || !_weaponWire.TryGetValue(weapon.Id, out int index) || index > byte.MaxValue)
+        {
+            return;
+        }
+
+        net.Broadcast(
+            new Net.FireMessage((byte)seat, (byte)index, _fireSequence[seat]++, origin, direction,
+                Net.NetMessage.NoSeat),
+            Net.NetChannels.ForSeat(seat));
+    }
+
+    // A round somebody else's aeroplane fired, spawned here from the event. ⚠ Only onto a seat
+    // flown elsewhere. An aeroplane flown here already put that round in the world, and a
+    // second one would double every burst.
+    private void TakeFire(in Net.FireMessage fire)
+    {
+        if (_projectiles is not { } pool || _weaponDefs is not { } defs
+            || fire.Seat >= _seatRigs.Count || fire.Weapon >= defs.All.Count
+            || _seatRigs[fire.Seat].Controller is not { RemoteOwned: true } rig)
+        {
+            return;
+        }
+
+        // The muzzle basis is only a fallback for a missing aim vector, and the event always
+        // carries one. A lock-on round steers after nothing here: the target is the shooter's
+        // own pick and no seat is named on the wire.
+        pool.Spawn(defs.All[fire.Weapon], new Transform3D(rig.Attitude, fire.Origin),
+            rig.WorldVelocity, rig.PlayerIndex, null, fire.Direction, rig.Team);
+    }
+
+    // Decision 8's fork, asked of every strike on a seat before a point of damage is spent. True
+    // means this machine does not decide this round. Either it was fired elsewhere, or it was
+    // fired here at an aeroplane somebody else owns and the claim has just gone to them.
+    private bool RouteHit(int victimSeat, in AircraftHit hit)
+    {
+        if (_net is not { } net || victimSeat >= _netSeats.Count)
+        {
+            return false;
+        }
+
+        int shooterSeat = SeatOfShooter(hit.Shooter);
+        // Whoever owns the shooter decides, and the host stands in for every round no seat
+        // fired (an AI, a world emplacement). Exactly one machine ever claims a hit.
+        bool decidesHere = shooterSeat >= 0 && shooterSeat < _netSeats.Count
+            ? _netSeats[shooterSeat].IsLocal
+            : net.IsHost;
+        if (!decidesHere)
+        {
+            return true;
+        }
+
+        if (_netSeats[victimSeat].IsLocal)
+        {
+            return false;
+        }
+
+        // The impact in the victim's own body space, off the SIM pose the victim's damage path
+        // reads. It has flown on by the time the claim lands, and the zone must not fly with it.
+        var pose = new Transform3D(hit.Victim.Attitude, hit.Victim.WorldPosition);
+        int weapon = _weaponWire.TryGetValue(hit.Weapon.Id, out int index) ? index : 0;
+        net.SendToSeat(
+            victimSeat,
+            new Net.HitMessage((byte)victimSeat,
+                shooterSeat >= 0 ? (byte)shooterSeat : Net.NetMessage.NoSeat, (ushort)weapon,
+                hit.DamageScale, (short)hit.ShapeIndex, pose.AffineInverse() * hit.Impact),
+            Net.NetChannels.Events);
+        return true;
+    }
+
+    // A shooter's claim on an aeroplane flown here, spent through the same damage path a local
+    // round takes. ⚠ Straight at the controller, never through the body. The body would offer it
+    // to the router again, and the router would bounce it back onto the wire.
+    private void TakeHit(in Net.HitMessage hit)
+    {
+        if (_weaponDefs is not { } defs || hit.VictimSeat >= _seatRigs.Count
+            || hit.Weapon >= defs.All.Count || !_netSeats[hit.VictimSeat].IsLocal
+            || _seatRigs[hit.VictimSeat].Controller is not { } victim)
+        {
+            return;
+        }
+
+        int shooter = hit.ShooterSeat < _seatRigs.Count
+            ? _seatRigs[hit.ShooterSeat].Controller?.PlayerIndex ?? ProjectilePool.NoShooter
+            : ProjectilePool.NoShooter;
+        var pose = new Transform3D(victim.Attitude, victim.WorldPosition);
+        victim.TakeProjectileHit(defs.All[hit.Weapon], pose * hit.LocalImpact,
+            victim.Body?.PartName(hit.Part) ?? "center", shooter, hit.Damage);
+    }
+
+    // The victim's own hull number, sent after it has applied a hit. The ledger itself is never
+    // replicated: only the fraction the damage stages and the HUD read.
+    private void SendDamage(int seat, FlightController hurt)
+    {
+        if (_net is not { } net || hurt.Damage is not { } damage)
+        {
+            return;
+        }
+
+        net.Broadcast(
+            new Net.DamageMessage((byte)seat, 0, 0, damage.SummaryHealthFraction),
+            Net.NetChannels.Events);
+    }
+
+    // The stage and flag words are sent zero and read as nothing. The damage stages this drives
+    // are the hull's, and a part-by-part ledger is not on the wire.
+    private void TakeDamage(in Net.DamageMessage damage)
+    {
+        if (damage.Seat < _seatRigs.Count
+            && _seatRigs[damage.Seat].Controller is { RemoteOwned: true } rig)
+        {
+            rig.Visuals?.OnHullDamage(damage.Hull);
+        }
+    }
+
+    // A seat flown here died, in the order docs/org/multiplayer-scoring.md decodes: the dying
+    // pilot's own machine reports it, and the host scores it. A seat flown elsewhere reaches this
+    // through its wreck playing out locally, and reports nothing.
+    private void ReportDeath(int seat, int? killer)
+    {
+        if (_net is not { } net || seat < 0 || seat >= _netSeats.Count || !_netSeats[seat].IsLocal)
+        {
+            return;
+        }
+
+        int killerSeat = killer is int shooter ? SeatOfShooter(shooter) : -1;
+        // Cause 2 covers every death with no seat to charge, an AI's kill included. The decode
+        // has no last-damager memory and no third party to credit, so the pilot pays for it.
+        var death = new Net.DeathMessage(
+            (byte)seat, killerSeat >= 0 ? (byte)killerSeat : Net.NetMessage.NoSeat,
+            killerSeat >= 0 ? Net.NetDeathCause.Killer : Net.NetDeathCause.Suicide, 0u);
+        if (!net.IsHost)
+        {
+            net.Send(net.HostPeer, death, Net.NetChannels.Events);
+            return;
+        }
+
+        net.Broadcast(death, Net.NetChannels.Events);
+        ScoreDeath(death);
+    }
+
+    // A death somebody else's machine reported: the wreck plays out here as it does there, and
+    // on the host the same report moves the score.
+    private void TakeDeath(in Net.DeathMessage death)
+    {
+        if (death.VictimSeat < _seatRigs.Count
+            && _seatRigs[death.VictimSeat].Controller is { RemoteOwned: true } rig)
+        {
+            int? killer = death.KillerSeat < _seatRigs.Count
+                ? _seatRigs[death.KillerSeat].Controller?.PlayerIndex
+                : null;
+            rig.TakeRemoteDeath(killer);
+        }
+
+        ScoreDeath(death);
+    }
+
+    // The one place a network match's numbers move, and it runs on the host alone. Causes 3 and 4
+    // name the turret or zeppelin owner in the killer field, so they score as a kill to that
+    // owner. Nothing in the remake raises them yet.
+    private void ScoreDeath(in Net.DeathMessage death)
+    {
+        if (_versus is not { } match || _net is not { IsHost: true })
+        {
+            return;
+        }
+
+        int victim = death.VictimSeat;
+        int killer = death.KillerSeat < match.PlayerCount ? death.KillerSeat : -1;
+        if (killer < 0 || death.Cause == Net.NetDeathCause.Suicide)
+        {
+            match.RegisterDeath(victim);
+        }
+        else
+        {
+            match.RegisterKill(killer, victim);
+        }
+
+        SendScore(victim);
+        if (killer >= 0 && killer != victim)
+        {
+            SendScore(killer);
+        }
+    }
+
+    // One seat's line as the host has it. Every guest shows this instead of counting, so a board
+    // reads the same everywhere whatever each machine saw.
+    private void SendScore(int seat)
+    {
+        if (_net is not { IsHost: true } net || _versus is not { } match
+            || seat < 0 || seat >= match.PlayerCount)
+        {
+            return;
+        }
+
+        net.Broadcast(
+            new Net.ScoreMessage((byte)seat, (short)match.ScoreOf(seat), (ushort)match.KillsOf(seat),
+                (ushort)match.DeathsOf(seat)),
+            Net.NetChannels.Events);
+    }
+
+    private void TakeScore(in Net.ScoreMessage score)
+    {
+        if (_net is not { IsHost: true })
+        {
+            _versus?.ApplyScore(score.Seat, score.Score, score.Kills, score.Deaths);
+        }
+    }
+
+    // A shooter id back to the seat that fired it, or -1 for a round no seat owns. Read off the
+    // rigs rather than assumed equal to the seat index, since only the roster decides that.
+    private int SeatOfShooter(int shooter)
+    {
+        if (shooter == ProjectilePool.NoShooter)
+        {
+            return -1;
+        }
+
+        for (int i = 0; i < _seatRigs.Count; i++)
+        {
+            if (_seatRigs[i].Controller is { } rig && rig.PlayerIndex == shooter)
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     // One interior render pass per rig, on that player's own HUD parent, so splitscreen gets a

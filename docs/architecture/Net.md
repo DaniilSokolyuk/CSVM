@@ -147,11 +147,19 @@ module knows neither. `SendStepInterval` is accepted as measured; at the fixed s
 intervals inside the buffer's own read-behind, which is what lets one lost sample still leave a
 pair to read between.
 
+## src/Net/NetChannels.cs
+Which channel a message rides. Sequenced discard is per sender and channel, and a relayed sample
+carries the host's peer id rather than its sender's, so two guests sharing one channel would
+discard each other by sequence number: `ForSeat` gives every seat its own, and `Events` carries
+the join and everything reliable, where nothing is discarded. A seat past the roster's ceiling
+falls back to `Events`, which costs ordering rather than delivery.
+
 ## src/Net/NetSession.cs
 The one object a session owns to talk to its peers: it holds the transport, implements the
-listener, sends a typed message under the class the type itself declares, and routes an arrival
-to the handler registered on its type word. `Step` is the only thing it does on its own, and a
-session calls it once before each simulation step. The only meaning it knows is the join, a host
-answering each peer with the handshake (which names the seat) and then the roster, a guest
-applying both; `On` refuses those two types so a later feature cannot unhook it. `Sent`,
-`Received`, `DroppedUnknown` and `Malformed` are what a suite reads to know a payload was claimed.
+listener, sends a typed message under the class the type declares, and routes an arrival to
+the handler registered on its type word. `Step` is the only thing it does on its own. The
+only meaning it knows is the join, a host answering each peer with the handshake (which names
+the seat) and then the roster; `On` refuses those two types. The star's relay is here too:
+`SendToSeat` addresses a seat through whoever owns it, and a host's `RelayToOthers` and
+`RelayToSeatOwner` forward an arrival's own bytes, never back to its sender. `Sent`,
+`Received`, `Relayed`, `DroppedUnknown` and `Malformed` are the counters a suite reads.
