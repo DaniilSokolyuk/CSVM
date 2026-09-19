@@ -600,7 +600,10 @@ flown here can never have its pose overruled by the wire; the buffer drops a sta
 sequence itself. `HumanFlightAdapter` builds that buffer for a remote seat, since its presence IS
 the ownership.
 
-**Verified.** <pending orchestrator run> The `net-aircraft-replication` engine suite (6.5 s, the
+**Verified.** On the run branch with Wave B whole (B11 to B15 and D32 merged), the full battery
+(`RunTests.ps1 -GoldenWorkers 2`) reads build clean, 4883 units passed with 2 skipped, 386 of 386
+engine suites passed with engine errors clean in all six shards, and 19 of 19 golden shots
+hash-identical. The `net-aircraft-replication` engine suite (6.5 s, the
 same order as `net-two-session`) flies both owners a scripted climbing right-hand roll for 240 sim
 steps over a 30 ms link with 10 ms of jitter and 25 % loss, then measures each owner's own path
 against the path the far peer showed for it, fitting the lag in twentieths of a step before reading
@@ -679,7 +682,15 @@ under loss and costs no further wire. A carried turret on an aeroplane flown els
 its gunner here at all; its rounds arrive as the owner's fire events like any other shot, so two
 machines can never aim the same barrel at different targets.
 
-**Verified.** <pending orchestrator run>
+**Verified.** On the run branch with Wave B whole, the full battery reads build clean, 4883 units
+passed with 2 skipped, 386 of 386 engine suites passed with engine errors clean, and 19 of 19
+golden shots hash-identical; `net-combat-events` and `net-relay-star` pass in the battery's
+shards and alone. Two things the battery taught: the three-session star suite holds three worlds
+in one process, which overflowed the global shader instance buffer inside a shard of sixty suites
+until it was raised fourfold in `project.godot`; and B15's port-mapping unit fact starved twice
+under the parallel unit run and now waits on a wall-clock deadline. The relay is asserted on the
+loopback star only, not over ENet sockets; `DamageMessage`'s stage and flag words are sent as
+zero; death causes 3 and 4 score correctly but nothing raises them yet.
 
 **Model recommendation.** High. The message shapes are small, but the authority fork is where this
 goes wrong invisibly: a hit decided on both ends charges the damage twice, a relay that rewrites the
@@ -741,7 +752,12 @@ shorter than the field is answered by the rotation relaxing its one-living-seat-
 rather than by computing a bearing. The original's 45-degree centroid fan stays unimplemented,
 which `docs/org/multiplayer-spawn.md` now states for the networked case as well.
 
-**Verified.** <pending orchestrator run> On this fork: `dotnet build` clean with zero warnings,
+**Verified.** On the run branch with Wave B whole, the full battery reads build clean, 4883 units
+passed with 2 skipped, 386 of 386 engine suites passed with engine errors clean, and 19 of 19
+golden shots hash-identical; `net-spawn-rotation` passes in its shard and alone. The suite was
+landed under the 16-seat ceiling and asserts a table point per seat against the constant. Sixteen
+seats have been validated by the roster rules, not flown: no suite yet builds a sixteen-seat
+match. On the agent's fork: `dotnet build` clean with zero warnings,
 4877 units passed with 2 skipped, and `net-spawn-rotation`, `net-combat-events`,
 `net-relay-star`, `net-two-session`, `net-seats`, `versus-spawn-rotation` and
 `versus-spawn-net-table` each pass on their own.
@@ -815,7 +831,12 @@ host's rematch sends the running state BEFORE the zeroed scores, then grants eve
 Dogfight arms both, which is a remake decision the scoring doc already records, and carrying both
 rows leaves an exclusive lobby nothing to change on the wire.
 
-**Verified.** <pending orchestrator run> On this fork: `dotnet build` clean with zero warnings,
+**Verified.** On the run branch with Wave B whole, the full battery reads build clean, 4883 units
+passed with 2 skipped, 386 of 386 engine suites passed with engine errors clean, and 19 of 19
+golden shots hash-identical; `net-match-state` passes in its shard and alone. The 1 Hz tick
+(`BL-1025`) and the slew window (`BL-1018`, first live reading: target 6.000 s, Snaps 1) are
+still to be judged on a real link with the HUD clock in view. On the agent's fork: `dotnet build`
+clean with zero warnings,
 4883 units passed with 2 skipped, `RunTests -Quick` green, and `net-match-state`,
 `net-two-session`, `net-combat-events`, `net-relay-star`, `net-spawn-rotation` and
 `net-aircraft-replication` each pass on their own. No golden was re-pinned: nothing that draws
@@ -929,7 +950,17 @@ listener behind an explicit host action, nothing listening otherwise, no server 
 the listener and its port mapping in scope. `docs/PLAN-public-release.md`'s grep list is narrowed
 to the terms that are still absent and names the two files the ENet and UPnP types are confined to.
 
-**Verified.** <pending orchestrator run>
+**Verified.** On the run branch with Wave B whole, the full battery reads build clean, 4883 units
+passed with 2 skipped, 386 of 386 engine suites passed with engine errors clean, and 19 of 19
+golden shots hash-identical; `enet-transport`, `net-enet-join` and `menu-net-door` pass in their
+shards and alone. Two orchestrator fixes on the merged tree: the join check of `net-enet-join`
+predated B11's aircraft stream and now reads the two reliable join payloads as a floor plus a
+growth check after the lockstep; and `NetPlayFeatureTests`' port-mapping fact waited a fixed 500
+steps for a thread-pool task, starved twice under the parallel unit run, and now waits on a 20 s
+wall-clock deadline. The Decision 5 revision found the socket negotiating 8 channels while seat 7
+sent on channel 8; `ChannelCount` is now one per seat plus the events channel and the suite
+proves the highest one carries. The evidence stops at one process: two real ENet sockets on
+127.0.0.1, never two machines, a router or a NAT.
 
 **Owed.** A host and a guest agree on the map, the match rules and the aircraft by hand: nothing is
 exchanged before the session is built, so each end picks its own and a disagreement is silent, and
@@ -1117,7 +1148,12 @@ suite gained one check that this build's selection is the ENet socket. Docs: new
 entries, and the build flavour in `docs/tooling.md`. No CLI flag was added, so `docs/cli.md` is
 untouched.
 
-**Verified.** <pending orchestrator run>
+**Verified.** On the run branch with Wave B whole, the full battery reads build clean, 4883 units
+passed with 2 skipped, 386 of 386 engine suites passed with engine errors clean, and 19 of 19
+golden shots hash-identical; `enet-transport` carries the selection check in its shard and alone.
+At landing both flavours built clean and the Steam-flavour units matched the default flavour's
+count. No Steam network was opened, because no SDK is linked; what is proven is that the seam
+takes a second carrier and that selecting it changes nothing above the seam.
 
 **Original approach (kept for reference).**
 
