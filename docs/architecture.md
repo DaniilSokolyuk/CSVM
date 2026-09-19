@@ -599,6 +599,15 @@ It holds no engine type, so it runs in a plain unit test; formats and evidence a
 - `src/Video/MoviePlayback.cs`, a movie on a clock: the picture due now as RGBA, timed by the frames' own timestamps, looping endlessly on a play count of zero.
 - `src/Video/CinemaPlayback.cs`, a cinema playing with its sound: clamped PCM out, the picture clocked by what the device has played, the two streams' start times taken against each other.
 
+### `src/Net/`, the network seam
+
+What carries bytes between peers, and the in-process carrier the suites run on. No type here
+names an engine type or a socket, so a session cannot learn what it is being carried by.
+
+- `src/Net/INetTransport.cs`, the carrier a session sends bytes over: the peer roster, one send per payload with its reliability class and channel, and the listener arrivals are reported to.
+- `src/Net/LoopbackConditions.cs`, one direction's wire conditions as a value: a latency, a symmetric jitter about it and a loss probability, every draw from a caller-supplied `Random`.
+- `src/Net/LoopbackTransport.cs`, transports wired to each other in one process through delivery queues: nothing arrives until a step, so a suite owns delivery time and makes its own reorders.
+
 ### Session root and tests
 
 - `src/Pads.cs`, single owner of "which gamepads exist": the phantom-device policy, the launch-time roster split, the focus gate and `--no-pads`.

@@ -151,7 +151,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 ### Wave A, the seam, in-process and network-free
 
-1. ☐ The transport interface and the loopback transport with an injected latency and loss model
+1. ☑ The transport interface and the loopback transport with an injected latency and loss model
 2. ☐ The message vocabulary: typed messages, reliability classes, serialisation, modelled on the decoded set
 3. ☐ The remote-airframe arm: a `FlightController` fed a received pose instead of a flight model
 4. ☐ Network seats: seat identity without a pane, the 8-behind-16 ceiling, the seed and match-clock handoff
@@ -192,7 +192,32 @@ worktrees; give each concurrent agent one namespace and name the files it may no
 
 # Wave A, the seam, in-process and network-free
 
-## A1 ☐ The transport interface and the loopback transport with an injected latency and loss model
+## A1 ☑ The transport interface and the loopback transport with an injected latency and loss model
+
+**Landed.** A new `CSVM/src/Net/` namespace holds the seam and one carrier.
+`CSVM/src/Net/INetTransport.cs` is the transport interface plus the two types it is spoken in:
+`NetReliability` (Unreliable, UnreliableSequenced, Reliable), `INetTransportListener`
+(`OnPeerConnected`, `OnPeerDisconnected`, `OnPayload(peer, channel, ReadOnlySpan<byte>)`) and
+`INetTransport` itself (`LocalPeer`, `Peers`, `Bind`, `Send(peer, payload, reliability, channel)`,
+`Disconnect`, `Step(dt)`). Payloads are byte spans and no member names a message type, so A2's
+vocabulary sits entirely above the seam. `CSVM/src/Net/LoopbackConditions.cs` is one direction's
+wire conditions as a validated value (latency, symmetric jitter half-width, loss probability) whose
+two draws come from a caller-supplied `Random`. `CSVM/src/Net/LoopbackTransport.cs` is `Mesh(n,
+conditions, rng)`, n transports linked to each other in one process through delivery queues, with
+`SetConditions(peer, conditions)` to change one direction mid-run and `Step(dt)` as the only place a
+payload is ever delivered. The guarantees are enforced, not imitated: loss is drawn only for the two
+unreliable classes, a reliable stream's deadlines are held monotonic per sender so jitter cannot
+reorder it, and a sequenced payload at or below the newest already delivered on its channel is
+discarded on arrival. `CSVM.Tests/LoopbackTransportTests.cs` (9 cases) and
+`CSVM.Tests/NetNamespaceDependencyTests.cs` cover it, the latter asserting over compiled metadata
+that no `CSVM.Net` type references anything under `Godot` or `System.Net`. `docs/architecture/Net.md`
+and its three index bullets in `docs/architecture.md` are new; `PROJECT_CONTEXT.md`'s namespace map
+gains `src/Net/`. Nothing under `CSVM/src/Flight/` or `CSVM/src/Session/` was touched: A1 is the
+mechanism, and the session wiring is A5's.
+
+**Verified.** <pending orchestrator run>
+
+**Original approach (kept for reference).**
 
 **Goal.** A session can send and receive typed messages to and from named peers without knowing
 what carries them, and a test can run two sessions against each other in one process with chosen
@@ -202,6 +227,9 @@ latency, jitter and loss.
 `docs/PLAN-public-release.md` greps `System.Net`, `ENetMultiplayerPeer` and `MultiplayerApi` to
 prove it, and that grep becomes a claim to retire when this lands. The interface shape (a peer id
 list, send unreliable, send reliable, a receive callback) is this plan's design, not a decode.
+The grep survives A1 unchanged: the namespace opens no socket and names no Godot type, which
+`NetNamespaceDependencyTests` now asserts mechanically rather than by grep. B15 is still the item
+that makes it false.
 
 **Approach.** One interface in a new `CSVM/src/Net/` namespace with three members: the peer roster,
 `Send(peer, message, reliability)` and a receive hook. `LoopbackTransport` connects two instances
@@ -209,13 +237,22 @@ in-process through queues with a per-direction latency, jitter and loss model in
 construction, so a suite can make a packet arrive late, out of order or not at all on demand. No
 Godot type in the interface; the ENet implementation (B15) is the only file that names one. Register
 the transport as a session input through `FlightRosterInputs`'s pattern of grouped construction
-facts rather than widening `SessionSpec`.
+facts rather than widening `SessionSpec`. As landed, the interface carries six members rather than
+three: `Bind`, `Disconnect` and `Step` join the roster and `Send`, because a listener has to be
+attached somewhere, a session leaving a match has to hang up, and delivery has to be driven by the
+caller for a suite to own its timing. The `FlightRosterInputs` registration is A5's, since A1
+touches no session.
 
-**Model recommendation.** <TODO: not settled in the scoping session; interface design with a
-whole-milestone blast radius suggests high>
+**Model recommendation.** High. The exact members of this seam are what A3, A5, B11 to B15 and D32
+all build against, so a shape settled wrong here is re-cut through every later item.
 
-**Verify.** <TODO: a `CSVM.Tests` suite driving two loopback transports through ordered, reordered
-and dropped deliveries; the exact assertions are unwritten>
+**Verify.** `CSVM.Tests/LoopbackTransportTests.cs`: a bound listener is told about the peers the
+mesh already gave it; nothing is delivered before a step or before its latency; loss takes both
+unreliable classes and never a reliable payload; a reliable stream keeps its send order under
+jitter and loss at certainty; a payload overtaken on its channel is dropped when sequenced and
+delivered out of order when plain unreliable; sequencing is per channel; both directions carry and
+a hang-up empties both rosters; one seed replays a lossy, jittered, reordering run exactly. Plus
+`CSVM.Tests/NetNamespaceDependencyTests.cs` for the no-engine, no-socket boundary.
 
 **⚠ Traps.** Do not build the interface on `MultiplayerApi` or `MultiplayerSynchronizer`; they
 replicate node properties and carry no interpolation, and they would put a Godot type in every

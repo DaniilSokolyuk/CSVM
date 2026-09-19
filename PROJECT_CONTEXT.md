@@ -174,6 +174,7 @@ GODOT --path CSVM res://scenes/Main.tscn -- --plane=player_bhawk
 - `src/Testing/`, the in-engine assertion harness behind `--run-tests` and the `--dump-*` probes.
 - `src/Bindings/`, the input binding model and the named-action seam: device identity, the tagged control, the binding list an action resolves through, the registry that resolves a device identity to a live pad, the seat device state a polling site reads its pad set through, a player's action map resolved once per tick, and the shipped default keymap with its versioned per-player file.
 - `src/Session/`, `Launcher.cs` (Main.tscn root: bootstrap, launchscreen, persistent camera/lighting) and `GameSession.cs` (the per-launch session node it instantiates), plus livery/spawn/plane-roster resolution, the roster aggregate with grouped inputs and its two internal assemblers, the effect/crash stage factory, and the weather rig.
+- `src/Net/`, the network seam: the transport interface a session sends byte payloads through, and the in-process loopback carrier with its injected latency, jitter and loss model. No engine type and no socket.
 - `src/` root, `SessionSpec.cs`, `SessionPaths.cs`, `Pads.cs`.
 - `CSVM.Tests/`, the xUnit project: engine-free reader units. Anything reaching `GD.*` or a live `Node` belongs in `src/Testing/` instead.
 
