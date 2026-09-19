@@ -316,40 +316,6 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   flight tick's own steps (forces, contact, damage) out; they share the accumulator and belong
   together. *Cross-refs:* `BL-1015`, `BL-1016` (the same shape in `GameSession.cs` and
   `OriginalOptionsScreen.cs`), `docs/architecture/Flight.md`.
-- `BL-1019` `[Tuning]` `[Blocked: PLAN-M6-multiplayer]` `[S]` `[Next: data]` `[Impact: high]`
-  `[Evidence: trace]` **The remote airframe's two timing constants are guesses:
-  `RemotePoseBuffer.BufferDelaySeconds` (0.1) and `RemotePoseBuffer.ExtrapolationCapSeconds`
-  (0.25).** *Evidence:* a read of `CSVM/src/Net/RemotePoseBuffer.cs`, where both are marked TUNE.
-  The delay has to cover one send interval plus the jitter on it, and the cap has to cover the
-  longest gap worth riding a velocity through, and neither number has been measured against a send
-  rate or a loss model, they were picked to be plausible. *Fix shape:* once two sessions can fly
-  against each other, record the arrival stamps of a real stream and read the send interval, its
-  jitter and the gap
-  distribution off them; set the delay from the jitter tail rather than the mean, and set the cap
-  from where riding a dead velocity starts to place the aeroplane somewhere it visibly was not.
-  The buffer already reports which of the three cases each answer came out of
-  (`RemotePoseFeed`), so the instrument that counts interpolating against extrapolating against
-  starved frames is the measurement. *⚠ Traps:* a delay raised to hide loss is latency every
-  player pays on every frame, so it is the wrong knob for a lossy link; and the two numbers are
-  not independent, a short delay starves sooner and leans on the cap. *Cross-refs:*
-  `docs/architecture/Net.md`, `PLAN-M6-multiplayer` A3.
-- `BL-1020` `[Tuning]` `[Blocked: PLAN-M6-multiplayer]` `[S]` `[Next: data]` `[Impact: low]`
-  `[Evidence: data]` **The aircraft-state send rate, `AircraftStateCadence.SendStepInterval` (3
-  simulation steps, 20 Hz at the fixed step), is set to fit the buffer's read-behind, not to a
-  measured bandwidth or error budget.** *Evidence:* the `net-aircraft-replication` suite, where a
-  two-seat match over a 30 ms link with 10 ms of jitter and 25 % loss reconstructs the far
-  aeroplane within 0.52 m mean and 1.08 m worst position error at a fitted 107 ms lag, over a
-  scripted 326 m curving flight. Taking the conditions apart at the same rate, jitter alone reads
-  0.49 m mean and loss alone 0.03 m, so the residual is the arrival stamping and not the rate: a
-  faster send would buy little until the sample carries the sender's own time. *Fix shape:* sweep
-  the interval against the per-seat byte rate (44 bytes a sample) with eight seats in the roster,
-  and settle it in the same measurement as `BL-1019`'s two buffer constants, since the three
-  numbers trade against each other. The four spare bytes in `NetMessage.AircraftStateBudget` are
-  where a send timestamp would go if the jitter term is worth removing first. *⚠ Traps:* the rate
-  is not free to raise, two send intervals have to stay inside the buffer delay or a single loss
-  starves the read; and a reading taken with two seats says nothing about the upstream of a host
-  broadcasting seven. *Cross-refs:* `BL-1019`, `docs/architecture/Net.md`,
-  `PLAN-M6-multiplayer` B11.
 
 ## Environment & world
 

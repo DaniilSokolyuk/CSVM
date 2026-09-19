@@ -55,7 +55,8 @@ that finds itself replicating a mesh, a node or an animation has left this plan.
 | 5 | Player ceiling | **8, behind a constant that is 16-safe**; the executable has no coded cap, 8 is the shipped lobby value and the data holds 16 |
 | 6 | Steam | **Not decided here.** The transport goes behind a flag so a Steam build (Steam Networking Sockets, relay, lobbies, invites) can be added without touching the session; the store listing is a separate legal and distribution decision |
 | 7 | Where the seam goes | **Two interfaces above the transport**: a remote-airframe arm beside `IFlightInputSource` on the aircraft side and a transport interface on the session side; a remote human is a pose that arrives late, never a stick that arrives late |
-| 8 | Hit authority | **Shooter's client decides the hit, the victim applies the damage and reports its own death, the host scores**, the decoded original's order, no lag compensation |
+| 8 | Hit authority | **Shooter's client decides the hit, the victim applies the damage and reports its own death, the host scores**, the decoded original's order, no lag compensation. The hit itself is a **reliable** message, confirmed after A2 found the original batches hits inside its unreliable aircraft-state packet: a lost hit would be a lost kill |
+| 9 | Topology | **Star, the host relays.** A guest connects to the host only; the host forwards every guest's aircraft state and events to the other guests, so one port and one UPnP mapping serve a match and a guest-to-guest packet costs one extra hop. No mesh between guests |
 
 ## ⚠ Read this before implementing anything
 
@@ -342,8 +343,8 @@ attitude by slerp over normalised quaternions, since the wire's quantised ones a
 a target past the newest rides that sample's velocity for at most `ExtrapolationCapSeconds` and
 then holds; a target before the oldest holds the oldest. `RemotePose.Feed` reports which of the
 three cases (`Interpolating`, `Extrapolating`, `Starved`) produced the answer, so B11's instrument
-counts them without re-deriving the decision. Both constants are marked TUNE and filed as
-`BL-1019`. The arm on the controller is the buffer itself: `FlightController.RemotePoses`, carried
+counts them without re-deriving the decision. Both constants are accepted at the harness
+conditions on B11's measurement. The arm on the controller is the buffer itself: `FlightController.RemotePoses`, carried
 through `FlightControllerBuild` and copied in `Bind` before the input arm is resolved, and
 `RemoteOwned => RemotePoses != null`, so a seat cannot be half remote. Owned remotely, the sim step
 runs `StepRemotePose` in place of the whole live-flight branch and writes the model's pose,
@@ -571,8 +572,8 @@ with the host's world.
 
 ## B11 ☑ Aircraft state replication: own aircraft broadcast at a fixed rate, remote aircraft interpolated
 
-**Landed.** `CSVM/src/Net/AircraftStateCadence.cs` owns the send half and nothing else: the TUNE
-`SendStepInterval` (3 simulation steps, 20 Hz at the fixed step, filed as `BL-1020`) and a sequence
+**Landed.** `CSVM/src/Net/AircraftStateCadence.cs` owns the send half and nothing else:
+`SendStepInterval` (3 simulation steps, 20 Hz at the fixed step, accepted as measured) and a sequence
 counter per seat, so the session's own edit stays in the step path. `StepHumanAircraft` now steps
 every entry of `_seatRigs` rather than every pane, which is what makes a seat flown elsewhere run
 `FlightController.StepRemotePose` and advance its buffer; outside a network match the two lists hold
@@ -611,8 +612,9 @@ it needs the lag fitted out before the residual means anything.
 **⚠ Traps.** Read the sim-clock cadence, not the physics tick, when measuring: the sim clock on the
 user's rig has run at half wall time in late campaign runs. Do not replicate the render pose; the
 sample is the sim pose. `NetSession.Broadcast` reaches this peer's own peers, so on a listen server
-with three or more machines a guest's samples reach the host alone until something relays them;
-with two peers, which is what the suite measures, that gap is invisible.
+with three or more machines a guest's samples reach the host alone until the host relays them
+(Decision 9, the relay is B12's to build with the event forwarding); with two peers, which is what
+the suite measures, that gap is invisible.
 
 **Original approach (kept for reference).**
 

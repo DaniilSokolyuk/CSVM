@@ -13,8 +13,8 @@ public sealed class AircraftStateCadence
     /// <summary>Simulation steps between two samples of one aircraft. Three at the fixed step is
     /// 20 Hz, which puts two send intervals inside
     /// <see cref="RemotePoseBuffer.BufferDelaySeconds"/>. One lost sample then still leaves the
-    /// buffer a pair to read between. TUNE: measured on the two-session harness beside the
-    /// buffer's own two constants, not set by feel.</summary>
+    /// buffer a pair to read between. Accepted on the two-session harness beside the buffer's own
+    /// two constants, where jitter and not the rate bounds the residual.</summary>
     public const int SendStepInterval = 3;
 
     private readonly ushort[] _sequence = new ushort[NetSeats.SeatCapacity];

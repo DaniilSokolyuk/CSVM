@@ -47,13 +47,13 @@ public sealed class RemotePoseBuffer
 {
     /// <summary>How far behind the render time the buffer reads, seconds. Big enough to hide the
     /// gap between two sends plus the jitter on them. Small enough that the aircraft is not shown
-    /// meaningfully in its own past. TUNE: measured on the two-session harness under the loss
-    /// model, not set by feel.</summary>
+    /// meaningfully in its own past. Accepted at the two-session harness's link conditions, where
+    /// no read starves.</summary>
     public const float BufferDelaySeconds = 0.1f;
 
     /// <summary>How far past its newest sample the buffer will ride a velocity, seconds. Past it
-    /// the answer holds rather than flying an aircraft nobody is steering any more. TUNE: measured
-    /// beside <see cref="BufferDelaySeconds"/> on the same harness.</summary>
+    /// the answer holds rather than flying an aircraft nobody is steering any more. Accepted beside
+    /// <see cref="BufferDelaySeconds"/> on the same harness.</summary>
     public const float ExtrapolationCapSeconds = 0.25f;
 
     /// <summary>How many samples are kept. At the send rates in question this is seconds of

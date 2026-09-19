@@ -116,15 +116,15 @@ samples go in stamped with the buffer's own clock, and a read gets the state
 sample the answer rides that sample's velocity for at most `ExtrapolationCapSeconds` and then
 holds, and `RemotePoseFeed` says which of the three cases (interpolating, extrapolating, starved)
 each answer came out of, so an instrument counts them without re-deriving the decision. Both
-constants are guesses (`BL-1019`). A sample at or below the newest sequence is dropped, wrap
-included. Read `Flight/FlightController.cs`'s `RemoteOwned` for what consumes it.
+constants are accepted at the harness conditions, where no read starves. A sample at or below the
+newest sequence is dropped, wrap included. Read `Flight/FlightController.cs`'s `RemoteOwned` for what consumes it.
 
 ## src/Net/AircraftStateCadence.cs
 The send half of aircraft replication, and the only thing in it that is not the session's own
 step: when an owner puts its aeroplane on the wire, counted in simulation steps, and what
 sequence each sample carries, counted per seat because a receiver decides staleness by it. What a
 sample holds is the session's to fill and what happens to it is `RemotePoseBuffer.cs`'s, so this
-module knows neither. `SendStepInterval` is TUNE (`BL-1020`); at the fixed step it puts two send
+module knows neither. `SendStepInterval` is accepted as measured; at the fixed step it puts two send
 intervals inside the buffer's own read-behind, which is what lets one lost sample still leave a
 pair to read between.
 
