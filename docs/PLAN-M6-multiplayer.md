@@ -215,7 +215,13 @@ and its three index bullets in `docs/architecture.md` are new; `PROJECT_CONTEXT.
 gains `src/Net/`. Nothing under `CSVM/src/Flight/` or `CSVM/src/Session/` was touched: A1 is the
 mechanism, and the session wiring is A5's.
 
-**Verified.** <pending orchestrator run>
+**Verified.** On the run branch with A1 to A5 merged, the full battery (`RunTests.ps1
+-GoldenWorkers 2`) reads build clean, 4830 units passed with 2 skipped, 377 of 378 engine suites
+passed with engine errors clean, and 19 of 19 golden shots hash-identical. The one engine failure,
+`instant-action-end` on a per-frame movement minimum through the 3 s win hold, passed alone on the
+same tree and is a load flake under six shards beside a sibling's runs; nothing under
+`CSVM/src/Net/` is on its path. `LoopbackTransportTests` (9) and `NetNamespaceDependencyTests`
+pass on the merged tree.
 
 **Original approach (kept for reference).**
 
@@ -275,7 +281,12 @@ damage, `0x41` spawn, `0x42` director transition), and `NetMessage.IsOriginalId`
 in code. The original's whole table, with builders, handlers, payload widths and guarantees, is now
 `docs/org/multiplayer-messages.md`, linked from the scoring and spawn pages.
 
-**Verified.** <pending orchestrator run>
+**Verified.** On the run branch with A1 to A5 merged, the full battery reads 4830 units passed,
+377 of 378 engine suites passed (the one failure a load flake in `instant-action-end` that passed
+alone; see A1) and 19 of 19 golden shots hash-identical. `NetMessagesTests` (the round trip of
+every struct, the handshake included) passes on the merged tree, and the team-offset correction
+in the warning table was re-read from the decompiled comparison in the same-team arm before the
+item was landed.
 
 **Model recommendation.** High. The wire layout is the one artefact every later item in Waves B, C
 and D reads back, and a field packed wrong here surfaces as a physics or scoring bug three items
@@ -341,7 +352,12 @@ same two lines as before, so `WorldPosition`, `WorldVelocity`, `NoseDirection`, 
 render interpolation are untouched. Being hit, damage visuals, engine and weapon audio, HUD
 markers, the shake and the crash rig all stay live.
 
-**Verified.** <pending orchestrator run>
+**Verified.** On the run branch with A1 to A5 merged, the full battery reads 4830 units passed,
+377 of 378 engine suites passed and 19 of 19 golden shots hash-identical, so the gating moved no
+pinned pixel of a locally flown aircraft. The one engine failure is the `instant-action-end` load
+flake described under A1; it passed alone. `RemotePoseBufferTests` (12) and the `remote-airframe`
+suite pass on the merged tree, the suite's locally flown control answering the gun trigger, the
+respawn button and the model step that the remote rig refuses.
 
 **Model recommendation.** High. The gating is a list of "must not run" members rather than a new
 code path, and the failure mode of a missed one (a remote aeroplane bouncing off terrain it never
@@ -426,7 +442,11 @@ build as its able-to-fail control. Docs: four `docs/architecture/Net.md` entries
 bullets, the `GameSession.cs`, `FlightRosterInputs.cs` and `HumanFlightAdapter.cs` entries in
 `docs/architecture/Session.md`, and the colour table's decode in `docs/org/multiplayer-spawn.md`.
 
-**Verified.** <pending orchestrator run>
+**Verified.** On the run branch with A1 to A5 merged, the full battery reads 4830 units passed,
+377 of 378 engine suites passed and 19 of 19 golden shots hash-identical, so the seat-rig list
+beside the pane list moved no pinned pixel of a single-pane or split-pane launch. The one engine
+failure is the `instant-action-end` load flake described under A1; it passed alone. `NetSeatTests`
+(11), `NetClockSlewTests` (11) and the `net-seats` suite pass on the merged tree.
 
 **Original approach (kept for reference).**
 
@@ -511,7 +531,13 @@ guest's own step, and the two worlds stand in separate physics spaces. `CSVM.Tes
 `docs/architecture/Session.md`, the harness in `docs/architecture/Testing.md`, and `0x43` in
 `docs/org/multiplayer-messages.md`'s minted list.
 
-**Verified.** <pending orchestrator run>
+**Verified.** On the run branch with A1 to A5 merged, the full battery reads 4830 units passed,
+377 of 378 engine suites passed and 19 of 19 golden shots hash-identical. The one engine failure
+is the `instant-action-end` load flake described under A1; it passed alone. `net-two-session`
+passes on the merged tree in 6.7 s with engine errors clean, reporting the second session at a
+2.5 s build and 204 MiB of static memory beside the first's 3.9 s and 237 MiB (warm against cold,
+so the pair bounds the second session rather than comparing like with like). `NetSessionTests` (9)
+passes.
 
 **Original approach (kept for reference).**
 
