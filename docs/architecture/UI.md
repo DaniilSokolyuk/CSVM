@@ -1180,6 +1180,16 @@ exported left out). Per seat it owns the cursor, the two stages of the pick, the
 the backing-out ladder; the gate is the mode's minimum of seats and every seat confirmed. It also holds Dogfight's two match rules, `KillTarget` and `TimeLimitMinutes` with their steppers, starting at the command line's own 5 and 5 and riding a Versus exit. `Choices`
 and `BuildExit` are the typed result. Nothing here reads a pad: `src/UI/MenuSeatDevices.cs`, below.
 
+## src/UI/Menu/NetPlayFeature.cs
+The multiplayer door as a shared `IMenuFeature`, engine-free and carrier-free: the port and the
+address a board edits, the socket it opens, and the readouts a board draws (`Stage`, `Peers`,
+`Link`, `PortMap`, `Fault`, `HostStarted`). Both carrier factories and both port-mapping calls
+arrive as delegates, so the launcher passes `EnetTransport` and `UpnpPortMap` and a suite passes a
+loopback mesh and no router. `OpenHost`/`OpenJoin` open, `Step` carries the link (a join lands
+there, not in the press), `BuildLaunch` hands the wire to the launch as a `MenuNetLaunch` and
+keeps nothing, `Close` gives the router's port back. The map runs on its own thread because the
+gateway search blocks; the unmap does not. Board: `src/UI/LaunchMenu.cs`'s Network screen.
+
 ## src/UI/MenuSeatDevices.cs
 The pad side of the shared player setup, for any presentation, over seat 0's `MenuInput` and the
 feature. `P1Pad` is the pad seat 0 claimed by steering a screen with it. `Sync` reconciles the

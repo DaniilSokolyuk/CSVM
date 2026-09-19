@@ -58,7 +58,19 @@ internal static class MenuSuiteHost
         // No save by default: a suite must never write over the keymap saved at this machine's
         // controls, and only a suite holding the store's directory override may pass one.
         host.Features.Add(new ControlsFeature(saveBindings));
+        host.Features.Add(NetDoor());
     }
+
+    /// <summary>The multiplayer door as a suite gets it: the real ENet carrier, bound to the
+    /// loopback address, and no port mapping at all. ⚠ Neither the wildcard bind nor the UPnP
+    /// search belongs in a run: one raises a firewall dialog, the other reaches the router.
+    /// </summary>
+    internal static NetPlayFeature NetDoor() =>
+        new((port, guests, bind) => CSVM.Net.EnetTransport.Host(port, guests, bind),
+            (address, port) => CSVM.Net.EnetTransport.Join(address, port))
+        {
+            BindAddress = "127.0.0.1",
+        };
 
     /// <summary>A launchscreen over a bare host, for a suite that drives the screens and reads
     /// nothing back from the host.</summary>

@@ -30,6 +30,9 @@ exactly how `PROJECT_CONTEXT.md`'s day-to-day table drifted from this page. One 
 **Modes and content, what gets built**
 `--viewer` · `--fly` · `--stunt` · `--vs` · `--vs-kills` · `--vs-time` · `--coop` · `--freecam` · `--anim-lab` · `--menu` · `--skip-intro` · `--intro` · `--chapter` · `--stage` · `--node` · `--plane` · `--players` · `--mission` · `--scenario` · `--ia` · `--campaign` · `--play-anim` · `--movie` · `--presentation` · `--force-builtin`
 
+**Multiplayer, the wire a match flies over**
+`--net-host` · `--net-join`
+
 **Placement, where the subject starts and which way it faces**
 `--pos` · `--direction` · `--lookat` · `--view` · `--spawn` · `--campos` · `--spawn-at` · `--spawn-dir`
 
@@ -89,7 +92,7 @@ the shared selection (`--debug-select`), the node lab (`--debug-nodelab`), the w
 **Written exceptions to "one flag, one bullet":** `--spawn-dir` shares `--spawn-at`'s bullet, since
 the pair is one mechanism, so `Grep` the partner's name to find it; `--debug-nodelab` and
 `--debug-damage` each carry a short opener bullet plus the full behaviour under their lab's own
-section further down. The counts reconcile as **151 index entries, 151 parser flags and 152 bullet
+section further down. The counts reconcile as **153 index entries, 153 parser flags and 154 bullet
 lines**.
 
 ## Flags
@@ -163,6 +166,17 @@ lines**.
   condition, accepted, not guarded against, since the mode's win/lose flow is a later item. The
   built-in menu's Dogfight map screen carries this as a row too, under the same rule, each flag
   beating only the row it names)
+- `--net-host[=port]`, `--net-host=address:port` (open a listen server and fly this session as its
+  host, the scripted twin of the menu's multiplayer door over the same socket. A bare flag takes
+  the default port 47500 on every interface, a numeric value sets the port, and an `address:port`
+  value binds that one interface, IPv6 in brackets. ⚠ A scripted run names `127.0.0.1`: a wildcard
+  bind is what puts a Windows firewall dialog on somebody's screen. A host waits for nobody and
+  flies alone until a guest arrives)
+- `--net-join=address[:port]` (join the match at that address and fly this session as a guest,
+  the port defaulting to 47500 and an IPv6 address written in brackets. The launch holds at the
+  load screen until the link stands or 30 seconds pass, because a guest with no host has no seats
+  to fly. The roster it flies is the host's, so the plane this end picked is a request, not a
+  promise)
 - `--coop` (plain splitscreen free flight defaults to **FFA**, every
   human on their own team (`AimAssist.TeamOfPilot`), so aim assist, world turrets and AI gunners
   treat the other humans as hostile. `--coop` opts a plain `--fly`/`--stunt` session into one

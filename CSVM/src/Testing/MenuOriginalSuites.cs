@@ -522,7 +522,7 @@ internal static class MenuOriginalSuites
             $"a Built-in request re-selects it and Show stands the launchscreen up ({host.Selected})");
         ctx.Check(menu?.ShownScreen == "Mode" && menu.ShownRowText == "Free Flight",
             $"at its own top level, the Mode screen ({menu?.ShownScreen}, {menu?.ShownRowText})");
-        ctx.Check(menu?.ShownRowCount == 6, $"whose sixth row is the Options door ({menu?.ShownRowCount})");
+        ctx.Check(menu?.ShownRowCount == 7, $"whose last two rows are the Options and multiplayer doors ({menu?.ShownRowCount})");
     }
 
     // Built-in's Options route: the last Mode row opens Options, and Right steps the difficulty to
@@ -540,7 +540,9 @@ internal static class MenuOriginalSuites
         }
 
         Press(host, seat, Up);
-        ctx.Check(menu.ShownRowText == LaunchMenu.OptionsRow, $"Up from Free Flight wraps onto Options ({menu.ShownRowText})");
+        Press(host, seat, Up);
+        ctx.Check(menu.ShownRowText == LaunchMenu.OptionsRow,
+            $"Up from Free Flight wraps onto the multiplayer door, and again onto Options ({menu.ShownRowText})");
         Press(host, seat, Accept);
         ctx.Check(menu.ShownScreen == "Options" && menu.ShownRowCount == 17 && menu.ShownRowText == "Difficulty: Normal",
             $"Accept opens the Options screen with its seventeen rows, the difficulty stepper first ({menu.ShownScreen}, {menu.ShownRowCount}, {menu.ShownRowText})");

@@ -4,6 +4,7 @@ using System.Globalization;
 using CSVM.Bindings;
 using CSVM.Flight;
 using CSVM.Mech3;
+using CSVM.Net;
 using CSVM.Session;
 using CSVM.UI.Menu;
 using CSVM.UI.Menu.BuiltIn;
@@ -36,7 +37,12 @@ public sealed partial class LaunchMenu : CanvasLayer
     /// <see cref="CampaignFlow"/> and only launches a mission from inside them.</summary>
     public const string CampaignRow = "Campaign";
 
-    /// <summary>The row that opens the Options screen, the last on the Mode screen. Options hold
+    /// <summary>The row that opens the multiplayer door, the last on the Mode screen. It is not a
+    /// <see cref="MenuMode"/> either. The door opens a wire and then walks the Dogfight screens,
+    /// so the mode a network match flies is Dogfight's own.</summary>
+    public const string NetworkRow = "Multiplayer";
+
+    /// <summary>The row that opens the Options screen, under the modes. Options hold
     /// the process-wide choices (the difficulty, the targeting setting, the graphics mode and the
     /// four display settings). Which presentation runs is not among them: only the two command-line
     /// flags choose Built-in.</summary>
@@ -46,6 +52,16 @@ public sealed partial class LaunchMenu : CanvasLayer
     /// steppers as a further choice: those are process-wide and leave through
     /// <c>OptionsApplyExit</c>, while a keymap is per player and saves itself.</summary>
     public const string ControlsRow = "Controls...";
+
+    // The multiplayer door's five rows, in the order they are drawn. Two fields a player edits,
+    // two ways a socket opens, and the way on to the map. The door's own state is the feature's;
+    // these are this screen's row numbers alone.
+    private const int NetPortRow = 0;
+    private const int NetAddressRow = 1;
+    private const int NetHostRow = 2;
+    private const int NetJoinRow = 3;
+    private const int NetContinueRow = 4;
+    private const int NetworkRows = 5;
 
     // Base metrics at 720p, scaled up on taller viewports (like StuntScoreboard). All TUNE.
     private const int TitleFont = 40;
@@ -184,6 +200,15 @@ public sealed partial class LaunchMenu : CanvasLayer
     // The shared player setup: the seats, their picks and the launch gate live there; this screen
     // offers them and draws them.
     private PlayerSetupFeature _setup = null!;
+    // The multiplayer door: the port, the address, the socket and the two readouts. Optional the
+    // way the keymap editor is, so a bare host needs no carrier behind it. The row is drawn
+    // either way and refuses when there is nothing behind it.
+    private NetPlayFeature? _net;
+    // The cursor on the multiplayer door's own screen, and the readout as it last drew. A socket
+    // changes state between presses, so the board is repainted off the reading rather than off
+    // the input.
+    private int _netIndex;
+    private string _netStatus = "";
     // The raw poller behind the host's first seat, player 1's, and the pad bookkeeping over it
     // (claiming, joining, hotplug); the commands themselves are read through the seats.
     private MenuInput _player1 = null!;
@@ -337,7 +362,7 @@ public sealed partial class LaunchMenu : CanvasLayer
     private int? _pressRow;
     private bool _pressInside;
 
-    private enum Screen { Mode, Chapter, Presets, Environment, MissionType, Waves, WaveEdit, Wingmen, Plane, WingmanLoadout, Hangar, Campaign, Options, Controls }
+    private enum Screen { Mode, Chapter, Presets, Environment, MissionType, Waves, WaveEdit, Wingmen, Plane, WingmanLoadout, Hangar, Campaign, Options, Controls, Network }
 
     // What a fit row edits. The reset row carries no slot of its own and is the only one Accept
     // does anything on, since every other row is a live stepper.
@@ -451,6 +476,7 @@ public sealed partial class LaunchMenu : CanvasLayer
         Screen.Campaign => _campaign?.Row ?? 0,
         Screen.Options => _optionsIndex,
         Screen.Controls => _controlsIndex,
+        Screen.Network => _netIndex,
         _ => _slots.Count == 1 && _slots[0].InLoadout ? _slots[0].FitRow : _slots[0].PlaneIndex,
     };
 
@@ -504,6 +530,9 @@ public sealed partial class LaunchMenu : CanvasLayer
             // Optional rather than required: a bare host in a suite that never opens the Controls
             // screen has no reason to carry a keymap editor, and a local one edits nothing shared.
             _controls = host.Features.TryGet<ControlsFeature>(out var controls) ? controls : new ControlsFeature(),
+            // Optional for the same reason. A suite that never opens the door needs no carrier
+            // behind it, and the door is the one feature that owns a socket.
+            _net = host.Features.TryGet<NetPlayFeature>(out var net) ? net : null,
             _player1 = player1,
             Layer = HudLayers.Board,
             Visible = false,
@@ -554,11 +583,12 @@ public sealed partial class LaunchMenu : CanvasLayer
     }
 
     /// <summary>The launch-gate RULE, pure and public so it is reachable from <c>CSVM.Tests</c>
-    /// with no menu instance behind it: everyone joined has locked a plane, AND, Dogfight only,
-    /// at least two have joined to fight each other. Free Flight and Instant Action launch solo
-    /// exactly as before.</summary>
-    public static bool CanLaunch(MenuMode mode, bool allLocked, int joinedCount) =>
-        allLocked && (mode != MenuMode.Versus || joinedCount >= 2);
+    /// with no menu instance behind it. Everyone joined has locked a plane, and, Dogfight only,
+    /// at least two have joined to fight each other. The <paramref name="networked"/> flag lifts
+    /// that second rule, the opponent being elsewhere. Free Flight and Instant Action launch
+    /// solo as before.</summary>
+    public static bool CanLaunch(MenuMode mode, bool allLocked, int joinedCount, bool networked = false) =>
+        allLocked && (networked || mode != MenuMode.Versus || joinedCount >= 2);
 
     /// <summary>The chapter list a mode actually offers, as codes: Stunt Flying only the maps with
     /// Danger Zones (a stunt run elsewhere would be an empty free flight); every other mode all
@@ -657,6 +687,7 @@ public sealed partial class LaunchMenu : CanvasLayer
             "wingmanloadout" => Screen.WingmanLoadout,
             "options" => Screen.Options,
             "controls" => Screen.Controls,
+            "network" => Screen.Network,
             _ => Screen.Mode,
         };
         if (_screen == Screen.Options)
@@ -951,7 +982,7 @@ public sealed partial class LaunchMenu : CanvasLayer
         // every other seat's frame is read from its own source. Text capture is set before the
         // poll: the PLANENAME screen's letter aliases must be dead for the frame that reads them.
         var seat = _host.Seats[0];
-        seat.CapturingText = NamePage() != null;
+        seat.CapturingText = NamePage() != null || AddressField() != null;
         Apply(WithPointer(seat.Poll((float)delta)));
         for (int i = 1; i < _slots.Count; i++)
             _slots[i].Frame = _slots[i].Seat.Source.Poll((float)delta);
@@ -959,6 +990,7 @@ public sealed partial class LaunchMenu : CanvasLayer
         // After the input, so a press that opened or left the briefing is already reflected: the
         // reveal is a clock the page cannot own, and the narration is a node the page cannot hold.
         dirty |= TickCampaignAudio(delta);
+        dirty |= TickNetDoor(delta);
         if (_pressFrames > 0)
         {
             _pressFrames--;
@@ -1004,7 +1036,18 @@ public sealed partial class LaunchMenu : CanvasLayer
             return;
         }
 
-        if (NamePage() is not { } page || @event is not InputEventKey { Pressed: true } key)
+        if (@event is not InputEventKey { Pressed: true } key)
+        {
+            return;
+        }
+
+        if (AddressField() is { } net)
+        {
+            TypeAddress(net, key);
+            return;
+        }
+
+        if (NamePage() is not { } page)
         {
             return;
         }
@@ -1371,6 +1414,7 @@ public sealed partial class LaunchMenu : CanvasLayer
                         _optionsIndex = Wrap(_optionsIndex + p1.Move, n);
                         ScrollOptionsToCursor();
                         break;
+                    case Screen.Network: _netIndex = Wrap(_netIndex + p1.Move, n); break;
                 }
                 dirty = true;
             }
@@ -1408,6 +1452,12 @@ public sealed partial class LaunchMenu : CanvasLayer
                 if (_screen == Screen.Mode)
                     _host.Exit(new QuitExit());
                 else
+                {
+                    // Backing off the board hangs up and gives the router's port back. Leaving a
+                    // socket listening behind an abandoned screen is the one outcome a player
+                    // cannot see and cannot undo from anywhere else in the menu.
+                    if (_screen == Screen.Network)
+                        _net?.Close();
                     _screen = _screen switch
                     {
                         // Backing out of the contents list leaves the wizard's fields as they were:
@@ -1419,8 +1469,12 @@ public sealed partial class LaunchMenu : CanvasLayer
                         Screen.WaveEdit => Screen.Waves,
                         Screen.Wingmen => Screen.Waves,
                         Screen.WingmanLoadout => Screen.Wingmen,
-                        _ => Screen.Mode, // Chapter
+                        // A Dogfight reached through the door came from the board, so Back goes
+                        // there and the open socket stays open.
+                        Screen.Chapter when Networked() => Screen.Network,
+                        _ => Screen.Mode, // Chapter, Network
                     };
+                }
                 dirty = true;
             }
             // Everyone else can only drop out from here.
@@ -1636,6 +1690,16 @@ public sealed partial class LaunchMenu : CanvasLayer
                     case 14: _audioVoiceChoice = StepLevel(_audioVoiceChoice, AudioMix.DefaultVoice, dir); return true;
                     default: return false;
                 }
+            case Screen.Network:
+                // The port is the door's one stepper. The address is typed, and the three rows
+                // under it are presses.
+                if (_netIndex != NetPortRow)
+                {
+                    return false;
+                }
+
+                _net?.StepPort(dir);
+                return true;
             case Screen.Chapter:
                 // Only the two Dogfight rows under the map list step; a map row has nothing
                 // sideways, and MatchRowCount is 0 in the other two modes.
@@ -1739,8 +1803,8 @@ public sealed partial class LaunchMenu : CanvasLayer
 
                 break;
             case Screen.Mode:
-                // The three trailing rows are the campaign's, the hangar's and Options' top-level
-                // doors, past the three modes.
+                // The four trailing rows are the campaign's, the hangar's, Options' and the
+                // multiplayer door's top-level doors, past the three modes.
                 if (_modeIndex == Modes.Length)
                 {
                     OpenCampaign();
@@ -1751,6 +1815,13 @@ public sealed partial class LaunchMenu : CanvasLayer
                 {
                     _screen = Screen.Options;
                     OpenOptions();
+                    break;
+                }
+
+                if (_modeIndex == Modes.Length + 3)
+                {
+                    _screen = Screen.Network;
+                    _netIndex = _net is { Stage: NetDoorStage.Shut } or null ? NetHostRow : NetContinueRow;
                     break;
                 }
 
@@ -1772,6 +1843,9 @@ public sealed partial class LaunchMenu : CanvasLayer
                     // around), keep the cursor on a row that exists.
                     _chapterIndex = Wrap(_chapterIndex, CurrentChapters.Length);
                 }
+                break;
+            case Screen.Network:
+                HandleNetworkAccept();
                 break;
             case Screen.Presets:
                 ApplyPreset(_presetCursor);
@@ -1843,6 +1917,82 @@ public sealed partial class LaunchMenu : CanvasLayer
                 PrimeJoins();
                 break;
         }
+    }
+
+    // --- the multiplayer door ---
+
+    // The door's address field, when it is the row under the cursor. Every typed character asks
+    // through here, so nothing reaches the address from another screen.
+    private NetPlayFeature? AddressField() =>
+        _screen == Screen.Network && _netIndex == NetAddressRow ? _net : null;
+
+    // One keypress into the address. Redrawn on the next frame rather than here, because Rebuild
+    // replaces the very controls the event is being dispatched through.
+    private void TypeAddress(NetPlayFeature net, InputEventKey key)
+    {
+        string before = net.Address;
+        if (key.Keycode == Key.Backspace)
+        {
+            net.EraseAddress();
+        }
+        else if (key.Unicode > 0)
+        {
+            net.TypeAddress(((char)key.Unicode).ToString(CultureInfo.InvariantCulture));
+        }
+
+        if (net.Address != before)
+        {
+            _typed = true;
+            GetViewport().SetInputAsHandled();
+        }
+    }
+
+    // The board's presses. Accept on the port row steps it, which is the Chapter screen's own
+    // rule that a row is walkable with one gesture. The address row is typed into instead.
+    private void HandleNetworkAccept()
+    {
+        if (_net is not { } net)
+        {
+            _error = "this build has no multiplayer door";
+            return;
+        }
+
+        switch (_netIndex)
+        {
+            case NetPortRow:
+                HandleMoveX(1);
+                break;
+            case NetHostRow:
+                net.OpenHost(NetSeats.MaxPlayers - 1);
+                _netIndex = net.Stage == NetDoorStage.Hosting ? NetContinueRow : NetHostRow;
+                _error = net.Fault;
+                break;
+            case NetJoinRow:
+                net.OpenJoin();
+                _error = net.Fault;
+                break;
+            case NetContinueRow:
+                OpenNetworkSortie(net);
+                break;
+        }
+    }
+
+    // Leaving the board for the sortie the wire carries. A network match is a Dogfight, so the
+    // mode is set here rather than picked again. ⚠ Both ends pick their own map: no pre-session
+    // message carries the host's, so the two boards have to agree on one by hand.
+    private void OpenNetworkSortie(NetPlayFeature net)
+    {
+        if (!net.CanLaunch)
+        {
+            _error = net.Fault.Length > 0 ? net.Fault : "host or join a match first";
+            return;
+        }
+
+        _mode = MenuMode.Versus;
+        _modeIndex = (int)MenuMode.Versus;
+        _screen = Screen.Chapter;
+        _chapterIndex = Wrap(_chapterIndex, CurrentChapters.Length);
+        _error = "";
     }
 
     // --- the hangar ---
@@ -2339,6 +2489,23 @@ public sealed partial class LaunchMenu : CanvasLayer
         _host.Exit(exit);
     }
 
+    // The open socket is stepped on every menu frame, not only on the board. A host that walked
+    // on to pick a map still has to admit guests, and a guest still has to hear its host. The
+    // feature itself goes quiet once a launch has taken the wire off it.
+    private bool TickNetDoor(double delta)
+    {
+        if (_net is not { } net)
+        {
+            return false;
+        }
+
+        net.Step(delta);
+        string reading = NetworkStatus();
+        bool changed = reading != _netStatus;
+        _netStatus = reading;
+        return changed && _screen == Screen.Network;
+    }
+
     // The briefing's clock and its narration, the two things its page cannot own: a page holds no
     // Godot node and has no frame to advance on. Returns whether the board needs redrawing, which
     // is whenever the reveal uncovered a line or changed the map it is drawing.
@@ -2468,7 +2635,12 @@ public sealed partial class LaunchMenu : CanvasLayer
     // what it is waiting for. Free Flight's gate adds its chapter to the setup's seat rule.
     private bool CanLaunch() => _mode == MenuMode.Free
         ? _free.CanLaunch(_setup.Seats.Count, _setup.ConfirmedCount)
-        : _setup.CanLaunch(_mode);
+        : _setup.CanLaunch(_mode, Networked());
+
+    // Whether this launch goes out over a wire the door already opened. A networked Dogfight
+    // seats one pilot here and the rest at other machines. The local two-seat minimum is
+    // therefore not the thing to gate it on.
+    private bool Networked() => _net is { CanLaunch: true };
 
     // Every non-campaign launch leaves as one LaunchExit through the host. Each mode's exit is its
     // own feature's: Free Flight's, Instant Action's, and Dogfight's the shared player setup's,
@@ -2492,7 +2664,11 @@ public sealed partial class LaunchMenu : CanvasLayer
             return;
         }
 
-        _host.Exit(_setup.BuildExit(CurrentChapters[_chapterIndex].Code, _mode, _devices.FlightPads));
+        var exit = _setup.BuildExit(CurrentChapters[_chapterIndex].Code, _mode, _devices.FlightPads);
+
+        // The open wire rides out with the launch, and the door keeps nothing: from here the
+        // session owns the transport, steps it and closes it.
+        _host.Exit(Networked() ? exit with { Net = _net!.BuildLaunch() } : exit);
     }
 
     // Every joined seat's pick as the typed seat choice, built by the setup: the roster row's
@@ -3137,6 +3313,7 @@ public sealed partial class LaunchMenu : CanvasLayer
             Screen.Campaign => _campaign?.Page.Title ?? CampaignRow,
             Screen.Options => $"OPTIONS  ({_optionsIndex + 1}/{CurrentCount()})",
             Screen.Controls => $"CONTROLS  ({_controlsIndex + 1}/{CurrentCount()})",
+            Screen.Network => "MULTIPLAYER",
             _ when _slots.Count == 1 && _slots[0].InLoadout =>
                 $"AMMO SELECTION  ({_roster[_slots[0].PlaneIndex].Name})",
             _ when _slots.Count == 1 && _slots[0].Locked => "AIRCRAFT SELECTED",
@@ -3543,7 +3720,8 @@ public sealed partial class LaunchMenu : CanvasLayer
 
     private int CurrentCount() => _screen switch
     {
-        Screen.Mode => Modes.Length + 3, // + the trailing campaign, hangar and options rows
+        Screen.Mode => Modes.Length + 4, // + the campaign, hangar, options and multiplayer rows
+        Screen.Network => NetworkRows,
         Screen.Hangar => _hangar?.Page.RowCount ?? 1,
         Screen.Campaign => _campaign?.Page.RowCount ?? 1,
         Screen.Options => OptionsStepperRows + 2, // + the controls door and the apply row
@@ -3599,7 +3777,9 @@ public sealed partial class LaunchMenu : CanvasLayer
         {
             Screen.Mode => index < Modes.Length ? Modes[index].Label
                 : index == Modes.Length ? CampaignRow
-                : index == Modes.Length + 1 ? HangarRow : OptionsRow,
+                : index == Modes.Length + 1 ? HangarRow
+                : index == Modes.Length + 2 ? OptionsRow : NetworkRow,
+            Screen.Network => NetworkRowText(index),
             Screen.Hangar => _hangar?.RowText(index) ?? "",
             Screen.Campaign => _campaign?.Page.RowText(index) ?? "",
             Screen.Options => index switch
@@ -3642,6 +3822,46 @@ public sealed partial class LaunchMenu : CanvasLayer
     private string MatchRowText(int row) => row == 0
         ? $"Kill target     {LimitLabel(_setup.KillTarget, "")}"
         : $"Time limit      {LimitLabel(_setup.TimeLimitMinutes, " min")}";
+
+    // One multiplayer-door row. The two fields read as fields whether or not a socket is open.
+    // The two openers name what they will do rather than what the door is doing, which the
+    // status line under them says instead.
+    private string NetworkRowText(int index) => index switch
+    {
+        NetPortRow => $"Port            {(_net?.Port ?? NetPlayFeature.DefaultPort).ToString(CultureInfo.InvariantCulture)}",
+        NetAddressRow => $"Address         {_net?.Address ?? NetPlayFeature.DefaultAddress}",
+        NetHostRow => "Host a match",
+        NetJoinRow => "Join that address",
+        _ => "Continue → Map",
+    };
+
+    // The line under the door's rows: what the socket is doing, who is on it, and what the
+    // router said. This is the whole readout, so a player who cannot fly can see why.
+    private string NetworkStatus()
+    {
+        if (_net is not { } net)
+        {
+            return "No network carrier is registered in this build.";
+        }
+
+        string link = net.Link is { } state ? $", link {state.ToString().ToLowerInvariant()}" : "";
+        string mapped = net.PortMap is { } map
+            ? map.IsMapped
+                ? $". Router mapped port {map.Port.ToString(CultureInfo.InvariantCulture)}, reachable at {map.ExternalAddress}"
+                : $". Router did not map the port ({map.Outcome.ToString().ToLowerInvariant()}); guests on this network still join"
+            : "";
+        return net.Stage switch
+        {
+            NetDoorStage.Hosting =>
+                $"Hosting on port {net.Port.ToString(CultureInfo.InvariantCulture)}{link}, {net.Peers.ToString(CultureInfo.InvariantCulture)} joined{mapped}",
+            NetDoorStage.Joining => $"Joining {net.Address}:{net.Port.ToString(CultureInfo.InvariantCulture)}{link}",
+            NetDoorStage.Joined => net.HostStarted
+                ? $"Linked to {net.Address}{link}. The host has started: pick the host's map and fly."
+                : $"Linked to {net.Address}{link}. Waiting for the host to start.",
+            NetDoorStage.Failed => $"That did not open: {net.Fault}",
+            _ => "Host a match, or type an address and join one. The host picks the map.",
+        };
+    }
 
     // One Waves-screen row: an unconfigured slot reads "empty" (decision 1's own "starts
     // empty" wizard, not the original's always-four dropdowns), a configured one summarises its
@@ -3815,7 +4035,9 @@ public sealed partial class LaunchMenu : CanvasLayer
                 : "(connect a pad and press START to edit its own keymap)";
         if (_screen != Screen.Plane)
             return "(other players join at aircraft select)";
-        if (_mode == MenuMode.Versus && _slots.Count < 2)
+        // A networked Dogfight is already a fight, so it asks for nobody: the opponent is at
+        // another machine and no press here would seat them.
+        if (_mode == MenuMode.Versus && _slots.Count < 2 && !Networked())
             return $"(Dogfight needs a fight, {SplitScreen.PlayerTag(_slots.Count)}: press START to join)";
         return Pads.Connected().Count > 0
             ? "(press START on a free pad to join)"
@@ -3873,6 +4095,9 @@ public sealed partial class LaunchMenu : CanvasLayer
         {
             Screen.MissionType => "↑↓  Choose mission       ←→  Lives",
             Screen.WaveEdit or Screen.Wingmen or Screen.Options => "↑↓  Choose field       ←→  Change",
+            // W/A/S/D are dead on the address row (MenuInput.TextEntry), so the arrows are named
+            // alone, as the hangar's own name screen names them.
+            Screen.Network => "↑↓  Choose row       ←→  Port       Type / Backspace  Address",
             // Dogfight's map screen carries the two match rows, whose stepper is an unbound axis
             // nobody can guess at. Free Flight's map screen has nothing sideways and says so.
             Screen.Chapter when MatchRowCount > 0 => "↑↓  Choose map or rule       ←→  Change",
@@ -3906,6 +4131,7 @@ public sealed partial class LaunchMenu : CanvasLayer
             Screen.Campaign => $"{CampaignRow}  ›  {_campaign?.Page.Title}",
             Screen.Options => OptionsRow,
             Screen.Controls => $"{OptionsRow}  ›  Controls  ›  Player {_controls.Player}",
+            Screen.Network => $"{NetworkRow}  ›  Map  ›  Aircraft",
             Screen.Chapter => $"{mode}  ›  Map  ›  Aircraft",
             Screen.Presets => $"{mode}  ›  Table of Contents",
             Screen.Environment => $"{mode}{PresetCrumb()}  ›  Environment  ›  Mission  ›  Aircraft",
@@ -3931,7 +4157,10 @@ public sealed partial class LaunchMenu : CanvasLayer
         Screen.Mode => focus < Modes.Length ? Modes[focus].Detail
             : focus == Modes.Length ? "Fly the story: pick a player, then the cabin."
             : focus == Modes.Length + 1 ? "Build a plane in the hangar and fly it."
-            : "Choose the difficulty, the graphics mode, the display settings and the volume levels.",
+            : focus == Modes.Length + 2
+                ? "Choose the difficulty, the graphics mode, the display settings and the volume levels."
+                : "Host a Dogfight over the network, or join one by address.",
+        Screen.Network => NetworkStatus(),
         Screen.Hangar => _hangar?.Page.Detail(focus) ?? "",
         Screen.Campaign => _campaign?.Page.Detail(focus) ?? "",
         // One arm per row of the Options screen, in the order RowText writes them. A row that lost

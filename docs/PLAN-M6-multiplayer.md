@@ -164,7 +164,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 12. ☐ Fire, hit, damage and death events in the decoded order, scored by the host
 13. ☐ Host-owned spawn and respawn from `net.zrd` and the rotation, applied by guests
 14. ☐ Match state: clock, limits, end and scoreboard replicated
-15. ◐ The ENet transport, host and join by direct IP with UPnP, and the multiplayer door's join board (`BL-951`)
+15. ☑ The ENet transport, host and join by direct IP with UPnP, and the multiplayer door's join board (`BL-951`)
 
 ### Wave C, campaign co-op
 
@@ -705,9 +705,9 @@ asserting the hold on both peers>
 
 **⚠ Traps.** <TODO: none known yet>
 
-## B15 ◐ The ENet transport, host and join by direct IP with UPnP, and the multiplayer door's join board (`BL-951`)
+## B15 ☑ The ENet transport, host and join by direct IP with UPnP, and the multiplayer door's join board (`BL-951`)
 
-**Landed (transport half).** `CSVM/src/Net/EnetTransport.cs` implements A1's `INetTransport` over
+**Landed (the transport).** `CSVM/src/Net/EnetTransport.cs` implements A1's `INetTransport` over
 Godot's `ENetMultiplayerPeer`, and is the only file under `CSVM/` that names a Godot networking
 type. The peer wrapper was taken over `ENetConnection` for two reasons: its three transfer modes
 are exactly the three reliability classes (`Unreliable` is an unsequenced packet, `UnreliableOrdered`
@@ -733,16 +733,62 @@ unreliable payload, and a hang-up that empties both rosters and swallows the sen
 `CSVM.Tests/EnetTransportTests.cs` pins the class-to-delivery mapping and the argument refusals;
 `CSVM.Tests/NetNamespaceDependencyTests.cs` now exempts the two carriers by full name from the
 no-engine-type rule and holds the networking half of that exemption to `EnetTransport` in a second
-fact.
+fact. The transport also carries `INetLink` (`LinkState`, `PendingPayloads`) and a hold-and-replay:
+a socket with no listener holds what lands and replays it on `Bind`, which is what lets a guest's
+handshake survive the gap between the join landing on the board and the session existing.
 
-**The second half still owes:** the join board from `BL-951` (re-verify it still open first), the
-`LauncherContext` wiring that constructs `Host`/`Join` and hands the transport to `GameSession`,
-the UPnP result on the board, the headless second-instance smoke over loopback IP, and the
-amendments to `SECURITY.md`'s surface statement and `docs/PLAN-public-release.md`'s "no network
-code" grep, which this half makes false and deliberately left alone because a sibling agent owns
-`Launcher.cs` and `GameSession.cs`.
+**Landed (the door).** `CSVM/src/UI/Menu/NetPlayFeature.cs` is the door as a shared `IMenuFeature`,
+naming neither an engine type nor a carrier. It owns the port and the address a board edits, the
+socket `OpenHost`/`OpenJoin` open, and the readouts a board draws (`Stage`, `Peers`, `Link`,
+`PortMap`, `Fault`, `HostStarted`). Both carrier factories and both port-mapping calls arrive as
+delegates, so the launcher passes `EnetTransport` and `UpnpPortMap` while a suite passes a loopback
+mesh and no router. A join lands on `Step`, never in the press, and gives up after
+`JoinTimeoutSeconds`. The UPnP ask runs on its own thread from where hosting opens, so no frame
+waits on the gateway search; the unmap does not, since a mapping left behind is a door standing
+open in the player's router. `BuildLaunch` hands the open wire out as a `MenuNetLaunch` and keeps
+nothing but the mapping, which `Close` gives back.
+
+**Landed (the board and the wiring).** `CSVM/src/UI/LaunchMenu.cs` draws the board: a Multiplayer
+row at the end of the Mode screen opens a five-row Network screen (port, address, Host a match,
+Join by address, Continue) whose status line reports the port, the link state, the joined count and
+the external address once the router has named one. `PlayerSetupFeature.Refusal`/`CanLaunch` and
+the static `LaunchMenu.CanLaunch` take an optional `networked` flag, so a networked Dogfight no
+longer asks for a second local pilot. `CSVM/src/Session/Launcher.cs` registers the door with the
+real carrier and router calls, carries `LaunchExit.Net` into the one `LauncherContext` it builds
+(`NetTransport`, `NetHost`, `NetSeats` and `NetAirframes` over
+`UI/PlanePickerRoster.StockAirframes`, which A5's suite builds its seats the same way from), and
+closes the launch at `ReturnToMenu` and at the quit. `CSVM/src/SessionSpec.cs` parses
+`--net-host[=port|address:port]` and `--net-join=address[:port]` through public `ParseHost` and
+`ParseJoin`, and a CLI guest holds at the launch until the link stands or 30 seconds pass.
+`GameSession.cs` is untouched: the session already takes the wire through `LauncherContext`.
+
+**Landed (the smoke).** `CSVM/src/Testing/NetEnetSessionSuites.cs`'s `net-enet-join` puts a host
+and a guest `GameSession` over two real ENet sockets on `127.0.0.1`, walking the port until one
+opens, and asserts the seed, the roster and the local seats a guest takes from the handshake plus
+the payload counters after a lockstep. Its able-to-fail control is the hold-and-replay: the guest's
+socket is stepped unbound until it holds at least two payloads, and binding the session replays
+them. `CSVM/src/Testing/MenuNetPlaySuites.cs`'s `menu-net-door` drives the board as a player does,
+including the control that an open door refuses to move its own port row.
+`CSVM.Tests/NetPlayFeatureTests.cs` pins the door itself over a loopback mesh in ten facts.
+⚠ The honest limit: this is one process. A second game process cannot be driven from the hidden
+desktop without putting a window on somebody's screen, so what crosses here is the ENet carrier
+over real UDP, not the process boundary. Two machines, and a NAT between them, remain unmeasured.
+
+**Landed (the release documents).** `.github/SECURITY.md` now states the surface as it is (a UDP
+listener behind an explicit host action, nothing listening otherwise, no server contacted) and puts
+the listener and its port mapping in scope. `docs/PLAN-public-release.md`'s grep list is narrowed
+to the terms that are still absent and names the two files the ENet and UPnP types are confined to.
 
 **Verified.** <pending orchestrator run>
+
+**Owed.** A host and a guest agree on the map, the match rules and the aircraft by hand: nothing is
+exchanged before the session is built, so each end picks its own and a disagreement is silent, and
+a host's roster gives every remote seat the local pilot's airframe (`BL-1022`). The Original
+presentation has no board over the shared door (`BL-1021`). `BL-951`'s local join board is
+untouched and stays open. LAN and WAN play, and the firewall and router behaviour that comes with
+them, need two machines and a friend.
+
+**Original approach (kept for reference).**
 
 **Goal.** One player hosts from the menu, another joins by address, and both land in a Dogfight
 that plays as it does on the harness.
@@ -751,15 +797,20 @@ that plays as it does on the harness.
 unreliable-ordered channels over UDP and its `UPNP` class maps a port on the host's router; both
 untested here. `BL-951` (`backlog.md`, the local multiplayer door and join board) describes the
 board this item widens with network seats; it was not re-verified still-open in the scoping
-session. <TODO: re-verify `BL-951` still-open against `git log --grep=BL-951` and
-`UI/Menu/Original/OriginalSeats.cs`>
+session. Re-verified open: `git log --grep=BL-951` finds only the retag that moved it from
+`[Next: decide]` to `[Next: code]` and the merge carrying it, no closing commit, and
+`git log -S"JoiningOpen"` and `-S"ClaimP1Pad"` show the scattered per-screen join the item
+describes still in place. The network door landed here is a separate board and leaves it open.
 
 **Approach.** `EnetTransport` implements A1's interface and is the only file under `CSVM/` naming a
 Godot networking type. The menu door opens the join board from `BL-951` with a host and a join
 action; a joined guest appears as a seat on every peer's board. UPnP is attempted and reported, never
 required.
 
-**Model recommendation.** <TODO: not settled in the scoping session>
+**Model recommendation.** A top-tier model. The item spans four namespaces at once (the carrier,
+the shared feature, the board and the launcher) under two namespace-dependency scans that reject
+the obvious shortcuts, and the timing bug it had to find, a guest's handshake arriving before its
+session exists, is visible only by reading the session's join spin against the transport's step.
 
 **Verify.** The transport half is the `enet-transport` engine suite, both ends in one process over
 `127.0.0.1`, which settles that ENet hosts and joins itself inside a single Godot process

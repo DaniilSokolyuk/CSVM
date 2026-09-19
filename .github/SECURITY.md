@@ -1,9 +1,13 @@
 # Security policy
 
-CSVM is an offline desktop application. Its code opens no network sockets and contacts no
-server: multiplayer is splitscreen on one machine, and there is no update check, telemetry
-or account. What the build does do is parse a lot of binary and JSON that came off disk,
-which is where its realistic security surface is.
+CSVM is a desktop application that contacts no server: there is no update check, no
+telemetry and no account. It does open a UDP socket, but only where the player asks for
+one. Hosting a multiplayer match from the menu's multiplayer door opens a listen server on
+a port the player chooses, and optionally asks the router to forward it; joining one opens
+an outbound connection to an address the player typed. Nothing listens otherwise, and a
+splitscreen or single-player session opens no socket at all. What the build does do in
+every session is parse a lot of binary and JSON that came off disk, which is where its
+realistic security surface is.
 
 ## Supported versions
 
@@ -37,6 +41,8 @@ person's project. If you would like to be named in the advisory, say so.
 - The extraction scripts (`Extract.cmd`, `Extract.ps1`, `ExtractAssets.ps1`,
   `ExtractRof.ps1`) and how they handle the path they are given.
 - The release zip's contents differing from what the release page's SHA-256 says they are.
+- The multiplayer listener while a player is hosting: what a peer can send a host over the
+  match's own messages, and the port mapping the host asks its router for.
 
 ## Out of scope
 

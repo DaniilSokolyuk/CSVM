@@ -47,6 +47,11 @@ public partial class Launcher : Node3D
     // log and short enough that a drop is placed within the sortie. TUNE.
     private const double RateWindowSeconds = 10;
 
+    // How long a --net-host/--net-join launch waits at the socket for the other end before it
+    // gives up and flies alone. Wall seconds, because ENet is on the wall clock. Long enough for
+    // a second process to reach its own launch, short enough to bound a scripted run. TUNE.
+    private const double NetLinkWaitSeconds = 30.0;
+
     // Master-bus index. default_bus_layout.tres sends Music, Effects and Voice into Master, so a
     // gain or a mute written here still reaches every sound while leaving a player's own mix on the
     // three child buses alone.
@@ -214,6 +219,15 @@ public partial class Launcher : Node3D
     // Wheel steps turned since the menu seat last read them, positive toward a list's foot.
     private int _menuWheel;
     private MenuAudioService? _menuAudio;
+    // The multiplayer door, held here as well as on the host because the socket it opens outlives
+    // the board. The launch takes the wire, and the end of the match is where the router's port
+    // goes back.
+    private NetPlayFeature? _netDoor;
+    // The open wire the last menu launch carried, which end of it this machine is, and, on a
+    // host, the field the door saw. Null on every local launch.
+    private Net.INetTransport? _netWire;
+    private Net.NetSeat[]? _netRoster;
+    private bool _netIsHost;
     // The decoded menu layout the Original presentation composes from, loaded once by the
     // availability check and handed to every Original instance the registry creates.
     private MenuLayout? _originalLayout;
@@ -862,6 +876,8 @@ public partial class Launcher : Node3D
             return;
         }
 
+        // Before the build, because the session reads its wire in its own constructor.
+        OpenCliNet();
         // A CLI launch has no load screen, so the cover is the whole of what stands between the
         // build and the session's first real frame. Same rule as the interactive paths: a session
         // starts from dark, whatever opened it.
@@ -1497,6 +1513,10 @@ public partial class Launcher : Node3D
                 : null,
             InstantActionWrapup = _menuDriven ? snapshot => _pendingWrapup = snapshot : null,
             Music = _music,
+            NetTransport = _netWire,
+            NetHost = _netIsHost,
+            NetSeats = _netRoster,
+            NetAirframes = _netWire == null ? null : UI.PlanePickerRoster.StockAirframes,
         });
         AddChild(_session);
         bool built = _session.StartSession();
@@ -1783,6 +1803,14 @@ public partial class Launcher : Node3D
         // different one.
         host.Features.Add(new ControlsFeature((player, profile) =>
             CSVM.Bindings.BindingStore.UserBindings().Save(player, profile)));
+        // The multiplayer door. The carrier and the router arrive as delegates. That is what
+        // keeps the feature, and every board over it, clear of the socket and the engine.
+        _netDoor = new NetPlayFeature(
+            (port, guests, bind) => Net.EnetTransport.Host(port, guests, bind),
+            (address, port) => Net.EnetTransport.Join(address, port),
+            port => Net.UpnpPortMap.Map(port),
+            port => Net.UpnpPortMap.Unmap(port));
+        host.Features.Add(_netDoor);
         host.AddSeat(seat);
         string? reason = host.Select(_spec.ForceBuiltInPresentation, _spec.PresentationOverride);
         string why = reason == null ? "" : $" reason={reason}";
@@ -1966,6 +1994,7 @@ public partial class Launcher : Node3D
     {
         var (planes, pads, fits, customs) = Unpack(launch.Seats);
         LaunchedFrom(launch);
+        TakeNetLaunch(launch, planes);
         _spec = SessionSpec.FromMenu(_cli, launch.Chapter, planes, launch.Mode, launch.InstantAction, fits, customs,
             launch.Match?.KillTarget, launch.Match?.TimeLimitMinutes);
         // Step the master so flying again is a new mission rather than a replay: without this every
@@ -1974,6 +2003,161 @@ public partial class Launcher : Node3D
         StepSortieSeed();
         BindMenuPads(pads);
         BeginLaunch();
+    }
+
+    // The command line's own way onto a wire, for a scripted or headless run. It opens the
+    // socket, waits for the other end on the WALL clock, and leaves the session the fields a
+    // menu launch leaves it. A socket that will not open leaves the launch local, with the
+    // reason logged. A smoke that flies alone reads better than one that never starts.
+    private void OpenCliNet()
+    {
+        if (_spec.NetHostPort == null && _spec.NetJoin == null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_spec.NetHostPort is { } port)
+            {
+                _netWire = Net.EnetTransport.Host(port, Net.NetSeats.MaxPlayers - 1, _spec.NetHostBind);
+                _netIsHost = true;
+            }
+            else
+            {
+                var (address, joinPort) = SessionSpec.ParseJoin(_spec.NetJoin!);
+                _netWire = Net.EnetTransport.Join(address, joinPort);
+                _netIsHost = false;
+            }
+        }
+        catch (System.Exception e) when (e is System.InvalidOperationException or System.ArgumentException)
+        {
+            Log.Error("core", $"net: the command line's socket would not open: {e.Message}");
+            _netWire = null;
+            return;
+        }
+
+        AwaitCliNetLink();
+    }
+
+    // The wall-clock wait a command-line join needs. ENet times itself off real seconds, so the
+    // session's own tight step loop cannot carry a handshake. The link is waited for here, once,
+    // before anything builds. A host waits for its first guest, a guest for its host.
+    private void AwaitCliNetLink()
+    {
+        if (_netWire is not Net.EnetTransport wire)
+        {
+            return;
+        }
+
+        var waited = System.Diagnostics.Stopwatch.StartNew();
+        while (waited.Elapsed.TotalSeconds < NetLinkWaitSeconds)
+        {
+            wire.Step(0.001);
+            if (wire.Peers.Count > 0 && wire.LinkState == Net.EnetLinkState.Up)
+            {
+                Log.Info("core", $"net: linked as {(_netIsHost ? "host" : "guest")} after {waited.Elapsed.TotalSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)} s, {wire.Peers.Count} peer(s)");
+                BuildCliNetRoster();
+                return;
+            }
+
+            OS.DelayMsec(1);
+        }
+
+        Log.Error("core", $"net: nobody on the wire after {NetLinkWaitSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)} s, flying this session alone");
+        wire.Close();
+        _netWire = null;
+        _netIsHost = false;
+    }
+
+    // A command-line host's roster: this machine's own seats, then one per peer that got in. The
+    // remote seats fly the local pilot's airframe, the same limit a menu host has.
+    private void BuildCliNetRoster()
+    {
+        if (!_netIsHost || _netWire == null)
+        {
+            return;
+        }
+
+        var seats = new List<Net.NetSeat>();
+        for (int i = 0; i < _spec.Players && seats.Count < Net.NetSeats.MaxPlayers; i++)
+        {
+            seats.Add(new Net.NetSeat
+            {
+                PeerId = _netWire.LocalPeer,
+                SeatIndex = seats.Count,
+                IsLocal = true,
+                Callsign = UI.SplitScreen.PlayerTag(i),
+                PlaneNode = i < _spec.PlaneNames.Count ? _spec.PlaneNames[i] : _spec.PlaneName,
+            });
+        }
+
+        foreach (int peer in _netWire.Peers)
+        {
+            if (seats.Count >= Net.NetSeats.MaxPlayers)
+            {
+                break;
+            }
+
+            seats.Add(new Net.NetSeat
+            {
+                PeerId = peer,
+                SeatIndex = seats.Count,
+                Callsign = $"guest {peer.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+                PlaneNode = _spec.PlaneName,
+            });
+        }
+
+        Net.NetSeats.Validate(seats);
+        _netRoster = seats.ToArray();
+    }
+
+    // The wire a menu launch carried, kept for the session build. A host also builds the match's
+    // roster here. The transport's peer list is the field, and the door is the only thing that
+    // has seen it. A guest builds none, since the host's roster replaces whatever it had.
+    // ⚠ A remote seat flies the local pilot's own airframe. No pre-session message carries a
+    // guest's pick, so its plane is agreed by the two players rather than by the wire.
+    private void TakeNetLaunch(LaunchExit launch, IReadOnlyList<string> planes)
+    {
+        _netWire = launch.Net?.Transport;
+        _netIsHost = launch.Net?.IsHost ?? false;
+        _netRoster = null;
+        if (_netWire == null || !_netIsHost)
+        {
+            return;
+        }
+
+        var seats = new List<Net.NetSeat>(planes.Count + _netWire.Peers.Count);
+        for (int i = 0; i < planes.Count; i++)
+        {
+            seats.Add(new Net.NetSeat
+            {
+                PeerId = _netWire.LocalPeer,
+                SeatIndex = seats.Count,
+                IsLocal = true,
+                Callsign = UI.SplitScreen.PlayerTag(i),
+                PlaneNode = planes[i],
+            });
+        }
+
+        foreach (int peer in _netWire.Peers)
+        {
+            if (seats.Count >= Net.NetSeats.MaxPlayers)
+            {
+                break;
+            }
+
+            seats.Add(new Net.NetSeat
+            {
+                PeerId = peer,
+                SeatIndex = seats.Count,
+                Callsign = $"guest {peer.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+                PlaneNode = planes[0],
+            });
+        }
+
+        Net.NetSeats.Validate(seats);
+        _netRoster = seats.ToArray();
     }
 
     // The seat choices as the four parallel lists the spec factories take. The fits ride
@@ -2103,6 +2287,28 @@ public partial class Launcher : Node3D
         BlankAndQuit();
     }
 
+    // The end of a network flight: the wire the match ran on is dropped, and the door gives the
+    // router's forwarded port back. The door handed the transport over at the launch and no
+    // longer closes it, so that half is the session layer's. A door that mapped nothing pays
+    // nothing here.
+    private void CloseNetLaunch()
+    {
+        if (_netWire == null)
+        {
+            return;
+        }
+
+        if (_netWire is System.IDisposable open)
+        {
+            open.Dispose();
+        }
+
+        _netWire = null;
+        _netRoster = null;
+        _netIsHost = false;
+        _netDoor?.Close();
+    }
+
     /// <summary>The three quits reached from a frame that is still drawing: blacks the persistent
     /// <c>WorldEnvironment</c>'s background, then ends the frame. <c>Quit()</c> ends the frame
     /// rather than the process, so one more frame is drawn and that image is held on screen for
@@ -2111,6 +2317,7 @@ public partial class Launcher : Node3D
     /// ⚠ Every probe exit keeps the bare <c>Quit()</c>: no headless run may pay for this.</summary>
     private void BlankAndQuit()
     {
+        CloseNetLaunch();
         WorldBackdrop.Black(_env);
         GetTree().Quit();
     }
@@ -2129,6 +2336,7 @@ public partial class Launcher : Node3D
             _session = null;
         }
 
+        CloseNetLaunch();
         // The menu is not a session start. A cover left over from one (a mission exited inside its
         // own fade) has nothing left to uncover.
         DropStartCover();

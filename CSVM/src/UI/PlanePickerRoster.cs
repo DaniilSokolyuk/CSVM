@@ -35,6 +35,10 @@ public static class PlanePickerRoster
         "player_warhawk",
     };
 
+    /// <summary>The eleven stock nodes in airframe-id order. A network roster carries an airframe
+    /// as its index into this list, so both peers have to read the one order.</summary>
+    public static IReadOnlyList<string> StockAirframes => AirframeNodes;
+
     /// <summary>The stock node an airframe id flies as, clamped like the def's own fields.</summary>
     public static string AirframeNode(int airframe) =>
         AirframeNodes[Math.Clamp(airframe, 0, AirframeNodes.Length - 1)];

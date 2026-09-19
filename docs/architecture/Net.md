@@ -44,9 +44,9 @@ and the one type under `CSVM/` allowed to name a Godot networking type. `Host` o
 server on a port, `Join` starts a join that reports success as the host joining the roster, and
 both ends address each other by the id ENet assigns, the host being 1. Every roster change and
 every payload comes out of `Step`, the single poll it makes, so "nothing arrives between steps"
-holds here as it does on the loopback. What ENet does differently is written on the members it
-binds: a hang-up finishes a round trip later, not inside the call. Read `UpnpPortMap.cs` next for
-the optional door in the host's own router.
+holds here as it does on the loopback. `INetLink` is where a board and a launcher read the socket
+(`LinkState`, `PendingPayloads`), and a socket with no listener holds what lands and replays it on
+`Bind`. Read `UpnpPortMap.cs` next for the optional door in the host's own router.
 
 ## src/Net/UpnpPortMap.cs
 A best-effort port mapping through Godot's UPnP client, so a host behind a router is reachable

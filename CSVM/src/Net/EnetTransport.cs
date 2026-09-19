@@ -19,6 +19,19 @@ public enum EnetLinkState
     Down,
 }
 
+/// <summary>A carrier that can say where its link stands. The seam itself has no word for that,
+/// and a join board shows it. Only a real socket implements this; a board asks for it and falls
+/// back to the peer roster when a carrier has none.</summary>
+public interface INetLink
+{
+    /// <summary>Where this end's link stands right now.</summary>
+    EnetLinkState LinkState { get; }
+
+    /// <summary>Payloads taken off the socket while no listener was bound; see
+    /// <see cref="INetTransport.Bind"/>, which replays them.</summary>
+    int PendingPayloads { get; }
+}
+
 /// <summary>
 /// The shipped carrier: <see cref="INetTransport"/> over Godot's ENet peer, which is UDP with
 /// ENet's own three delivery classes. Every roster change and every payload is reported from
@@ -28,15 +41,21 @@ public enum EnetLinkState
 /// ⚠ This is the only type under <c>CSVM/</c> that may name a Godot networking type;
 /// <c>CSVM.Tests/NetNamespaceDependencyTests.cs</c> asserts that over compiled metadata.
 /// </summary>
-public sealed class EnetTransport : INetTransport, IDisposable
+public sealed class EnetTransport : INetTransport, INetLink, IDisposable
 {
     /// <summary>The highest channel a caller may send on. ENet fixes a connection's channel count
     /// during its handshake and keeps some channels for itself. Both ends ask for this many, and a
     /// send past it is a programming error rather than a dropped payload.</summary>
     public const int MaxChannel = 8;
 
+    /// <summary>How many payloads are held for a listener that has not bound yet. Deep enough for
+    /// a join answer and the openers behind it, shallow enough that a carrier nobody ever binds
+    /// cannot grow without bound. Past it the oldest held payload is dropped and logged.</summary>
+    public const int HeldPayloads = 64;
+
     private readonly ENetMultiplayerPeer _peer;
     private readonly List<int> _peers = new();
+    private readonly List<(int Peer, int Channel, byte[] Bytes)> _held = new();
     private readonly int _local;
     private INetTransportListener? _listener;
     private bool _closed;
@@ -55,9 +74,10 @@ public sealed class EnetTransport : INetTransport, IDisposable
     /// <inheritdoc/>
     public IReadOnlyList<int> Peers => _peers;
 
-    /// <summary>Where this end's link stands. A guest opens on <see cref="EnetLinkState.Connecting"/>
-    /// and reaches <see cref="EnetLinkState.Up"/> on the step that announces the host. A link that
-    /// fails or is hung up on reads <see cref="EnetLinkState.Down"/> and stays there.</summary>
+    /// <inheritdoc/>
+    /// <remarks>A guest opens on <see cref="EnetLinkState.Connecting"/> and reaches
+    /// <see cref="EnetLinkState.Up"/> on the step that announces the host. A link that fails or is
+    /// hung up on reads <see cref="EnetLinkState.Down"/> and stays there.</remarks>
     public EnetLinkState LinkState => _closed
         ? EnetLinkState.Down
         : _peer.GetConnectionStatus() switch
@@ -66,6 +86,9 @@ public sealed class EnetTransport : INetTransport, IDisposable
             MultiplayerPeer.ConnectionStatus.Connecting => EnetLinkState.Connecting,
             _ => EnetLinkState.Down,
         };
+
+    /// <inheritdoc/>
+    public int PendingPayloads => _held.Count;
 
     /// <summary>Opens a listen server on <paramref name="port"/> for up to
     /// <paramref name="maxPeers"/> guests. <paramref name="bindAddress"/> is every interface by
@@ -116,6 +139,10 @@ public sealed class EnetTransport : INetTransport, IDisposable
     }
 
     /// <inheritdoc/>
+    /// <remarks>The peers this end already has are announced from inside the call, and so is
+    /// every payload taken while nothing was bound, in arrival order. ⚠ Do not drop the replay.
+    /// A join board steps the socket to show its link. The host's answer can land in that
+    /// window, before the session that owns the wire exists.</remarks>
     public void Bind(INetTransportListener listener)
     {
         if (_listener != null)
@@ -127,6 +154,13 @@ public sealed class EnetTransport : INetTransport, IDisposable
         foreach (int peer in _peers.ToArray())
         {
             listener.OnPeerConnected(peer);
+        }
+
+        var held = _held.ToArray();
+        _held.Clear();
+        foreach (var (peer, channel, bytes) in held)
+        {
+            listener.OnPayload(peer, channel, bytes);
         }
     }
 
@@ -191,7 +225,14 @@ public sealed class EnetTransport : INetTransport, IDisposable
             int from = _peer.GetPacketPeer();
             int channel = _peer.GetPacketChannel();
             byte[] payload = _peer.GetPacket();
-            _listener?.OnPayload(from, channel, payload);
+            if (_listener is { } listener)
+            {
+                listener.OnPayload(from, channel, payload);
+            }
+            else
+            {
+                Hold(from, channel, payload);
+            }
         }
     }
 
@@ -211,6 +252,7 @@ public sealed class EnetTransport : INetTransport, IDisposable
         _peer.Close();
         _peer.Dispose();
         _peers.Clear();
+        _held.Clear();
     }
 
     /// <inheritdoc cref="Close"/>
@@ -235,6 +277,20 @@ public sealed class EnetTransport : INetTransport, IDisposable
         {
             throw new ArgumentOutOfRangeException(nameof(port), port, "a port is 1 to 65535");
         }
+    }
+
+    // A payload nobody is bound to take yet, kept for the listener that binds next. The oldest
+    // goes first at the cap: a held payload is a join answer, and the newest is the one still
+    // worth having.
+    private void Hold(int peer, int channel, byte[] payload)
+    {
+        if (_held.Count >= HeldPayloads)
+        {
+            Log.Warn("core", $"net: {HeldPayloads} payloads held with no listener bound, dropping the oldest");
+            _held.RemoveAt(0);
+        }
+
+        _held.Add((peer, channel, payload));
     }
 
     private void OnEnetPeerConnected(long id)

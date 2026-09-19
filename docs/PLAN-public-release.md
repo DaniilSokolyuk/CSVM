@@ -764,9 +764,13 @@ README's wording, extended with what a contributor should do about their own. `S
 the surface (the file parsers, the `user://` state files, the extraction scripts, and a zip
 disagreeing with its published SHA-256), the private advisory channel rather than an issue, that
 only the newest release gets fixes, and that the unsigned SmartScreen warning is out of scope by
-design. Its "no network code" claim is grepped rather than assumed: `System.Net`, `HttpClient`,
-`WebSocket`, `UdpClient`, `TcpClient`, `HTTPRequest`, `ENetMultiplayerPeer` and `MultiplayerApi`
-have no hit anywhere under `CSVM/`, scenes included.
+design. Its "contacts no server" claim is grepped rather than assumed: `System.Net`, `HttpClient`,
+`WebSocket`, `UdpClient`, `TcpClient`, `HTTPRequest` and `MultiplayerApi` have no hit anywhere
+under `CSVM/`, scenes included, so no build reaches out on its own. The multiplayer door is the
+one socket, and the page states it rather than grepping it away: `ENetMultiplayerPeer` lives only
+in `CSVM/src/Net/EnetTransport.cs` and Godot's UPnP client only in `CSVM/src/Net/UpnpPortMap.cs`,
+the two exemptions `CSVM.Tests/NetNamespaceDependencyTests.cs` asserts over compiled metadata,
+and nothing listens until the player hosts.
 
 `ISSUE_TEMPLATE/config.yml` keeps blank issues on deliberately, with the reason in the file:
 Discussions stay off so there is one surface, which leaves a question or a suggestion nowhere to go

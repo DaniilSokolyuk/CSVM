@@ -148,6 +148,19 @@ public sealed record SessionSpec
     /// <summary>Resolved. <c>--vs-time=</c> was spelled out, so the flag beats a time limit
     /// a menu screen chose (<see cref="FromMenu"/>).</summary>
     public bool VsTimeExplicit { get; private set; }
+    /// <summary><c>--net-host</c>, <c>--net-host=port</c> or <c>--net-host=address:port</c>: open
+    /// a listen server on that port and fly this session as its host. Null when the flag is
+    /// absent. A scripted smoke is what it is for; a player opens the same socket from the menu's
+    /// multiplayer door. Split with <see cref="ParseHost"/>.</summary>
+    public int? NetHostPort { get; private set; }
+    /// <summary>Which interface <c>--net-host=</c> binds, every one of them unless its value
+    /// named an address. ⚠ A scripted run names 127.0.0.1: a wildcard bind is what makes Windows
+    /// put a firewall dialog on somebody's screen.</summary>
+    public string NetHostBind { get; private set; } = "*";
+    /// <summary><c>--net-join=address</c>, or <c>address:port</c>: join the match at that address
+    /// and fly this session as a guest. Null when the flag is absent. Split with
+    /// <see cref="ParseJoin"/>.</summary>
+    public string? NetJoin { get; private set; }
     /// <summary><b>Resolved.</b> Open the aircraft's per-part HP sliders at launch, a modifier on
     /// <see cref="SessionMode.Viewer"/> (the parked plane) or <see cref="SessionMode.Fly"/> (the
     /// flown one), dropped by the modes that build no aircraft at all. The lab itself is always
@@ -933,6 +946,9 @@ public sealed record SessionSpec
             else if (arg == "--coop") { s.Coop = true; }
             else if (arg.StartsWith("--vs-kills=")) { s.VsKills = int.Parse(arg["--vs-kills=".Length..]); s.VsKillsExplicit = true; }
             else if (arg.StartsWith("--vs-time=")) { s.VsTimeMinutes = int.Parse(arg["--vs-time=".Length..]); s.VsTimeExplicit = true; }
+            else if (arg == "--net-host") { s.NetHostPort = UI.Menu.NetPlayFeature.DefaultPort; }
+            else if (arg.StartsWith("--net-host=")) { var h = ParseHost(arg["--net-host=".Length..]); s.NetHostBind = h.Bind; s.NetHostPort = h.Port; }
+            else if (arg.StartsWith("--net-join=")) { s.NetJoin = arg["--net-join=".Length..]; }
             else if (arg == "--freecam") { s._freecamArg = true; s.HasContentArg = true; }
             else if (arg == "--anim-lab") { s._animLabArg = true; s.HasContentArg = true; }
             else if (arg.StartsWith("--play-anim=")) { s.PlayAnim = arg["--play-anim=".Length..]; s.HasContentArg = true; }
@@ -1415,6 +1431,48 @@ public sealed record SessionSpec
         s.TexOverrides = texOverrides;
         s.Resolve();
         return s;
+    }
+
+    /// <summary>Splits a <see cref="NetJoin"/> value into the address and the port to join. A
+    /// value naming no port takes the door's own default. An IPv6 address is written in brackets,
+    /// which is what tells its colons from the port's.</summary>
+    public static (string Address, int Port) ParseJoin(string value)
+    {
+        string text = value ?? "";
+        int PortOf(string field) =>
+            int.TryParse(field, NumberStyles.Integer, CultureInfo.InvariantCulture, out int port)
+            && port is > 0 and < 65536
+                ? port
+                : UI.Menu.NetPlayFeature.DefaultPort;
+
+        int bracket = text.IndexOf("]:", StringComparison.Ordinal);
+        if (text.StartsWith('[') && bracket > 0)
+        {
+            return (text[1..bracket], PortOf(text[(bracket + 2)..]));
+        }
+
+        int colon = text.LastIndexOf(':');
+        if (colon > 0 && text.IndexOf(':') == colon)
+        {
+            return (text[..colon], PortOf(text[(colon + 1)..]));
+        }
+
+        return (text.Trim('[', ']'), UI.Menu.NetPlayFeature.DefaultPort);
+    }
+
+    /// <summary>Splits a <see cref="NetHostPort"/> value: a bare port binds every interface, and
+    /// an <c>address:port</c> binds that one address, by the same rules as
+    /// <see cref="ParseJoin"/>.</summary>
+    public static (string Bind, int Port) ParseHost(string value)
+    {
+        string text = value ?? "";
+        if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int bare))
+        {
+            return ("*", bare is > 0 and < 65536 ? bare : UI.Menu.NetPlayFeature.DefaultPort);
+        }
+
+        var (address, port) = ParseJoin(text);
+        return (address.Length == 0 ? "*" : address, port);
     }
 
     /// <summary>The spec for a launchscreen launch, one plane per player, derived from the pristine

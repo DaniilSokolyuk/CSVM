@@ -356,15 +356,16 @@ public sealed class PlayerSetupFeature : IMenuFeature
 
     /// <summary>Why a launch in <paramref name="mode"/> is refused right now, or null when it
     /// may go: at least the mode's minimum of seats, every seat confirmed. A lone Dogfight seat
-    /// is refused for the second seat before its own confirmation.</summary>
-    public string? Refusal(MenuMode mode)
+    /// is refused for the second seat before its own confirmation, unless
+    /// <paramref name="networked"/>, where the opponent sits at another machine.</summary>
+    public string? Refusal(MenuMode mode, bool networked = false)
     {
         if (_seats.Count == 0)
         {
             return "no seat joined";
         }
 
-        if (_seats.Count < MinimumSeats(mode))
+        if (!networked && _seats.Count < MinimumSeats(mode))
         {
             return "Dogfight needs a second seat";
         }
@@ -378,8 +379,9 @@ public sealed class PlayerSetupFeature : IMenuFeature
         return null;
     }
 
-    /// <summary>Whether the launch gate is open for <paramref name="mode"/>; see <see cref="Refusal"/>.</summary>
-    public bool CanLaunch(MenuMode mode) => Refusal(mode) == null;
+    /// <summary>Whether the launch gate is open for <paramref name="mode"/>; see
+    /// <see cref="Refusal"/>.</summary>
+    public bool CanLaunch(MenuMode mode, bool networked = false) => Refusal(mode, networked) == null;
 
     /// <summary>One <see cref="MenuSeatChoice"/> per seat in seat order: the roster row's node,
     /// the flight devices <paramref name="flightDevices"/> answers for the seat (the source's own

@@ -958,6 +958,22 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   layout is the form in another file. *Cross-refs:* `BL-1014`, `BL-1015`,
   `docs/menu-presentations.md`, `docs/architecture/UI.md`.
 
+- `BL-1021` `[Feature]` `[M]` `[Next: look]` `[Impact: high]` `[Evidence: trace]` **The Original
+  presentation has no multiplayer door, so hosting or joining a networked match is reachable only
+  from Built-in.** *Evidence:* `NetPlayFeature` is a shared `IMenuFeature` and names no
+  presentation, but only `LaunchMenu.cs` draws a board over it (the Mode screen's last row, then
+  five rows for the port, the address, Host, Join and Continue). `OriginalShell` offers no row for
+  it, for the same reason it offers no Dogfight match rules: its Dogfight screen is remake-designed
+  and no authored layout section carries a widget for one. *Fix shape:* a board in the shell's own
+  inks over the same feature, reading `Stage`, `Port`, `Address`, `Peers`, `Link`, `PortMap` and
+  `Fault` and calling `OpenHost`/`OpenJoin`/`Close`; the launch leg needs nothing new, since
+  `BuildLaunch` already rides out on `LaunchExit.Net`. *⚠ Traps:* the feature must keep being
+  stepped every menu frame or a join never lands, which is presentation work, not feature work;
+  the door is remake-only chrome with no shipped art behind it, so the art direction decision the
+  wrap-up page's post-its set is the precedent to follow. *Cross-refs:* `BL-951` (the local join
+  board, still open, and the board this one sits beside), `docs/menu-presentations.md`,
+  `docs/architecture/UI.md`.
+
 ## Splitscreen
 
 Our splitscreen mode (2–4 players) has no counterpart in the original, so every rule it authored
@@ -1121,6 +1137,22 @@ usual.
   not a split. The per-frame tick order across the runtimes is the one thing the session must
   keep in one place; do not scatter it into the extracted modules. *Cross-refs:* `BL-1014`,
   `BL-1016`, `docs/architecture/Session.md`.
+
+- `BL-1022` `[Feature]` `[M]` `[Next: code]` `[Impact: high]` `[Evidence: trace]` **A host and a
+  guest agree on the map and the aircraft by hand: nothing is exchanged before the session starts,
+  so each end picks its own and a disagreement is silent.** *Evidence:* the multiplayer door hands
+  the launch an open transport and nothing else, and both ends then walk their own map screen and
+  their own aircraft select. A guest flying a different chapter than its host gets a world its
+  host is not in, with no word either way. A host's roster gives every remote seat the local
+  pilot's airframe (`Launcher`'s net roster over `PlanePickerRoster.StockAirframes`), because no
+  message carries a guest's pick before the handshake. *Fix shape:* a pre-session exchange over
+  the existing vocabulary, the host announcing the chapter and the match rules and each guest
+  answering with its airframe index, applied before the session is built; the index is into
+  `PlanePickerRoster.StockAirframes`, which both ends already read in one order. *⚠ Traps:* the
+  index is the contract, so a reordering of that list is a wire break, not a cosmetic change; a
+  guest that joins after the host has launched has no screen left to correct a mismatch on, so the
+  exchange belongs before the launch, not after it. *Cross-refs:* `BL-1021`,
+  `docs/architecture/Net.md`, `docs/architecture/Session.md`.
 
 ## Tooling, platform & docs
 
