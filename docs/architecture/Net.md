@@ -43,12 +43,12 @@ sequenced payload at or below the newest already delivered on its channel is dis
 ## src/Net/EnetTransport.cs
 The shipped carrier: the seam over Godot's ENet peer, UDP under ENet's own three delivery classes,
 and the one type under `CSVM/` allowed to name a Godot networking type. `Host` opens a listen
-server on a port, `Join` starts a join that reports success as the host joining the roster, and
-both ends address each other by the id ENet assigns, the host being 1. Every roster change and
-every payload comes out of `Step`, the single poll it makes, so "nothing arrives between steps"
-holds here as it does on the loopback. `INetLink` is where a board and a launcher read the socket
-(`LinkState`, `PendingPayloads`), and a socket with no listener holds what lands and replays it on
-`Bind`. Read `UpnpPortMap.cs` next for the optional door in the host's own router.
+server, `Join` reports success as the host joining the roster, and both ends address each other by
+the id ENet assigns, the host being 1. Every roster change and payload comes out of `Step`, the
+single poll it makes, so "nothing arrives between steps" holds here as on the loopback.
+`ChannelCount` is the events channel plus one per seat, asked for by both ends, since ENet fixes
+it at the handshake and refuses a send past it. `INetLink` is where a board and a launcher read
+the socket, and a socket with no listener holds what lands and replays it on `Bind`.
 
 ## src/Net/SteamTransport.cs
 The Steam carrier's place in the seam with nothing behind it: the Steamworks SDK cannot be
@@ -120,9 +120,9 @@ splitscreen pane does, which is why the session orders its rigs by it. Read
 without a pane.
 
 ## src/Net/NetSeats.cs
-The roster's rules: `MaxPlayers = 8` pilots admitted, every seat-indexed table built
-`SeatCapacity = 16` wide so the ceiling can rise without resizing one, each seat's identity colour,
-and `Validate`, which requires seats numbered from zero with no gap and at least one flown here.
+The roster's rules: `MaxPlayers = 16` pilots admitted, the count the original's lobby shows and
+its data holds, every seat-indexed table built `SeatCapacity = 16` wide, each seat's identity
+colour, and `Validate`, which requires seats numbered from zero with no gap and at least one flown here.
 Seats 0 to 7 take the original's authored dwords at `00628eb4` in order (the remake's index is
 0-based where the original's was 1-based and its eighth pilot read past the table); seats 8 to 15
 take the channel-wise complement of seat minus 8. The channel order and the derived eight are TUNE

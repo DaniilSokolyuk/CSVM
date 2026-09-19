@@ -970,7 +970,13 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   `BuildLaunch` already rides out on `LaunchExit.Net`. *⚠ Traps:* the feature must keep being
   stepped every menu frame or a join never lands, which is presentation work, not feature work;
   the door is remake-only chrome with no shipped art behind it, so the art direction decision the
-  wrap-up page's post-its set is the precedent to follow. *Cross-refs:* `BL-951` (the local join
+  wrap-up page's post-its set is the precedent to follow. The original's own screens are the look
+  reference: `OriginalScreenshots/Multiplayer Connection.png` (the Connection page: MSN Gaming
+  Zone, LAN IPX, LAN TCP/IP, Internet with an IP address field, Modem-to-Modem, a Build Custom
+  Plane panel, Host and Connect), `OriginalScreenshots/Multiplayer Connection Screen.png` (the
+  LAN TCP/IP games list with five sort columns, an auto-refresh toggle, Create Game and Join Game,
+  and a "Searching ..." dialog) and the four `OriginalScreenshots/Multiplayer Lobby *.png` shots
+  (the lobby under `BL-1022`). *Cross-refs:* `BL-951` (the local join
   board, still open, and the board this one sits beside), `docs/menu-presentations.md`,
   `docs/architecture/UI.md`.
 
@@ -1145,7 +1151,15 @@ usual.
   their own aircraft select. A guest flying a different chapter than its host gets a world its
   host is not in, with no word either way. A host's roster gives every remote seat the local
   pilot's airframe (`Launcher`'s net roster over `PlanePickerRoster.StockAirframes`), because no
-  message carries a guest's pick before the handshake. *Fix shape:* a pre-session exchange over
+  message carries a guest's pick before the handshake. The original agrees all of it in a lobby,
+  the four `OriginalScreenshots/Multiplayer Lobby *.png` shots: a `Players (1 of 16)` roster with
+  a Ready box per pilot, Boot and Create Team, a chat line, and four tabs. Mission Options is the
+  host's page (Mission Environment, Mission Type with its description, Victory Conditions as one
+  of Time in minutes or Score, Restrict Number of Teams with a range, Limited Lives and Auto
+  Respawn, Allow Custom Planes with Outlaw Components); Select Plane (Default or Custom, stats
+  and the gun and hardpoint census) and Select Ammo (a shell type per gun calibre and a rocket
+  type per hardpoint, eight rows) are per pilot; Game Scores is the fourth tab. *Fix shape:* a
+  pre-session exchange over
   the existing vocabulary, the host announcing the chapter and the match rules and each guest
   answering with its airframe index, applied before the session is built; the index is into
   `PlanePickerRoster.StockAirframes`, which both ends already read in one order. *⚠ Traps:* the

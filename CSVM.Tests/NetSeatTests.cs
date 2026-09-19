@@ -25,10 +25,10 @@ public sealed class NetSeatTests
     [Fact]
     public void TheCeilingStandsBehindAWiderTable()
     {
-        Assert.Equal(8, NetSeats.MaxPlayers);
+        Assert.Equal(16, NetSeats.MaxPlayers);
         Assert.Equal(16, NetSeats.SeatCapacity);
-        Assert.True(NetSeats.SeatCapacity > NetSeats.MaxPlayers,
-            "the ceiling has to be raisable without resizing a table");
+        Assert.True(NetSeats.SeatCapacity >= NetSeats.MaxPlayers,
+            "every seat-indexed table has to hold the whole ceiling");
     }
 
     [Fact]

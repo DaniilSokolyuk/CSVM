@@ -6,21 +6,20 @@ namespace CSVM.Net;
 /// <summary>
 /// The seat roster's own rules. How many pilots a match admits, how wide every seat-indexed table
 /// is, each seat's identity colour, and what makes a roster well formed. The ceiling and the table
-/// width are two numbers on purpose. Raising the ceiling is then this one constant plus the colour
-/// and respawn-fan entries, rather than a sweep of every array.
+/// width are two numbers on purpose. Lowering the ceiling is then this one constant, and raising
+/// the width is the data's block size, rather than a sweep of every array.
 /// </summary>
 public static class NetSeats
 {
-    /// <summary>Pilots one match admits. The original codes no cap at all. Eight is the value its
-    /// lobby ships, and the width its authored colour table and respawn fan are drawn for. Raising
-    /// it needs authored colours and a finer fan, not only a bigger number
+    /// <summary>Pilots one match admits. The original codes no cap at all; its lobby shows
+    /// "Players (1 of 16)" and its data holds 16. Its authored colour table and respawn fan serve
+    /// eight, so seats past that take derived colours and a wrapped fan
     /// (<c>docs/org/multiplayer-spawn.md</c>).</summary>
-    public const int MaxPlayers = 8;
+    public const int MaxPlayers = 16;
 
-    /// <summary>How wide every seat-indexed table is built. Above <see cref="MaxPlayers"/>, so the
-    /// ceiling can rise without resizing one. Sixteen is what the original's own data already
-    /// holds: 16-entry spawn blocks, a 16-entry lobby player array and a 16-entry team
-    /// array.</summary>
+    /// <summary>How wide every seat-indexed table is built, never below <see cref="MaxPlayers"/>.
+    /// Sixteen is what the original's own data holds: 16-entry spawn blocks, a 16-entry lobby
+    /// player array and a 16-entry team array.</summary>
     public const int SeatCapacity = 16;
 
     // The original's per-pilot colour table at 00628eb4, eight dwords, zeros from 00628ed4. Each

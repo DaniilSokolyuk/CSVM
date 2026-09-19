@@ -221,6 +221,18 @@ internal static class EnetTransportSuites
         bool carried = landed != null && landed.Channel == 0 && landed.Bytes.SequenceEqual(loose);
         ctx.Check(carried,
             $"an unreliable payload carries too, on the default channel (channel {landed?.Channel}, {landed?.Bytes.Length} of {loose.Length} bytes)");
+
+        // The last seat's channel is the highest one negotiated. A count one short would refuse
+        // it silently at the socket, which no loopback suite can see.
+        atGuest.Payloads.Clear();
+        int top = NetChannels.ForSeat(NetSeats.MaxPlayers - 1);
+        byte[] far = Payload(0x22, 8);
+        host.Send(guestPeer, far, NetReliability.UnreliableSequenced, channel: top);
+        Pump(host, guest, () => atGuest.Payloads.Count > 0);
+        var topLanded = atGuest.Payloads.FirstOrDefault();
+        bool topCarried = topLanded != null && topLanded.Channel == top && topLanded.Bytes.SequenceEqual(far);
+        ctx.Check(topCarried && top == EnetTransport.ChannelCount - 1,
+            $"and the last seat's channel, the highest negotiated, carries over the socket (channel {top} of {EnetTransport.ChannelCount}, landed on {topLanded?.Channel})");
     }
 
     private static void HangUp(TestContext ctx, EnetTransport host, EnetTransport guest,

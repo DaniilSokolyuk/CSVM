@@ -43,10 +43,11 @@ public interface INetLink
 /// </summary>
 public sealed class EnetTransport : INetTransport, INetLink, IDisposable
 {
-    /// <summary>The highest channel a caller may send on. ENet fixes a connection's channel count
-    /// during its handshake and keeps some channels for itself. Both ends ask for this many, and a
-    /// send past it is a programming error rather than a dropped payload.</summary>
-    public const int MaxChannel = 8;
+    /// <summary>How many channels a connection carries, 0 to one below this. ENet fixes the count
+    /// during its handshake, so both ends ask for the same number. It is the reliable events
+    /// channel and one per seat, as <see cref="NetChannels"/> lays them out. A send past the count
+    /// is a programming error rather than a dropped payload.</summary>
+    public const int ChannelCount = NetChannels.FirstSeat + NetSeats.SeatCapacity;
 
     /// <summary>How many payloads are held for a listener that has not bound yet. Deep enough for
     /// a join answer and the openers behind it, shallow enough that a carrier nobody ever binds
@@ -105,7 +106,7 @@ public sealed class EnetTransport : INetTransport, INetLink, IDisposable
 
         var peer = new ENetMultiplayerPeer();
         peer.SetBindIP(bindAddress);
-        var error = peer.CreateServer(port, maxPeers, MaxChannel);
+        var error = peer.CreateServer(port, maxPeers, ChannelCount);
         if (error != Error.Ok)
         {
             peer.Dispose();
@@ -128,7 +129,7 @@ public sealed class EnetTransport : INetTransport, INetLink, IDisposable
         }
 
         var peer = new ENetMultiplayerPeer();
-        var error = peer.CreateClient(address, port, MaxChannel);
+        var error = peer.CreateClient(address, port, ChannelCount);
         if (error != Error.Ok)
         {
             peer.Dispose();
@@ -167,9 +168,9 @@ public sealed class EnetTransport : INetTransport, INetLink, IDisposable
     /// <inheritdoc/>
     public void Send(int peer, ReadOnlySpan<byte> payload, NetReliability reliability, int channel = 0)
     {
-        if (channel is < 0 or > MaxChannel)
+        if (channel is < 0 or >= ChannelCount)
         {
-            throw new ArgumentOutOfRangeException(nameof(channel), channel, $"a channel is 0 to {MaxChannel}");
+            throw new ArgumentOutOfRangeException(nameof(channel), channel, $"a channel is 0 to {ChannelCount - 1}");
         }
 
         if (LinkState != EnetLinkState.Up || !_peers.Contains(peer))

@@ -52,7 +52,7 @@ that finds itself replicating a mesh, a node or an animation has left this plan.
 | 2 | Is campaign co-op in scope | **Yes**, as the host's campaign with guests, the same shape as the local splitscreen campaign co-op; not per-guest profiles or progression |
 | 3 | Which modes first | **Dogfight and co-op**, the flag and zeppelin modes later |
 | 4 | Hosting model | **Listen server** (one player hosts); a dedicated headless host later |
-| 5 | Player ceiling | **8, behind a constant that is 16-safe**; the executable has no coded cap, 8 is the shipped lobby value and the data holds 16 |
+| 5 | Player ceiling | **16, one constant with every seat-indexed table built to the same width**; the executable has no coded cap, the shipped lobby shows `Players (1 of 16)` and the data holds 16. The authored colour table and the 45-degree respawn fan serve eight, so seats 8 to 15 take derived colours (`BL-1017`) and a wrapped fan. Revised from 8 when the lobby screenshots arrived |
 | 6 | Steam | **Not decided here.** The transport goes behind a flag so a Steam build (Steam Networking Sockets, relay, lobbies, invites) can be added without touching the session; the store listing is a separate legal and distribution decision |
 | 7 | Where the seam goes | **Two interfaces above the transport**: a remote-airframe arm beside `IFlightInputSource` on the aircraft side and a transport interface on the session side; a remote human is a pose that arrives late, never a stick that arrives late |
 | 8 | Hit authority | **Shooter's client decides the hit, the victim applies the damage and reports its own death, the host scores**, the decoded original's order, no lag compensation. The hit itself is a **reliable** message, confirmed after A2 found the original batches hits inside its unreliable aircraft-state packet: a lost hit would be a lost kill |
@@ -107,6 +107,19 @@ team array 16 (`00645590`, stride 0x10), both filled with no bound check; the sc
 limit: types 0x13 and 0x27 are allocated from the live counts with 16-bit length fields, and ids
 are 32-bit DPIDs. Raising the remake past 8 costs the colour table, the 45-degree fan, the 16-entry
 spawn block assumption and the four lobby arrays.
+
+**The shipped lobby, as seen.** `OriginalScreenshots/Multiplayer Lobby Mission Options.png`,
+`... Select Plane.png`, `... Select Ammo Guns.png` and `... Select Ammo Rockets.png` (the main
+checkout only, git-ignored) show the 1.02 lobby: the roster reads `Players (1 of 16)`, which is
+why Decision 5 is 16 rather than the 8 first assumed; each pilot has a Ready box; the host's Mission Options
+page holds the environment, the mission type, Victory Conditions as one of Time (mins, default
+10) or Score (default 40), Restrict Number of Teams with a range (default 2 to 2), Limited Lives,
+Auto Respawn, Allow Custom Planes and Outlaw Components; Select Plane and Select Ammo (a shell
+per gun calibre, a rocket per hardpoint, eight rows) are per pilot; the fourth tab is Game
+Scores. `Multiplayer Connection.png` and `Multiplayer Connection Screen.png` are the Connection
+page (MSN Gaming Zone, LAN IPX, LAN TCP/IP, Internet by IP address, Modem-to-Modem) and the LAN
+games list. B14 reads the two victory conditions and the Game Scores tab from here; C24 and
+`BL-1022` read the lobby flow.
 
 **The message shape.** A death is message type `0x12`, built by `FUN_00498a90` and handled by
 `FUN_00498bf0`, carrying a killer id at `+4` and a cause at `+0xc`; the cause table and the three
@@ -412,7 +425,7 @@ rather than a separate flag, so the two cannot disagree.
 **Landed.** Four modules in `CSVM/src/Net/`, and the session wiring that reads them.
 `NetSeat.cs` is the per-seat record shaped like the decoded pilot record (`PeerId`, `SeatIndex`,
 `TeamId`, `IsLocal`, `Callsign`, `PlaneNode`, `Livery`, signed `Score`, and `Color` off the table).
-`NetSeats.cs` holds `MaxPlayers = 8` behind `SeatCapacity = 16`, the colour table (seats 0 to 7 the
+`NetSeats.cs` holds `MaxPlayers = 16` with `SeatCapacity = 16` (raised from 8 under Decision 5's revision), the colour table (seats 0 to 7 the
 eight dwords at `00628eb4` read as red, green, blue; seats 8 to 15 the channel-wise complement of
 seat minus 8, both TUNE, `BL-1017`), and `Validate`, which requires seats numbered from zero with
 no gap and at least one flown here. `NetHandshake.cs` is the host's seed and its session clock at
@@ -754,8 +767,8 @@ which `NetSeat.PeerId` needs and which a raw `ENetConnection` would have made th
 a handshake for. Two static constructors: `Host(port, maxPeers, bindAddress = "*")` opens a listen
 server and is peer 1, `Join(address, port)` starts a join whose success arrives as
 `OnPeerConnected(1)` on a later step. `Send` picks the mode from `NetReliability` and passes the
-caller's channel through, with `MaxChannel = 8` asked for at connect so a channel above zero has a
-negotiated ENet channel to ride. `Step` makes one poll, from which every join, departure and
+caller's channel through, with `ChannelCount` (the events channel plus one per seat) asked for at
+connect so every seat's channel has a negotiated ENet channel to ride. `Step` makes one poll, from which every join, departure and
 payload is reported, so the seam's "nothing arrives between steps" rule holds here as on the
 loopback. `LinkState` (`Connecting`, `Up`, `Down`) is the join board's readout, named here so no
 caller learns Godot's own enum; `Close`/`Dispose` releases the socket.
