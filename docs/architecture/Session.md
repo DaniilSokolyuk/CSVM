@@ -11,14 +11,14 @@ The per-launch orchestrator: `Launcher` constructs it from `(SessionSpec, Launch
 local `BuildState`. It owns the session clock, world root, panes, seats, mode runtimes and resource lifetimes, delegating aircraft assembly and
 membership to `FlightRoster`, world construction to `WorldSession`, and effects staging to `WorldEffectsFactory`. `_rigs` is the pane list every
 camera-anchored system reads; `_seatRigs` is the whole field, a network match's guests included, and is what the roster, the spawn walk, the versus
-board and the respawn rotation are sized by. A context transport opens a `Net.NetSession` in the constructor, before the world, so a host can answer
-a join it has not built for yet; a guest's start is therefore two phases, and `AwaitNetJoin` pumps that wire until the host's seed, seat and roster
-have landed, ahead of `Rng.Reset` and of the seat sizing. A handshake's clock opens the `NetClockSlew` advanced each frame. After the synchronous
-build it constructs one `SessionSimulation`, which owns the step order; `_PhysicsProcess` requests one realtime step and `_Process` each
-parent-driven `GameClock` substep, and both step the wire first, so an arrival is applied on the step after it landed. `AllAircraft` combines the
-roster's AI view with the ordered rig controllers, and `OrderWaveAirframes` with `StepOwedLoad` puts the coming waves' aeroplanes behind the load
-screen. Exit frees the session subtree atomically and releases only the non-node resources this orchestrator owns. The prohibitions that keep those
-rules true, no `Teardown`, no argument parsing here and no re-derived camera set, sit on the members they bind. Read `SessionSimulation.cs` next.
+board, the respawn rotation and the human-aircraft step are sized by. A context transport opens a `Net.NetSession` in the constructor, before the
+world, so a host can answer a join it has not built for yet; `AwaitNetJoin` pumps that wire until the host's seed, seat and roster have landed,
+ahead of `Rng.Reset` and the seat sizing, and the handshake's clock opens the `NetClockSlew` advanced each frame. After the synchronous build it
+constructs one `SessionSimulation`, which owns the step order; both step paths step the wire before the step, so an arrival is applied on the step
+after it landed, and the human-aircraft phase then puts every seat flown here on the wire on the `AircraftStateCadence`, as the SIM pose, while a
+sample for a seat flown elsewhere reaches that seat's own pose buffer. `AllAircraft` combines the roster's AI view with the ordered rig controllers,
+and `OrderWaveAirframes` with `StepOwedLoad` puts the coming waves behind the load screen. Exit frees the session subtree atomically and releases
+only the non-node resources it owns; the prohibitions that keep these rules true sit on the members they bind. Read `SessionSimulation.cs` next.
 
 ## src/Session/SessionSimulation.cs
 The session simulation: one plain-C# module owning hold admission and the exact order of flight,
@@ -479,14 +479,14 @@ the enemy scale and the spawn jitter, the engine's own order ([../org/vehicleDam
 title, stamps the block's objective marker, and owns the AI skills cache. Read `FlightRoster.cs` next.
 
 ## src/Session/HumanFlightAdapter.cs
-`FlightRoster`'s private human-aircraft path: one `Assemble` builds the painted model, `FlightController`, loadout and ordnance, carried turrets,
-HUD and instruments, damage visuals, audio, stunt and match bindings, target selection, the authored start placement, the Danger Zone eye, the crash
-runtime, and last the `UI.SplitScreen.OwnAirframeLayer` stamp that keeps the whole model out of this pilot's own spyglass disc. A seat the bindings'
-`NetSeats` marks remote is flown elsewhere: it takes the aeroplane, paint, loadout, spawn slot and score row, and skips every pane, HUD, camera,
-listener, pad and pause key, with the roster's own airframe pick beating this machine's launch flags. It reads only the roster's copied policy plus
-the grouped aircraft, world and human-session contracts. Player order decides the shared paint and spawn draws. An airframe swap's captured scheme
-and its own build are laid over that assembly, the one path a bought plane takes. An Instant Action racer takes no `Race`, so it flies on through the
-ending's hold. `BuildDamageVisuals` is also the common first phase for AI damage. Read `FlightRoster.cs` next.
+`FlightRoster`'s private human-aircraft path: `Assemble` builds the painted model, `FlightController`, loadout and ordnance, carried turrets, HUD and
+instruments, damage visuals, audio, stunt and match bindings, target selection, the start placement, the Danger Zone eye, the crash runtime, and last
+the `UI.SplitScreen.OwnAirframeLayer` stamp that keeps the model out of this pilot's spyglass disc. A seat the bindings' `NetSeats` marks remote is
+flown elsewhere: it takes the aeroplane, paint, loadout, spawn slot and score row, is built with the `RemotePoseBuffer` that IS its ownership, and
+skips every pane, HUD, camera, listener, pad and pause key, the roster's airframe pick beating this machine's launch flags. It reads only the roster's
+copied policy plus the grouped aircraft, world and human-session contracts; player order decides the paint and spawn draws. An airframe swap lays its
+captured scheme and own build over that assembly, the one path a bought plane takes. An Instant Action racer takes no `Race`, so it flies on through
+the ending's hold, and `BuildDamageVisuals` opens AI damage too. Read `FlightRoster.cs` next.
 
 ## src/Session/EffectCatalogue.cs
 The record of which authored anims are playable effects and what their defs need staged: the name

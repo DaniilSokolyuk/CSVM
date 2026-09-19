@@ -260,6 +260,7 @@
     "muzzle-flash-cockpit-hidden": 0.1,
     "muzzle-flash-rides-muzzle": 0.02,
     "muzzle-light-first-person-point-term": 0.02,
+    "net-aircraft-replication": 6.5,
     "net-seats": 1.26,
     "net-two-session": 6.5,
     "nitro-ai-edges": 0.45,

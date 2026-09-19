@@ -93,6 +93,9 @@ public partial class GameSession : Node3D
     // This session's end of the wire, null outside a network match. Stepped once per simulation
     // step, before the step, so a payload is applied on the step after it arrived.
     private readonly Net.NetSession? _net;
+    // When the seats flown here go on the wire, and what sequence each sample carries. Advanced
+    // once per simulation step by the human-aircraft phase, which is also the only sender.
+    private readonly Net.AircraftStateCadence _stateCadence = new();
     // Every pane's camera, bound once right after BuildRigs, the session-owned "what do the
     // cameras see" registry draw rules read instead of `_rigs[0]`/`GetViewport().GetCamera3D()`.
     // ProjectilePool.Viewers takes this same instance; B11/B13 are its next consumers.
@@ -517,6 +520,9 @@ public partial class GameSession : Node3D
         // weather visuals below are per-rig). Single player reuses the main-viewport camera.
         BuildRigs(_spec.Fly ? _spec.Players : 1);
         BuildSeatRigs();
+        // Once, at the build, as soon as the seats exist. A sample that lands before its
+        // aeroplane is assembled reaches a seat with no buffer and is dropped there.
+        _net?.On<Net.AircraftStateMessage>((_, sample) => TakeAircraftState(sample));
         // ⚠ Do not let a draw-rule consumer re-derive its camera set from _rigs; every one shares
         // this single registration so they cannot disagree about what the cameras see.
         _viewers.Bind(_rigs.Count > 0 ? _rigs.Select(r => r.Camera)
@@ -3818,6 +3824,47 @@ public partial class GameSession : Node3D
         Log.Info("flight", $"net seats: {_seatRigs.Count} in the match, {locals} with a pane here");
     }
 
+    // One received sample, handed to the seat it describes. ⚠ Only a seat with a buffer takes
+    // one, which is exactly a seat flown elsewhere. An aeroplane flown here has its pose written
+    // by its own simulation, and no arrival may overrule that. The buffer itself drops a sequence
+    // at or below the newest it holds, so a reordered delivery needs no test here.
+    private void TakeAircraftState(in Net.AircraftStateMessage sample)
+    {
+        if (sample.Seat >= _seatRigs.Count)
+        {
+            return;
+        }
+
+        _seatRigs[sample.Seat].Controller?.RemotePoses?.Receive(sample);
+    }
+
+    // The own-aeroplane half of replication, run at the end of the human-aircraft phase so a
+    // sample is this step's settled pose. It is the SIM pose: the render pose is this frame's
+    // interpolation toward it and is nobody else's business. A seat flown elsewhere sends
+    // nothing from here; its samples arrive.
+    private void BroadcastAircraftState()
+    {
+        if (_net is not { } net || _netSeats.Count == 0 || !_stateCadence.StepSends())
+        {
+            return;
+        }
+
+        for (int i = 0; i < _netSeats.Count && i < _seatRigs.Count; i++)
+        {
+            if (!_netSeats[i].IsLocal || _seatRigs[i].Controller is not { } flown)
+            {
+                continue;
+            }
+
+            int seat = _netSeats[i].SeatIndex;
+            var stick = flown.LastCommand;
+            net.Broadcast(new Net.AircraftStateMessage(
+                (byte)seat, _stateCadence.Next(seat), flown.WorldPosition,
+                flown.Attitude.GetRotationQuaternion(), flown.WorldVelocity, flown.Throttle,
+                stick.Roll, stick.Pitch, stick.Yaw, flown.Nitro.Boosting));
+        }
+    }
+
     // One interior render pass per rig, on that player's own HUD parent, so splitscreen gets a
     // pass per pane rather than one for the window (--no-cockpit-pass opts out). Built after the rigs, since
     // the interior it moves is the plane build's and the sun and environment it copies are the
@@ -4633,10 +4680,14 @@ public partial class GameSession : Node3D
         public void StepIncomingFire(float dt) => session._incomingFire?.SimStep(dt);
         public void StepProjectiles(float dt) => session._projectiles?.SimStep(dt);
 
+        // Every SEAT, not every pane: a seat flown elsewhere steps here too, which is where its
+        // received history is advanced and read (FlightController.RemoteOwned). Outside a network
+        // match the two lists hold the same rigs.
         public void StepHumanAircraft(float dt)
         {
-            foreach (var rig in session._rigs)
+            foreach (var rig in session._seatRigs)
                 rig.Controller?.SimStep(dt);
+            session.BroadcastAircraftState();
         }
 
         public void StepZeppelins(float dt) => session._zeppelins?.SimStep(dt);

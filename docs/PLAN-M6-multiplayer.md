@@ -159,7 +159,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 ### Wave B, Dogfight over the wire
 
-11. ☐ Aircraft state replication: own aircraft broadcast at a fixed rate, remote aircraft interpolated
+11. ☑ Aircraft state replication: own aircraft broadcast at a fixed rate, remote aircraft interpolated
 12. ☐ Fire, hit, damage and death events in the decoded order, scored by the host
 13. ☐ Host-owned spawn and respawn from `net.zrd` and the rotation, applied by guests
 14. ☐ Match state: clock, limits, end and scoreboard replicated
@@ -569,7 +569,52 @@ with the host's world.
 
 # Wave B, Dogfight over the wire
 
-## B11 ☐ Aircraft state replication: own aircraft broadcast at a fixed rate, remote aircraft interpolated
+## B11 ☑ Aircraft state replication: own aircraft broadcast at a fixed rate, remote aircraft interpolated
+
+**Landed.** `CSVM/src/Net/AircraftStateCadence.cs` owns the send half and nothing else: the TUNE
+`SendStepInterval` (3 simulation steps, 20 Hz at the fixed step, filed as `BL-1020`) and a sequence
+counter per seat, so the session's own edit stays in the step path. `StepHumanAircraft` now steps
+every entry of `_seatRigs` rather than every pane, which is what makes a seat flown elsewhere run
+`FlightController.StepRemotePose` and advance its buffer; outside a network match the two lists hold
+the same rigs. At the end of that phase `BroadcastAircraftState` puts each seat flown here on the
+wire as A2's `AircraftStateMessage`: the SIM pose, never the render pose, with position, attitude,
+velocity, throttle, the three surface deflections and the nitro flag. The message already carried
+every field inside its 48-byte budget, so neither the struct nor `docs/org/multiplayer-messages.md`
+changed. The one handler is registered at the build, right after `BuildSeatRigs`, and hands an
+arrival to that seat's `RemotePoses`, which exists only on a seat flown elsewhere, so an aeroplane
+flown here can never have its pose overruled by the wire; the buffer drops a stale or reordered
+sequence itself. `HumanFlightAdapter` builds that buffer for a remote seat, since its presence IS
+the ownership.
+
+**Verified.** <pending orchestrator run> The `net-aircraft-replication` engine suite (6.5 s, the
+same order as `net-two-session`) flies both owners a scripted climbing right-hand roll for 240 sim
+steps over a 30 ms link with 10 ms of jitter and 25 % loss, then measures each owner's own path
+against the path the far peer showed for it, fitting the lag in twentieths of a step before reading
+the residual (METHOD-32). The guest shows the host's aeroplane at **0.52 m mean and 1.08 m worst**
+position error at a fitted 107 ms; the host shows the guest's at 0.38 m and 1.58 m at 117 ms, over
+a 326 m flight with 69 degrees of cumulative turn. Over four mesh seeds the spread is 0.22 to
+0.52 m mean, 1.08 to 1.79 m worst and 100 to 121 ms of lag, with 176 to 194 of 210 sampled steps
+answered by interpolating and none starved, so the regression bars are set at 1.5 m mean and 5 m
+worst from those readings; what a player will accept is still unmeasured and no bar claims it.
+The same metric run against the OTHER aeroplane's path reads 2119.6 m, which is the able-to-fail
+control (METHOD-14). Taking the conditions apart at the same rate, jitter alone reads 0.49 m mean
+and loss alone 0.03 m, so the residual is the arrival stamping and not the send rate: a sample
+carries no send time and the buffer stamps it on arrival. Five quick unit tests cover the cadence,
+its per-seat ladders and the 16-bit wrap the receiving buffer has to accept.
+
+**Model recommendation.** High. The wiring is three small edits, but each one is a place where the
+wrong choice is invisible until two machines fly: stepping panes instead of seats leaves remote
+aeroplanes frozen with every test still green, and a handler that does not check for a buffer lets
+the wire write over a locally simulated pose. The measurement is the larger part of the work, and
+it needs the lag fitted out before the residual means anything.
+
+**⚠ Traps.** Read the sim-clock cadence, not the physics tick, when measuring: the sim clock on the
+user's rig has run at half wall time in late campaign runs. Do not replicate the render pose; the
+sample is the sim pose. `NetSession.Broadcast` reaches this peer's own peers, so on a listen server
+with three or more machines a guest's samples reach the host alone until something relays them;
+with two peers, which is what the suite measures, that gap is invisible.
+
+**Original approach (kept for reference).**
 
 **Goal.** Every peer sees every other aircraft where its owner has it, smoothly, with the lag hidden
 behind an interpolation buffer and not behind stutter.
@@ -584,16 +629,6 @@ enqueue a state sample every N sim steps; remote seats' controllers take the arm
 is position, attitude, velocity, throttle, control-surface deflections for the animator, and the
 nitro flag, with a sequence number; a stale sequence is dropped. TUNE entries for the three numbers
 go to `backlog.md`.
-
-**Model recommendation.** <TODO: not settled in the scoping session>
-
-**Verify.** <TODO: on the harness, the position error between the owner's pose and the remote's
-interpolated pose over a scripted flight at chosen latency and loss; the acceptable error is
-unmeasured>
-
-**⚠ Traps.** Read the sim-clock cadence, not the physics tick, when measuring: the sim clock on the
-user's rig has run at half wall time in late campaign runs. Do not replicate the render pose; the
-sample is the sim pose.
 
 ## B12 ☐ Fire, hit, damage and death events in the decoded order, scored by the host
 

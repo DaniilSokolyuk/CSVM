@@ -28,6 +28,30 @@ internal static class NetSessionSuites
     // for a reliable payload to cross a 30 ms link with 10 ms of jitter on it.
     private const int LockstepSteps = 20;
 
+    // The scripted flight both owners fly in the replication suite: full throttle in a climbing
+    // right-hand roll, so the path curves continuously. A straight line at a constant speed is
+    // reconstructed exactly by any interpolator and would measure nothing (METHOD-1).
+    private const string TrackedFlight = "--hold=0.6,0.9,0,1";
+
+    // How long that flight is measured for, in SIM STEPS at the fixed step. This harness asks
+    // for each step itself, so the reading is in sim time and never in wall time.
+    private const int FlightSteps = 240;
+
+    // The alignment search's width, in sim steps, and the index the measurement starts at. It has
+    // to cover the buffer delay plus the link's latency and jitter. Starting there also skips the
+    // opening steps, where the shown aeroplane holds its spawn because nothing has arrived.
+    private const int MaxLagSteps = 30;
+
+    // How finely the lag is fitted, in divisions of one sim step. A whole-step fit leaves half a
+    // step of misalignment in the residual, which is most of a metre at these speeds.
+    private const int LagFitSteps = 20;
+
+    // The tracking bars, in metres, at the link below. Set from repeated readings of this suite
+    // with headroom, not from a standard anybody has stated. What a player will accept is
+    // unmeasured, so these are a regression tripwire on a measured number.
+    private const float MeanErrorBar = 1.5f;
+    private const float WorstErrorBar = 5f;
+
     // The airframe order both peers read a roster's airframe index against. Two different entries,
     // so a seat's pick crossing the wire cannot be satisfied by the two ends sharing a default.
     private static readonly string[] Airframes = { "player_pfighter", "player_fbrand" };
@@ -41,13 +65,7 @@ internal static class NetSessionSuites
         + "receiving session's own step, and the two worlds stand in separate physics spaces")]
     internal static void TwoSessionsOverOneLoopback(TestContext ctx)
     {
-        ctx.RequireData(ctx.PlanesGamezPath, $"planes gamez");
-        ctx.RequireData(ctx.ZrdrPath, $"zrdr archive");
-        string missionZrdr = SessionPaths.MissionZrdr(ctx.DataRoot, ctx.Chapter, MpMission);
-        ctx.RequireData(SessionPaths.ChapterTextures(ctx.DataRoot, ctx.Chapter), $"{ctx.Chapter} textures");
-        ctx.RequireData(SessionPaths.ChapterGamez(ctx.DataRoot, ctx.Chapter), $"{ctx.Chapter} gamez");
-        ctx.RequireData(missionZrdr, $"{ctx.Chapter}/{MpMission} zrdr");
-
+        string missionZrdr = RequireMatchData(ctx);
         var spec = SessionSpec.Parse(new[]
         {
             "--vs", $"--chapter={ctx.Chapter}", $"--mission={MpMission}", "--players=1", "--mute",
@@ -115,6 +133,233 @@ internal static class NetSessionSuites
             GameClock.Current = clockWas;
             Rng.Reset(master, pinned);
         }
+    }
+
+    [Suite("net-aircraft-replication",
+        "a host and a guest fly one scripted curve each over a 30 ms, 25 per cent lossy loopback "
+        + "mesh: each owner puts its own SIM pose on the wire on the send cadence, the far peer's "
+        + "interpolated aeroplane traces that path to a measured error once the deliberate lag is "
+        + "fitted out, the fitted lag is the buffer delay plus the link and no more, nearly every "
+        + "answer comes out of the buffer interpolating, and the same metric against the OTHER "
+        + "aeroplane's path is an order of magnitude worse")]
+    internal static void AircraftStateTracksItsOwner(TestContext ctx)
+    {
+        string missionZrdr = RequireMatchData(ctx);
+        var spec = SessionSpec.Parse(new[]
+        {
+            "--vs", $"--chapter={ctx.Chapter}", $"--mission={MpMission}", "--players=1", "--mute",
+            "--no-pads", TrackedFlight,
+        });
+        var table = new SpawnPicker(spec).LoadSpawnList(missionZrdr, spec.Scenario);
+        if (table is not { Count: >= 2 })
+        {
+            throw new SuiteSkippedException($"{ctx.Chapter}/{MpMission} authors no usable net.zrd table");
+        }
+
+        // The same link the join is asserted over. Aircraft state is the unreliable sequenced
+        // class, so a quarter of these samples never land and the buffer covers the gaps.
+        var mesh = LoopbackTransport.Mesh(2, new LoopbackConditions(0.03, 0.01, 0.25), new Random(9311));
+        var roster = new NetSeat[]
+        {
+            new() { PeerId = 0, SeatIndex = 0, IsLocal = true, Callsign = "host", PlaneNode = Airframes[0] },
+            new() { PeerId = 1, SeatIndex = 1, Callsign = "guest", PlaneNode = Airframes[1] },
+        };
+        NetSeats.Validate(roster);
+
+        ulong master = Rng.Master;
+        bool pinned = Rng.Pinned;
+        var clockWas = GameClock.Current;
+        var profileWas = StartupProfile.Current;
+        Ends? host = null;
+        Ends? guest = null;
+        try
+        {
+            host = Open(ctx, spec, mesh[0], isHost: true, HostSeed, roster);
+            guest = Open(ctx, spec, mesh[1], isHost: false, GuestSeed, null);
+            ctx.Check(host.Built && guest.Built,
+                $"both sessions build in one process (host {host.Built}, guest {guest.Built})");
+            if (!host.Built || !guest.Built)
+            {
+                return;
+            }
+
+            var flight = Fly(host.Session, guest.Session);
+            Tracking(ctx, flight);
+        }
+        finally
+        {
+            guest?.Close();
+            host?.Close();
+            StartupProfile.Current = profileWas;
+            GameClock.Current = clockWas;
+            Rng.Reset(master, pinned);
+        }
+    }
+
+    // One tracked flight: both sessions stepped together, with the four paths that matter
+    // recorded after every step. The case the guest's buffer answered from is counted
+    // beside them.
+    private static TrackedRun Fly(GameSession host, GameSession guest)
+    {
+        var flight = new TrackedRun();
+        for (int i = 0; i < FlightSteps; i++)
+        {
+            host._PhysicsProcess(GameClock.FixedDt);
+            guest._PhysicsProcess(GameClock.FixedDt);
+            flight.HostOwn.Add(Pose(host, 0));
+            flight.HostShown.Add(Pose(host, 1));
+            flight.GuestOwn.Add(Pose(guest, 1));
+            flight.GuestShown.Add(Pose(guest, 0));
+            // Over the window the error is measured on, not from the first step. Before the link
+            // has delivered anything the buffer is empty or holds its oldest sample. That is the
+            // opening, and it says nothing about the stream.
+            if (i >= MaxLagSteps
+                && guest.SeatRigs[0].Controller?.RemotePoses is { } received
+                && received.TrySample(out var answer))
+            {
+                flight.Feeds[(int)answer.Feed]++;
+            }
+
+            flight.Stick = host.SeatRigs[0].Controller?.LastCommand ?? default;
+            flight.Flying = host.SeatRigs[0].Controller is { InPlay: true }
+                            && guest.SeatRigs[1].Controller is { InPlay: true };
+        }
+
+        return flight;
+    }
+
+    // What the flight proves. The order matters: the scripted curve is established first, because
+    // every tracking number below is meaningless over a path nobody flew.
+    private static void Tracking(TestContext ctx, TrackedRun flight)
+    {
+        float flown = Length(flight.HostOwn);
+        float turn = Turn(flight.HostOwn);
+        var stick = flight.Stick;
+        ctx.Check(flight.Flying && flown > 200f && turn > 30f,
+            $"the scripted owners fly a curve worth measuring ({flown:0} m flown, {turn:0} degrees of turn, on a held stick of {stick.Pitch:0.0},{stick.Roll:0.0},{stick.Yaw:0.0},{stick.Throttle:0.0}, both still in play {flight.Flying})");
+
+        var there = Track(flight.HostOwn, flight.GuestShown);
+        var back = Track(flight.GuestOwn, flight.HostShown);
+        foreach (var (name, fit) in new[] { ("guest", there), ("host", back) })
+        {
+            float seconds = fit.Lag * GameClock.FixedDt;
+            ctx.Check(fit.Mean < MeanErrorBar && fit.Max < WorstErrorBar,
+                $"the {name}'s remote aeroplane traces its owner's own path to {fit.Mean:0.00} m mean and {fit.Max:0.00} m worst, at a fitted lag of {seconds * 1000f:0} ms");
+            // The deliberate part of the delay. Below the buffer's own read-behind the far peer
+            // would be guessing ahead; far above the link plus one send interval something is
+            // holding samples back.
+            float low = RemotePoseBuffer.BufferDelaySeconds;
+            float high = RemotePoseBuffer.BufferDelaySeconds + 0.04f
+                + (AircraftStateCadence.SendStepInterval * GameClock.FixedDt);
+            ctx.Check(seconds >= low - GameClock.FixedDt && seconds <= high,
+                $"and that lag is the buffer delay plus the link, nothing more ({seconds * 1000f:0} ms, expected {low * 1000f:0} to {high * 1000f:0} ms)");
+        }
+
+        // A quarter of the samples never land, so a minority of answers ride the newest one's
+        // velocity by design. What must not happen is a starved answer: that is the buffer out
+        // of history altogether, past the cap, showing an aeroplane nobody is steering.
+        int answers = flight.Feeds.Sum();
+        string census = $"{flight.Feeds[(int)RemotePoseFeed.Interpolating]} interpolating, {flight.Feeds[(int)RemotePoseFeed.Extrapolating]} extrapolating, {flight.Feeds[(int)RemotePoseFeed.Starved]} starved of {answers}";
+        ctx.Check(answers > 0 && flight.Feeds[(int)RemotePoseFeed.Starved] == 0
+                  && flight.Feeds[(int)RemotePoseFeed.Interpolating] > answers * 3 / 4,
+            $"and the buffer answers from two samples over three quarters of the time on a quarter-lossy link, never starved ({census})");
+
+        // ABLE-TO-FAIL CONTROL. The same metric between the guest's reconstruction and the OTHER
+        // aeroplane in its own world. A metric that cannot tell two aircraft apart would pass
+        // every assertion above while replicating nothing (METHOD-14).
+        var wrong = Track(flight.GuestOwn, flight.GuestShown);
+        ctx.Check(wrong.Mean > there.Mean * 10f,
+            $"ABLE-TO-FAIL CONTROL: matched against the other aeroplane's path the same metric reads {wrong.Mean:0.0} m mean, against {there.Mean:0.00} m for the right one");
+    }
+
+    // The error between an owner's own path and the path the far peer showed for it. The shown
+    // path is DELIBERATELY late, by the buffer's read-behind plus the link. The lag is fitted
+    // first, and the residual at it is the tracking error (METHOD-32). ⚠ The fit is in fractions
+    // of a step. A whole-step grid leaves up to half a step of misalignment, most of a metre at
+    // 80 m/s. The fitted lag is reported with the error, since a fit at an end of the search is
+    // a fit that failed.
+    private static (float Lag, float Mean, float Max) Track(
+        IReadOnlyList<Vector3> own, IReadOnlyList<Vector3> shown)
+    {
+        float best = 0f;
+        float bestMean = float.MaxValue;
+        int n = shown.Count - MaxLagSteps;
+        for (int step = 0; step <= MaxLagSteps * LagFitSteps; step++)
+        {
+            float lag = (float)step / LagFitSteps;
+            float sum = 0f;
+            for (int i = MaxLagSteps; i < shown.Count; i++)
+            {
+                sum += shown[i].DistanceTo(Along(own, i - lag));
+            }
+
+            if (sum / n < bestMean)
+            {
+                bestMean = sum / n;
+                best = lag;
+            }
+        }
+
+        float max = 0f;
+        for (int i = MaxLagSteps; i < shown.Count; i++)
+        {
+            max = Mathf.Max(max, shown[i].DistanceTo(Along(own, i - best)));
+        }
+
+        return (best, bestMean, max);
+    }
+
+    // Where a path was between two of its steps, which is what a fractional lag asks for. The
+    // step is short against the curve, so the chord is the path to well under the error measured.
+    private static Vector3 Along(IReadOnlyList<Vector3> path, float at)
+    {
+        int first = Mathf.Clamp((int)Mathf.Floor(at), 0, path.Count - 2);
+        return path[first].Lerp(path[first + 1], Mathf.Clamp(at - first, 0f, 1f));
+    }
+
+    private static Vector3 Pose(GameSession session, int seat) =>
+        session.SeatRigs[seat].Controller?.WorldPosition ?? Vector3.Zero;
+
+    private static float Length(IReadOnlyList<Vector3> path)
+    {
+        float sum = 0f;
+        for (int i = 1; i < path.Count; i++)
+        {
+            sum += path[i].DistanceTo(path[i - 1]);
+        }
+
+        return sum;
+    }
+
+    // How far the path bent in total, in degrees: the turn between one step and the next, summed.
+    // The angle between the first heading and the last is the wrong measure, since a curve that
+    // comes back around reads as straight.
+    private static float Turn(IReadOnlyList<Vector3> path)
+    {
+        float turned = 0f;
+        for (int i = 2; i < path.Count; i++)
+        {
+            var before = path[i - 1] - path[i - 2];
+            var after = path[i] - path[i - 1];
+            if (before.LengthSquared() > 0f && after.LengthSquared() > 0f)
+            {
+                turned += Mathf.RadToDeg(before.AngleTo(after));
+            }
+        }
+
+        return turned;
+    }
+
+    // The five data files both ends of a match are built from.
+    private static string RequireMatchData(TestContext ctx)
+    {
+        ctx.RequireData(ctx.PlanesGamezPath, $"planes gamez");
+        ctx.RequireData(ctx.ZrdrPath, $"zrdr archive");
+        string missionZrdr = SessionPaths.MissionZrdr(ctx.DataRoot, ctx.Chapter, MpMission);
+        ctx.RequireData(SessionPaths.ChapterTextures(ctx.DataRoot, ctx.Chapter), $"{ctx.Chapter} textures");
+        ctx.RequireData(SessionPaths.ChapterGamez(ctx.DataRoot, ctx.Chapter), $"{ctx.Chapter} gamez");
+        ctx.RequireData(missionZrdr, $"{ctx.Chapter}/{MpMission} zrdr");
+        return missionZrdr;
     }
 
     // The seed, the seat and the roster a guest is built from are the host's, and nothing of its
@@ -268,6 +513,20 @@ internal static class NetSessionSuites
         }
 
         return -1;
+    }
+
+    // What one tracked flight recorded: each owner's own sim path, and the path the far peer
+    // showed for it. The census of which case the guest's buffer answered from is here too.
+    private sealed class TrackedRun
+    {
+        public List<Vector3> HostOwn { get; } = new();
+        public List<Vector3> HostShown { get; } = new();
+        public List<Vector3> GuestOwn { get; } = new();
+        public List<Vector3> GuestShown { get; } = new();
+        public int[] Feeds { get; } = new int[3];
+        public bool Flying { get; set; }
+
+        public CSVM.Flight.FlightInput Stick { get; set; }
     }
 
     // One peer's whole rig, so the teardown is one call per end. It cannot then free a pane out

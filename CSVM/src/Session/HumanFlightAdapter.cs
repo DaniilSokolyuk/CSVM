@@ -180,6 +180,10 @@ internal sealed class HumanFlightAdapter
         {
             PlayerIndex = pi,
             IsHumanPiloted = true,
+            // A seat flown elsewhere takes its pose out of this history, not a flight model.
+            // The buffer's presence IS that ownership, so it is built here and nowhere else.
+            // The session fills it from the samples that seat's owner sends.
+            RemotePoses = remote ? new Net.RemotePoseBuffer() : null,
             // one scripted sequence per player ('|'-separated); the last covers the rest
             HoldSegments = _policy.HoldSets == null ? null
                 : _policy.HoldSets[Math.Min(pi, _policy.HoldSets.Length - 1)],

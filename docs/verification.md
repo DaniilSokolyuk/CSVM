@@ -53,6 +53,10 @@ member, and it does not go here.
   hit area, so settle a hit-rate question by rastering rays over the silhouette and counting both
   geometries, never with a kill-time stopwatch that folds rate into damage.** The airframe hulls
   present 1.16 to 4.39 times the model's own silhouette and lose none of it.
+- **METHOD-32**, **A deliberately delayed reconstruction is compared at its own lag: fit the lag
+  in fractions of a step first, then read the residual, because a same-step difference measures
+  the delay and a whole-step fit leaves half a step of it behind.** Fitting the replicated
+  aeroplane's lag fractionally moved its reading from 0.60 m to 0.52 m mean.
 
 ## DIAG, chasing a symptom
 
