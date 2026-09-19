@@ -16,9 +16,9 @@ ahead of `Rng.Reset` and the seat sizing, and the handshake's clock opens the `N
 `SessionSimulation`, which owns the step order; both step paths step the wire first, so an arrival is applied on the step after it landed, and the human-aircraft phase
 puts every seat flown here on the wire on the `AircraftStateCadence` as the SIM pose, while a sample for a seat flown elsewhere reaches that seat's own pose buffer.
 `WireNetCombat` puts combat on the same wire: an owner's fire event spawns the round on every peer, the shooter's machine decides a hit and addresses the victim's owner,
-that owner applies the damage and reports its own death, and the host alone scores it and relays each of those between guests. `AllAircraft` combines the roster's AI view
-with the ordered rig controllers, and `OrderWaveAirframes` with `StepOwedLoad` puts the coming waves behind the load screen. Exit frees the session subtree atomically and
-releases only the non-node resources it owns; the prohibitions that keep these rules true sit on the members they bind. Read `SessionSimulation.cs` next.
+that owner applies the damage and reports its own death, and the host alone scores it and relays each of those between guests. `WireNetSpawns` puts placement on it under one rule: the OPENING spawn is the shared seed's own walk over the mission table and crosses no wire, while every later return is GRANTED, a downed seat asking the host and the host's single rotation answering the whole field with a table entry every peer applies through the same call the owner would have made locally.
+A guest builds no rotation of its own, and a field larger than the table is served by that rotation relaxing its one-living-seat-per-point rule rather than failing. `AllAircraft` combines the roster's AI view with the ordered rig controllers, and `OrderWaveAirframes` with `StepOwedLoad` puts the coming waves behind the load screen.
+Exit frees the session subtree atomically and releases only the non-node resources it owns; the prohibitions that keep these rules true sit on the members they bind. Read `SessionSimulation.cs` next.
 
 ## src/Session/SessionSimulation.cs
 The session simulation: one plain-C# module owning hold admission and the exact order of flight,

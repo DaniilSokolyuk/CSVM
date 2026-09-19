@@ -305,7 +305,20 @@ public partial class GameSession : Node3D
     // advanced on the sim dt (never wall time). Null outside Versus, the Downed events then
     // simply have no subscriber. Freed with this node; flight holds no match state.
     private VersusMatch? _versus;
+    // Built on the host alone in a network match, since two rotations diverge on first blood.
+    // A guest holds none and takes every placement off the wire.
     private VersusSpawnRotation? _versusSpawns;
+    // The spawn list the session was placed from, kept so a granted spawn resolves its entry
+    // index against the same table on every peer. Null where the session walks no list.
+    private IReadOnlyList<SpawnPoint>? _spawnList;
+    // Which seats have an unanswered spawn ask out, so a due crash timer asks the host once per
+    // death rather than once per step.
+    private bool[] _spawnAsked = System.Array.Empty<bool>();
+    // The entry each seat was last granted, which is what every peer must agree on.
+    private int[] _spawnEntries = System.Array.Empty<int>();
+    // Who downed each seat last, which the rotation weighs heaviest. Filled by every rig's Downed
+    // report, a seat flown elsewhere included, since its owner's death report raises that here too.
+    private int?[] _lastKiller = System.Array.Empty<int?>();
     // The stunt race (--stunt with several pilots), for the same reason: a rerun resets it rather
     // than each pilot's own run. Null outside a race.
     private StuntRace? _race;
@@ -454,6 +467,16 @@ public partial class GameSession : Node3D
     /// <summary>The Dogfight scorekeeping, null outside <c>--vs</c>. On a guest it is the mirror
     /// of the host's, written from the score messages rather than counted here.</summary>
     internal VersusMatch? Versus => _versus;
+
+    /// <summary>How many host grants this session has placed an aircraft from, the host's own
+    /// included. A suite reads it to tell a placement that came off the wire from one the shared
+    /// seed walked to. That is the line between the opening spawn and every respawn.</summary>
+    internal int SpawnsTaken { get; private set; }
+
+    /// <summary>The spawn table entry each seat was last granted, -1 where it has had none. This
+    /// is the placement itself rather than where the aeroplane now stands, which on a seat flown
+    /// elsewhere is whatever its owner's latest pose says.</summary>
+    internal IReadOnlyList<int> SpawnEntries => _spawnEntries;
 
     /// <summary>The campaign mission's director, null outside a <c>--campaign=</c> launch. The
     /// session layer reads its <see cref="CampaignDirector.ReturnToCabin"/> to know the mission is
@@ -2266,6 +2289,7 @@ public partial class GameSession : Node3D
         _spawnPicker.WithholdOverrideForCutscene = _campaign != null && _cutscene is { Playing: true };
         var spawnList = _spawnPicker.LoadSpawnList(state.MissionZrdrPath, iaScenario);
         int spawnBase = _spawnPicker.ChooseSpawnBase(spawnList);
+        _spawnList = spawnList;
 
         // The weapons catalogue and stock loadouts, loaded once, and ONE shared projectile pool
         // every player's guns fire into, since projectiles live in the shared world. The pool
@@ -2675,14 +2699,17 @@ public partial class GameSession : Node3D
         if (versus is { } match)
         {
             _versus = match;
-            // Spawn rotation: a downed seat comes back on a point picked against the living field.
-            // The fixed spawn can be camped at. The rotation's Rng is seeded from the master alone,
-            // so no pick here draws from Rng.Spawn and shifts the launch spawn index.
-            _versusSpawns = VersusSpawnRotation.For(spawnList, spawnBase, _seatRigs.Count,
-                new Random(Rng.IntSeedFor(Rng.VersusSpawn)));
+            // Spawn rotation: a downed seat comes back on a point picked against the living field,
+            // since a fixed spawn can be camped at. Its Rng comes off the master alone, so no pick
+            // here shifts Rng.Spawn. ⚠ Never on a guest: a second rotation diverges on first blood.
+            _versusSpawns = _netSeats.Count > 0 && _net is not { IsHost: true }
+                ? null
+                : VersusSpawnRotation.For(spawnList, spawnBase, _seatRigs.Count,
+                    new Random(Rng.IntSeedFor(Rng.VersusSpawn)));
             // Who downed each seat last, which the rotation weighs heaviest: the Downed report
             // carries it, and the respawn that reads it happens seconds later.
-            var lastKiller = new int?[_seatRigs.Count];
+            _lastKiller = new int?[_seatRigs.Count];
+            var lastKiller = _lastKiller;
             foreach (var rig in _seatRigs)
                 if (rig.Controller is { } pilot)
                 {
@@ -2690,7 +2717,9 @@ public partial class GameSession : Node3D
                     pilot.AutoRespawnAfter = VersusRespawnDelay; // crash cam, then back in, R skips
                     pilot.Match = match;                  // R-ownership gate: board-up ⇒ rematch
                     pilot.RestartMatch = () => RestartMatch(match);
-                    if (_versusSpawns != null)
+                    if (_netSeats.Count > 0)
+                        pilot.RespawnRequest = () => AskSpawn(seat);
+                    else if (_versusSpawns != null)
                         pilot.RespawnPlacement = () => VersusRespawn(seat, lastKiller[seat]);
                     pilot.Downed += (victim, killer) =>
                     {
@@ -2727,6 +2756,10 @@ public partial class GameSession : Node3D
         // Fire, hit, damage and death over the wire. It runs after the match so a death report
         // has a scorer to reach, and after the rigs so every seat carries its router.
         WireNetCombat(weaponDefs);
+
+        // And where a downed seat comes back, which runs after the match for the same reason: the
+        // rotation it is granted from is built there.
+        WireNetSpawns();
 
         // --incoming: the incoming-fire test rig, a phantom shooter on every pilot's six, so both
         // cues and the shield are reachable with one player, no AI gunner needed.
@@ -4160,6 +4193,120 @@ public partial class GameSession : Node3D
         }
     }
 
+    // Where a downed seat comes back, over the wire. The rotation stands on the host alone, so a
+    // return is asked of it and granted to the whole field. Every peer then places the aeroplane
+    // through the same call its owner would have made locally. Inert with no seats on a wire,
+    // where a rig keeps its own RespawnPlacement and nothing here is reached.
+    private void WireNetSpawns()
+    {
+        if (_net is not { } net || _netSeats.Count == 0)
+        {
+            return;
+        }
+
+        _spawnAsked = new bool[_seatRigs.Count];
+        _spawnEntries = new int[_seatRigs.Count];
+        System.Array.Fill(_spawnEntries, -1);
+        net.On<Net.SpawnMessage>((_, spawn) => TakeSpawn(spawn));
+        if (net.IsHost)
+        {
+            net.On<Net.SpawnRequestMessage>((_, ask) => GrantSpawn(ask.Seat, Net.NetSpawnKind.Respawn));
+        }
+
+        Log.Info("core", $"net spawns: {_seatRigs.Count} seats, {(net.IsHost ? $"host (the rotation over {_spawnList?.Count ?? 0} point(s) grants every return)" : "guest (asking the host for its own return, running no rotation)")}");
+    }
+
+    // A seat flown here is down and its timer is up. The host answers itself; a guest asks, once
+    // per death, because the ask is reliable and the aeroplane stays down until the answer lands.
+    private void AskSpawn(int seat)
+    {
+        if (_net is not { } net || seat < 0 || seat >= _netSeats.Count || !_netSeats[seat].IsLocal)
+        {
+            return;
+        }
+
+        if (net.IsHost)
+        {
+            GrantSpawn(seat, Net.NetSpawnKind.Respawn);
+            return;
+        }
+
+        if (seat >= _spawnAsked.Length || _spawnAsked[seat])
+        {
+            return;
+        }
+
+        _spawnAsked[seat] = true;
+        net.Send(net.HostPeer, new Net.SpawnRequestMessage((byte)seat), Net.NetChannels.Events);
+    }
+
+    // The host's answer, and the one place a match's rotation is run. A return is granted only to
+    // a seat that is down. The ask is reliable, so a repeat would otherwise walk the rotation a
+    // second time and move a flying aeroplane. A rematch's opening grant has no such guard: there
+    // the whole field is being put back, whether it was flying or not.
+    private void GrantSpawn(int seat, Net.NetSpawnKind kind)
+    {
+        if (_net is not { IsHost: true } net || seat < 0 || seat >= _seatRigs.Count
+            || _seatRigs[seat].Controller is not { } rig
+            || (kind == Net.NetSpawnKind.Respawn && !rig.Crashed))
+        {
+            return;
+        }
+
+        var spawn = new Net.SpawnMessage((byte)seat, kind, RotatedEntry(seat));
+        net.Broadcast(spawn, Net.NetChannels.Events);
+        TakeSpawn(spawn);
+    }
+
+    // The rotation's pick for one seat, as an index into the spawn list every peer holds. No
+    // rotation means no table to index, and the seat comes back on the pose it was given.
+    private ushort RotatedEntry(int seat)
+    {
+        if (_versusSpawns is not { } rotation)
+        {
+            return Net.NetMessage.NoSpawnEntry;
+        }
+
+        rotation.Choose(seat, LivingField(), seat < _lastKiller.Length ? _lastKiller[seat] : null);
+        return (ushort)rotation.IndexOf(seat);
+    }
+
+    // The grant, applied. Every peer runs this, the host on its own message, so one placement
+    // rule serves the aeroplane's owner and every copy of it. ⚠ Through RespawnAt, never
+    // Respawn. The host's own seats still carry a rotation, and asking it again here moves the
+    // aeroplane off the point the field was told about.
+    private void TakeSpawn(in Net.SpawnMessage spawn)
+    {
+        if (spawn.Seat >= _seatRigs.Count || _seatRigs[spawn.Seat].Controller is not { } rig)
+        {
+            return;
+        }
+
+        if (spawn.Seat < _spawnAsked.Length)
+        {
+            _spawnAsked[spawn.Seat] = false;
+        }
+
+        SpawnsTaken++;
+        if (spawn.Seat < _spawnEntries.Length)
+        {
+            _spawnEntries[spawn.Seat] = spawn.EntryIndex == Net.NetMessage.NoSpawnEntry
+                ? -1 : spawn.EntryIndex;
+        }
+
+        if (_spawnList is { } list && spawn.EntryIndex < list.Count)
+        {
+            var point = list[spawn.EntryIndex];
+            rig.RespawnAt(point.Position, point.Position + point.Forward);
+        }
+        else
+        {
+            rig.Respawn();
+        }
+
+        Log.Info("flight", $"net spawns: seat {spawn.Seat} placed on entry {spawn.EntryIndex} of {_spawnList?.Count ?? 0} ({spawn.Kind})");
+    }
+
     // A shooter id back to the seat that fired it, or -1 for a round no seat owns. Read off the
     // rigs rather than assumed equal to the seat index, since only the roster decides that.
     private int SeatOfShooter(int shooter)
@@ -4433,8 +4580,29 @@ public partial class GameSession : Node3D
         // A rematch is a fresh round, so it opens on the opening spawns rather than on wherever
         // the last round's rotation had left each seat.
         _versusSpawns?.Restart();
+        if (_netSeats.Count > 0)
+        {
+            // On a wire the whole field is put back by grant, seat by seat, so a rematch places
+            // every aeroplane from the one rotation. A guest grants nothing and waits.
+            for (int seat = 0; seat < _seatRigs.Count; seat++)
+                GrantSpawn(seat, Net.NetSpawnKind.Opening);
+            return;
+        }
+
         foreach (var rig in _rigs)
             rig.Controller?.Respawn();
+    }
+
+    // The field the rotation weighs, one entry per seat and null where that seat is not in the
+    // fight. ⚠ Over the whole seat list, not the panes. A host flying one pane still rotates
+    // around the guests' aeroplanes, and reading _rigs here hides every one of them.
+    private Vector3?[] LivingField()
+    {
+        var field = new Vector3?[_seatRigs.Count];
+        for (int i = 0; i < _seatRigs.Count; i++)
+            field[i] = _seatRigs[i].Controller is { Crashed: false, Inert: false } flying
+                ? flying.GlobalPosition : null;
+        return field;
     }
 
     // Where a downed dogfight seat comes back, the rotation's pick against the field as it stands
@@ -4444,11 +4612,7 @@ public partial class GameSession : Node3D
     {
         if (_versusSpawns is not { } rotation)
             return null;
-        var field = new Vector3?[_rigs.Count];
-        for (int i = 0; i < _rigs.Count; i++)
-            field[i] = _rigs[i].Controller is { Crashed: false, Inert: false } flying
-                ? flying.GlobalPosition : null;
-        var point = rotation.Choose(seat, field, killer);
+        var point = rotation.Choose(seat, LivingField(), killer);
         string list = _spawnPicker.ScenarioOverride ?? _spec.Scenario;
         Log.Info("flight", $"dogfight: P{seat + 1} respawns on {list} #{rotation.IndexOf(seat)} of {rotation.PointCount}{(killer is { } k ? $", downed by P{k + 1}" : "")}");
         return (point.Position, point.Position + point.Forward);

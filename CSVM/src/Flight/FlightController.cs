@@ -295,6 +295,13 @@ public partial class FlightController : Node3D
     /// against.</summary>
     public Func<(Vector3 Pos, Vector3 LookAt)?>? RespawnPlacement;
 
+    /// <summary>Set, this seat's return is somebody else's to grant. A due crash timer and the
+    /// respawn key ask this instead of respawning. The aeroplane flies again only when the
+    /// session calls <see cref="RespawnAt"/> from the answer. It is asked on every step the
+    /// timer is due, so deciding to ask the wire once is the session's. Null, the default,
+    /// leaves the seat to come back on its own timer.</summary>
+    public Action? RespawnRequest;
+
     /// <summary>Splitscreen pause bookkeeping, the SAME instance on every rig
     /// (assigned by <c>GameSession</c>, the same way <see cref="Match"/> is), so any player's
     /// Start/P here can pause everyone but only <see cref="PauseState.OwnerPlayerIndex"/> can
@@ -590,6 +597,7 @@ public partial class FlightController : Node3D
     private CanvasLayer? _messageCanvas;         // the message stack's own layer, which the crash
                                                  // hide above deliberately leaves up
     private Vector3 _spawnPos;
+    private (Vector3 Pos, Vector3 LookAt)? _grantedPlacement; // a granted pose, armed by RespawnAt
     private Basis _spawnAttitude;
     private float _spawnThrottle = FallbackSpawnThrottle;
     private float _spawnSpeed = FallbackSpawnSpeed;
@@ -1226,9 +1234,12 @@ public partial class FlightController : Node3D
     /// stunt run alone, a mid-run crash deliberately keeps its zones and clock.</summary>
     public void Respawn()
     {
-        // Asked before anything reads the spawn pose, so the whole reset below lands on the new
-        // point. The dogfight rotates a downed seat away from the one it was camped at.
-        if (RespawnPlacement?.Invoke() is { } placement)
+        // Read before anything reads the spawn pose, so the whole reset below lands on the new
+        // point. The dogfight rotates a downed seat away from the one it was camped at. A granted
+        // pose is taken instead of asked for, so it cannot run a rotation of its own.
+        var placed = _grantedPlacement ?? RespawnPlacement?.Invoke();
+        _grantedPlacement = null;
+        if (placed is { } placement)
         {
             _spawnPos = placement.Pos;
             var aim = placement.LookAt - placement.Pos;
@@ -1300,6 +1311,15 @@ public partial class FlightController : Node3D
         GlobalTransform = _simCurr;
         if (_cam != null && IsInsideTree())
             SnapCamera();
+    }
+
+    /// <summary>The same return, at a pose this machine did not choose: the placement a match's
+    /// host granted this seat. The grant is consumed by the one <see cref="Respawn"/> it arms, so
+    /// a later return on this seat asks <see cref="RespawnPlacement"/> again as usual.</summary>
+    public void RespawnAt(Vector3 pos, Vector3 lookAt)
+    {
+        _grantedPlacement = (pos, lookAt);
+        Respawn();
     }
 
     /// <summary>Opens this spawn's collision-free window, and with
@@ -1934,7 +1954,12 @@ public partial class FlightController : Node3D
             if (!RemoteOwned
                 && (RespawnPressed() || _lifecycle.TickAutoRespawn(dt, _holdSegments != null)))
             {
-                Respawn();
+                // In a match the placement is granted, not taken: the ask goes out and the
+                // aeroplane stays down until the answer places it.
+                if (RespawnRequest is { } ask)
+                    ask();
+                else
+                    Respawn();
                 return;
             }
             // The one thing a dead aircraft still does: fall. No input, no weapons, no stunt

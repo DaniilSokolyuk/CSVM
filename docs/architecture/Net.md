@@ -77,13 +77,13 @@ moment hosting opens and closes, never on a frame and never in a transport step.
 
 ## src/Net/NetMessages.cs
 The vocabulary: `NetMessageType` (one word per message), the death, spawn and match-end enums
-taken from the original's own values, and the eleven message structs. Each is a value type
-implementing `INetMessage<TSelf>`, which carries its type word and its `INetTransport.cs`
-reliability class as static abstracts, so a sender reads the class off the type without
-constructing anything. `NetMessage` holds what they share: the four-byte header, the no-seat
-marker, the aircraft-state width budget, `ReliabilityOf`, `IsOriginalId`, and `TryReadHeader`,
-the one call a receiver makes before it knows which deserialiser to run. Read
-`NetMessageWriter.cs` next.
+taken from the original's own values, and the twelve message structs, the host's spawn grant and
+a seat's own ask for one among them. Each is a value type implementing `INetMessage<TSelf>`,
+which carries its type word and its `INetTransport.cs` reliability class as static abstracts, so
+a sender reads the class off the type without constructing anything. `NetMessage` holds what they
+share: the four-byte header, the no-seat and no-spawn-entry markers, the aircraft-state width
+budget, `ReliabilityOf`, `IsOriginalId`, and `TryReadHeader`, the one call a receiver makes
+before it knows which deserialiser to run. Read `NetMessageWriter.cs` next.
 
 ## src/Net/NetMessageWriter.cs
 The two cursors every serialiser and deserialiser runs on, `NetMessageWriter` and

@@ -42,6 +42,9 @@ public enum NetMessageType : ushort
     /// <summary>What the host answers a joining peer with: the match seed, its clock and the seat
     /// it handed out.</summary>
     Handshake = 0x0043,
+
+    /// <summary>A pilot asking the host to place it again.</summary>
+    SpawnRequest = 0x0044,
 }
 
 /// <summary>Why a pilot died, the original's own cause word
@@ -439,6 +442,43 @@ public readonly record struct SpawnMessage(byte Seat, NetSpawnKind Kind, ushort 
 }
 
 /// <summary>
+/// A pilot asking the host to place it again: the whole of what a guest says about its own
+/// respawn. Reliable, and answered with a <see cref="SpawnMessage"/> for the same seat. It
+/// carries the seat and nothing else, because where and when the aeroplane comes back are the
+/// host's to decide.</summary>
+public readonly record struct SpawnRequestMessage(byte Seat) : INetMessage<SpawnRequestMessage>
+{
+    /// <summary>The fixed width of the message, header included.</summary>
+    public const int Size = 5;
+
+    /// <inheritdoc/>
+    public static NetMessageType Type => NetMessageType.SpawnRequest;
+
+    /// <inheritdoc/>
+    public static NetReliability Reliability => NetReliability.Reliable;
+
+    /// <inheritdoc/>
+    public static bool TryRead(ReadOnlySpan<byte> from, out SpawnRequestMessage message)
+    {
+        message = default;
+        var reader = new NetMessageReader(from);
+        if (!reader.Is(Size) || reader.Type != Type)
+            return false;
+
+        message = new SpawnRequestMessage(reader.ReadByte());
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public int Write(Span<byte> into)
+    {
+        var writer = new NetMessageWriter(into, Type);
+        writer.WriteByte(Seat);
+        return writer.Close();
+    }
+}
+
+/// <summary>
 /// One seat's score line as the host has it. The signed score is what the kill target is
 /// compared against, so a penalty moves a seat away from winning. Kills and deaths ride along
 /// as display counters only.</summary>
@@ -732,6 +772,10 @@ public static class NetMessage
     /// <summary>The seat value meaning "nobody": no killer, no lock, no shooter.</summary>
     public const byte NoSeat = 0xFF;
 
+    /// <summary>The <see cref="SpawnMessage"/> entry meaning "no table entry": the match runs over
+    /// no spawn list, so the seat comes back on the one pose it was given.</summary>
+    public const ushort NoSpawnEntry = 0xFFFF;
+
     /// <summary>The highest type word the original itself uses. Anything above it is this
     /// remake's own and has no counterpart in <c>crimson.exe</c>.</summary>
     public const ushort OriginalIdCeiling = 0x27;
@@ -753,6 +797,7 @@ public static class NetMessage
         NetMessageType.SeatRoster => SeatRosterMessage.Reliability,
         NetMessageType.Damage => DamageMessage.Reliability,
         NetMessageType.Spawn => SpawnMessage.Reliability,
+        NetMessageType.SpawnRequest => SpawnRequestMessage.Reliability,
         NetMessageType.DirectorTransition => DirectorTransitionMessage.Reliability,
         NetMessageType.Handshake => HandshakeMessage.Reliability,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "no such message type"),

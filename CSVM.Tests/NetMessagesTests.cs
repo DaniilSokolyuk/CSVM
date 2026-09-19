@@ -161,6 +161,19 @@ public class NetMessagesTests
         Assert.Equal(sent, got);
     }
 
+    [Fact]
+    public void SpawnRequestRoundTripsTheAskingSeat()
+    {
+        var sent = new SpawnRequestMessage(Seat: 5);
+
+        Span<byte> buffer = stackalloc byte[SpawnRequestMessage.Size];
+        int written = sent.Write(buffer);
+
+        Assert.Equal(SpawnRequestMessage.Size, written);
+        Assert.True(SpawnRequestMessage.TryRead(buffer, out var got));
+        Assert.Equal(sent, got);
+    }
+
     // A penalty has to survive the wire as a negative, because the score is the number the kill
     // target is compared against.
     [Fact]

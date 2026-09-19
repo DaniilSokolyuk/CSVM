@@ -9,11 +9,12 @@ using Godot;
 
 namespace CSVM.Testing;
 
-/// <summary>Combat between whole sessions in one process: what one machine fires, claims and dies
-/// of, and what the others make of it. The rig is <see cref="NetSessionSuites"/>'s, one session
-/// per peer under its own <see cref="SubViewport"/> and <see cref="World3D"/>, so a rule asserted
-/// here is a rule between machines. The star suite adds a third session with the guest-to-guest
-/// link cut. That cut is the only way to tell a relayed message from a direct one.</summary>
+/// <summary>Combat between whole sessions in one process: what one machine fires, what it
+/// claims, what it dies of, where it comes back. The rig is
+/// <see cref="NetSessionSuites"/>'s, one session per peer under its own <see cref="SubViewport"/>
+/// and <see cref="World3D"/>. A rule asserted here is therefore a rule between machines. Two
+/// suites add a third session with the guest-to-guest link cut. That cut is the only way to tell
+/// a relayed or granted message from a direct one.</summary>
 internal static class NetCombatSuites
 {
     private const string MpMission = "MP1";
@@ -33,6 +34,19 @@ internal static class NetCombatSuites
     private const string TrackedFlight = "--hold=0.6,0.9,0,1";
 
     private const int StarFlightSteps = 180;
+
+    // The crash-camera wait every seat is cut to for the spawn suite, in seconds. The match's own
+    // three seconds are 180 sim steps per death, and nothing here reads the wait itself.
+    private const float QuickRespawn = 0.5f;
+
+    // How long a death is given to come back, in sim steps: the wait above, the ask to the host
+    // and the grant back. Room to spare, on a link that carries each leg in one step.
+    private const int GrantSteps = 120;
+
+    // How close to a table entry a placed aeroplane counts as standing on it, in metres,
+    // horizontally. Wider than the opening reading's metre: a granted aeroplane already flies at
+    // the multiplayer opening speed by the step its grant is seen to land.
+    private const float EntryTolerance = 5f;
 
     // The airframe order every peer reads a roster's airframe index against.
     private static readonly string[] Airframes = { "player_pfighter", "player_fbrand" };
@@ -134,6 +148,192 @@ internal static class NetCombatSuites
             host?.Close();
             ambient.Restore();
         }
+    }
+
+    [Suite("net-spawn-rotation",
+        "three sessions in one process with the two guests unlinked from each other: every seat "
+        + "opens on the same spawn table entry with no spawn event applied anywhere, so the "
+        + "opening placement is the shared seed's walk alone; over a sequence of deaths each "
+        + "returning seat is put back by exactly one host grant, on one real table entry, the same "
+        + "entry on all three peers and never the one it was downed at; and a grant naming an "
+        + "entry the host's own rotation refuses is still obeyed to the letter by both guests")]
+    internal static void TheHostGrantsEverySpawn(TestContext ctx)
+    {
+        var spec = MatchSpec(ctx, out var table);
+        if (table.Count < 4)
+        {
+            throw new SuiteSkippedException($"{ctx.Chapter}/{MpMission} authors fewer than four spawns");
+        }
+
+        var mesh = LoopbackTransport.Mesh(3, LoopbackConditions.Perfect, new Random(3307));
+        // The star, cut before any session binds. An ask reaches the host alone and a grant comes
+        // back from it alone, so nothing here is two guests agreeing between themselves.
+        mesh[1].Disconnect(2);
+        var roster = Roster(3);
+
+        var ambient = Ambient.Save();
+        Ends? host = null;
+        Ends? first = null;
+        Ends? second = null;
+        try
+        {
+            host = Ends.Open(ctx, spec, mesh[0], isHost: true, HostSeed, roster);
+            first = Ends.Open(ctx, spec, mesh[1], isHost: false, HostSeed + 1, null);
+            second = Ends.Open(ctx, spec, mesh[2], isHost: false, HostSeed + 2, null);
+            ctx.Check(host.Built && first.Built && second.Built,
+                $"three sessions build in one process (host {host.Built}, first {first.Built}, second {second.Built})");
+            if (!host.Built || !first.Built || !second.Built)
+            {
+                return;
+            }
+
+            var peers = new[] { host.Session, first.Session, second.Session };
+            var placed = Opening(ctx, table, peers);
+            Returns(ctx, table, peers, placed);
+            ObeyedVerbatim(ctx, table, peers, placed);
+        }
+        finally
+        {
+            second?.Close();
+            first?.Close();
+            host?.Close();
+            ambient.Restore();
+        }
+    }
+
+    // The opening placement, read before any session has stepped. Nothing has crossed the wire
+    // but the join, so an agreement here is the shared seed's walk and can be nothing else.
+    private static int[] Opening(TestContext ctx, IReadOnlyList<SpawnPoint> table, GameSession[] peers)
+    {
+        var entries = peers
+            .Select(p => p.SeatRigs.Select(r => EntryAt(table, r.Controller)).ToArray()).ToArray();
+        string reading = string.Join(" | ", entries.Select(e => string.Join(",", e)));
+        ctx.Check(entries[0].All(i => i >= 0) && entries.All(e => e.SequenceEqual(entries[0])),
+            $"every seat opens on the same table entry on all three peers ({reading})");
+        ctx.Check(new HashSet<int>(entries[0]).Count == entries[0].Length,
+            $"and no two seats share one ({string.Join(",", entries[0])})");
+        string grants = string.Join(",", peers.Select(p => p.SpawnsTaken));
+        ctx.Check(peers.All(p => p.SpawnsTaken == 0),
+            $"with no spawn grant applied anywhere, so the opening is the seed's walk and not an event ({grants} grant(s))");
+        ctx.Check(table.Count >= NetSeats.MaxPlayers,
+            $"and the block holds a point for every seat the match admits, so no two of a full field open together ({table.Count} entries against {NetSeats.MaxPlayers} seats)");
+        return entries[0];
+    }
+
+    // A sequence of deaths, each on a different machine. Every one of them must come back through
+    // the host, because a guest that rotated for itself would diverge on the first of them.
+    private static void Returns(TestContext ctx, IReadOnlyList<SpawnPoint> table, GameSession[] peers,
+        int[] placed)
+    {
+        foreach (var session in peers)
+        {
+            foreach (var rig in session.SeatRigs)
+            {
+                if (rig.Controller is { } pilot)
+                {
+                    pilot.AutoRespawnAfter = QuickRespawn;
+                }
+            }
+        }
+
+        Downed(ctx, table, peers, placed, owner: 1, seat: 1, killer: 0);
+        Downed(ctx, table, peers, placed, owner: 0, seat: 0, killer: 1);
+        Downed(ctx, table, peers, placed, owner: 1, seat: 1, killer: 2);
+    }
+
+    // One death and the return that answers it. The owner's machine is the only one told to
+    // crash: everything after that is the death report, the ask and the grant doing their work.
+    // ⚠ The agreement is read off the granted entry, not off three positions. A seat flown
+    // elsewhere stands where its owner's latest pose puts it. A pose sent before the death and
+    // delivered after the grant is a replication lag, not a second placement rule.
+    private static void Downed(TestContext ctx, IReadOnlyList<SpawnPoint> table, GameSession[] peers,
+        int[] placed, int owner, int seat, int killer)
+    {
+        int was = placed[seat];
+        var before = peers.Select(p => (int?)p.SpawnsTaken).ToArray();
+        peers[owner].SeatRigs[seat].Controller!
+            .DebugForceCrash(peers[owner].SeatRigs[killer].Controller!.PlayerIndex);
+
+        int steps = StepUntilGranted(peers, before);
+        var now = peers.Select(p => p.SpawnEntries[seat]).ToArray();
+        var grants = peers.Select((p, i) => p.SpawnsTaken - before[i]!.Value).ToArray();
+        int flown = EntryAt(table, peers[owner].SeatRigs[seat].Controller);
+        string reading = $"seat {seat} downed by seat {killer} at entry {was}, back on {string.Join("/", now)} after {steps} step(s)";
+        ctx.Check(now[0] >= 0 && now[0] < table.Count && now.All(e => e == now[0]),
+            $"a downed seat is placed on one real table entry, the same one on all three peers ({reading})");
+        ctx.Check(now[0] != was, $"and never the entry it was downed at ({reading})");
+        ctx.Check(flown == now[0],
+            $"and the aeroplane itself stands on that entry on the machine that flies it (entry {flown} against {now[0]})");
+        ctx.Check(grants.All(g => g == 1),
+            $"placed by exactly one host grant on every peer, the owner's own machine included ({string.Join(",", grants)} grant(s))");
+        placed[seat] = now[0];
+    }
+
+    // ABLE-TO-FAIL CONTROL. The host hands out an entry its own rotation would refuse, the one a
+    // living seat is standing on. Both guests place the aeroplane there anyway, which a guest
+    // running a rotation of its own could not do. The agreements above are therefore the host's
+    // word being followed, not three machines picking alike.
+    private static void ObeyedVerbatim(TestContext ctx, IReadOnlyList<SpawnPoint> table,
+        GameSession[] peers, int[] placed)
+    {
+        int seat = 2;
+        int odd = placed[0];
+        var before = new int?[] { null, peers[1].SpawnsTaken, peers[2].SpawnsTaken };
+        peers[0].NetLink!.Broadcast(
+            new SpawnMessage((byte)seat, NetSpawnKind.Respawn, (ushort)odd), NetChannels.Events);
+        StepUntilGranted(peers, before);
+
+        int owner = peers[2].SpawnEntries[seat];
+        int watcher = peers[1].SpawnEntries[seat];
+        int flown = EntryAt(table, peers[2].SeatRigs[seat].Controller);
+        ctx.Check(owner == odd && watcher == odd && flown == odd,
+            $"ABLE-TO-FAIL CONTROL: a grant naming entry {odd}, which the rotation refuses, is obeyed by the owner and by the other guest ({owner} and {watcher}, aeroplane on {flown})");
+        placed[seat] = odd;
+    }
+
+    // Steps every peer together until each one being watched has applied one more grant, and
+    // answers with how many steps that took. A null is a peer the grant never reaches, which is
+    // the host's own broadcast coming back to nobody.
+    private static int StepUntilGranted(GameSession[] peers, int?[] before)
+    {
+        for (int step = 1; step <= GrantSteps; step++)
+        {
+            Lockstep(1, peers);
+            bool all = true;
+            for (int i = 0; i < peers.Length; i++)
+            {
+                all &= before[i] is not { } was || peers[i].SpawnsTaken > was;
+            }
+
+            if (all)
+            {
+                return step;
+            }
+        }
+
+        return GrantSteps;
+    }
+
+    // Which table entry a placed aircraft is standing on, or -1. A start is raised off the ground
+    // under it, so the match is on the horizontal position alone.
+    private static int EntryAt(IReadOnlyList<SpawnPoint> table, Node3D? placed)
+    {
+        if (placed == null)
+        {
+            return -1;
+        }
+
+        var pos = placed.GlobalPosition;
+        for (int i = 0; i < table.Count; i++)
+        {
+            var d = table[i].Position - pos;
+            if (Mathf.Abs(d.X) < EntryTolerance && Mathf.Abs(d.Z) < EntryTolerance)
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     // What one owner's guns put in the world, counted on the far peer. The pool's own scored-shooter

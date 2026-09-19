@@ -158,10 +158,12 @@ it.
 `Net/NetMessages.cs` keeps the two-word header and the original's id for every event that has a
 counterpart here: `0x0f` aircraft state, `0x10` fire, `0x12` death with its four causes, `0x13`
 score, `0x17` match state, `0x22` hit and `0x27` seat roster. Damage, spawn, the mission
-director transition and the join handshake have no counterpart, so they are minted at `0x40`,
-`0x41`, `0x42` and `0x43`, above the ceiling above. The handshake carries the master seed, the
-host's clock and the seat the joining peer was given; the original needs none of the three,
-because it draws from no shared stream and hands out no seat.
+director transition, the join handshake and a seat's ask to be spawned again have no
+counterpart, so they are minted at `0x40`, `0x41`, `0x42`, `0x43` and `0x44`, above the ceiling
+above. The handshake carries the master seed, the host's clock and the seat the joining peer was
+given; the original needs none of the three, because it draws from no shared stream and hands
+out no seat. The ask carries a seat and nothing else: the original's client takes its own
+respawn, while here the host owns every placement and answers the ask with a spawn event.
 
 The remake does not take the batching: its hit and damage messages are reliable and separate, its
 score message is one seat rather than the whole table, and its roster carries the match seed,

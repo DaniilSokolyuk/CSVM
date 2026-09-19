@@ -175,7 +175,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 11. ☑ Aircraft state replication: own aircraft broadcast at a fixed rate, remote aircraft interpolated
 12. ☑ Fire, hit, damage and death events in the decoded order, scored by the host
-13. ☐ Host-owned spawn and respawn from `net.zrd` and the rotation, applied by guests
+13. ☑ Host-owned spawn and respawn from `net.zrd` and the rotation, applied by guests
 14. ☐ Match state: clock, limits, end and scoreboard replicated
 15. ☑ The ENet transport, host and join by direct IP with UPnP, and the multiplayer door's join board (`BL-951`)
 
@@ -712,10 +712,54 @@ event reliable from the owner to the host in the `0x12` shape; the host runs `Ve
 scoring and broadcasts the score. Projectiles stay local on every peer, spawned from fire events, so
 `StepProjectiles` and `StepIncomingFire` need no wire.
 
-## B13 ☐ Host-owned spawn and respawn from `net.zrd` and the rotation, applied by guests
+## B13 ☑ Host-owned spawn and respawn from `net.zrd` and the rotation, applied by guests
 
-**Goal.** The host picks every spawn and respawn from the mission's `net.zrd` through the existing
-rotation, and every guest places the aircraft where the host said.
+**Landed.** One rule decides where a pilot appears, and it is written in the `GameSession.cs`
+entry of `docs/architecture/Session.md`: the OPENING placement is the shared seed's own walk over
+the mission's `net.zrd` table and crosses no wire at all, while every later return is GRANTED by
+the host. `GameSession.WireNetSpawns` is the wiring, beside B12's `WireNetCombat` and inert with
+no seats on a wire. `_versusSpawns` is now built on the host alone, so a guest holds no rotation
+to diverge with. A downed seat that is flown here asks through `AskSpawn`: on the host that is a
+direct call to `GrantSpawn`, on a guest one reliable `SpawnRequestMessage` (minted at `0x44`,
+seat and nothing else) sent once per death under `_spawnAsked`. `GrantSpawn` runs the rotation
+against the living field, broadcasts `SpawnMessage(seat, kind, entry)` and applies it locally
+through the same `TakeSpawn` every guest runs, which resolves the entry against the spawn list
+the session was placed from and calls `FlightController.RespawnAt`. A rematch grants the whole
+field its opening entries the same way rather than each machine respawning locally.
+
+`FlightController` gained the two hooks that make one placement path serve both: `RespawnRequest`
+withholds the return entirely, so a due crash timer or the respawn key asks instead of respawning
+and the aeroplane stays down until the answer lands, and `RespawnAt` takes a pose it was handed
+rather than asking `RespawnPlacement`, so a granted spawn cannot run a rotation of its own. Two
+bugs fell out of the reading: `VersusRespawn` built its living field over `_rigs`, the pane list,
+so a host flying one pane would have rotated around its own aeroplane alone with every guest
+invisible to the spacing rule, and it now reads `_seatRigs` through the shared `LivingField`.
+
+With the field at sixteen the rule needs no fan: the free-for-all block holds sixteen entries and
+the match admits sixteen pilots, so every seat still opens on a point of its own, and a list
+shorter than the field is answered by the rotation relaxing its one-living-seat-per-point rule
+rather than by computing a bearing. The original's 45-degree centroid fan stays unimplemented,
+which `docs/org/multiplayer-spawn.md` now states for the networked case as well.
+
+**Verified.** <pending orchestrator run> On this fork: `dotnet build` clean with zero warnings,
+4877 units passed with 2 skipped, and `net-spawn-rotation`, `net-combat-events`,
+`net-relay-star`, `net-two-session`, `net-seats`, `versus-spawn-rotation` and
+`versus-spawn-net-table` each pass on their own.
+
+**Verify.** `net-spawn-rotation` in `CSVM/src/Testing/NetCombatSuites.cs`, three sessions in one
+process with the guest-to-guest link cut so an ask reaches the host alone. Before any peer has
+stepped it reads every seat's opening entry on all three and finds them equal with no grant
+applied anywhere, which is the opening-is-the-seed rule proved rather than asserted. Then three
+deaths on two different machines, each stepped only until every peer has taken one more grant:
+the granted entry agrees across all three, is a real table entry, is never the one the seat was
+downed at, and the aeroplane stands on it on the machine that flies it. The able-to-fail control
+has the host hand out an entry its own rotation refuses, the one a living seat holds, and both
+guests obey it; a guest rotating for itself could not land there. Weight 9.9 in
+`analysis/engine-suite-weights.json`.
+
+**Original approach (kept for reference).** Rotation runs only on the host; a reliable spawn event
+carries the seat and the picked entry; guests call the same placement path the owner does. A
+guest's own respawn is requested from the host, not taken.
 
 **Evidence (confidence: traced).** `SpawnPoints.LoadNetFreeForAll` reads the table
 (`docs/formats/net-spawns.md`); `docs/org/multiplayer-spawn.md` is what the executable does with a
@@ -723,17 +767,15 @@ pick; `VersusSpawnRotation` (`CSVM/src/Flight/VersusSpawnRotation.cs`) is the re
 with one living seat per point and the roomiest-entry respawn; the 16-entry block quantisation is
 in this plan's data survey.
 
-**Approach.** Rotation runs only on the host; a reliable spawn event carries the seat and the
-picked entry; guests call the same placement path the owner does. A guest's own respawn is
-requested from the host, not taken.
-
 **Model recommendation.** <TODO: not settled in the scoping session>
 
-**Verify.** <TODO: a harness suite asserting both peers place every seat on the same entry over a
-sequence of deaths; `VersusSpawnSuites` is the pattern>
-
 **⚠ Traps.** A guest must not run the rotation locally "to save a round trip"; two rotations
-diverge on the first death.
+diverge on the first death. A granted spawn must not be applied through plain `Respawn`: on the
+host that seat still carries a rotation, and asking it again moves the aeroplane off the point
+the rest of the field was just told about. An agreement between peers must be read off the
+granted entry and not off three positions, because a seat flown elsewhere stands where its
+owner's latest pose puts it and an unreliable pose sent before the death can arrive after the
+grant.
 
 ## B14 ☐ Match state: clock, limits, end and scoreboard replicated
 

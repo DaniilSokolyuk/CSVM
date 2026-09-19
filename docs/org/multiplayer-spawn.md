@@ -93,3 +93,12 @@ puts a returning pilot next to the pack, which is the camping problem
 `Flight/VersusSpawnRotation.cs` exists to solve, and that rotation stays as it is. The stunt
 race's abreast starting grid is selected only when a race exists and never touches a Dogfight:
 four dogfighters 60 m apart on one heading is a head-on merge every round.
+
+Over a wire it departs from the original a second time, in who picks. The original has each
+client place its own pilot; here the host owns the rotation and a downed pilot asks for its
+return, because two rotations diverge on the first death. Only the return crosses the wire: the
+opening placement is the shared seed walking every peer onto the same entry, so a match start
+sends no spawn event at all. The block holds sixteen entries and the match admits at most
+sixteen pilots, so a full field still opens one seat per point and the 45-degree fan above has
+nothing to wrap past. A list shorter than the field is answered by the rotation relaxing its
+one-living-seat-per-point rule, never by computing a bearing.

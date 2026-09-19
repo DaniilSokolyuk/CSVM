@@ -727,9 +727,8 @@ spawn sets (one living seat per point) and picks a respawn among the roomiest en
 living field, weighing the killer at `KillerWeight` and drawing between everything within
 `RoomyShare` of the best, so the point rotates and no seat can be camped. `For` returns null when
 there is no list, `Restart` reopens a round on the opening points, and the draw comes from a
-caller-supplied `Random` so a pinned run replays. `GameSession` feeds it the live field and hands
-the result to `FlightController.RespawnPlacement`. Off-engine coverage:
-`CSVM.Tests/VersusSpawnRotationTests.cs`; the seam's own suite is `versus-spawn-rotation`.
+caller-supplied `Random` so a pinned run replays. `GameSession` feeds it the live field; offline it hands the pick to `FlightController.RespawnPlacement`, and in a match only the host holds a rotation at all, its pick crossing the wire as a table entry.
+Off-engine coverage: `CSVM.Tests/VersusSpawnRotationTests.cs`; the suites are `versus-spawn-rotation` and `net-spawn-rotation`.
 
 ## src/Flight/VersusHud.cs
 The per-pane Dogfight HUD: a compact status line (remaining time, this pane's kills and deaths, the
@@ -1146,7 +1145,7 @@ text, dials and gates compose and assert here with no `Control` (`ComputeStallWa
 ## src/Flight/FlightController.cs
 The flying-aircraft node: input through `FlightModel` to a transform (or, for an AI pilot publishing
 a `RailPose`, the danger-zone ribbon's pose in place of the model step, the sweep still run), plus
-weapon fire as `FireControl`'s engine adapter and the crash and respawn paths. It keeps no rule it
+weapon fire as `FireControl`'s engine adapter and the crash and respawn paths (`Respawn` takes what its `RespawnPlacement` hook answers, `RespawnAt` a pose handed to it instead, and `RespawnRequest` withholds the return altogether for a seat whose placement is somebody else's to grant). It keeps no rule it
 can delegate: the camera is `CameraController`'s, the pilot HUD `FlightHud`'s, this frame's stick
 one `IFlightInputSource`, the states an aircraft moves between `AircraftLifecycle`'s, and what a
 contact costs `AircraftContactResolver`'s. This node reads the devices, performs what each of those
