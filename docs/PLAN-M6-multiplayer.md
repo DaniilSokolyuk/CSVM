@@ -154,7 +154,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 1. ☑ The transport interface and the loopback transport with an injected latency and loss model
 2. ☑ The message vocabulary: typed messages, reliability classes, serialisation, modelled on the decoded set
 3. ☐ The remote-airframe arm: a `FlightController` fed a received pose instead of a flight model
-4. ☐ Network seats: seat identity without a pane, the 8-behind-16 ceiling, the seed and match-clock handoff
+4. ☑ Network seats: seat identity without a pane, the 8-behind-16 ceiling, the seed and match-clock handoff
 5. ☐ The two-session harness: a host and a guest `GameSession` in one process under `RunTests.ps1`
 
 ### Wave B, Dogfight over the wire
@@ -354,7 +354,45 @@ controller; the exact probes are unwritten>
 aircraft will bounce off terrain it never touched on its owner's machine. Collision on a remote
 aircraft is cosmetic and for being hit; it must never move the pose.
 
-## A4 ☐ Network seats: seat identity without a pane, the 8-behind-16 ceiling, the seed and match-clock handoff
+## A4 ☑ Network seats: seat identity without a pane, the 8-behind-16 ceiling, the seed and match-clock handoff
+
+**Landed.** Four modules in `CSVM/src/Net/`, and the session wiring that reads them.
+`NetSeat.cs` is the per-seat record shaped like the decoded pilot record (`PeerId`, `SeatIndex`,
+`TeamId`, `IsLocal`, `Callsign`, `PlaneNode`, `Livery`, signed `Score`, and `Color` off the table).
+`NetSeats.cs` holds `MaxPlayers = 8` behind `SeatCapacity = 16`, the colour table (seats 0 to 7 the
+eight dwords at `00628eb4` read as red, green, blue; seats 8 to 15 the channel-wise complement of
+seat minus 8, both TUNE, `BL-1017`), and `Validate`, which requires seats numbered from zero with
+no gap and at least one flown here. `NetHandshake.cs` is the host's seed and its session clock at
+send; `NetClockSlew.cs` is the guest-side application of the clock half, an offset walked to each
+fresh reading over `ConvergeSeconds` at no more than `MaxRateOffset` of real time, snapping past
+`SnapSeconds` and counting it (all three TUNE, `BL-1018`). No wire layout is declared: these are
+the records a session hands to and takes from A2's vocabulary.
+
+In the session, `LauncherContext` gained optional `NetSeats` and `NetHandshake`. `GameSession`
+takes the handshake's seed as its master before `Rng.Reset` runs, opens a `NetClockSlew` from its
+clock and advances it once per frame, and builds `_seatRigs` beside `_rigs`: the panes at their own
+seat indices plus one pane-less `PlayerRig` per guest, ordered by seat. `_rigs` stays the pane list
+every camera-anchored system reads, and the six seat-indexed sites (the roster's `RigCount` and
+`BuildPlayers`, `VersusMatch`, `VersusSpawnRotation`, the `lastKiller` ledger and the scoring loop)
+read `_seatRigs`, so `SpawnPicker`, `VersusMatch` and `VersusSpawnRotation` index remote seats with
+no change of their own. `HumanRosterBindings` carries the roster as `NetSeats`, and
+`HumanFlightAdapter` skips the pane, HUD parent, camera, own-ship audio, pads, keyboard, pause key,
+target selection, stunt zones, versus HUD, danger-zone eye, speed cue and own-airframe layer for a
+seat that is not local, keeps everything else, hides the canvases `_Ready` builds through the
+existing `SetPilotHudVisible(false)`, and takes the roster's airframe pick over the launch flags.
+`FlightController.cs` and `SessionSimulation.cs` were not touched.
+
+`CSVM.Tests/NetSeatTests.cs` (11 cases) and `CSVM.Tests/NetClockSlewTests.cs` (11 cases) are the
+unit coverage; `CSVM/src/Testing/NetSeatSuites.cs`'s `net-seats` builds a three-seat match on the
+`MP1` net table with one pane and two guests and asserts the roster order, the spawn walk, the
+score rows, the rotation's ledger and the absent pane furniture, against the local seat in the same
+build as its able-to-fail control. Docs: four `docs/architecture/Net.md` entries and their index
+bullets, the `GameSession.cs`, `FlightRosterInputs.cs` and `HumanFlightAdapter.cs` entries in
+`docs/architecture/Session.md`, and the colour table's decode in `docs/org/multiplayer-spawn.md`.
+
+**Verified.** <pending orchestrator run>
+
+**Original approach (kept for reference).**
 
 **Goal.** A remote guest occupies a seat number with no pane, every seat-indexed system (spawns,
 scores, markers, colours) works on it unchanged, the player ceiling is one constant, and every peer
@@ -374,11 +412,25 @@ respawn-fan entries. The host sends the roster, its seed and its clock at join; 
 session clock to the host's rather than snapping it. Seats without a pane skip the HUD, camera and
 audio build in `HumanFlightAdapter` but keep the rest.
 
-**Model recommendation.** <TODO: not settled in the scoping session>
+**Model recommendation.** High. The seat record and the seat-versus-pane split are what B11 to B14
+and C23 all index against, and the edit lands in `GameSession.cs`, where a wrong list at one of the
+six seat-indexed sites is a silent wrong answer rather than a build error.
 
-**Verify.** <TODO: a suite building a session with pane-less seats and asserting the roster, the
-spawn placement and the score tables index them; a clock-slew suite; the exact assertions are
-unwritten>
+**Verify.** `CSVM.Tests/NetSeatTests.cs`: the ceiling stands behind a wider table; the first eight
+colours are the authored dwords; every seat has a distinct colour and the derived eight are the
+stated complement; a seat outside the table throws rather than wrapping; a roster is refused when
+it is empty, past the ceiling, gapped, repeated, or flown by nobody here.
+`CSVM.Tests/NetClockSlewTests.cs`: the handshake offset is in force before anything is observed; a
+fresh reading moves nothing on its own frame; the walk arrives inside one window and never passes
+its target; the rate stays inside its bound; a negative error runs the offset the other way; a
+reading past the threshold is applied at once and counted, one inside it is not; the newest reading
+replaces the one being walked to; a settled slew costs nothing. The `net-seats` engine suite builds
+the production roster seam with one pane and two guests on the `MP1` net table and asserts all
+three seats commit in seat order, each opens on its own distinct table entry, the board keeps a row
+for a guest's kill, the rotation's opening ledger holds the guest's entry, the roster's airframe
+pick is what the guest flies, and every guest is built with no HUD in a pane, no pad, no keyboard,
+no pause key, no target selection and no camera-anchored cue, with the local seat in the same build
+as the able-to-fail control.
 
 **⚠ Traps.** The original's pilot index is 1-based and its eighth pilot flies black; the remake's
 seats are 0-based and every seat gets a colour, so do not copy the table's off-by-one when porting

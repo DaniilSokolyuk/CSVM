@@ -70,6 +70,20 @@ the one the `snd_CTF*` sound keys (`00628f94` onward) and the `score_return_flag
 `score_enemy_flag` score keys (`00627754`, `00627768`) belong to. Team ids are handed out from 1,
 which is what leaves block 0 of the table to the un-teamed match.
 
+## The per-pilot colour table
+
+`00628eb4` holds eight dwords and then zeros from `00628ed4`. It is indexed by the pilot's own
+index with no bound check at `00495893` (`MOV ECX, dword ptr [EDX*0x4 + 0x628eb4]`, `EDX` from the
+aircraft's `+0x3c`) and again at `00497ae6`, and each entry is stored to the aircraft at `+0x1060`.
+The stored bytes are `81 2d 2d 00`, `2d 2d 81 00`, `2d 81 2d 00`, `81 81 2d 00`, `81 2d 64 00`,
+`66 81 2d 00`, `45 7c 81 00`, `66 2d 81 00`. Which channel the consumer takes first is not decoded:
+a search for a reader of `+0x1060` finds only those two writers.
+
+The original's pilot index is 1-based here, so its eighth pilot reads the first zero dword past the
+table. `Net/NetSeats.cs` does not reproduce that: every seat gets a colour, seats 0 to 7 from the
+eight dwords read as red, green, blue, and seats 8 to 15 from the channel-wise complement of seat
+minus 8. Both readings are TUNE (`BL-1017`).
+
 ## What the remake takes
 
 The remake's Dogfight is the un-teamed match, so it takes the opening rule and the opening

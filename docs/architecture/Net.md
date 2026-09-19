@@ -55,3 +55,37 @@ unit-range field as a 16-bit integer, and a fixed-width UTF-8 field that truncat
 character. The writer opens with the header and patches the total length in on `Close`; the
 reader reads the header in its constructor, so `Type`, `Length` and `Valid` answer before any
 payload byte is touched.
+## src/Net/NetClockSlew.cs
+How a guest holds its session clock against the host's, as one offset that is walked rather than
+written: `HostTime(guest) = guest + Offset`, and a fresh `Observe` sets a target the offset
+converges on over `ConvergeSeconds`, bounded by `MaxRateOffset` of real time, never overshooting.
+A reading further out than `SnapSeconds` is applied at once and counted in `Snaps`, which is the
+signal that the window is wrong rather than the link. Engine-free and clock-free: it is handed
+every time it is told about, so `GameSession` needs no clock write and a unit suite drives it
+whole. The three constants are TUNE (`BL-1018`).
+
+## src/Net/NetHandshake.cs
+What a host hands a joining guest before either flies: the master seed and the host's session
+clock at send. The seed reaches `GameSession`'s constructor through `LauncherContext`, where it
+replaces the launch's own master before `Rng.Reset` runs, which is what makes both peers draw the
+same liveries, the same spawn walk and the same dice. The clock becomes the opening offset of the
+guest's `NetClockSlew`. The record is what a session hands to and takes from the wire; the bytes
+that carry it are the message vocabulary's.
+
+## src/Net/NetSeat.cs
+One pilot's place in a match, shaped like the record the original allocates per player: the peer it
+is addressed by, its team, whether this machine flies it, its callsign, its airframe and paint, its
+seat index and its signed score. `Color` reads the seat's own entry in `NetSeats`. The seat index is
+the whole identity: a remote pilot indexes spawns, scores, markers and colours exactly as a
+splitscreen pane does, which is why the session orders its rigs by it. Read
+`docs/architecture/Session.md`'s `GameSession.cs` entry for where a seat becomes an aeroplane
+without a pane.
+
+## src/Net/NetSeats.cs
+The roster's rules: `MaxPlayers = 8` pilots admitted, every seat-indexed table built
+`SeatCapacity = 16` wide so the ceiling can rise without resizing one, each seat's identity colour,
+and `Validate`, which requires seats numbered from zero with no gap and at least one flown here.
+Seats 0 to 7 take the original's authored dwords at `00628eb4` in order (the remake's index is
+0-based where the original's was 1-based and its eighth pilot read past the table); seats 8 to 15
+take the channel-wise complement of seat minus 8. The channel order and the derived eight are TUNE
+(`BL-1017`).

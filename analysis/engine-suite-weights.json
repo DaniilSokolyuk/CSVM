@@ -259,6 +259,7 @@
     "muzzle-flash-cockpit-hidden": 0.1,
     "muzzle-flash-rides-muzzle": 0.02,
     "muzzle-light-first-person-point-term": 0.02,
+    "net-seats": 1.26,
     "nitro-ai-edges": 0.45,
     "nitro-boost-anchors": 0.25,
     "nitro-boost-flown-rig": 0.495,

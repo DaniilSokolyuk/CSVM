@@ -2367,6 +2367,16 @@ public sealed class LauncherContext
     /// connected roster, which is what every CLI launch does).</summary>
     public required int[][]? MenuPads { get; init; }
 
+    /// <summary>The whole network match's seat roster, local panes and remote guests alike, or
+    /// null outside a network match. A seat here that is not <see cref="Net.NetSeat.IsLocal"/>
+    /// gets an aircraft, a spawn slot, a score row and a marker colour, and no pane.</summary>
+    public IReadOnlyList<Net.NetSeat>? NetSeats { get; init; }
+
+    /// <summary>What the host handed this guest at join, or null on a host and outside a match.
+    /// Its seed replaces this session's master before anything draws, so every peer's liveries,
+    /// spawn walk and dice agree.</summary>
+    public Net.NetHandshake? NetHandshake { get; init; }
+
     /// <summary>The presentation this session's own boards take, already resolved: the menu's
     /// active one, or what the flags name on a CLI launch. A resolved answer rather than a flag,
     /// which is why it rides here beside <see cref="MenuDriven"/>.</summary>

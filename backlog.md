@@ -1029,6 +1029,23 @@ usual.
   *Cross-refs:* `PLAN-cockpit-view` B11 ("Splitscreen posture"), `BL-389` (splitscreen weapon
   mix, same playtest family).
 
+- `BL-1017` `[Tuning]` `[S]` `[Next: decode]` `[Impact: low]` `[Evidence: decoded]` **Seat colours:
+  the eight authored dwords are read channel-order-unproven, and seats 8 to 15 are invented.**
+  *Evidence:* the per-pilot table at `00628eb4` holds eight dwords and zeros from `00628ed4`; it is
+  indexed unchecked at `00495893` and `00497ae6` and each entry is stored to the aircraft at
+  `+0x1060`, where a search for a reader finds only those writers. So which channel the consumer
+  takes first is undetermined. `Net/NetSeats.cs` reads each entry's three stored bytes as red,
+  green, blue, the reading under which the set comes out red, blue, green, yellow, magenta, lime,
+  teal and violet, and derives seats 8 to 15 as the channel-wise complement of seats 0 to 7 (light
+  twins that collide with none of the authored ones). Both are TUNE. *Fix shape:* find the consumer
+  of the aircraft's `+0x1060` dword and read the channel order off it; then judge the eight against
+  a capture of the original's own lobby or marker colours, and judge the derived eight at the
+  controls once a match runs more than eight seats. *⚠ Traps:* the original's pilot index is
+  1-based and its eighth pilot reads one dword past the table, so do not reproduce that read as
+  fidelity; the remake gives every seat a colour on purpose. *Cross-refs:* `PLAN-M6-multiplayer`
+  A4, `docs/org/multiplayer-spawn.md`, `UI/SplitScreen.cs`'s own `Colors4` (a separate invention,
+  for panes rather than seats).
+
 ## Missions, modes & campaign
 
 - `BL-314` `[Feature]` `[Blocked: PT-45]` `[L]` `[Next: look]` `[Impact: high]` `[Evidence: feel]` **Race countdown, a rolling start on rails before the run clock
@@ -1124,6 +1141,20 @@ usual.
   inferred. Dropping the var also closes that divergence.
 
 ## Misc
+
+- `BL-1018` `[Tuning]` `[S]` `[Next: code]` `[Impact: low]` `[Evidence: trace]` **The guest clock
+  slew's window, rate bound and snap threshold are all invented.** *Evidence:* `Net/NetClockSlew.cs`
+  walks a guest's offset onto host time over `ConvergeSeconds = 2.0` at no more than
+  `MaxRateOffset = 0.10` of real time, and applies a reading more than `SnapSeconds = 5.0` out at
+  once. Nothing in the original's networking was decoded for any of the three; they are chosen so a
+  correction is invisible over a couple of seconds and a lost link does not leave the guest walking
+  for a minute. *Fix shape:* judge them against a real link once a match runs: the window and the
+  bound against how a corrected timestamp reads at the controls (an aeroplane's interpolation is
+  what shows a clock walking), the threshold against the observed `Snaps` count, which is exposed
+  for that reason. A rising `Snaps` says the window or the threshold is wrong, not that the link
+  is. *⚠ Traps:* do not raise the rate bound to make convergence quicker; host time running well
+  off real time is the thing the walk exists to avoid. *Cross-refs:* `PLAN-M6-multiplayer` A4 and
+  B11 (send rate and interpolation buffer, judged in the same sitting).
 
 - `BL-284` `[Bug]` `[Blocked: CAP-34]` `[M]` `[Next: look]` `[Impact: low]` `[Evidence: footage]` **Wing-light flare: soft round glow vs the original's sharp star burst; view-dependence
   unproven.** Follow-up from `BL-119` (landed 2026-08-05): with the authored one-sided quad restored

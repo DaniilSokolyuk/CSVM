@@ -83,6 +83,16 @@ public partial class GameSession : Node3D
     // sees (skydome / cloud deck / whiteout). Exactly one entry in single player,
     // wrapping the main-viewport _camera below, so the 1P render path is unchanged.
     private readonly List<PlayerRig> _rigs = new();
+    // One rig per SEAT: the panes above first, then one pane-less rig per network guest, in seat
+    // order. This is what the seat-indexed systems size themselves by (roster, spawn walk, versus
+    // board), while everything that dereferences a camera keeps reading _rigs. Identical to _rigs
+    // outside a network match.
+    private readonly List<PlayerRig> _seatRigs = new();
+    // The whole match's seat roster, empty outside a network match. See Net.NetSeat.
+    private readonly IReadOnlyList<Net.NetSeat> _netSeats;
+    // How this guest reads the host's session clock, null on a host and outside a match. Built
+    // from the handshake, whose seed is already in _masterSeed by then.
+    private readonly Net.NetClockSlew? _netClock;
     // Every pane's camera, bound once right after BuildRigs, the session-owned "what do the
     // cameras see" registry draw rules read instead of `_rigs[0]`/`GetViewport().GetCamera3D()`.
     // ProjectilePool.Viewers takes this same instance; B11/B13 are its next consumers.
@@ -356,7 +366,17 @@ public partial class GameSession : Node3D
         _rofPath = ctx.RofPath;
         _probeRunner = ctx.ProbeRunner;
         _captureDirector = ctx.CaptureDirector;
-        _masterSeed = ctx.MasterSeed;
+        // A guest's seed is the host's, taken here so it is in place before Build calls Rng.Reset.
+        // Both peers then draw the same liveries, the same spawn walk and the same dice.
+        _masterSeed = ctx.NetHandshake?.Seed ?? ctx.MasterSeed;
+        // Sorted once here, so a seat's position in this list IS its seat index. Everything
+        // downstream then reads the roster with the index it reads the rigs with.
+        _netSeats = ctx.NetSeats is { Count: > 0 } seats
+            ? seats.OrderBy(s => s.SeatIndex).ToArray()
+            : Array.Empty<Net.NetSeat>();
+        _netClock = ctx.NetHandshake is { } handshake
+            ? new Net.NetClockSlew(handshake.HostClock)
+            : null;
         _camera = ctx.Camera;
         _orbit = ctx.Orbit;
         _sun = ctx.Sun;
@@ -456,6 +476,7 @@ public partial class GameSession : Node3D
         // One rig per rendered view, before anything camera-anchored is built (the skydome and
         // weather visuals below are per-rig). Single player reuses the main-viewport camera.
         BuildRigs(_spec.Fly ? _spec.Players : 1);
+        BuildSeatRigs();
         // ⚠ Do not let a draw-rule consumer re-derive its camera set from _rigs; every one shares
         // this single registration so they cannot disagree about what the cameras see.
         _viewers.Bind(_rigs.Count > 0 ? _rigs.Select(r => r.Camera)
@@ -771,6 +792,9 @@ public partial class GameSession : Node3D
                 clock.StepOnce();
             }
             clock.BeginFrame(delta);
+            // A guest's offset onto host time is walked, not written, so nothing reading a
+            // replicated timestamp sees the correction land on one frame.
+            _netClock?.Advance(delta);
             if (clock.ParentDriven)
             {
                 DriveParentSimulation(clock);
@@ -2296,7 +2320,7 @@ public partial class GameSession : Node3D
         // binds every pane's VersusHud to this one instance below); the score/respawn plumbing
         // that feeds it Downed reports only runs once every rig exists, further down.
         VersusMatch? versus = _spec.Versus
-            ? new VersusMatch(_rigs.Count, _spec.VsKills, _spec.VsTimeMinutes * 60f)
+            ? new VersusMatch(_seatRigs.Count, _spec.VsKills, _spec.VsTimeMinutes * 60f)
             : null;
 
         // The original's HUD bitmap font, loaded once and shared across panes. Null when the rimage
@@ -2386,7 +2410,8 @@ public partial class GameSession : Node3D
         };
         var humanBindings = new HumanRosterBindings
         {
-            RigCount = _rigs.Count,
+            RigCount = _seatRigs.Count,
+            NetSeats = _netSeats,
             MixGain = mixGain,
             PadAssignment = padAssignment,
             PauseState = _pauseState!,
@@ -2398,7 +2423,7 @@ public partial class GameSession : Node3D
             StuntZones = stuntZones,
             Race = race,
             VersusMatch = versus,
-            Rigs = _rigs,
+            Rigs = _seatRigs,
             InstantActionPlayerPlaneNode = iaOverride,
             InstantActionActive = iaRt != null,
             Coop = _spec.Coop,
@@ -2407,7 +2432,7 @@ public partial class GameSession : Node3D
         var flightRoster = new FlightRoster(FlightRosterPolicy.From(_spec), _liveryResolver,
             _worldEffectsFactory, _worldRoot!, aircraftResources, worldBindings, humanBindings,
             flightStarts);
-        var rosterBuild = flightRoster.BuildPlayers(_rigs);
+        var rosterBuild = flightRoster.BuildPlayers(_seatRigs);
         state.MeshInstances += rosterBuild.MeshInstances;
         state.What += rosterBuild.SummarySuffix;
         // One shared PauseState on every rig: any human pauses everybody, and only the pauser may
@@ -2588,12 +2613,12 @@ public partial class GameSession : Node3D
             // Spawn rotation: a downed seat comes back on a point picked against the living field.
             // The fixed spawn can be camped at. The rotation's Rng is seeded from the master alone,
             // so no pick here draws from Rng.Spawn and shifts the launch spawn index.
-            _versusSpawns = VersusSpawnRotation.For(spawnList, spawnBase, _rigs.Count,
+            _versusSpawns = VersusSpawnRotation.For(spawnList, spawnBase, _seatRigs.Count,
                 new Random(Rng.IntSeedFor(Rng.VersusSpawn)));
             // Who downed each seat last, which the rotation weighs heaviest: the Downed report
             // carries it, and the respawn that reads it happens seconds later.
-            var lastKiller = new int?[_rigs.Count];
-            foreach (var rig in _rigs)
+            var lastKiller = new int?[_seatRigs.Count];
+            foreach (var rig in _seatRigs)
                 if (rig.Controller is { } pilot)
                 {
                     int seat = rig.Index;
@@ -2613,7 +2638,7 @@ public partial class GameSession : Node3D
                     };
                 }
             match.MatchCompleted += () => Log.Info("flight", $"dogfight: match complete, {string.Join(", ", match.Standings().Select(s => $"P{s.PlayerIndex + 1} {s.Score}pts {s.Kills}K/{s.Deaths}D (#{s.Rank})"))}");
-            Log.Info("flight", $"dogfight: {_rigs.Count} pilots, {(match.KillTarget > 0 ? $"first to {match.KillTarget} points" : "no kill target")}, {(match.TimeLimit > 0f ? $"{match.TimeLimit / 60f:0.#} min limit" : "no time limit")}");
+            Log.Info("flight", $"dogfight: {_seatRigs.Count} pilots, {(match.KillTarget > 0 ? $"first to {match.KillTarget} points" : "no kill target")}, {(match.TimeLimit > 0f ? $"{match.TimeLimit / 60f:0.#} min limit" : "no time limit")}");
 
             // The match's shared results board: same construction as the race board above,
             // one CanvasLayer over the whole window (the match ends for everybody at once), R
@@ -3685,6 +3710,41 @@ public partial class GameSession : Node3D
             });
         }
         Log.Info("flight", $"splitscreen: {count} panes sharing one world ({SplitScreen.LayoutName(count, GetViewport().GetVisibleRect().Size)})");
+    }
+
+    // The seat list the roster, the spawn walk and the versus board are sized by. It holds the
+    // panes built above at their own seats, plus one pane-less rig per seat flown elsewhere. Such
+    // a rig carries no camera and parents nothing into a pane. That is what makes HumanFlightAdapter
+    // skip every view, device and listener for it. Outside a network match this is the pane list
+    // itself, so nothing about a local session moves.
+    private void BuildSeatRigs()
+    {
+        _seatRigs.Clear();
+        if (_netSeats.Count == 0)
+        {
+            _seatRigs.AddRange(_rigs);
+            return;
+        }
+
+        Net.NetSeats.Validate(_netSeats);
+        int locals = 0;
+        foreach (var seat in _netSeats.OrderBy(s => s.SeatIndex))
+        {
+            // ⚠ A pane takes its SEAT's index, not its pane position. Seat index is the identity
+            // the whole field agrees on, and a guest's own pane is rarely seat 0. Leaving the pane
+            // number here would mark the wrong opponent and key the wrong score row.
+            var rig = seat.IsLocal && locals < _rigs.Count
+                ? _rigs[locals++]
+                : new PlayerRig { Camera = null!, HudParent = _worldRoot!, VisualLayer = 0 };
+            rig.Index = seat.SeatIndex;
+            _seatRigs.Add(rig);
+        }
+
+        if (locals < _rigs.Count)
+        {
+            Log.Warn("flight", $"net seats: {_rigs.Count} panes built for {locals} local seats; the extra panes fly nothing");
+        }
+        Log.Info("flight", $"net seats: {_seatRigs.Count} in the match, {locals} with a pane here");
     }
 
     // One interior render pass per rig, on that player's own HUD parent, so splitscreen gets a
