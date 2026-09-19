@@ -256,6 +256,37 @@ public class NetMessagesTests
         Assert.Empty(got.Seats);
     }
 
+    // The join's first payload. The seed is a full 64 bits and the clock a full double, so both
+    // ride as pairs of 32-bit words. A truncation would put the two peers on different dice.
+    [Fact]
+    public void TheHandshakeRoundTripsTheWholeSeedTheClockAndTheSeat()
+    {
+        var sent = new HandshakeMessage(0xfedcba9876543210UL, 1234.56789, 3);
+
+        Span<byte> buffer = stackalloc byte[HandshakeMessage.Size];
+        int written = sent.Write(buffer);
+
+        Assert.Equal(HandshakeMessage.Size, written);
+        Assert.True(HandshakeMessage.TryRead(buffer, out var got));
+        Assert.Equal(sent, got);
+        Assert.True(NetMessage.TryReadHeader(buffer, out var type, out int length));
+        Assert.Equal(NetMessageType.Handshake, type);
+        Assert.Equal(HandshakeMessage.Size, length);
+    }
+
+    // A guest with no seat yet is a real state, not a malformed message. NoSeat has to survive
+    // the trip, so the field reads as "not seated" rather than as seat 255.
+    [Fact]
+    public void TheHandshakeCarriesTheNoSeatMarkerIntact()
+    {
+        Span<byte> buffer = stackalloc byte[HandshakeMessage.Size];
+        new HandshakeMessage(0UL, 0.0, NetMessage.NoSeat).Write(buffer);
+
+        Assert.True(HandshakeMessage.TryRead(buffer, out var got));
+        Assert.Equal(NetMessage.NoSeat, got.Seat);
+        Assert.False(SeatRosterMessage.TryRead(buffer, out _));
+    }
+
     // What a receiver does first: read the header, then hand the buffer to the deserialiser for
     // that type. Nothing else in the vocabulary has to be parsed to route a packet.
     [Fact]
@@ -317,6 +348,7 @@ public class NetMessagesTests
         Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.MatchState));
         Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.SeatRoster));
         Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.DirectorTransition));
+        Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.Handshake));
         Assert.Throws<ArgumentOutOfRangeException>(() => NetMessage.ReliabilityOf((NetMessageType)0x7fff));
     }
 
@@ -335,5 +367,6 @@ public class NetMessagesTests
         Assert.False(NetMessage.IsOriginalId(NetMessageType.Damage));
         Assert.False(NetMessage.IsOriginalId(NetMessageType.Spawn));
         Assert.False(NetMessage.IsOriginalId(NetMessageType.DirectorTransition));
+        Assert.False(NetMessage.IsOriginalId(NetMessageType.Handshake));
     }
 }

@@ -11,14 +11,14 @@ The per-launch orchestrator: `Launcher` constructs it from `(SessionSpec, Launch
 local `BuildState`. It owns the session clock, world root, panes, seats, mode runtimes and resource lifetimes, delegating aircraft assembly and
 membership to `FlightRoster`, world construction to `WorldSession`, and effects staging to `WorldEffectsFactory`. `_rigs` is the pane list every
 camera-anchored system reads; `_seatRigs` is the whole field, a network match's guests included, and is what the roster, the spawn walk, the versus
-board and the respawn rotation are sized by. A handshake's seed replaces the launch's master before `Rng.Reset`, and its clock opens the
-`NetClockSlew` advanced each frame. After the synchronous build it constructs one `SessionSimulation`, which owns the step order; `_PhysicsProcess`
-requests one realtime step and `_Process` each parent-driven `GameClock` substep. `AllAircraft` combines the roster's AI view with the ordered rig
-controllers, for consumers that read membership without stepping it. `OrderWaveAirframes` at build time and `StepOwedLoad` per load-screen frame put
-the coming waves' aeroplanes behind the load rather than on the launch frame that needs them. Exit frees the session subtree atomically and releases
-only the non-node resources this orchestrator owns. The prohibitions that keep those rules true, no `Teardown`, no argument parsing here and no
-re-derived camera set, sit on the members they bind. Read `SessionSimulation.cs` for the step order and `Launcher.cs` for what outlives one
-session.
+board and the respawn rotation are sized by. A context transport opens a `Net.NetSession` in the constructor, before the world, so a host can answer
+a join it has not built for yet; a guest's start is therefore two phases, and `AwaitNetJoin` pumps that wire until the host's seed, seat and roster
+have landed, ahead of `Rng.Reset` and of the seat sizing. A handshake's clock opens the `NetClockSlew` advanced each frame. After the synchronous
+build it constructs one `SessionSimulation`, which owns the step order; `_PhysicsProcess` requests one realtime step and `_Process` each
+parent-driven `GameClock` substep, and both step the wire first, so an arrival is applied on the step after it landed. `AllAircraft` combines the
+roster's AI view with the ordered rig controllers, and `OrderWaveAirframes` with `StepOwedLoad` puts the coming waves' aeroplanes behind the load
+screen. Exit frees the session subtree atomically and releases only the non-node resources this orchestrator owns. The prohibitions that keep those
+rules true, no `Teardown`, no argument parsing here and no re-derived camera set, sit on the members they bind. Read `SessionSimulation.cs` next.
 
 ## src/Session/SessionSimulation.cs
 The session simulation: one plain-C# module owning hold admission and the exact order of flight,
@@ -37,7 +37,7 @@ and what outlives a session (camera, sun, audio, music, the perf and hitch instr
 menu as one `MenuHost` built on the first show, the presentation resolution, the only options write (an apply from the in-flight `Flight/PausePreferences.cs` leaf takes that same route, without the presentation reselect a menu-side apply ends on),
 the frame pacing and the window's screen, mode and size at startup and on an Options apply (`Utils/VSyncSetting.cs`, `Utils/MonitorSetting.cs`, `Utils/DisplayModeSetting.cs`, `Utils/ResolutionSetting.cs`),
 and the sink every menu exit takes ([../menu-presentations.md](../menu-presentations.md)); with no
-extraction it shows `UI/NoGameDataScreen.cs`. `LaunchSession`, `ReturnToMenu`, `RestartSession` and
+extraction it shows `UI/NoGameDataScreen.cs`. Each launch hands the session one `LauncherContext`, the settled paths, the persistent nodes, the process services and the match's wire (`NetTransport` with `NetHost` and `NetAirframes` beside it, or `NetSeats` and `NetHandshake` where a caller has them already), never a new argument, which is a `SessionSpec` change. `LaunchSession`, `ReturnToMenu`, `RestartSession` and
 `BeginLaunch`/`RunOwedLaunch` are every path a session starts or ends on (the load screen stays up past the build while the session's owed build steps run one a frame through `GameSession.StepOwedLoad`, which is what makes it a yield of several frames; a CLI launch has no screen and drains them inside `LaunchSession`), a flight left early comes back to the screen it was launched from (settled by the launch through `MenuReturnDestination.ForLaunch`, not by the exit press), and what the persistent `WorldEnvironment` draws behind all of it is `Utils/WorldBackdrop.cs`'s: black while the menu owns the screen and at the quits that still draw, the sky again at every launch.
 
 ## src/Session/LiveryResolver.cs

@@ -2374,8 +2374,24 @@ public sealed class LauncherContext
 
     /// <summary>What the host handed this guest at join, or null on a host and outside a match.
     /// Its seed replaces this session's master before anything draws, so every peer's liveries,
-    /// spawn walk and dice agree.</summary>
+    /// spawn walk and dice agree. A session given a <see cref="NetTransport"/> as a guest takes
+    /// this off the wire instead, and this field then names nothing.</summary>
     public Net.NetHandshake? NetHandshake { get; init; }
+
+    /// <summary>The carrier this session's <c>NetSession</c> talks to its peers over, or null
+    /// outside a network match. The session binds it and steps it once per simulation step. The
+    /// caller owns the object and never binds a listener of its own to it.</summary>
+    public Net.INetTransport? NetTransport { get; init; }
+
+    /// <summary>Whether this peer owns the match. A host sends its roster and seed to every peer
+    /// that joins. A guest is built from what arrives, and waits for it before its world builds.
+    /// Meaningless without a <see cref="NetTransport"/>.</summary>
+    public bool NetHost { get; init; }
+
+    /// <summary>The airframe order every peer reads a roster's airframe index against, since the
+    /// roster carries an index and a seat flies a named node. Empty leaves a guest's seats without
+    /// a pick, which falls back to this machine's own launch flags.</summary>
+    public IReadOnlyList<string>? NetAirframes { get; init; }
 
     /// <summary>The presentation this session's own boards take, already resolved: the menu's
     /// active one, or what the flags name on a CLI launch. A resolved answer rather than a flag,

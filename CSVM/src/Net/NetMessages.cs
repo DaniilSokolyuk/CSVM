@@ -38,6 +38,10 @@ public enum NetMessageType : ushort
 
     /// <summary>One mission-director transition, as a code and an id.</summary>
     DirectorTransition = 0x0042,
+
+    /// <summary>What the host answers a joining peer with: the match seed, its clock and the seat
+    /// it handed out.</summary>
+    Handshake = 0x0043,
 }
 
 /// <summary>Why a pilot died, the original's own cause word
@@ -550,6 +554,56 @@ public readonly record struct DirectorTransitionMessage(ushort Code, int Id)
 }
 
 /// <summary>
+/// The host's answer to a join, sent to that one peer before the roster. It carries the master
+/// seed every peer's streams derive from, the host's session clock, and the joiner's seat.
+/// The seat is here rather than in the roster because the roster is the same bytes for everybody.
+/// Which of its entries is yours is the one fact that differs per guest. The seed and the clock
+/// are the two halves of <see cref="NetHandshake"/>. Each rides as two 32-bit fields, since the
+/// cursors carry no wider primitive.</summary>
+public readonly record struct HandshakeMessage(ulong Seed, double HostClock, byte Seat)
+    : INetMessage<HandshakeMessage>
+{
+    /// <summary>The fixed width of the message, header included.</summary>
+    public const int Size = 24;
+
+    /// <inheritdoc/>
+    public static NetMessageType Type => NetMessageType.Handshake;
+
+    /// <inheritdoc/>
+    public static NetReliability Reliability => NetReliability.Reliable;
+
+    /// <inheritdoc/>
+    public static bool TryRead(ReadOnlySpan<byte> from, out HandshakeMessage message)
+    {
+        message = default;
+        var reader = new NetMessageReader(from);
+        if (!reader.Is(Size) || reader.Type != Type)
+            return false;
+
+        ulong seed = reader.ReadUInt32() | ((ulong)reader.ReadUInt32() << 32);
+        ulong clock = reader.ReadUInt32() | ((ulong)reader.ReadUInt32() << 32);
+        byte seat = reader.ReadByte();
+        message = new HandshakeMessage(seed, BitConverter.UInt64BitsToDouble(clock), seat);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public int Write(Span<byte> into)
+    {
+        var writer = new NetMessageWriter(into, Type);
+        writer.WriteUInt32((uint)Seed);
+        writer.WriteUInt32((uint)(Seed >> 32));
+        ulong clock = BitConverter.DoubleToUInt64Bits(HostClock);
+        writer.WriteUInt32((uint)clock);
+        writer.WriteUInt32((uint)(clock >> 32));
+        writer.WriteByte(Seat);
+        writer.WriteByte(0);
+        writer.WriteUInt16(0);
+        return writer.Close();
+    }
+}
+
+/// <summary>
 /// The whole seat roster and the match seed, the one variable-length message in the vocabulary.
 /// The seed is here because every peer draws from seeded streams, and one seed handed out at
 /// join makes every draw agree. A seat arriving or leaving resends the whole roster rather than
@@ -683,6 +737,7 @@ public static class NetMessage
         NetMessageType.Damage => DamageMessage.Reliability,
         NetMessageType.Spawn => SpawnMessage.Reliability,
         NetMessageType.DirectorTransition => DirectorTransitionMessage.Reliability,
+        NetMessageType.Handshake => HandshakeMessage.Reliability,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "no such message type"),
     };
 

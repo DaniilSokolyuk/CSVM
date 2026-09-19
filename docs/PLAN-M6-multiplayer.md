@@ -155,7 +155,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 2. ☑ The message vocabulary: typed messages, reliability classes, serialisation, modelled on the decoded set
 3. ☑ The remote-airframe arm: a `FlightController` fed a received pose instead of a flight model
 4. ☑ Network seats: seat identity without a pane, the 8-behind-16 ceiling, the seed and match-clock handoff
-5. ☐ The two-session harness: a host and a guest `GameSession` in one process under `RunTests.ps1`
+5. ☑ The two-session harness: a host and a guest `GameSession` in one process under `RunTests.ps1`
 
 ### Wave B, Dogfight over the wire
 
@@ -473,7 +473,47 @@ seats are 0-based and every seat gets a colour, so do not copy the table's off-b
 the colour dwords. Do not raise the ceiling past 8 in this plan; the respawn fan and the co-op
 missions are authored for fewer.
 
-## A5 ☐ The two-session harness: a host and a guest `GameSession` in one process under `RunTests.ps1`
+## A5 ☑ The two-session harness: a host and a guest `GameSession` in one process under `RunTests.ps1`
+
+**Landed.** One module in `CSVM/src/Net/`, the session wiring that opens it, and the suite that
+runs two whole sessions on it. `NetSession.cs` is a session's own end of the wire: it holds an
+`INetTransport`, is the listener bound to it, sends a typed message under the class the type
+declares (`Send`, `Broadcast`), routes an arrival by its type word to a handler registered through
+`On<T>`, and counts `Sent`, `Received`, `DroppedUnknown` and `Malformed`. `Step(dt)` is the only
+thing it does on its own. The one meaning it carries is the join: a host answers each peer with
+the handshake and then the roster, and a guest applies both, rebuilding its seats whenever either
+half lands. `On<T>` refuses the join's two types, so a later feature cannot unhook it. The one
+edit to A2's files is `HandshakeMessage` in `NetMessages.cs`, minted at `0x43`: the master seed,
+the host's clock, and the seat the joining peer was given, which the roster cannot carry because
+its entries hold no peer id.
+
+`LauncherContext` gained `NetTransport`, `NetHost` and `NetAirframes`. A session given a transport
+opens its `NetSession` in the constructor, before its world, so a host can answer a join it has
+not built for yet. A guest's start is therefore two phases: `AwaitNetJoin`, the first statement of
+`StartSession`, pumps the wire up to `NetJoinSteps` of simulated link time and applies the host's
+seed, roster and clock ahead of `Rng.Reset` and of `BuildSeatRigs`. Both step paths
+(`_PhysicsProcess` and `DriveParentSimulation`) step the wire immediately before the simulation
+step, so a payload is applied on the step after it arrived. `SessionSimulation.cs` and everything
+under `CSVM/src/Flight/` were not touched, and with no transport in the context every added call
+is a null-guarded no-op.
+
+`CSVM/src/Testing/NetSessionSuites.cs`'s `net-two-session` builds a host and a guest `GameSession`
+from one extraction in one process, each under its own `SubViewport` with its own `World3D`, over
+a two-transport loopback mesh at 30 ms latency, 10 ms jitter and 25 per cent loss. It asserts the
+guest built on the host's seed rather than the one it was launched with, the roster crossed seat
+for seat with the local flags complementary, both worlds walked every seat onto the same net-table
+entry (the base is drawn from the seeded stream, so a disagreed seed moves it), the join is two
+reliable payloads and nothing else, a handler registered by type takes its message from inside the
+guest's own step, and the two worlds stand in separate physics spaces. `CSVM.Tests/NetSessionTests.cs`
+(9 cases) is the engine-free coverage of the join, the dispatch and the counters, and
+`NetMessagesTests.cs` gained the handshake's round trip. Docs: the `NetSession.cs` entry in
+`docs/architecture/Net.md` with its index bullet, the `GameSession.cs` and `Launcher.cs` entries in
+`docs/architecture/Session.md`, the harness in `docs/architecture/Testing.md`, and `0x43` in
+`docs/org/multiplayer-messages.md`'s minted list.
+
+**Verified.** <pending orchestrator run>
+
+**Original approach (kept for reference).**
 
 **Goal.** A suite can host a session, join a second session to it through the loopback transport,
 step both, and assert on what each sees, on the hidden desktop the runner already uses.
@@ -488,10 +528,13 @@ unmeasured.
 told it is a guest, wires them through two `LoopbackTransport`s, and steps them in lockstep from the
 test. Reuse the `--run-tests=` entry and `RunProbe.ps1`'s hidden desktop; never a foreground window.
 
-**Model recommendation.** <TODO: not settled in the scoping session>
+**Model recommendation.** High. This is the rig every replication item is measured on, and its
+failure mode is a suite that passes while proving nothing, which is not visible from its verdict.
 
-**Verify.** <TODO: the harness's own smoke, two sessions built and stepped with zero errors; the
-memory and resource check is unmeasured>
+**Verify.** The `net-two-session` engine suite above, run under `RunTests.ps1` on the hidden
+desktop. The second session costs a 2.4 s build and about 205 MiB of static memory beside the
+first's 3.9 s and 237 MiB, measured warm against cold in the same process, so the pair bounds the
+second session rather than comparing like with like (PERF-7). The whole suite is 6.5 s.
 
 **⚠ Traps.** Suites run in one frame and physics can miss enabled shapes on that frame; a collider
 claim needs a live session, not the harness (`docs/verification.md`). Two sessions in one tree share

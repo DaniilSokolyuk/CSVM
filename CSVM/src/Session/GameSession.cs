@@ -58,6 +58,12 @@ public partial class GameSession : Node3D
     // the name the original looks up before deciding whether to draw it at all.
     private const string PirateZepNode = "piratezep";
 
+    // How many transport steps a guest gives the host's answer before it gives up and fails the
+    // build. Ten seconds of simulated link at the fixed step. ⚠ This advances the transport's own
+    // clock, not the wall clock. It bounds simulated delivery time and is not a timeout, so a
+    // carrier that needs real seconds to receive needs a real wait here instead.
+    private const int NetJoinSteps = 600;
+
     private static readonly string[] InstanceShaderParams =
         { "node_bias", "csky_fog_on", "csky_light_fade", Mech3.SceneBuilder.OpacityParam };
 
@@ -75,10 +81,6 @@ public partial class GameSession : Node3D
     // src/Testing/CaptureDirector.cs's entry. Process-scoped and owned by the Launcher (which
     // Ticks it); held here for the Pending reads that gate display choices during the build.
     private readonly Testing.CaptureDirector _captureDirector;
-    // The master seed every subsystem generator derives from (see Utils.Rng), resolved by the
-    // Launcher once per process (pinned runs take the spec's value; everything else draws from
-    // the clock) and re-applied here at each session build.
-    private readonly ulong _masterSeed;
     // One rig per rendered view: its camera plus the camera-anchored copies only it
     // sees (skydome / cloud deck / whiteout). Exactly one entry in single player,
     // wrapping the main-viewport _camera below, so the 1P render path is unchanged.
@@ -88,11 +90,9 @@ public partial class GameSession : Node3D
     // board), while everything that dereferences a camera keeps reading _rigs. Identical to _rigs
     // outside a network match.
     private readonly List<PlayerRig> _seatRigs = new();
-    // The whole match's seat roster, empty outside a network match. See Net.NetSeat.
-    private readonly IReadOnlyList<Net.NetSeat> _netSeats;
-    // How this guest reads the host's session clock, null on a host and outside a match. Built
-    // from the handshake, whose seed is already in _masterSeed by then.
-    private readonly Net.NetClockSlew? _netClock;
+    // This session's end of the wire, null outside a network match. Stepped once per simulation
+    // step, before the step, so a payload is applied on the step after it arrived.
+    private readonly Net.NetSession? _net;
     // Every pane's camera, bound once right after BuildRigs, the session-owned "what do the
     // cameras see" registry draw rules read instead of `_rigs[0]`/`GetViewport().GetCamera3D()`.
     // ProjectilePool.Viewers takes this same instance; B11/B13 are its next consumers.
@@ -170,6 +170,18 @@ public partial class GameSession : Node3D
     // here rather than through key-repeat events, since the grace period is measured on wall
     // time regardless of the sim being halted.
     private readonly HoldToRepeat _stepHold = new(initialDelay: 0.3f, repeatInterval: 0f);
+
+    // The master seed every subsystem generator derives from (see Utils.Rng), resolved by the
+    // Launcher once per process and re-applied here at each session build. A pinned run takes
+    // the spec's value, everything else draws from the clock. Not readonly: a guest replaces it
+    // with the host's before the build, which is the whole point of the handshake.
+    private ulong _masterSeed;
+    // The whole match's seat roster, empty outside a network match. See Net.NetSeat. Not
+    // readonly: a guest's roster arrives over the wire, between construction and the build.
+    private IReadOnlyList<Net.NetSeat> _netSeats;
+    // How this guest reads the host's session clock, null on a host and outside a match. Built
+    // from the handshake, whose seed is already in _masterSeed by then.
+    private Net.NetClockSlew? _netClock;
 
     // Resolves each player's livery and spawn point against _spec;
     // see src/Session/LiveryResolver.cs and src/Session/SpawnPicker.cs.
@@ -377,6 +389,14 @@ public partial class GameSession : Node3D
         _netClock = ctx.NetHandshake is { } handshake
             ? new Net.NetClockSlew(handshake.HostClock)
             : null;
+        // The wire, opened here rather than at the build. A host must be able to answer a join
+        // before its own world stands, and a guest has nothing to build from until it has.
+        _net = ctx.NetTransport is { } transport
+            ? ctx.NetHost
+                ? Net.NetSession.Host(transport, _netSeats, _masterSeed,
+                    () => _clock?.Time ?? 0.0, ctx.NetAirframes)
+                : Net.NetSession.Guest(transport, ctx.NetAirframes)
+            : null;
         _camera = ctx.Camera;
         _orbit = ctx.Orbit;
         _sun = ctx.Sun;
@@ -406,6 +426,21 @@ public partial class GameSession : Node3D
     /// <summary>The session's per-player rigs, the Launcher's F11 placement print reads them.</summary>
     internal List<PlayerRig> Rigs => _rigs;
 
+    /// <summary>One rig per seat: the panes, then one pane-less rig per remote pilot, in seat
+    /// order. Identical to <see cref="Rigs"/> outside a network match.</summary>
+    internal IReadOnlyList<PlayerRig> SeatRigs => _seatRigs;
+
+    /// <summary>This session's end of the wire, null outside a network match. A suite reads its
+    /// counters and its roster; a replication feature registers its handlers on it.</summary>
+    internal Net.NetSession? NetLink => _net;
+
+    /// <summary>The master every stream in this session was derived from, which on a guest is the
+    /// host's.</summary>
+    internal ulong MasterSeed => _masterSeed;
+
+    /// <summary>The whole match's roster in seat order, empty outside a network match.</summary>
+    internal IReadOnlyList<Net.NetSeat> NetSeats => _netSeats;
+
     /// <summary>The campaign mission's director, null outside a <c>--campaign=</c> launch. The
     /// session layer reads its <see cref="CampaignDirector.ReturnToCabin"/> to know the mission is
     /// over and the player belongs back in the cabin.</summary>
@@ -434,6 +469,11 @@ public partial class GameSession : Node3D
     /// _worldRoot for the caller to free) when the build threw.</summary>
     public bool StartSession()
     {
+        // Phase two of a guest's start, before anything below draws or sizes itself by the field.
+        if (!AwaitNetJoin())
+        {
+            return false;
+        }
         // Published as the ambient Current so WorldSession, which the test harness also drives with
         // no session around it, can record its phases blind.
         _startup = new StartupProfile(_spec.ModeName, Time.GetTicksMsec())
@@ -871,6 +911,8 @@ public partial class GameSession : Node3D
         // Before the step, never after: everything below reads world poses, and a follower or a
         // held pose seeded from a drawn one would feed the interpolation back into the simulation.
         RenderPoses.Restore();
+        // Before the step, so everything that arrived is already applied when the phases run.
+        _net?.Step(delta);
         _simulation?.Step((float)delta);
     }
 
@@ -3712,6 +3754,35 @@ public partial class GameSession : Node3D
         Log.Info("flight", $"splitscreen: {count} panes sharing one world ({SplitScreen.LayoutName(count, GetViewport().GetVisibleRect().Size)})");
     }
 
+    // A guest is constructed before it knows what it joined. Its seat, the field and the seed all
+    // arrive over the wire, so its start is two phases, construct and then receive.
+    // This is the second. It runs before Rng.Reset and before the seat rigs are sized,
+    // which is what makes the host's seed and roster the ones the build uses.
+    private bool AwaitNetJoin()
+    {
+        if (_net is not { IsHost: false } net)
+        {
+            return true;
+        }
+
+        for (int i = 0; i < NetJoinSteps && !net.Joined; i++)
+        {
+            net.Step(GameClock.FixedDt);
+        }
+
+        if (!net.Joined)
+        {
+            Log.Error("core", $"net: no handshake or roster from the host in {NetJoinSteps} transport steps, the join failed");
+            return false;
+        }
+
+        _masterSeed = net.Handshake.Seed;
+        _netSeats = net.Seats.OrderBy(s => s.SeatIndex).ToArray();
+        _netClock = new Net.NetClockSlew(net.Handshake.HostClock);
+        Log.Info("core", $"net: joined as seat {net.LocalSeat} of {_netSeats.Count}, master seed {_masterSeed}");
+        return true;
+    }
+
     // The seat list the roster, the spawn walk and the versus board are sized by. It holds the
     // panes built above at their own seats, plus one pane-less rig per seat flown elsewhere. Such
     // a rig carries no camera and parents nothing into a pane. That is what makes HumanFlightAdapter
@@ -4368,6 +4439,8 @@ public partial class GameSession : Node3D
         }
         for (int i = 0; i < clock.Steps; i++)
         {
+            // Per substep and before it, the same order the realtime adapter takes.
+            _net?.Step(clock.Dt);
             _simulation?.Step(clock.Dt);
         }
 

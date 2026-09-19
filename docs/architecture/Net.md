@@ -39,7 +39,7 @@ sequenced payload at or below the newest already delivered on its channel is dis
 
 ## src/Net/NetMessages.cs
 The vocabulary: `NetMessageType` (one word per message), the death, spawn and match-end enums
-taken from the original's own values, and the ten message structs. Each is a value type
+taken from the original's own values, and the eleven message structs. Each is a value type
 implementing `INetMessage<TSelf>`, which carries its type word and its `INetTransport.cs`
 reliability class as static abstracts, so a sender reads the class off the type without
 constructing anything. `NetMessage` holds what they share: the four-byte header, the no-seat
@@ -99,3 +99,12 @@ holds, and `RemotePoseFeed` says which of the three cases (interpolating, extrap
 each answer came out of, so an instrument counts them without re-deriving the decision. Both
 constants are guesses (`BL-1019`). A sample at or below the newest sequence is dropped, wrap
 included. Read `Flight/FlightController.cs`'s `RemoteOwned` for what consumes it.
+
+## src/Net/NetSession.cs
+The one object a session owns to talk to its peers: it holds the transport, implements the
+listener, sends a typed message under the class the type itself declares, and routes an arrival
+to the handler registered on its type word. `Step` is the only thing it does on its own, and a
+session calls it once before each simulation step. The only meaning it knows is the join, a host
+answering each peer with the handshake (which names the seat) and then the roster, a guest
+applying both; `On` refuses those two types so a later feature cannot unhook it. `Sent`,
+`Received`, `DroppedUnknown` and `Malformed` are what a suite reads to know a payload was claimed.
