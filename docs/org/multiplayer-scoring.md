@@ -1,7 +1,8 @@
 # Multiplayer scoring and match end, decoded from `crimson.exe`
 
 What a network match counts and how it stops. The placement side of the same match is
-[`multiplayer-spawn.md`](multiplayer-spawn.md).
+[`multiplayer-spawn.md`](multiplayer-spawn.md), and every message the match puts on the wire is
+[`multiplayer-messages.md`](multiplayer-messages.md).
 
 ## One signed score per pilot
 
@@ -38,7 +39,7 @@ at `+0xc`:
 
 | Cause | Built when | Scored |
 |---|---|---|
-| 1 | the killer argument is non-zero | `score_kill` to the killer, **or `score_suicide` to the killer** when killer and victim share the team field at record `+0x3c` |
+| 1 | the killer argument is non-zero | `score_kill` to the killer, **or `score_suicide` to the killer** when killer and victim share the team slot at **remote record `+0x3c`**, the `0x1090`-byte record `FUN_00499d80` looks up, not the pilot record |
 | 2 | no killer at all | `score_suicide` to the pilot who died |
 | 3, 4 | a zeppelin part or a turret owner | that owner's event |
 

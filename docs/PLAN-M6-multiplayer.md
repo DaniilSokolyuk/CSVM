@@ -61,7 +61,7 @@ that finds itself replicating a mesh, a node or an animation has left this plan.
 
 | # | The wrong claim | How it died |
 |---|---|---|
-| 1 | `docs/org/multiplayer-scoring.md` names offset `+0x3c` of the pilot record as the team field | The team id the code compares is at `+0x08` (`FUN_00413db0`, `FUN_0046ea40`); `+0x3c` is the second word of the 0x44-byte plane and livery configuration at `+0x34` (`FUN_00497990`). Re-read `FUN_00498bf0` before the co-op team logic is built, and correct the doc in that item's commit |
+| 1 | ~~`docs/org/multiplayer-scoring.md` names offset `+0x3c` of the pilot record as the team field~~ **This row was itself wrong; A2's re-read settled it** | Two records carry a team field and the row conflated them. `FUN_00498bf0`'s same-team arm compares `+0x3c` of the **remote** record, the `0x1090`-byte object `FUN_00499d80` looks up over `DAT_0071c7a4`, which `FUN_00495310` fills from the pilot record's `+0x08` team object (`FUN_0046f3c0`) when teams are on and from the pilot index when they are off; `FUN_00499a50`'s team-chat arm compares the same field, and the colour table `00628eb4` is indexed by it. `+0x08` of the *pilot* record (`FUN_00413db0`, `FUN_0046ea40`) is the team object it is derived from. The scoring doc now names the record with the offset |
 | 2 | The original caps a match at a coded number of players | No constant bound exists. The pilot list is an STL list (head `0071c150`, count `0071c154`, walked by `FUN_0046f110`) and the count is never compared against a maximum. The only gate is DirectPlay's `dwMaxPlayers`, filled from the lobby screen variable `nMaxPlayers` (string `006192e0`, global `00642f08`), which the code only ever resets to 0 |
 
 | Confidence | Items | What that means for you |
@@ -152,7 +152,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 ### Wave A, the seam, in-process and network-free
 
 1. ☑ The transport interface and the loopback transport with an injected latency and loss model
-2. ☐ The message vocabulary: typed messages, reliability classes, serialisation, modelled on the decoded set
+2. ☑ The message vocabulary: typed messages, reliability classes, serialisation, modelled on the decoded set
 3. ☐ The remote-airframe arm: a `FlightController` fed a received pose instead of a flight model
 4. ☐ Network seats: seat identity without a pane, the 8-behind-16 ceiling, the seed and match-clock handoff
 5. ☐ The two-session harness: a host and a guest `GameSession` in one process under `RunTests.ps1`
@@ -260,7 +260,48 @@ session. Do not reach for `[Rpc]` on session code for the same reason. The loopb
 must apply to unreliable messages only; a "reliable" message that the loopback drops is a bug in
 the test, not a scenario.
 
-## A2 ☐ The message vocabulary: typed messages, reliability classes, serialisation, modelled on the decoded set
+## A2 ☑ The message vocabulary: typed messages, reliability classes, serialisation, modelled on the decoded set
+
+**Landed.** `CSVM/src/Net/NetMessages.cs` holds ten message structs over a shared four-byte header
+(`ushort type`, `ushort totalLength`, the original's own framing). Each is a value type implementing
+`INetMessage<TSelf>`, whose `static abstract Type` and `Reliability` let a sender read the class off
+the type without constructing anything; `NetMessage.ReliabilityOf` is the same table as a switch for
+a type word that arrives off the wire. `CSVM/src/Net/NetMessageWriter.cs` holds the two cursors every
+serialiser runs on, `NetMessageWriter` and `NetMessageReader`, little-endian over `Span<byte>` with
+no reflection, plus the quantised unit field and the fixed-width UTF-8 field the layouts need. Seven
+ids follow the original (`0x0F` aircraft state, `0x10` fire, `0x12` death, `0x13` score, `0x17` match
+state, `0x22` hit, `0x27` seat roster); three are minted above the original's `0x27` ceiling (`0x40`
+damage, `0x41` spawn, `0x42` director transition), and `NetMessage.IsOriginalId` says which is which
+in code. The original's whole table, with builders, handlers, payload widths and guarantees, is now
+`docs/org/multiplayer-messages.md`, linked from the scoring and spawn pages.
+
+**Verified.** <pending orchestrator run>
+
+**Model recommendation.** High. The wire layout is the one artefact every later item in Waves B, C
+and D reads back, and a field packed wrong here surfaces as a physics or scoring bug three items
+away.
+
+**Verify.** `CSVM.Tests/NetMessagesTests.cs`, 22 tests tagged `Tier=Quick`: a round trip per message
+type, the quantisation clamp, the variable-length roster at zero, one and over-capacity seat counts,
+callsign truncation, header routing, and four rejection cases (wrong type word, truncated buffer,
+declared length mismatched to the entry count, header shorter than four bytes). The size budget is
+`NetMessage.AircraftStateBudget = 48`, asserted against the 44 bytes the layout actually needs, so
+the four bytes of headroom are a named constant and not a fact about today's fields.
+
+**⚠ Traps.** The decode is done and the id table is in `docs/org/multiplayer-messages.md`. Three
+findings change what later items may assume. First, the original batches its hit reports into the
+*unreliable* `0x0F` aircraft-state packet (12 bytes per hit, a 4-bit count, queued by `FUN_004987d0`
+and dropped by `FUN_00498760`), so its hits are droppable; the remake keeps Decision 8's reliable
+hit instead, and B-wave scoring must not cite the original as authority for a droppable hit. Second,
+types `0x02`, `0x03`, `0x05`, `0x06`, `0x07`, `0x0D` and `0x0E` never cross the wire at all:
+`FUN_005b2820` and `FUN_005b24a0` synthesise them on the stack from DirectPlay system messages, so
+a remake transport owes them nothing. Third, the plan's ⚠ row 1 below is **wrong**, and the scoring
+doc was right about the offset: `FUN_00498bf0`'s cause-1 arm compares `+0x3c` of the *remote* record
+(the `0x1090`-byte object `FUN_00499d80` looks up), not of the pilot record, and `FUN_00495310`
+fills that field from the pilot record's `+0x08` team object. Both offsets are real and they name
+different records; the scoring doc's line now says which.
+
+**Original approach (kept for reference).**
 
 **Goal.** Every byte that crosses the wire has a named type, a declared reliability class and a
 serialiser with a test, and the set is small enough to list on one page.
@@ -276,16 +317,8 @@ fire (unreliable, sequenced), hit and damage (reliable), death (reliable, the `0
 and respawn (reliable), score and match state (reliable), seat roster and seed (reliable), mission
 director transition (reliable, Wave C). Hand-packed structs with a sequence number on the unreliable
 ones; no reflection-based serialiser. The vocabulary lives in `CSVM/src/Net/`, and no other
-namespace names a message type's wire layout.
-
-**Model recommendation.** <TODO: not settled in the scoping session>
-
-**Verify.** <TODO: a round-trip suite per message type, plus a size budget assertion so the aircraft
-state stays small; the budget is unwritten>
-
-**⚠ Traps.** <TODO: decode the original's full message id table (`FUN_00498a90`'s siblings) before
-naming the remake's, so the ids can follow the original's where they exist; the scoping session did
-not do this>
+namespace names a message type's wire layout. The landed shape splits that one module into the
+vocabulary and the writer/reader pair, since A1 owns the transport in the same namespace.
 
 ## A3 ☐ The remote-airframe arm: a `FlightController` fed a received pose instead of a flight model
 
@@ -415,8 +448,9 @@ the host scores it by the decoded tables.
 through `FUN_0046e1b0`; Dogfight honours three events (suicide -1, kill +1, turret kill +1); a death
 is message `0x12` from the dying client with killer at `+4` and cause at `+0xc`; the cause table and
 what each is charged as are in the doc. `VersusMatch` already holds the local tally
-(`GameSession.cs:2613`, `:2673`). ⚠ The doc's `+0x3c` team field is wrong (see the table above);
-the team id is `+0x08`.
+(`GameSession.cs:2613`, `:2673`). ⚠ The team field the same-team arm compares is `+0x3c` of the
+remote record, not of the pilot record (see row 1 of the table above, and
+`docs/org/multiplayer-messages.md`).
 
 **Approach.** Fire events unreliable and sequenced (a missed gun burst is cosmetic); hit events
 reliable from the shooter to the victim's owner; damage applied on the owner as today; the death

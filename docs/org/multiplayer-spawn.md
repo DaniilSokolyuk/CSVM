@@ -4,7 +4,8 @@ Where the original puts a pilot in a network match: the opening placement off th
 `net.zrd` table, and the different rule a respawn takes. The table's own file format is
 [`formats/net-spawns.md`](../formats/net-spawns.md); this page is what the executable does with it.
 What the same match counts and how it ends is
-[`multiplayer-scoring.md`](multiplayer-scoring.md).
+[`multiplayer-scoring.md`](multiplayer-scoring.md), and every message it puts on the wire is
+[`multiplayer-messages.md`](multiplayer-messages.md).
 
 All of it lives in `remote.cpp` (the source path string at `00628f50`): `FUN_00495310` is the
 session init and `FUN_004969b0` is the placement it ends with.

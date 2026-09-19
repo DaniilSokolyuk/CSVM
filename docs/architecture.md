@@ -602,11 +602,14 @@ It holds no engine type, so it runs in a plain unit test; formats and evidence a
 ### `src/Net/`, the network seam
 
 What carries bytes between peers, and the in-process carrier the suites run on. No type here
-names an engine type or a socket, so a session cannot learn what it is being carried by.
+names an engine type or a socket, so a session cannot learn what it is being carried by. The
+original's own message set, with ids and guarantees, is in [`org/multiplayer-messages.md`](org/multiplayer-messages.md).
 
 - `src/Net/INetTransport.cs`, the carrier a session sends bytes over: the peer roster, one send per payload with its reliability class and channel, and the listener arrivals are reported to.
 - `src/Net/LoopbackConditions.cs`, one direction's wire conditions as a value: a latency, a symmetric jitter about it and a loss probability, every draw from a caller-supplied `Random`.
 - `src/Net/LoopbackTransport.cs`, transports wired to each other in one process through delivery queues: nothing arrives until a step, so a suite owns delivery time and makes its own reorders.
+- `src/Net/NetMessages.cs`, the message vocabulary: one struct per message, each declaring its type word and reliability class, over a shared four-byte header.
+- `src/Net/NetMessageWriter.cs`, the writer and reader cursors every message is packed and unpacked through: little-endian primitives, quantised unit fields, fixed-width text.
 
 ### Session root and tests
 

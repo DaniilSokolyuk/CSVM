@@ -1,14 +1,15 @@
 # Net
 
 The network seam: what carries bytes between peers, and the in-process carrier the suites run on.
-No type here names an engine type or a socket, which is what lets one session run over the
-loopback in a plain unit test and over a real carrier in a match; the boundary is asserted over
-compiled metadata by `CSVM.Tests/NetNamespaceDependencyTests.cs`. Nothing about the world crosses
+No type here names an engine type beyond Godot's plain math structs, nor a socket, which is what
+lets one session run over the loopback in a plain unit test and over a real carrier in a match;
+the boundary is asserted over compiled metadata by `CSVM.Tests/NetNamespaceDependencyTests.cs`. Nothing about the world crosses
 this seam, and the message vocabulary sits entirely above it.
 
 One `## src/...` entry per module, body at most 8 lines.
 
-Traps do not live here; the rule is in `docs/architecture.md`.
+Traps do not live here; the rule is in `docs/architecture.md`. What the original sends, with its
+type ids, payloads and guarantees, is in [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
 
 ## src/Net/INetTransport.cs
 The seam itself, and the two types it is spoken in. `NetReliability` is the three classes a
@@ -35,3 +36,22 @@ The guarantees are enforced, not imitated: loss is drawn only for the unreliable
 reliable stream's deadlines are held monotonic per sender so jitter cannot reorder it, and a
 sequenced payload at or below the newest already delivered on its channel is discarded. Read
 `CSVM.Tests/LoopbackTransportTests.cs` for the contract in assertions.
+
+## src/Net/NetMessages.cs
+The vocabulary: `NetMessageType` (one word per message), the death, spawn and match-end enums
+taken from the original's own values, and the ten message structs. Each is a value type
+implementing `INetMessage<TSelf>`, which carries its type word and its `INetTransport.cs`
+reliability class as static abstracts, so a sender reads the class off the type without
+constructing anything. `NetMessage` holds what they share: the four-byte header, the no-seat
+marker, the aircraft-state width budget, `ReliabilityOf`, `IsOriginalId`, and `TryReadHeader`,
+the one call a receiver makes before it knows which deserialiser to run. Read
+`NetMessageWriter.cs` next.
+
+## src/Net/NetMessageWriter.cs
+The two cursors every serialiser and deserialiser runs on, `NetMessageWriter` and
+`NetMessageReader`, kept in one file because they are one pair and drift apart if they are not.
+Little-endian primitives over the caller's span, plus the two quantised forms the layouts need: a
+unit-range field as a 16-bit integer, and a fixed-width UTF-8 field that truncates on a whole
+character. The writer opens with the header and patches the total length in on `Close`; the
+reader reads the header in its constructor, so `Type`, `Length` and `Valid` answer before any
+payload byte is touched.
