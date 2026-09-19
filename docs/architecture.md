@@ -614,6 +614,7 @@ original's own message set, with ids and guarantees, is in [`org/multiplayer-mes
 - `src/Net/NetHandshake.cs`, what a host hands a joining guest before either flies: the master seed every stream derives from, and the host's session clock at send.
 - `src/Net/NetSeat.cs`, one pilot's place in a match: peer, team, local flag, callsign, airframe, paint, seat index and signed score, with the seat index as the whole identity.
 - `src/Net/NetSeats.cs`, the roster's rules: eight pilots admitted behind sixteen-wide tables, the original's authored seat colours, and what makes a roster well formed.
+- `src/Net/RemotePoseBuffer.cs`, one remote aircraft's received samples and the pose to draw it at now: interpolated a fixed delay behind, extrapolated along the newest velocity up to a cap, then held.
 
 ### Session root and tests
 

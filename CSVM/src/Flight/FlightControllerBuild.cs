@@ -25,6 +25,13 @@ internal sealed class FlightControllerBuild
     /// segment list cannot: the plant has no auto-level, so "push for N seconds" flies a different
     /// trajectory on every airframe while "push until level" flies the same one.</summary>
     public IFlightInputSource? InputSource;
+
+    /// <summary>Set, this seat is somebody else's aeroplane. The controller takes its pose out of
+    /// this buffer instead of flying a model (<see cref="FlightController.RemoteOwned"/>). Every
+    /// arm above is moot, since no stick here flies it. The buffer's presence is the
+    /// ownership, so a seat cannot be half remote. The session fills it from received
+    /// aircraft-state messages.</summary>
+    public Net.RemotePoseBuffer? RemotePoses;
     public Node3D PlaneModel = null!;
     public PropAnimator? Props;
     public WingLightBlinker? WingLights;
@@ -145,6 +152,7 @@ public partial class FlightController
         Pilot = build.Pilot;
         _holdSegments = build.HoldSegments;
         _suppliedInputSource = build.InputSource;
+        RemotePoses = build.RemotePoses;
         PlaneModel = build.PlaneModel;
         Props = build.Props;
         WingLights = build.WingLights;

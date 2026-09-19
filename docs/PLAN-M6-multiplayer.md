@@ -153,7 +153,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 1. ☑ The transport interface and the loopback transport with an injected latency and loss model
 2. ☑ The message vocabulary: typed messages, reliability classes, serialisation, modelled on the decoded set
-3. ☐ The remote-airframe arm: a `FlightController` fed a received pose instead of a flight model
+3. ☑ The remote-airframe arm: a `FlightController` fed a received pose instead of a flight model
 4. ☑ Network seats: seat identity without a pane, the 8-behind-16 ceiling, the seed and match-clock handoff
 5. ☐ The two-session harness: a host and a guest `GameSession` in one process under `RunTests.ps1`
 
@@ -320,7 +320,53 @@ ones; no reflection-based serialiser. The vocabulary lives in `CSVM/src/Net/`, a
 namespace names a message type's wire layout. The landed shape splits that one module into the
 vocabulary and the writer/reader pair, since A1 owns the transport in the same namespace.
 
-## A3 ☐ The remote-airframe arm: a `FlightController` fed a received pose instead of a flight model
+## A3 ☑ The remote-airframe arm: a `FlightController` fed a received pose instead of a flight model
+
+**Landed.** `CSVM/src/Net/RemotePoseBuffer.cs` is one remote aircraft's received history: samples
+go in stamped with the buffer's own clock (`Receive` at `Now`, `Add` at an explicit time for a
+test), a sample at or below the newest sequence is dropped with a wrap-safe comparison, and a read
+answers the state `BufferDelaySeconds` behind the render time. Two samples straddling that target
+interpolate (position, velocity, throttle and the sender's three surface deflections by lerp, the
+attitude by slerp over normalised quaternions, since the wire's quantised ones are not unit);
+a target past the newest rides that sample's velocity for at most `ExtrapolationCapSeconds` and
+then holds; a target before the oldest holds the oldest. `RemotePose.Feed` reports which of the
+three cases (`Interpolating`, `Extrapolating`, `Starved`) produced the answer, so B11's instrument
+counts them without re-deriving the decision. Both constants are marked TUNE and filed as
+`BL-1019`. The arm on the controller is the buffer itself: `FlightController.RemotePoses`, carried
+through `FlightControllerBuild` and copied in `Bind` before the input arm is resolved, and
+`RemoteOwned => RemotePoses != null`, so a seat cannot be half remote. Owned remotely, the sim step
+runs `StepRemotePose` in place of the whole live-flight branch and writes the model's pose,
+velocity, lever and boost from the sample; `_simPrev`/`_simCurr`/`_renderPose` are then set by the
+same two lines as before, so `WorldPosition`, `WorldVelocity`, `NoseDirection`, `Attitude` and the
+render interpolation are untouched. Being hit, damage visuals, engine and weapon audio, HUD
+markers, the shake and the crash rig all stay live.
+
+**Verified.** <pending orchestrator run>
+
+**Model recommendation.** High. The gating is a list of "must not run" members rather than a new
+code path, and the failure mode of a missed one (a remote aeroplane bouncing off terrain it never
+touched on its owner's machine) is invisible until two sessions fly.
+
+**Verify.** `CSVM.Tests/RemotePoseBufferTests.cs`, 12 tests tagged `Tier=Quick`: straddling
+interpolation, a gap in the stream, a sample at and below the newest sequence, the 65535 wrap,
+extrapolation at half the cap, the hold past it, a read before the oldest, an empty buffer, the
+buffer's own clock, `Clear`, the bounded ring, and a non-unit quaternion slerped. The engine suite
+is `remote-airframe`: two identical real rigs, one handed a buffer and one not, where the remote
+one's pose tracks a scripted 120 m/s stream to under 0.5 m and 0.02 rad through the delay, its
+velocity and the sender's stick arrive intact, a stopped stream holds it one cap past the last
+sample and three further seconds move it under 0.01 m, a non-cannon hit spends its damage ledger
+without moving it, and neither the gun trigger nor a held respawn reaches it. Each of the last
+three has the locally flown rig as its able-to-fail control, which flies, fires and respawns.
+
+**⚠ Traps.** `AircraftStateMessage` carries no timestamp, only a `ushort` sequence, so the buffer
+keeps its own clock and the session owes it one `Advance` per step (the controller does this) plus
+one `Receive` per message. A remote controller must not run the ground-blow probe, the nearest-human
+fill, terrain contact resolution or the under-map backstop, or it will move a pose only its owner
+may write. Guns and rockets stay untouched but unreachable from this machine's trigger; B12's fire
+events are what fires them. A respawn clears the buffer, because the samples before it describe an
+aeroplane that is no longer there.
+
+**Original approach (kept for reference).**
 
 **Goal.** A `FlightController` built for a remote human flies from received state samples,
 interpolated between the last two and extrapolated past the newest, while everything hung on it
@@ -341,18 +387,8 @@ interpolation buffer the network fills. The buffer holds timestamped samples; in
 the two straddling the render time minus the buffer delay, extrapolation along the last velocity
 when the newest sample is older than that. Keep the arm inside `FlightController` so the readers of
 `WorldPosition`, `WorldVelocity`, `NoseDirection` and `Attitude` (`FlightController.cs:937` to
-`:950`) need no change.
-
-**Model recommendation.** <TODO: not settled in the scoping session>
-
-**Verify.** <TODO: a suite feeding a scripted sample stream and asserting the interpolated pose;
-a live check that a remote aircraft's guns, damage stages and crash rig fire on a pose-driven
-controller; the exact probes are unwritten>
-
-**⚠ Traps.** The ground-blow probe and the nearest-human distance are filled by the caller after
-`Read` (`IFlightInputSource.cs:8`); a pose-driven controller must still not run them, or a remote
-aircraft will bounce off terrain it never touched on its owner's machine. Collision on a remote
-aircraft is cosmetic and for being hit; it must never move the pose.
+`:950`) need no change. The landed shape carries the ownership on the buffer reference itself
+rather than a separate flag, so the two cannot disagree.
 
 ## A4 ☑ Network seats: seat identity without a pane, the 8-behind-16 ceiling, the seed and match-clock handoff
 

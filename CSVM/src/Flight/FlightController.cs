@@ -355,6 +355,13 @@ public partial class FlightController : Node3D
     /// path off this same split (<see cref="FlightModel.UsesAiForcePath"/>).</summary>
     public AiPilot? Pilot;
 
+    /// <summary>Somebody else's machine owns this airframe. Set, the sim step takes the pose out
+    /// of this buffer instead of running <see cref="FlightModel"/>. Every rule that would move the
+    /// aeroplane locally is off with it, named at <see cref="RemoteOwned"/>. Being shot, damaged,
+    /// heard, marked and crashed all stay live. The buffer's presence IS the ownership, so the two
+    /// cannot disagree. A session fills it from received aircraft-state messages.</summary>
+    public Net.RemotePoseBuffer? RemotePoses;
+
     /// <summary>The nitro boost lifecycle. <see cref="NitroSystem.Installed"/> is the build's
     /// (the hangar's nitrous engine pick, or the AI spawn's roster flag); the command arm, the
     /// AI maneuver arm, the tank and the animation edges run from <see cref="SimStep"/>.</summary>
@@ -937,6 +944,14 @@ public partial class FlightController : Node3D
     /// shape as <see cref="InPhotoMode"/>; this node decides nothing about the leaf itself.</summary>
     public bool InPauseLeaf { get; private set; }
 
+    /// <summary>Another machine flies this airframe and this one only shows it
+    /// (<see cref="RemotePoses"/>). While set the sim step reads no device and runs no
+    /// <see cref="FlightModel"/> step, no ground-blow probe and no nearest-human fill. Nor any
+    /// collision sweep or contact response, fire control or under-map respawn, since each of those
+    /// would move a pose whose owner is elsewhere. What hangs off the aeroplane is untouched: it
+    /// is hit, damaged, heard, drawn, marked and crashed exactly as a local one is.</summary>
+    public bool RemoteOwned => RemotePoses != null;
+
     /// <summary>The flight model's world position, the plane as a SIM value, not a node transform
     /// (the node lags it by the render interpolation). What another plane's aim assist aims at.</summary>
     public Vector3 WorldPosition => _model.Position;
@@ -1008,8 +1023,12 @@ public partial class FlightController : Node3D
     /// the wreck's retained speed alone.</summary>
     internal FlightInput LastCommand => _lastInput;
 
+    // A remote airframe is a pose that arrives late, never a stick that arrives late. It takes no
+    // arm at all: a neutral hold answers any incidental read, and no device is touched. That wins
+    // over a supplied stick, whose pose is not this machine's to write.
     private IFlightInputSource ResolveInputSource() =>
-        _suppliedInputSource
+        RemoteOwned ? new ScriptedInputSource(new[] { (default(FlightInput), 0f) })
+        : _suppliedInputSource
         ?? (_holdSegments != null ? new ScriptedInputSource(_holdSegments)
         : Pilot != null ? new PilotInputSource(this)
         : new KeyboardInputSource(this));
@@ -1204,6 +1223,7 @@ public partial class FlightController : Node3D
         }
         _lifecycle.Respawn();
         (_inputSource as ScriptedInputSource)?.Reset(); // scripted hold sequences restart from the spawn
+        RemotePoses?.Clear();  // the received history describes an aeroplane that is no longer there
         _lastInput = default;
         Pilot?.ClearStun();  // a fresh airframe never wakes up with its pilot's hands still off
         _model.ClearChoke(); // nor with the last airframe's engine still choked
@@ -1836,7 +1856,10 @@ public partial class FlightController : Node3D
         if (Inert)
             return;
 
-        PollInput();
+        // A remote airframe reads no device at all. The stick that flies it is on another machine,
+        // and what crosses the wire is the pose it produced, not the controls behind it.
+        if (!RemoteOwned)
+            PollInput();
 
         // Advance the stunt clock every physics frame, including through the crash freeze so the
         // clock never stops (a deliberate rule); it stops only at AllComplete (inside Tick). A
@@ -1878,7 +1901,10 @@ public partial class FlightController : Node3D
                 StepWreckFall(dt);
                 return;
             }
-            if (RespawnPressed() || _lifecycle.TickAutoRespawn(dt, _holdSegments != null))
+            // A remote wreck flies again when its owner's spawn says so, never on a button or a
+            // timer here.
+            if (!RemoteOwned
+                && (RespawnPressed() || _lifecycle.TickAutoRespawn(dt, _holdSegments != null)))
             {
                 Respawn();
                 return;
@@ -1894,7 +1920,11 @@ public partial class FlightController : Node3D
 
         // Weapon lab: a HELD airframe skips input/model/collision and re-asserts its pinned pose
         // instead; weapons/gauges/telemetry below run exactly as in flight, through _model.Reset.
-        if (_held)
+        if (RemoteOwned)
+        {
+            StepRemotePose(dt);
+        }
+        else if (_held)
         {
             if (!_heldPinned)
             {
@@ -2013,7 +2043,8 @@ public partial class FlightController : Node3D
 
         // Weapons: poll the raw held controls, let FireControl decide (selector edges, fire
         // clocks, ammo draw-down, cues), then perform its outcome against the pool and audio.
-        if (_fire != null)
+        // Off for a remote airframe, whose rounds come from its owner's fire events.
+        if (_fire != null && !RemoteOwned)
         {
             // The weapon lab flips these on the public fields at runtime (bank switch, toggles;
             // GameSession also sets InfiniteAmmo post-_Ready), mirror them into the machine.
@@ -2089,11 +2120,11 @@ public partial class FlightController : Node3D
         // down per physics frame (world + map-edge extension colliders)
         _pilotHud.StepAgl(World, _model.Position, Body?.ExcludeSelf);
 
-        // Backstop if the swept ray ever misses. A HELD plane is exempt: it is exactly where the lab
-        // parked it (below the map is a legal place to hold), and a respawn would fling it away from
-        // the target it was aimed at.
+        // Backstop if the swept ray ever misses. A HELD plane is exempt: the lab parked it there,
+        // and a respawn would fling it off its target. A remote one too, since its placement is
+        // the host's to make.
         _sinceUnderMapReport += dt;
-        if (!_held && _model.Position.Y < UnderMapY)
+        if (!_held && !RemoteOwned && _model.Position.Y < UnderMapY)
         {
             // ⚠ Rate-limited rather than one line per reset. An aircraft stuck under the map trips
             // this every physics frame, so an ungated print is one console write per frame per
@@ -3315,6 +3346,35 @@ public partial class FlightController : Node3D
         _simPrev = _simCurr;
         _simCurr = _renderPose = new Transform3D(_model.Attitude, _model.Position);
         GlobalTransform = _simCurr;
+    }
+
+    // The whole of a remote airframe's motion: this step's answer from the received history,
+    // written onto the flight model in place of an integration. The sender's own lever and stick
+    // come with it, for the gauges, the propeller and the control-surface animator.
+    // ⚠ A starved buffer writes nothing at all. Holding the last pose is the honest answer; an
+    // unwritten sample would otherwise snap the aeroplane to an origin nobody sent.
+    private void StepRemotePose(float dt)
+    {
+        if (RemotePoses is not { } received)
+            return;
+        received.Advance(dt);
+        _lifecycle.TickTimers(dt);
+        if (!received.TrySample(out var pose))
+            return;
+        SetLever(pose.Throttle);
+        _model.Reset(pose.Position, new Basis(pose.Attitude), pose.Velocity.Length(), pose.Throttle);
+        // After the reset, which rebuilds the direction from the attitude. A sideslipping
+        // aeroplane is not flying where its nose points, and the owner already measured that.
+        _model.SetVelocity(pose.Velocity);
+        _model.Boosting = pose.Nitro;
+        _lastInput = new FlightInput
+        {
+            Roll = pose.Aileron,
+            Pitch = pose.Elevator,
+            Yaw = pose.Rudder,
+            Throttle = pose.Throttle,
+            Boost = pose.Nitro,
+        };
     }
 
     /// <summary>The GROUND-IMPACT event: a live aircraft flown into the world, or a

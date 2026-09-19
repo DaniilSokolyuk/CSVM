@@ -316,6 +316,23 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   flight tick's own steps (forces, contact, damage) out; they share the accumulator and belong
   together. *Cross-refs:* `BL-1015`, `BL-1016` (the same shape in `GameSession.cs` and
   `OriginalOptionsScreen.cs`), `docs/architecture/Flight.md`.
+- `BL-1019` `[Tuning]` `[Blocked: PLAN-M6-multiplayer]` `[S]` `[Next: data]` `[Impact: high]`
+  `[Evidence: trace]` **The remote airframe's two timing constants are guesses:
+  `RemotePoseBuffer.BufferDelaySeconds` (0.1) and `RemotePoseBuffer.ExtrapolationCapSeconds`
+  (0.25).** *Evidence:* a read of `CSVM/src/Net/RemotePoseBuffer.cs`, where both are marked TUNE.
+  The delay has to cover one send interval plus the jitter on it, and the cap has to cover the
+  longest gap worth riding a velocity through, and neither number has been measured against a send
+  rate or a loss model, they were picked to be plausible. *Fix shape:* once two sessions can fly
+  against each other, record the arrival stamps of a real stream and read the send interval, its
+  jitter and the gap
+  distribution off them; set the delay from the jitter tail rather than the mean, and set the cap
+  from where riding a dead velocity starts to place the aeroplane somewhere it visibly was not.
+  The buffer already reports which of the three cases each answer came out of
+  (`RemotePoseFeed`), so the instrument that counts interpolating against extrapolating against
+  starved frames is the measurement. *⚠ Traps:* a delay raised to hide loss is latency every
+  player pays on every frame, so it is the wrong knob for a lossy link; and the two numbers are
+  not independent, a short delay starves sooner and leans on the cap. *Cross-refs:*
+  `docs/architecture/Net.md`, `PLAN-M6-multiplayer` A3.
 
 ## Environment & world
 

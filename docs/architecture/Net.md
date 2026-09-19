@@ -89,3 +89,13 @@ Seats 0 to 7 take the original's authored dwords at `00628eb4` in order (the rem
 0-based where the original's was 1-based and its eighth pilot read past the table); seats 8 to 15
 take the channel-wise complement of seat minus 8. The channel order and the derived eight are TUNE
 (`BL-1017`).
+
+## src/Net/RemotePoseBuffer.cs
+One remote aircraft's received history, and the pose to draw it at now: `AircraftStateMessage`
+samples go in stamped with the buffer's own clock, and a read gets the state
+`BufferDelaySeconds` behind, interpolated between the two samples straddling it. Past the newest
+sample the answer rides that sample's velocity for at most `ExtrapolationCapSeconds` and then
+holds, and `RemotePoseFeed` says which of the three cases (interpolating, extrapolating, starved)
+each answer came out of, so an instrument counts them without re-deriving the decision. Both
+constants are guesses (`BL-1019`). A sample at or below the newest sequence is dropped, wrap
+included. Read `Flight/FlightController.cs`'s `RemoteOwned` for what consumes it.
