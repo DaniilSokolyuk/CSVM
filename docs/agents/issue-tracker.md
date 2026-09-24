@@ -34,6 +34,26 @@ An issue is cited by its number, `#123`, in commits, plans and other issues. The
 in the issue body under the same heading. A public bug report from the form carries `bug`
 and none of these three; it is worked in its own thread as before.
 
+## Backlog labels
+
+A `backlog` issue carries `backlog.md`'s type and property tags as labels, with the same
+vocabularies and meanings as that file's header, so the tracker can be filtered the way the
+backlog artifact is:
+
+| Group | Labels |
+|---|---|
+| Theme | one `theme:<slug>`: `damage`, `weapons`, `flight`, `environment`, `effects`, `audio`, `cameras`, `hud`, `splitscreen`, `missions`, `tooling`, `misc`. The label's description is the `backlog.md` heading it stands for, spelled exactly. |
+| Type | one `type:<type>`: `bug`, `feature`, `research`, `tuning`, `cleanup`, `fidelity`, `perf`, `tooling`, `testing` |
+| Size | `size:S`, `size:M`, `size:L` |
+| Next step | `next:decode`, `next:data`, `next:code`, `next:look`, `next:decide` |
+| Impact | `impact:high`, `impact:low`, `impact:none` |
+| Evidence | `evidence:decoded`, `evidence:data`, `evidence:footage`, `evidence:spec`, `evidence:feel`, `evidence:trace` |
+| Status | `owed-playtest`, `blocked` (the body names the blocker), `divergence`; none means open and unblocked |
+
+Apply them when filing (`--label backlog,theme:audio,type:bug,...`) and change them when the body
+changes what they say. A new theme is a new `theme:` label whose description is the new heading.
+`/update-backlog-artifact` reads these labels and rejects a value outside the vocabularies.
+
 ## Scheduling
 
 `docs/PLAN-<name>.md` is still the live plan, a checklist of scheduled work with at most one

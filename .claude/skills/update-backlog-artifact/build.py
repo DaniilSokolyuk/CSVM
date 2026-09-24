@@ -5,9 +5,9 @@
 # Parses every top-level `- \`BL-NNN\` ...` bullet under each `## ` theme heading
 # (excluding "## Standing notes") into one row object per item:
 #   {theme, id, type, status, size, next, impact, evidence, scope, title}
-# then appends one row per open `backlog`-labelled GitHub issue (theme "GitHub
-# issues", id "#N", type from the body's bold lead, status from the triage label)
-# read through `gh issue list`, and injects them all as JSON in place of the
+# then adds one row per open `backlog`-labelled GitHub issue (id "#N", theme and
+# tags from its theme:/type:/size:/next:/impact:/evidence: and status labels) into
+# its theme after the BL- items, and injects them all as JSON in place of the
 # template's __BACKLOG_DATA__ placeholder. --no-issues skips the tracker.
 #
 # All file I/O is explicit UTF-8; edit this file with the Read/Edit/Write tools
@@ -118,30 +118,62 @@ def parse(src):
     return rows, themes, problems
 
 
-ISSUE_THEME = "GitHub issues"
+# Issues carry backlog.md's tags as labels (docs/agents/issue-tracker.md, "Backlog labels"):
+# theme:<slug> whose description is the backlog.md heading, type:<lower>, size:, next:,
+# impact:, evidence:, and the status labels below. A triage label stands in for the status
+# when no status label is present.
+UNTRIAGED = "Untriaged"
+STATUS_LABELS = {"owed-playtest": "Owed-playtest", "blocked": "Blocked", "divergence": "Divergence"}
 TRIAGE = ["needs-triage", "needs-info", "ready-for-agent", "ready-for-human", "wontfix"]
-# Issue bodies open with "**Unscheduled engine work, <kind>.**"; the kind is the row's type.
-LEAD = re.compile(r"^\*\*[^*]*?,\s*([A-Za-z][\w -]*?)\.\*\*")
+
+
+def gh_json(args):
+    out = subprocess.run(["gh"] + args, capture_output=True, cwd=REPO, shell=(os.name == "nt"))
+    if out.returncode != 0:
+        raise RuntimeError(out.stderr.decode("utf-8", "replace").strip() or "gh failed")
+    return json.loads(out.stdout.decode("utf-8"))
 
 
 def fetch_issues():
-    """Open `backlog` issues from the tracker as rows. Raises on a gh failure."""
-    cmd = ["gh", "issue", "list", "--state", "open", "--label", "backlog", "--limit", "500",
-           "--json", "number,title,body,labels"]
-    out = subprocess.run(cmd, capture_output=True, cwd=REPO, shell=(os.name == "nt"))
-    if out.returncode != 0:
-        raise RuntimeError(out.stderr.decode("utf-8", "replace").strip() or "gh issue list failed")
-    rows = []
-    for issue in json.loads(out.stdout.decode("utf-8")):
-        labels = [l["name"] for l in issue.get("labels", [])]
-        lead = LEAD.match(issue.get("body") or "")
-        kind = lead.group(1).strip().capitalize() if lead else "Issue"
-        status = next((l for l in TRIAGE if l in labels), None)
-        rows.append({"theme": ISSUE_THEME, "id": "#%d" % issue["number"], "type": kind,
-                     "status": status, "size": None, "next": None, "impact": None,
-                     "evidence": None, "scope": None, "title": issue["title"].strip()})
+    """Open `backlog` issues as rows. Returns (rows, problems); raises on a gh failure."""
+    themes = {l["name"][len("theme:"):]: l["description"]
+              for l in gh_json(["label", "list", "--limit", "500", "--json", "name,description"])
+              if l["name"].startswith("theme:")}
+    issues = gh_json(["issue", "list", "--state", "open", "--label", "backlog", "--limit", "500",
+                      "--json", "number,title,labels"])
+    rows, problems = [], []
+    for issue in issues:
+        iid = "#%d" % issue["number"]
+        row = {"theme": UNTRIAGED, "id": iid, "type": None, "status": None, "size": None,
+               "next": None, "impact": None, "evidence": None, "scope": None,
+               "title": issue["title"].strip()}
+        names = [l["name"] for l in issue.get("labels", [])]
+        for name in names:
+            group, _, value = name.partition(":")
+            if not value:
+                row["status"] = row["status"] or STATUS_LABELS.get(name)
+            elif group == "theme":
+                if value not in themes:
+                    problems.append("%s: no theme label %s" % (iid, name))
+                row["theme"] = themes.get(value, UNTRIAGED)
+            elif group == "type":
+                row["type"] = next((t for t in TYPES if t.lower() == value), None)
+                if row["type"] is None:
+                    problems.append("%s: unknown type label %s" % (iid, name))
+            elif group == "size":
+                row["size"] = value if value in SIZES else None
+                if row["size"] is None:
+                    problems.append("%s: unknown size label %s" % (iid, name))
+            elif group.capitalize() in VOCAB:
+                if value not in VOCAB[group.capitalize()]:
+                    problems.append("%s: %s is not one of %s"
+                                    % (iid, name, ", ".join(VOCAB[group.capitalize()])))
+                row[group] = value
+        row["status"] = row["status"] or next((l for l in TRIAGE if l in names), None)
+        row["type"] = row["type"] or "Issue"
+        rows.append(row)
     rows.sort(key=lambda r: int(r["id"][1:]))
-    return rows
+    return rows, problems
 
 
 def main():
@@ -175,13 +207,22 @@ def main():
     issues = []
     if with_issues:
         try:
-            issues = fetch_issues()
+            issues, issue_problems = fetch_issues()
         except Exception as e:  # noqa: BLE001 - any gh failure is fatal, named
             sys.stderr.write("ISSUES: %s (pass --no-issues to build from backlog.md alone)\n" % e)
             return 1
-        if issues:
-            themes.append(ISSUE_THEME)
-            rows.extend(issues)
+        if issue_problems:
+            for p in issue_problems:
+                sys.stderr.write("LABEL: %s\n" % p)
+            return 1
+        # Each issue joins its theme after that theme's BL- items; a theme only issues use
+        # goes after the file's themes, and Untriaged last.
+        for issue in issues:
+            if issue["theme"] not in themes and issue["theme"] != UNTRIAGED:
+                themes.append(issue["theme"])
+        if any(r["theme"] == UNTRIAGED for r in issues):
+            themes.append(UNTRIAGED)
+        rows = [r for t in themes for r in rows + issues if r["theme"] == t]
 
     tpl = io.open(TEMPLATE, encoding="utf-8").read()
     if "__BACKLOG_DATA__" not in tpl:
@@ -190,7 +231,7 @@ def main():
     tpl = tpl.replace("__BACKLOG_DATA__", json.dumps(rows, ensure_ascii=False))
     io.open(out_path, "w", encoding="utf-8").write(tpl)
 
-    untagged = sum(1 for r in rows if r["size"] is None and r["theme"] != ISSUE_THEME)
+    untagged = sum(1 for r in rows if r["size"] is None)
     sys.stderr.write("%d items across %d themes (%d without property tags, %d GitHub issues) -> %s\n"
                      % (len(rows), len(themes), untagged, len(issues), out_path))
     sys.stderr.write("themes: %s\n" % " | ".join(themes))

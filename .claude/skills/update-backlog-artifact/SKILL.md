@@ -30,11 +30,15 @@ rather than falling back to a hand parse; the failure message names the offendin
 is unavailable and the user wants the file-only table anyway, `--no-issues` before the output path
 builds from `backlog.md` alone; say in the report that the issues were left out.
 
-**The GitHub issues** land as one more theme, `GitHub issues`, last in the order. Each open
-`backlog` issue is one row: id `#N`, type from the body's bold lead (`**Unscheduled engine work,
-tooling.**` gives `Tooling`; a body without that lead gives `Issue`), status from the triage
-label the issue carries (`docs/agents/triage-labels.md`), title verbatim. Size, next, impact,
-evidence and scope are `null`, since issues carry no property tags.
+**The GitHub issues** carry `backlog.md`'s tags as labels (`docs/agents/issue-tracker.md`,
+"Backlog labels"). Each open `backlog` issue is one row, id `#N`, placed in its `theme:` label's
+theme after that theme's `BL-` items. The theme name is the label's *description*, which is
+spelled exactly like the `backlog.md` heading. `type:`, `size:`, `next:`, `impact:` and `evidence:`
+labels fill their fields. The `owed-playtest`, `blocked` and `divergence` labels fill the status,
+and when none of them is present, the triage label does (`docs/agents/triage-labels.md`). The title
+is taken verbatim. An issue with no `theme:` label goes into an `Untriaged` theme at the end, and
+one with no `type:` label shows as `Issue`. A label value outside the vocabularies is a build
+failure that names the issue. Issues carry no scope.
 
 ⚠ `build.py` reads and writes explicit UTF-8. Edit it with Read/Edit/Write, never through a
 PowerShell `Get-Content`/`Set-Content` round-trip (see `CLAUDE.md`).
