@@ -20,4 +20,11 @@ vec3 csky_srgb_to_linear(vec3 c) {
     return mix(higher, lower, step(c, vec3(0.04045)));
 }
 
+// The inverse curve: a linear value back to the byte the original's framebuffer held.
+vec3 csky_linear_to_srgb(vec3 l) {
+    vec3 higher = 1.055 * pow(l, vec3(1.0 / 2.4)) - vec3(0.055);
+    vec3 lower = l * 12.92;
+    return mix(higher, lower, step(l, vec3(0.0031308)));
+}
+
 #endif

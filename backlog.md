@@ -474,11 +474,12 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   entry that drives it "plausibly an authoring leftover", present on 1 of 11 aircraft, so the
   capture may delete the feature rather than tune it.
 
-- `BL-285` `[Bug]` `[S]` `[Next: decode]` `[Impact: low]` `[Evidence: decoded]` **The decoded
-  exhaust smoke is ported and measures about half the original's density at a matched slam.**
+- `BL-285` `[Bug]` `[S]` `[Next: look]` `[Impact: low]` `[Evidence: decoded]` **The exhaust
+  smoke now darkens its background within a few points of the original at a matched slam, but
+  still draws at about 0.7 of its width.**
   *Verdict at the controls:* against CAP-21, "its a lot denser in the original"; the AI aircraft's
-  trails (`git log --grep=BL-969`) draw and read right. The matched-speed compare below stands as
-  the measurement; no further look is owed, the next step is the decode of the draw path. *Evidence:* the original's exhaust
+  trails (`git log --grep=BL-969`) draw and read right. That verdict predates the blend fix below,
+  so the plume, and every other near-black mixed puffer, is owed a fresh look. *Evidence:* the original's exhaust
   smoke is its one code-built puffer, a near-black 0.4 m trail per `exhaust%d` marker whose opacity
   charges from the commanded lever running ahead of the live one and decays at 1.5/s
   (`FUN_004afa20`, `FUN_004afbc0`, fed from `FUN_0048e580`; decode in `docs/formats/effects.md`,
@@ -494,19 +495,20 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   between the two frames is the plume and nothing else, and the footage is read the same way
   against a background estimated per row from the band's own margins. Over the hundred rows a
   hundred pixels below the wing line, the original darkens its background by 41% and 39% in its two
-  plumes, peaking at 62% and 72%, over median widths of 77 px and 60 px; the port darkens by 20%
-  in both, peaking at 36% and 41%, over 49 px each. The port therefore stands at about half the
-  original's opacity and about 0.7 of its width at the same moment of the same manoeuvre in the
-  same airframe, which confirms the verdict at the controls and rules the matched speed out as the
-  cause. *The question:* which term in the draw carries the missing factor, since the emitter has
-  none left. Three candidates, all in the renderer: the quad-rim fade in
-  `MultiMeshEmitterRenderer`'s shader, which ramps alpha over the outer 12% of each card edge and
-  is authored against additive rectangles over dark ground yet also applies to the mixed blend this
-  plume draws in; `Puffer.SizeScaleDefault`, the decoded radius-to-diameter 2; and the
-  `smoke101..103` alpha channel, mean 0.263 and peak 0.639, which caps one card at 0.23 opacity
-  under the slam's 0.355 birth alpha. None of the three is settled by the decode as it stands, so
-  the next step is the original's own draw path for a near-black mixed sprite, never a constant of
-  this emitter. ⚠ Traps: slam with a digit key, not the
+  plumes, peaking at 62% and 72%, over median widths of 77 px and 60 px. *The draw path,
+  decoded* (`docs/org/puffer.md`, "What the mixed sprite puts on screen"): the three renderer
+  candidates are all settled as not the carrier. The quad is `2r` with no rim treatment, so the
+  radius-to-diameter 2 is right; the texture stage is texture × diffuse in colour and alpha, as the
+  port draws it; the rim fade measures no change on this plume. The carrier was the blend space:
+  DX7 mixes framebuffer bytes and Godot's `blend_mix` mixes linear values, which for a black sprite
+  darkens a bright background far less. The mixed layer now computes the byte-space mix, and the
+  ramp colour is the drawn byte 1 rather than the installed 7. The port now darkens by 37% and 39%,
+  peaking at 62% and 69%, over 46 px and 50 px, against 21% and 23% over 42 px and 46 px before.
+  *The question:* the width. The emitter and the draw path are decoded end to end, so the remaining
+  factor is in what the two frames show rather than in a constant: the footage's Bloodhawk spans
+  about 520 px of the 1280 against the port's 600, so relative to the airframe the port's plume is
+  narrower still, which points at the chase camera's distance or field of view, or at the
+  original's lower render resolution being scaled to the capture. ⚠ Traps: slam with a digit key, not the
   throttle-up key. A held key moves the commanded lever at the slew's own rate, so the gap stays
   one step's slew and the original shows nothing for it either. A scripted `--hold` feeds the
   smoke no gap, since it bypasses the lever; `--lever=` is the capture flag that reaches the

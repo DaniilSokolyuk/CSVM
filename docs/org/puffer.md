@@ -308,13 +308,14 @@ Everything here is a known, deliberate divergence, not a gap waiting to be close
 | **`TrailBurnAt`**, spending *virtual* metres at a held pose | For hosts that cannot move (the damage lab's parked plane). The engine has no equivalent, which is also why the 200 m teleport guard is not applied to it: there is no motion length to test |
 | **The 1-pixel cull** (`FUN_0057c5c0`), skipped | A software-rasteriser fill defence; at modern resolutions it would discard sprites the original drew |
 | **`K = 0.02`** rather than the software `0.01` | This project has no software path |
+| **The rim fade** (alpha eased to zero over the outer 12 % of the quad) | `FUN_0057c5c0` has no rim treatment. Ours hides the border pixels some frames leak (`fire_f01`'s edge reaches 247), which would otherwise draw faint rectangles on large grown quads. On `smoke101`..`103` it changes nothing measurable: their outer band averages alpha 0.03, and the exhaust plume measures the same darkening with it removed |
 | **The life-fade envelope** (ease the additive glow in/out) | A render nicety with no authored key behind it. It is bypassed entirely whenever a `COLORS` ramp is present, since the ramp owns the alpha |
 | **The soft-particle depth fade** (over the last ~1.5 m before the scene depth) | A render nicety with no counterpart in the original, softening the hard line where a tilted billboard dips into terrain. Off for a sprite set that dies dark, whose ground-level sites would otherwise fade every fresh puff to invisible against the terrain right behind it; on for the rest, which leak through it anyway |
 | **Particle pools with a ceiling**, and pooled copies of each effect template | See the ⚠ below, INVENTED on both counts. A continuous emitter's pool doubles on demand up to `ContinuousPoolMax`, so only the ceiling is the divergence, not the starting size |
 | **The `COLORS` ramp linearised in the shader** | Not a divergence but a translation: the ramp's bytes are DX7 framebuffer values (the smoke screen's `53,74,37`), and Godot's linear pipeline needs `csky_srgb_to_linear` on them to put the same byte back on screen, as every fullbright pass already does. Multiplied in raw, that ramp draws `109,126,92` against the reference's `50,68,35`, two shades too pale on every ramped puffer |
 | **One alpha per particle across the panes** | The original evaluates the fade per particle per DRAW, so each splitscreen pane gets its own distances. Ours is one `MultiMesh` per emitter shared by every pane with the alpha written once per frame, so since `BL-339` the bands are run against EVERY pane's camera and the particle takes the most favourable answer: drawn if any pane should see it, at that pane's alpha. A pane can therefore see a puff its own camera would have faded further; per-pane alpha would take one MultiMesh per pane. Identical to the original wherever there is one viewer, which is every capture, freecam shot and single-player session. Relatedly, an emitter drawing on the very first frame of a session can beat the camera publish by one frame and draw unfaded, one frame of full alpha at session start, left alone rather than deferred |
 | **One draw ORDER across the panes, taken from pane 0** | The same seam, one field further on: the instance buffer carries one order, so the back-to-front sort runs against the first pane's camera and every pane draws that order. Deliberately pane 0 rather than a most-favourable rule, because there is no favourable order, only a different one per viewer. A pane looking along a different axis can therefore see a nearer puff painted under a farther one. Exact wherever there is one viewer, and a per-pane order would take one MultiMesh per pane, the same price as per-pane alpha. With no camera published at all the order is the emitter's own, unsorted, which is the session's first frame and every unwired lab |
-| **The mission's distance fog on a sprite** | The original's sprite quad is a pre-transformed vertex whose format (`0x1c4`, `FUN_005a4210`) carries a SPECULAR component, which is where D3D reads a per-vertex fog factor, and fog is enabled device-wide once at init (`FUN_005a0e00` sets state `0x1c` to 1 and `FUN_005a2f70(1)` sets LINEAR mode; nothing ever disables either). The sprite builder `FUN_0057c5c0` writes position, RHW and UVs and leaves the diffuse and specular fields of the shared quad buffer alone, so what fog factor a puffer sprite carried is not settled here. What is settled is that it rarely mattered: 238 puffers author `FADE_RANGE`, and every world emitter in C5 cuts off between 500 m and 1000 m against that zone's 1500–2250 m fog, so the particle is discarded before any fog could reach it. CSVM mixes the fog in anyway, because the cutoff only covers the emitters that author a band. A world `PUFFER_STATE` emitter is built with the session's own ambience, so it reads the mission wind and the pane cameras and its authored `FADE_RANGE` discards it short of the fog the way the original's did, but an unauthored range never culls, and such a puff reaches whatever distance its host and its lifetime carry it to. An unfogged puff out there would stand at full contrast against a hill that is already fog colour. Colour and cylinder are the sky's globals, so there is no second fog distance; at fog amount zero the mix is exact and an unfogged scene is byte-identical |
+| **The mission's distance fog on a sprite** | The original's sprite quad is a pre-transformed vertex whose format (`0x1c4`, `FUN_005a4210`) carries a SPECULAR component, which is where D3D reads a per-vertex fog factor, and fog is enabled device-wide once at init (`FUN_005a0e00` sets state `0x1c` to 1 and `FUN_005a2f70(1)` sets LINEAR mode; nothing ever disables either). On the hardware path `FUN_0054ed10` writes that specular word as `0xff000000` on all four vertices, fog factor 255, so the original's sprite is unfogged. It rarely mattered: 238 puffers author `FADE_RANGE`, and every world emitter in C5 cuts off between 500 m and 1000 m against that zone's 1500–2250 m fog, so the particle is discarded before any fog could reach it. CSVM mixes the fog in anyway, because the cutoff only covers the emitters that author a band. A world `PUFFER_STATE` emitter is built with the session's own ambience, so it reads the mission wind and the pane cameras and its authored `FADE_RANGE` discards it short of the fog the way the original's did, but an unauthored range never culls, and such a puff reaches whatever distance its host and its lifetime carry it to. An unfogged puff out there would stand at full contrast against a hill that is already fog colour. Colour and cylinder are the sky's globals, so there is no second fog distance; at fog amount zero the mix is exact and an unfogged scene is byte-identical |
 | ~~`puffer.fireRiseScale` / `fireLifetimeScale`~~ | **DELETED 2026-08-10.** The one invented multiplier this system carried, and it is gone, see below |
 
 ⚠ **Every pool size in this system is INVENTED, not decoded.** The particle pools (the trail
@@ -383,6 +384,42 @@ transparent pass's additive.
 **Not one puffer sprite in the install carries the flag**, so every emitter alpha-mixes. The
 flagged textures all belong to other draw paths: the `fire101` … `fire112` mesh flipbook, the lens
 flares, the impact rings and the HUD hilites.
+
+### What the mixed sprite puts on screen
+
+The rest of the draw path, from particle state to the pixel, on the hardware path
+(`DAT_009be708 != 0`):
+
+| Term | Rule | Where |
+|---|---|---|
+| Vertex alpha | `round(distanceAlpha × rampAlpha × 255)`, clamped to 0..255; the ramp-less branch uses `(1 − ageFrac) × distanceAlpha` | `0054ea98`–`0054eace` (`× 255` at `0x60414c`, `+ 0.5` at `0x6032e0`) |
+| Vertex colour | each ramp channel **rounded as it stands**, `+ 0.5` (`0x603458`) and the `1.5 × 2^52` magic (`0x609158`), clamped to 0..255 and packed into the diffuse of all four vertices. No `× 255`: the ramp holds bytes. The ramp-less branch writes `0xffffff` | `0054e9e5`–`0054ead6` |
+| Vertex fog factor | the specular word of all four vertices is `0xff000000`, fog factor 255, unfogged | `FUN_0054ed10` |
+| Quad | `±r` about the projected centre, UVs 0..1 at the corners, clipped only at the screen bounds; no rim treatment | `FUN_0057c5c0` |
+| Texture stage | `COLOROP` and `ALPHAOP` `MODULATE` (texture × diffuse), linear min, mag and mip filters. The flush's `SELECTARG1` alpha case needs texture kind 2, which the upload never assigns (`kind = hasAlpha ? 4 : 1` at `005a1e96`) | `FUN_005a0e00`, `005a6244`–`005a629b` |
+| Surface format | an alpha texture WITH an alpha plane (object `+0x14`) uploads as ARGB8888 when the device offers it AND render-flags bit 3 is set (only `cloud1`, `cloud2`, `rotorblur`), else ARGB4444 when offered, else ARGB1555; one without a plane takes ARGB1555. `smoke101`..`103` carry graded plane alpha, so they take 4444 and their alpha is quantised to sixteenths, not thresholded | upload code at `0x005a1840`, `005a1adc`–`005a1c6f` |
+| Blend | `SRCALPHA, INVSRCALPHA` over the framebuffer's bytes, depth writes off, sorted back to front | `FUN_005a0e00`, `FUN_005a6160` |
+
+⚠ **The mixed blend runs on framebuffer bytes, and Godot's target is linear.** DX7 has no sRGB
+framebuffer, so `SRCALPHA, INVSRCALPHA` mixes the gamma-encoded bytes. Godot's `blend_mix` mixes
+linear values, and for a dark sprite over a bright background that is a much weaker darkening: a
+black sprite at alpha 0.5 takes a byte-200 sky to byte 100 in the original and to byte 146 in a
+linear mix. The exhaust plume measured at about half the original's darkening that way.
+`MultiMeshEmitterRenderer` therefore keeps `blend_mix` for the mixed layer and replaces its alpha:
+against the opaque background it reads from `hint_screen_texture`, the source and the background go
+to bytes and mix there, and the alpha written is the one at which a linear mix lands on that result
+(on luminance, `(out − dst) / (src − dst)`). A single sprite over the opaque world is exact. A stack
+of sprites is approximate, because each layer's alpha is taken against the opaque background rather
+than against what the earlier layers left, and Godot's screen texture holds no transparent pass.
+⚠ **The composite must stay a convex mix.** A premultiplied form that adds the byte-space change
+as colour is exact for a black stack but adds, rather than mixes, for a light source, so a stack of
+white mist sprites (the `c1-waterfall` golden) saturates to a flat glowing blob. The convex form bounds
+every layer between its source and what is behind it. The cockpit panel's
+`SceneBuilder.GammaBlendAlpha` is the same correction in the light-over-dark case.
+
+⚠ **The exhaust ramp's colour is byte 1, not `7, 7, 9`.** `FUN_004afbc0` installs `7/255, 7/255,
+9/255` into a ramp every other caller fills with bytes, so the rounding above turns each channel
+into 1. `ExhaustSmoke.TrailState` carries the drawn byte.
 
 **The two blends take the fog toward different values.** An alpha-mixed quad stands in for what is
 behind it, so full fog leaves it at `csky_fog_color`, the value the hill behind it reaches. An
