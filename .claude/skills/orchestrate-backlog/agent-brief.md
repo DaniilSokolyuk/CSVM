@@ -54,6 +54,15 @@ mechanism in your report. `c1-flight-kill` flakes under load: re-run before beli
 never re-pin it for that. Do NOT run the complete `.\RunTests.ps1` battery; the orchestrator runs
 it on the merged tree.
 
+A red result is fixed, or proved not yours (red on your base commit without your change) and
+waived: one line per failing suite in `commit.txt`,
+`Waiver: <suite> (owned by <BL-NNN or #N>): <why the landing does not wait for it>`, naming the
+open item that owns the failure. When nothing owns it, write a `new-issue-*.md` for it, leave the
+waiver out of `commit.txt` and give the line in your report with `#NEW` as the owner; the
+orchestrator files the issue and writes the line with its number. Check the form with `.\CheckWaiver.ps1 -MessageFile <commit.txt>
+-Root <your worktree>`. The orchestrator refuses a red result without one, and a waiver never
+covers a failure your change caused.
+
 ## No foreground game windows
 
 Never launch Godot or the game so that a window appears on the user's screen, and never
@@ -97,7 +106,8 @@ the commit message and any transferable lesson as a `docs/verification.md` rule.
 Your final message is the only thing the orchestrator reads. Keep it under 40 lines:
 1. Outcome: closed / closed disproved / amended (question for the user, quoted) / blocked (why).
 2. What changed, by file, one line each. Name any golden re-pinned and why, with the proof.
-3. Verification actually run, with the real counts and results (a failure is reported, not hidden).
+3. Verification actually run, with the real counts and results (a failure is reported, not hidden):
+   one line `Battery: green` or `Battery: red: <failing suites>`, and each `Waiver:` line verbatim.
 4. Anything owed to the user (a look at the controls, a decision), one line each.
 5. Any doc rule numbers you minted (INSTR-nn, PERF-nn, WORLD-nn, ...) so collisions can be fixed.
 6. The path of your commit.txt, of any close/comment/new-issue files beside it, and
