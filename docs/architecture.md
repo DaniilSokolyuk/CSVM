@@ -48,6 +48,7 @@ GameZ→Godot builders, and the animation runtime that drives the world.
 - `src/Mech3/WorldBuilder.cs`, builds a chapter world: placed + partition subtrees, cloud deck, camera-anchored skydome, edge extender.
 - `src/Mech3/MapEdgeExtender.cs`, rolling window of repeated border tiles and clutter continuing the world past the map edge, one per session.
 - `src/Mech3/Clutter.cs`, stamps the boot-script clutter templates onto matching-textured terrain at the polygon's own UV lattice.
+- `src/Mech3/ClutterActivation.cs`, draws each clutter stamp only while the world node it was stamped from is visible.
 - `src/Mech3/ClutterTemplates.cs`, the `templates.zrd` reader: each clutter decoration model's authored substitution table, scale range and fade distances.
 - `src/Mech3/FogVolumes.cs`, the `fogvol.zrd` reader + the gamez `fvol*` volume census: what the ambient cloud field scatters, and where.
 - `src/Mech3/Zrdr.cs`, zrdr extraction reader (zip or dir) + `ZrdrDict`, the key/[values…] view over a reader's list.

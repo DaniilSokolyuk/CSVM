@@ -180,7 +180,8 @@ helpers (`HorizonZonesOf`, `CloudDeckAltitudeOf`, `DomeZonesToBuild`, `DetachedW
 ## src/Mech3/MapEdgeExtender.cs
 A rolling window of repeated border tiles and clutter continuing the world past the map edge, one
 window per session shared by every player camera and diffed only on a cell crossing. Clutter copies
-grow from `ClutterBuilder.ExportedKinds`, each keeping its source stamp's fade thresholds.
+grow from `ClutterBuilder.ExportedKinds`, each keeping its source stamp's fade thresholds and
+drawing only while `ClutterActivation` shows that stamp.
 `ClassifyGroundMesh`, `IsCompletionStrip` and `FoldAxis` are pure statics pinned by
 `MapEdgeTileTests`/`MapEdgeFoldTests`; `--dump-tilegrid` writes the per-cell acceptance census
 `WriteCensus` builds. The original's own continuation behaviour and the per-chapter fold
@@ -195,6 +196,14 @@ data under `EffectsLevel`, and samples through `SceneBuilder.SampleAlbedo` for t
 which patch a district dresses; `OverrideTemplateNames` is `--clutter-templates=`'s replacement.
 A decoration is a node chain, and `FirstWithMesh` hands back the translation down to the node carrying the mesh, so a stamp lands where the chain puts the drawn card: C5's lamp glow rides 4.75 m up its post. A solid decoration's chain carries SEVERAL meshes, which `ExtraMeshes` collects (nearest LOD only, each in the drawn mesh's frame) so `Kind.ExtraParts` draws and collides the whole building: 12 of C5's city blocks hold two street walls and a roof cap on further nodes, and drawing the first mesh alone leaves them open on two sides.
 Placement runtime: [../org/clutter.md](../org/clutter.md); authored side: [../formats/clutter.md](../formats/clutter.md), [../formats/templates.md](../formats/templates.md).
+
+## src/Mech3/ClutterActivation.cs
+Keeps every clutter stamp drawn exactly while the world node it was stamped from is visible in the
+tree. Each `KindExport` carries its stamps' owner indices; `Bind` finds the built node per index and
+syncs on its `VisibilityChanged` and `TreeEntered`, so a mission script's area verb, a
+`NodeSetActive` or a record born inactive hides the trees with the ground. A hidden stamp collapses
+its basis and switches off its shared shape as a crater's victim does, and a show restores only
+what this hid. `Version` lets `MapEdgeExtender`'s copies follow their source stamps. Read `ClutterCull.cs`.
 
 ## src/Mech3/ClutterTemplates.cs
 The chapter's `templates.zrd` (`ClutterTemplateSpec.Load`/`.Parse`): one `ClutterKindProps` per

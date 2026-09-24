@@ -544,27 +544,6 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   its shadow on itself clean. *Cross-refs:* `git log --grep=BL-803`, `SHOT-42`, `docs/cli.md` (the
   four doors), `docs/PLAN-enhanced-graphics-2.md`.
 
-- `BL-1038` `[Bug]` `[M]` `[Next: code]` `[Impact: high]` `[Evidence: trace]` `[CM01]` **The trees
-  of an island the mission deactivates stand on open water in CM01.** *Verdict at the controls:*
-  "Trees from a deactivated island still are active", a curved file of palms on the sea at
-  `--pos="-1430.753,149.389,-1818.664" --direction="-0.64273,-0.01762,-0.76589"`
-  (`Screenshots/crimsonskies_2026-09-20_07-25-14-063.png`). *Evidence:* `Clutter.cs`
-  `PlaceOnWorld` walks the world's children and partition nodes and stamps every polygon carrying a
-  template's ground texture, and every placement of one kind is baked into one MultiMesh; the walk
-  reads no node's ACTIVE bit and nothing maps a stamp back to the node it was stamped under, so
-  `AnimRuntime.SetSubtreeActive`, which writes `Visible` on the subtree, cannot reach the island's
-  stamps. Whether the island's terrain is hidden by its own record's ACTIVE bit (`WorldBuilder`
-  `applyActive`) or by the mission's area verb (`SetSubtreeActiveByIndex`) is the first thing to
-  read off CM01's script. *Fix shape:* carry the stamping node's gamez index on each placement; a
-  subtree activation hides and shows the instances under it the way a dead decoration's are taken
-  out, and a placement under a node born inactive starts hidden. *⚠ Traps:* not a placement rule
-  change: the stamps are right, their visibility is not. Do not filter the walk by the ACTIVE bit
-  alone; a script can activate a subtree later and its trees must come with it. The rolling window
-  past the map edge copies from `ExportedKinds` and must follow its source stamp. *Playtest after
-  fix:* CM01 at the pose above, no trees on the water, and the island's trees present wherever its
-  terrain is. *Cross-refs:* `docs/formats/clutter.md`, `docs/architecture/Mech3.md` (`Clutter`),
-  `git log --grep=BL-1029` (the further-mesh walk on the same builder).
-
 ## Effects & animation runtime
 
 - `BL-674` `[Bug]` `[M]` `[Next: look]` `[Impact: high]` `[Evidence: data]` `[CM10]` **CM10's attack-balloon wave flies from 990 m down to water level and back up

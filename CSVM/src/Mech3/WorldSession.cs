@@ -177,6 +177,8 @@ public sealed class WorldSession
             {
                 root.AddChild(clutter);
                 clutterRoot = clutter;
+                // Before the bootstrap: a mission script switching an island off takes its trees.
+                clutterBuilder.FollowActivation(root);
                 // Shared shapes: N distinct shapes / T distinct triangles,
                 // attached M times, the distinct totals, not the expanded
                 // per-attachment triangle count.
