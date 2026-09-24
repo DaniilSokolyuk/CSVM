@@ -96,8 +96,8 @@ Builds and frees a production-shaped, pooled effect-template stage for mesh-visi
 The launchscreen fixture a menu suite stands a `LaunchMenu` on. `Bare` builds a `MenuHost` over an
 empty `PresentationRegistry`, a silent `IMenuAudio` and a caller-owned exit list; `AddFeatures`
 registers the same Free Flight, Instant Action, player-setup, hangar, campaign and controls
-features the launcher wires; `Menu` returns a built launchscreen for a suite that reads nothing
-back from the host; `ScratchPlanes` fills a scratch plane store for a presentation, so no suite
-reads `user://Planes`, and `DropScratchPlanes` removes it. Seat 0 joins through the setup feature,
-so the seat is added after the features; the controls feature is the form that saves nothing.
+features the launcher wires; `Build` stands a launchscreen on a host over the suite's own
+`ScratchPlanes` store, and `Menu` does so on a bare host. Presentations take that store too, so no
+menu suite reads `user://Planes`; `DropScratchPlanes` removes it. Seat 0 joins through the setup
+feature, so it is added after the features; the controls feature is the form that saves nothing.
 Read `UI/Menu/MenuHost.cs` for the host itself.

@@ -47,7 +47,7 @@ internal static class MenuInstantActionSuites
         ctx.RequireData(ctx.ZrdrPath, $"zrdr archive");
         var exits = new List<MenuExit>();
         var host = MenuSuiteHost.Bare(exits, ctx.DataRoot, out var seat);
-        var menu = LaunchMenu.Build(ctx.ZrdrPath, ctx.DataRoot, host, seat.Input);
+        var menu = MenuSuiteHost.Build(ctx, host, seat, "menu-instant-action-journey");
         ctx.Host.AddChild(menu);
         var launches = new Launches(exits);
         try

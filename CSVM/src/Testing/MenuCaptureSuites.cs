@@ -28,7 +28,7 @@ internal static class MenuCaptureSuites
     {
         ctx.RequireData(ctx.ZrdrPath, $"zrdr archive");
         var written = new List<string>();
-        var menu = MenuSuiteHost.Menu(ctx);
+        var menu = MenuSuiteHost.Menu(ctx, "menu-screenshot-key");
         ctx.Host.AddChild(menu);
         try
         {

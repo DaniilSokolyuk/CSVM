@@ -47,7 +47,8 @@ internal static class MenuHangarSuites
         + "walks plane selection, airframe (the first confirm picks and an edited build's swap raises "
         + "the defaults ask as its three answers), "
         + "engine, armor, guns, hardpoints, paint and name to the purchase review, commits a scratch "
-        + "plane that the pickers then list and select, edits it from the plane list and cancels "
+        + "plane into the suite's own scratch plane store, which starts empty, that the pickers then "
+        + "list and select, edits it from the plane list and cancels "
         + "without touching its file, deletes it through the two-stage list, opens the --menu= aids "
         + "and the campaign wallet door over the aid's scratch profile, walks every page after the buy "
         + "row with the money on hand beside the totals and a marked yet pickable over-priced part, "
@@ -59,11 +60,11 @@ internal static class MenuHangarSuites
         ctx.RequireData(ctx.ZrdrPath, $"zrdr archive");
         var exits = new List<MenuExit>();
         var host = MenuSuiteHost.Bare(exits, ctx.DataRoot, out var seat);
-        var menu = LaunchMenu.Build(ctx.ZrdrPath, ctx.DataRoot, host, seat.Input);
+        var menu = MenuSuiteHost.Build(ctx, host, seat, "menu-hangar-journey");
         ctx.Host.AddChild(menu);
-        var store = CustomPlaneStore.UserPlanes();
+        var store = menu.PlaneStore!;
         string scratch = ScratchName();
-        ctx.Check(store.Load(scratch) == null, $"the scratch name {scratch} is free in the user's store before the run");
+        ctx.Check(store.List().Count == 0, $"the suite's scratch store starts empty ({store.List().Count})");
         try
         {
             ModeDoor(ctx, menu, host);
@@ -81,12 +82,10 @@ internal static class MenuHangarSuites
         }
         finally
         {
-            store.Delete(scratch);
             ctx.Host.RemoveChild(menu);
             menu.QueueFree();
+            MenuSuiteHost.DropScratchPlanes(ctx, "menu-hangar-journey");
         }
-
-        ctx.Check(store.Load(scratch) == null, $"the scratch plane is gone from the user's store after the run");
     }
 
     [Suite("menu-original-hangar",
@@ -209,9 +208,8 @@ internal static class MenuHangarSuites
         Is(ctx, "the first row starts a new plane", "New Plane", menu.ShownRowText);
         Is(ctx, "its description", "Build a plane from a bare airframe", menu.ShownDetail);
         Has(ctx, "the footer names the select press", "Enter / A  Select", menu.ShownFooter);
-        int saved = menu.Hangar!.Saved.Count;
-        ctx.Check(menu.ShownRowCount == saved + (saved > 0 ? 2 : 1),
-            $"the rows are New Plane, the store's {saved} saved planes and the delete row where any are saved ({menu.ShownRowCount})");
+        ctx.Check(menu.Hangar!.Saved.Count == 0 && menu.ShownRowCount == 1,
+            $"over the empty scratch store New Plane is the only row, with no delete row ({menu.Hangar.Saved.Count} saved, {menu.ShownRowCount} rows)");
         ctx.Check(menu.ShownDetail.Length > 0 && menu.Hangar.TotalsLine.Length == 0,
             $"no totals line stands on the New Plane row ({menu.Hangar.TotalsLine})");
 
@@ -608,7 +606,7 @@ internal static class MenuHangarSuites
         Is(ctx, "the scratch plane's own row", "Delete " + scratch, menu.ShownRowText);
         Has(ctx, "described as final", "for good", menu.ShownDetail);
         menu.Drive(Accept);
-        ctx.Check(store.Load(scratch) == null, $"Accept removes the file");
+        ctx.Check(store.Load(scratch) == null && store.List().Count == 0, $"Accept removes the file, leaving the store empty ({store.List().Count})");
         ctx.Check(menu.Hangar != null && menu.ShownScreen == "Hangar", $"and the flow stays open ({menu.ShownScreen})");
         menu.Drive(Back);
         ctx.Check(menu.ShownScreen == "Mode", $"Back leaves for the Mode screen ({menu.ShownScreen})");

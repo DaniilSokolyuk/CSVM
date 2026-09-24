@@ -76,7 +76,8 @@ internal static class MenuCampaignSuites
         ctx.RequireData(ctx.ZrdrPath, $"zrdr archive");
         var exits = new List<MenuExit>();
         var host = MenuSuiteHost.Bare(exits, ctx.DataRoot, out var seat);
-        var menu = LaunchMenu.Build(ctx.ZrdrPath, ctx.DataRoot, host, seat.Input);
+        // Its Planes folder sits under the root below, so the root's own sweeps remove it.
+        var menu = MenuSuiteHost.Build(ctx, host, seat, "menu-campaign-journey");
         ctx.Host.AddChild(menu);
         menu.SetProcess(false);
         string root = Path.Combine(ctx.ScratchDir, "menu-campaign-journey");
@@ -847,7 +848,7 @@ internal static class MenuCampaignSuites
         var closing = new FilmRecorder();
         var host = MenuSuiteHost.Bare(new List<MenuExit>(), ctx.DataRoot, out var seat,
             chapterCinema: new ChapterCinema(chapter.Play), closingCinema: new ClosingCinema(closing.Play));
-        var menu = LaunchMenu.Build(ctx.ZrdrPath, ctx.DataRoot, host, seat.Input);
+        var menu = MenuSuiteHost.Build(ctx, host, seat, "menu-campaign-film");
         ctx.Host.AddChild(menu);
         menu.SetProcess(false);
         string root = Path.Combine(ctx.ScratchDir, "menu-campaign-film");
