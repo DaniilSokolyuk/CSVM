@@ -640,6 +640,31 @@ unspawned prototype's state; the rack's root visibility is the pylon's armed sta
 original's own rack-mount routine is not decoded; the pose is read off the data, and the user's
 report that the unfired flare must not show its star.
 
+**The def ends with the round.** Every end of a round clears its live word `+0x20`: the detonation
+(`FUN_005ac3a0`, called from the fuse tail of `FUN_005afd50` at `0x005b0310`), range expiry without
+a detonation (the same routine's `LAB_005b0318`, which stores the 0 and returns), and the shot-down
+branch of `FUN_005af720` (round `+0x674` health at 0.0: the detonation when weapon `+0x188` is empty,
+else that `DESTROY_ANIMATION`, below, then `+0x20 = 0`). None of them touches the round's instances. The
+per-frame sweep `FUN_005af900` (called for each weapon from `0x005ac531`) unlinks a round whose
+`+0x20` is 0 and hands it to `FUN_005b08d0`, which waits until the frame counter `DAT_009be6f8`
+matches the round's `+0x66c` (so a round that died on a later frame is retired one frame after it
+died), stops `ANIMATION` (`+0x10`) and `ANIMATION_ATTACHED` (`+0x14`) with `FUN_004ed480(inst, 0)`,
+takes the node out of the scene (`FUN_004cd6d0`) and, unless the weapon is `TETHER_GUIDED` (bit
+`0x200000`, authored by no weapon), calls `FUN_005aed40` to return the round to the free list
+`DAT_00a1d798`. There, for a weapon with a `FLYOUT` `MODEL` (`+0x120`) whose round holds a model clone
+(`+0x1c`), `FUN_005ad2d0` stops the `MODEL_ANIMATION` instance at round `+0x18` with the same
+`FUN_004ed480(inst, 0)`, detaches the clone (`FUN_004d13f0`) and pushes it on the weapon's clone
+free list at `+0x160`, which `FUN_005ad290` pops at the next spawn. `FUN_004ed480` with a zero
+sequence reaches `FUN_004ed340(inst, 0, 1)`, which restores the saved node states of the instance's
+targets (`FUN_004ed090`: active bit, position, rotation, scale, opacity 1) and tears the instance
+down (`FUN_004ed190`, releasing its sub-instances through `FUN_004ebbb0`). The spawn's callback
+`LAB_005ad320` is `mov eax,[esp+8]; mov dword [eax+0x18],0; ret`: it only clears the round's slot
+when the instance is released, so a def that completes first leaves nothing for the retire to stop.
+So a round's `MODEL_ANIMATION` runs exactly as long as the round plus the one retire frame. The
+flare's `deploy_reararc` is stopped at its 2.0 s `DETONATION_TIME`, its star `sflsh` goes with the
+clone at about 13 % opacity, and the def's `rear_flash_effect` call at 4.0 s is never reached; the
+only flash is the detonation's `IMPACT` binding.
+
 **How long the flight is, and how fast.** The spawn's `+0x38 == 0.0 && !(flags & 0x800)` test picks
 the branch for a weapon without `ACCELERATION` and without `INSTANT` (bit `0x800` is `INSTANT`,
 `FUN_005ad630` at its `s_INSTANT` read), which `wep_14` is: speed `+0x640` and cap `+0x644` are both

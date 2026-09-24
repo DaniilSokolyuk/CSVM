@@ -862,7 +862,9 @@ internal static class OrdnanceSuites
         "of every FLYOUT weapon holds on the built body; a fired flare still starts " +
         "deploy_reararc at spawn, so its star is on the round the frame it leaves; and the star's " +
         "per-instance opacity follows the authored ramp (0 at spawn, 1 at 0.05 s, down over 2.25 s) " +
-        "while it scales 1 to 2, with the rack copy's opacity, overrides and materials untouched")]
+        "while it scales 1 to 2, with the rack copy's opacity, overrides and materials untouched; " +
+        "the round's end stops the def, so a fired flare flashes once at its 2.0 s detonation and " +
+        "never reaches the def's 4.0 s rear_flash_effect, which a lab flare with no fuse does reach")]
     internal static void FlyoutRackPose(TestContext ctx)
     {
         ctx.RequireData(ctx.ZrdrPath, $"weapon definitions");
@@ -1013,6 +1015,45 @@ internal static class OrdnanceSuites
                 }
                 ctx.Check(rackUntouched,
                     $"the rack flare's star has no opacity written, no surface override and the same shared materials after the fired star's fade");
+
+                // The def ends with the round, as FUN_005ad2d0 stops it at the retire. The def calls
+                // rear_flash_effect at 4.0 s, after the flare's 2.0 s fuse.
+                var flashes = new List<float>();
+                live.EffectHandles = _ => true;
+                live.EffectSink = (name, _, _, _, _) =>
+                {
+                    if (name == "rear_flash_effect")
+                        flashes.Add(simTime);
+                };
+                bool goneAfterFuse = false;
+                while (simTime < 4.5f)
+                {
+                    live.SimStep(step);
+                    simTime += step;
+                    if (simTime is > 2.05f and < 2.07f)
+                    {
+                        bodies.Clear();
+                        live.CollectFlyoutBodies(bodies);
+                        goneAfterFuse = bodies.Count == 0;
+                    }
+                }
+                ctx.Check(goneAfterFuse && flashes.Count == 1 && flashes[0] < 2.05f,
+                    $"a fired flare flashes once, at its 2.0 s detonation, and its def's 4.0 s rear_flash_effect is never reached: body gone={goneAfterFuse} flashes at [{string.Join(",", flashes.Select(t => $"{t:0.00}s"))}]");
+
+                // CONTROL: the same def on a round that outlives 4.0 s does reach the call.
+                flashes.Clear();
+                flare.DetonationTime = 10f;
+                flare.Range = 100000f;
+                flare.RangeSqM = flare.Range * flare.Range;
+                float launchedAt = simTime;
+                live.Spawn(flare, muzzle, Vector3.Zero, shooterId: 7, team: InstantActionRuntime.EnemyTeam);
+                while (simTime < launchedAt + 4.5f)
+                {
+                    live.SimStep(step);
+                    simTime += step;
+                }
+                ctx.Check(flashes.Count == 1 && Mathf.Abs(flashes[0] - launchedAt - 4f) < 0.05f,
+                    $"CONTROL: a lab flare with no 2.0 s fuse reaches the def's rear_flash_effect at 4.0 s: flashes at [{string.Join(",", flashes.Select(t => $"{t - launchedAt:0.00}s"))}] after launch");
             }
             finally
             {

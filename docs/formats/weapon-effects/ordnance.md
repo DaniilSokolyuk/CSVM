@@ -60,10 +60,13 @@ instance, as the world runtime writes one (the `csky_opacity` instance parameter
 twin material as that instance's surface override where the shader has no alpha path), so the
 shared prototype material the pylon-mounted copies draw with is never edited. The rear-arc flare's
 `sflsh` therefore fades in over 0.05 s and out over 2.25 s while it scales 1 to 2. The round's def
-ends with the round: at the 2.0 s `DETONATION_TIME` the body is freed with the star still at about
-13 % opacity, and the def's own `rear_flash_effect` call at 4.0 s is never reached. The detonation
-plays the same `rear_flash_effect` through the flare's `IMPACT` `default` and `player` rows. Whether the original keeps the
-round's `MODEL_ANIMATION` instance running past detonation is not decoded.
+ends with the round, as the original's retire stops the round's `MODEL_ANIMATION` instance and
+returns its model clone (`FUN_005ad2d0`, decoded in
+[`org/ordnanceTypes.md`](../../org/ordnanceTypes.md), "The def ends with the round"): at the 2.0 s
+`DETONATION_TIME` the body is freed with the star still at about 13 % opacity, and the def's own
+`rear_flash_effect` call at 4.0 s is never reached. The detonation plays the same
+`rear_flash_effect` through the flare's `IMPACT` `default` and `player` rows, so a fired flare
+flashes once.
 
 `large_fireball` / `small_fireball` (bound by `FIRE`/`IMPACT` on the heaviest ordnance) are the
 **shared** destruction fireballs defined in `flame_ball.zrd.json` and reused by nearly every
