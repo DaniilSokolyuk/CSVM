@@ -56,10 +56,6 @@ internal static class OrdnanceSuites
         ctx.Check(Mathf.IsEqualApprox(full, 200f) && Mathf.IsEqualApprox(radius, 30f),
             $"wep_14 authors HEALTH_DAMAGE 200 and IMPACT_PROXIMITY 30 (the data this lab is scaled to)");
 
-        // The lab stands at the origin in the host's one physics space, where a cached collidable
-        // chapter world's sea collider also stands; without this the splash count depends on which
-        // suite ran before.
-        ctx.EvictCollidableWorlds();
         var textures = new TextureArchive(texturesPath);
         ProjectilePool? pool = null;
         var bodies = new List<StaticBody3D>();
@@ -2136,12 +2132,8 @@ internal static class OrdnanceSuites
         ctx.Check(rendered.EffectName == "large_fireball",
             $"and wep_02's bound large_fireball still plays on the same surface fx={rendered.EffectName ?? "-"}");
 
-        // The lab reads the built chapter through the one physics space, where a cached collidable
-        // world's colliders would also stand and answer the ray.
-        ctx.EvictCollidableWorlds();
         ctx.WithPrivateWorld(FilmLotChapter, collision: true,
             world => Strafe(ctx, world, gun, texturesPath));
-        ctx.EvictCollidableWorlds();
         ctx.WithPrivateWorld("C1", collision: true,
             world => StrafeAirport(ctx, world, gun, airportTextures));
     }

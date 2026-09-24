@@ -1056,24 +1056,6 @@ usual.
   position; `Pads.LogPads` records the roster so the next one reads off the log rather than being
   inferred. Dropping the var also closes that divergence.
 
-- `BL-1036` `[Tooling]` `[S]` `[Next: code]` `[Impact: high]` `[Evidence: trace]` **`ground-contact`
-  run before `instant-action-end` in the same `--run-tests` process makes the second one fail: its
-  aircraft stops moving, so which suites a shard happens to hold decides whether the battery is
-  green.** *Evidence:* `.\RunTests.ps1 -Filter 'suite:ground-contact,suite:instant-action-end'
-  -SkipUnits -SkipGoldens` fails every run on the hold checks, reporting `frames=180 slowest
-  step=0.00 m last=0.00 m boards=1` where the suite wants every frame of the 3 s hold to move.
-  `instant-action-end` passes alone, and passes after each of the other shard-5 predecessors tried,
-  so the pair is the whole condition. Shards are packed from `analysis/engine-suite-weights.json`,
-  which is why adding any suite anywhere can introduce or remove the pairing and the failure looks
-  like a flake. *Fix shape:* find what `ground-contact` leaves in the shared physics space (it
-  builds a collision world and sweeps it) and give the suite a teardown that returns the process to
-  the state the next suite assumes, rather than reordering shards around it. *⚠ Traps:* the
-  symptom is not load or timing; it reproduces on an idle machine with those two suites alone. Do
-  not tune a weight to separate them, that hides the leak and the next added suite re-pairs them.
-  *Priority:* ahead of the other tooling items. `BL-951` landed over this failure, and while the
-  pair stays red every battery result is ambiguous, since a 1-failed run has to be re-read by hand
-  to tell this pairing from a real regression. *Cross-refs:* `git log --grep=BL-951`.
-
 ## Misc
 
 - `BL-284` `[Bug]` `[Blocked: CAP-34]` `[M]` `[Next: look]` `[Impact: low]` `[Evidence: footage]` **Wing-light flare: soft round glow vs the original's sharp star burst; the view-dependence
