@@ -120,6 +120,7 @@ public sealed class WorldBuilder
     /// <see cref="SceneBuilder.BlendSurfaceCount"/>.</summary>
     public int BlendSurfaceCount => _scene.BlendSurfaceCount;
     public int ScissorSurfaceCount => _scene.ScissorSurfaceCount;
+    public int GroundLayerSurfaceCount => _scene.GroundLayerSurfaceCount;
 
     /// <summary>Polygons drawn as nothing for want of a texture the retail data lacks, see
     /// <see cref="SceneBuilder.UndrawnPolygonCount"/>.</summary>

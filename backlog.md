@@ -486,34 +486,6 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   replaced; `git log --grep=BL-305`. Do not reopen either ID; IDs are never reused, per this
   file's own rule).
 
-- `BL-1027` `[Bug]` `[M]` `[Next: code]` `[Impact: high]` `[Evidence: feel]` `[C1]` **A bright band
-  along a ground polygon's edge paints over the tree cards standing in front of it in C1, after
-  BL-997's depth prepass.** *Verdict at the controls:* the ground seen through a tree card's soft
-  alpha reads darker, and a band along the edge of a larger ground polygon reads full bright through
-  the same card, so the band is that ground drawn on top of the card; the near card is not the thing
-  painted over, which answers the question BL-1027's amendment left open. Second pose, freecam at
-  x -2089 y 156 z -3919 in C1 (`Screenshots/crimsonskies_2026-09-20_07-42-54-631.png`, the red box);
-  the first at `--pos="-1595.425,182.281,-4843.352" --direction="-0.21242,0.01919,-0.97699"`
-  (`Screenshots/crimsonskies_2026-09-19_23-41-17-262.png`). *Evidence:* BL-997 fixed card against
-  card (`depth_prepass_alpha` on the blended MultiMesh variant, `Clutter.cs` `ShaderCode`);
-  `SceneBuilder`'s world-surface blended variants still carry `depth_draw_never`; C1 carries 573
-  blended and 543 scissored world surfaces and 7 blended card kinds
-  (`--hide-alpha=blend-surfaces,scissor-surfaces,blend-cards,scissor-cards`, the isolation door,
-  `git log --grep=BL-1027`). The seeded captures along the first heading put card pixels lost to a
-  world surface at 0, and `clutter-card-depth`'s card-over-terrain case reads lost=0, so neither
-  reproduces either frame. *Fix shape:* reproduce at the second pose first, where the cards are near;
-  name the band's surface class with the isolation door (a blended world surface drawn after the
-  card, sorted on its centroid, is the shape the verdict points at); then the draw order between the
-  world's blended surfaces and the cards. *⚠ Traps:* the blend-or-scissor verdict is per texture
-  family (`TextureArchive.SoftAlphaTrees`) and is not the knob. The seeded captures at the first pose
-  do not reproduce it, so a zero from that instrument is not a pass. *Playtest after fix:* both poses
-  in `--fly`, the band behind the cards reads through their soft edge like the rest of the ground.
-  *On closing:* decide whether `--hide-alpha` and the `SceneBuilder.AlphaOf` registry stay as
-  diagnostics (then `docs/cli.md` keeps the flag bullet and the world log keeps its census line) or
-  leave with the fix; a door with no owner after its item closes is what this item's isolation
-  door becomes otherwise. *Cross-refs:* `git log --grep=BL-997`, `git log --grep=BL-1027`,
-  `INSTR-91`.
-
 - `BL-1037` `[Bug]` `[M]` `[Next: code]` `[Impact: high]` `[Evidence: feel]` **Under Enhanced
   Graphics, faint diagonal bands cross the water and the aircraft's self-shadow carries noise; the
   item also takes the sun's penumbra filter down to SoftHigh.** *Verdict at the controls:* after `BL-803`'s fix

@@ -834,6 +834,11 @@ member, and it does not go here.
   one by making its accessor throw for one run, with an unconverted suite failing as the
   control.** `menu-original-tracer`'s aircraft column scrolled only on a profile holding a saved
   custom plane, because the eleven stock airframes exactly fill the column's eleven-row window.
+- **INSTR-94**, **A draw-order overpaint is measured against the same pose with the suspect surface
+  forced to draw first, never by counting pixels where the composite equals the backdrop exactly: a
+  blended surface whose alpha is below one paints over a card's soft edge without erasing it, and an
+  equality count reads that as zero.** A C1 ground strip sorted after a tree card read 0 erased
+  pixels and 1125 reordered ones in the same pane.
 
 ## SRC, sources and documents
 
