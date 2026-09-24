@@ -359,7 +359,9 @@ member, and it does not go here.
   report to `Debug`, which keeps the file-sink record and drops the console write. The same
   measurement also inflates the instrument reading it: with `hitchMonitor.floorMs` low enough to
   trip most frames, every `[perf] hitch` line is itself a console write on the frame that follows.
-  PERF-23 is the per-frame form of this.
+  PERF-23 is the per-frame form of this. A player's part destruction on CM11 read as a 29 ms
+  first-time damage-presentation start; a second destruction in the same sortie cost the same,
+  because nine console lines were 22 to 28 ms of it and the stage starts themselves 0.7 to 6.7 ms.
 
 ## LOG, logs, error censuses, and exit codes
 

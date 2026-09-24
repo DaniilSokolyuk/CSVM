@@ -3849,6 +3849,11 @@ public partial class FlightController : Node3D
     // The gunner's one standing target of any class, which AiPilot reads as its pursuit quarry.
     private static object? StandingTarget(AiGunner gunner) => gunner.Target;
 
+    // The name a rating_biases entry is matched against, read only when there is a list to match.
+    // The ranking asks it per candidate per tick, and a Godot name read allocates (PERF-20).
+    private static string BiasNameOf(object? source, AiGunner gunner) =>
+        gunner.RatingBiases is { Count: > 0 } ? TargetPool.NameOf(source) : string.Empty;
+
     // Whether this pilot may be offered a gasbag at all: the decoded admission gate walks the
     // weapon list for a DAMAGES_ZEPPELIN slot with ammo whose two launch timers have run out
     // (FUN_00420070, docs/org/aiPilot.md). A pilot that launches nothing has no such slot.
@@ -3929,7 +3934,7 @@ public partial class FlightController : Node3D
                 || ownPos.DistanceSquaredTo(c.Position) > attack * attack)
                 continue;
             float bias = AiTargetRanking.ObjectiveBiasFor(
-                fc.IsHumanPiloted ? AiTargetRanking.PlayerRole : TargetPool.NameOf(c.Source),
+                fc.IsHumanPiloted ? AiTargetRanking.PlayerRole : BiasNameOf(c.Source, gunner),
                 gunner.RatingBiases);
             if (bias < AiTargetRanking.NotRanked)
                 return true;
@@ -4158,7 +4163,7 @@ public partial class FlightController : Node3D
                 // of its own here and spends nothing, as the shipped hull defs do.
                 ClassBias = fc?.Stats?.AiTargetBias ?? 0f,
                 ObjectiveBias = AiTargetRanking.ObjectiveBiasFor(
-                    human ? AiTargetRanking.PlayerRole : TargetPool.NameOf(c.Source),
+                    human ? AiTargetRanking.PlayerRole : BiasNameOf(c.Source, gunner),
                     gunner.RatingBiases),
                 AlliedAttackers = attackers,
             });
@@ -4247,7 +4252,7 @@ public partial class FlightController : Node3D
                 // candidate alike. It is read off this aeroplane and never off the candidate.
                 ClassBias = Stats?.AiStructBias ?? 0f,
                 ObjectiveBias = AiTargetRanking.ObjectiveBiasFor(
-                    TargetPool.NameOf(c.Source), _biasOwners,
+                    BiasNameOf(c.Source, gunner), _biasOwners,
                     gunner.RatingBiases, isTurret),
                 AlliedAttackers = attackers,
             });

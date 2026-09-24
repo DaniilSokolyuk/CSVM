@@ -82,8 +82,8 @@ death disappears with no extra plumbing. It walks the aim assist's aeroplanes an
 sites arrive through `objectives` under their record's flag, `objective` on the Enemy cycle and `other_target` on the
 Non-Aircraft, and a roster block's own flag marks its aeroplane's candidate. Sub-parts arrive through `subParts` only
 while `selectedWeapon` carries `LOCK_ON`; a gun emplacement is on no cycle. The gamez ancestor chain `CollectOwners`
-hands the `rating_biases` match is cached per destructible instance: each name read allocates a finalizable
-`StringName`. Read `TargetSelection.cs`; decode: [../org/targeting.md](../org/targeting.md).
+hands the `rating_biases` match, and a pool's own anchor name `NameOf` returns, are cached per destructible instance:
+each name read allocates a finalizable `StringName`. Read `TargetSelection.cs`; decode: [../org/targeting.md](../org/targeting.md).
 
 ## src/Flight/Weapons/TargetSelection.cs
 One pilot's target selection: the sticky choice, the eleven actions and the lifecycle. One instance

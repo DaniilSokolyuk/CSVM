@@ -607,9 +607,9 @@ anchor)` pair seeded from the authored `HEALTH`, plus a coarse healthy/damaged/d
 `DamageStage`. Built in `AnimRuntime`'s bootstrap, read by `ANIM_HEALTH` evaluation, escalated by `ApplyDamageStages`,
 damaged via `DamageAt`. `Resolve(struck)` climbs to the nearest claiming pool, which answers for its damage node and
 everything under it (what the original stamps its handler over) and, through its anchor alone, for nothing. `Instance`
-carries what a mission record authors (`Team`, `Owner`, `Gasbag`, `Dormant`, `Reseed`) and caches the anchor's gamez
-ancestor names for `TargetPool.CollectOwners` under the parent's id, so an authored re-parent re-walks them and a
-per-tick ranking ask does not. Schema: docs/formats/destructibles.md; teams docs/org/targeting.md.
+carries what a mission record authors (`Team`, `Owner`, `Gasbag`, `Dormant`, `Reseed`) and caches the anchor's own name and its gamez
+ancestor names for `TargetPool` under the parent's id, so an authored re-parent re-reads them and a per-tick ranking
+ask does not. Schema: docs/formats/destructibles.md; teams docs/org/targeting.md.
 
 ## src/Mech3/WavFile.cs
 Pure-C# WAV parser with an MS ADPCM to PCM16 decoder (`DecodeMsAdpcm`), no Godot dependencies:

@@ -286,9 +286,9 @@ public static class AiTargetRanking
             return own;
         if (owners == null)
             return flat;
-        foreach (var owner in owners)
+        for (int i = 0; i < owners.Count; i++)
         {
-            if (owner is { Length: > 0 } && MatchedBias(owner, biases, flat) is { } above)
+            if (owners[i] is { Length: > 0 } owner && MatchedBias(owner, biases, flat) is { } above)
                 return above;
         }
 
@@ -312,12 +312,15 @@ public static class AiTargetRanking
         return false;
     }
 
-    // One level of the chain: the first entry this one name matches, in rank units, or null when
-    // the whole list passes the name over and the next name up takes its own pass.
+    // One level of the chain: the first entry this one name matches, in rank units. Null means the
+    // whole list passes the name over, and the next name up takes its own pass.
+    // ⚠ Index, never foreach: a foreach over the interface boxes the list's enumerator. This runs
+    // per AI shooter per candidate per physics tick.
     private static float? MatchedBias(string name, IReadOnlyList<AiRatingBias> biases, float flat)
     {
-        foreach (var b in biases)
+        for (int i = 0; i < biases.Count; i++)
         {
+            var b = biases[i];
             if (!b.Matches(name))
                 continue;
             if (b.Bias >= 1f)
