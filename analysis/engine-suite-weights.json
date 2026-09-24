@@ -349,6 +349,7 @@
     "weapon-selector-input": 0.02,
     "weapons-fire": 0.239,
     "weather-cockpit-whiteout": 0.04,
+    "wing-flare-pose": 1.0,
     "wingman-engage": 0.491,
     "wingman-lost-leader": 0.449,
     "wingman-station": 1.513,

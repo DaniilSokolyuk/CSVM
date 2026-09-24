@@ -586,28 +586,6 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   terrain is. *Cross-refs:* `docs/formats/clutter.md`, `docs/architecture/Mech3.md` (`Clutter`),
   `git log --grep=BL-1029` (the further-mesh walk on the same builder).
 
-- `BL-1039` `[Bug]` `[S]` `[Next: code]` `[Impact: low]` `[Evidence: data]` **The wing-light flare
-  is a `Facade`/`SphericalY` model in the plane data and is drawn as a fixed one-sided quad, so the
-  position lights do not turn to the camera.** *Verdict at the controls:* "Position lights on planes
-  dont turn towards camera". *Evidence:* `extracted/planes/nodes.json`'s `wing_flare1` and
-  `wing_flare2` reference model 1261, and `extracted/planes/models.json` model 1261 is
-  `model_type: Facade`, `facade_mode: SphericalY`, `lighting: false`, the classification the placed
-  `cloudparent` facades, C1's `docklight_flare` and the templates clutter's glow stamps carry, all of
-  which pose through `csky_facade.gdshaderinc`'s `csky_facade_spherical`
-  (`git log --grep=BL-998`, `git log --grep=BL-1013`). `PlaneBuilder.FlareMaterial` is a
-  `StandardMaterial3D` with no billboard, and its comment records why: Godot's billboard mode
-  flattened the star burst into a blob (`BL-119`). That mode is the camera basis, which rolls with
-  the eye; the original's SphericalY is a look-at from the eye's position that keeps the card's own
-  up, decoded at BL-998 (`FUN_00539390`). *Fix shape:* the flare quad takes a ShaderMaterial
-  including `csky_facade.gdshaderinc` and posing through
-  `csky_facade_spherical(origin, CAMERA_POSITION_WORLD)` like the clutter's glow stamps; the
-  additive tint, the blink and the `OmniLight3D` untouched. *⚠ Traps:* not `BillboardMode`; that is
-  the rejected fix, for the reason BL-998 found. The star-burst shape stays `BL-284`'s. *Playtest
-  after fix:* any player plane but the Bloodhawk, wing lights on, an orbit from nose through side to
-  tail in the chase view: the flare visible and facing you all the way round, and not rolling in a
-  bank. *Cross-refs:* `BL-284` (the shape half; its view-dependence half is answered here),
-  `CAP-34`, `docs/formats/gamez.md` (the model classification).
-
 ## Effects & animation runtime
 
 - `BL-674` `[Bug]` `[M]` `[Next: look]` `[Impact: high]` `[Evidence: data]` `[CM10]` **CM10's attack-balloon wave flies from 990 m down to water level and back up
@@ -1058,13 +1036,13 @@ usual.
 
 ## Misc
 
-- `BL-284` `[Bug]` `[Blocked: CAP-34]` `[M]` `[Next: look]` `[Impact: low]` `[Evidence: footage]` **Wing-light flare: soft round glow vs the original's sharp star burst; the view-dependence
-  half is `BL-1039`'s.** Follow-up from `BL-119`: with the authored one-sided quad restored
-  and the blink at the measured ~1 frame, the flare reads as a compact soft amber glow, much closer
-  than the old billboard blob, but the PT-03 reference still shows sharp radiating star points that
-  our plain radial `oil_liteflare` sprite does not produce. Whether the original draws the flare
-  from every angle is answered by data, the flare mesh is a `Facade`/`SphericalY` model
-  (`BL-1039` poses it so), and the orbit clip settles the star shape alone; any player plane works: `vehicle.zrd.json`
+- `BL-284` `[Bug]` `[Blocked: CAP-34]` `[M]` `[Next: look]` `[Impact: low]` `[Evidence: footage]` **Wing-light flare: soft round glow vs the original's sharp star burst.** Follow-up from
+  `BL-119`: with the blink at the measured ~1 frame, the flare reads as a compact soft amber glow,
+  much closer than the old billboard blob, but the PT-03 reference still shows sharp radiating star
+  points that our plain radial `oil_liteflare` sprite does not produce. Whether the original draws
+  the flare from every angle is answered by data: the flare mesh is a `Facade`/`SphericalY` model,
+  and `PlaneBuilder`'s flare material poses it through `csky_facade_spherical`
+  (`git log --grep=BL-1039`). The orbit clip settles the star shape alone; any player plane works: `vehicle.zrd.json`
   wires `wing_lights_blink` (or `brigand`'s own `wing_lights_brigand`) into every player craft's
   `start_anims` except the Bloodhawk, which has neither the anim nor flare nodes. (Earlier notes
   here said only piratefighter/brigand carried it, that read `wing_light.zrd.json`'s two
@@ -1072,6 +1050,7 @@ usual.
   wiring and is what the runtime actually plays from, per `WingLights.cs`'s doc comment.) Also riding
   here: `WingLightBlinker.LightEnergy = 1.0` is a declared TUNE, the def authors the point
   lights' range/colour only, no intensity.
-  ⚠ Traps: (a) re-adding the billboard is the rejected fix, PT-03's screenshot is against it.
+  ⚠ Traps: (a) Godot's billboard mode is the rejected fix, PT-03's screenshot is against it; the
+  facade look-at the flare takes reads the eye's position alone, so a bank cannot roll it.
   (b) don't edit or swap the sprite to fake the star: the star points may be the original engine's
   flare *rendering* (a cross-flare pass), not the texture asset, the orbit clip decides first.

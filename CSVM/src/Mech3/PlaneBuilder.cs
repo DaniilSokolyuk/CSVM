@@ -32,6 +32,36 @@ public sealed class PlaneBuilder
     /// tilt so the gunsight stays on the guns. Decode: docs/org/cameraViews.md.</summary>
     public const float HeadPitchOffsetRad = -0.08203f;
 
+    // The flare mesh is a SphericalY facade, posed through the facade look-at like every other
+    // population of that class (docs/org/cloudCards.md), keeping the node's scale.
+    // ⚠ Never Godot's billboard mode: it is the camera basis, so a bank rolls the flare with the eye.
+    // The fragment is StandardMaterial3D's unshaded additive path: texture times tint times COLOR.
+    // The sampler never repeats, since the texture maps once and wrapping bleeds its opposite edge in.
+    private const string FlareShaderCode = """
+        shader_type spatial;
+        render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled;
+
+        uniform sampler2D albedo_tex : source_color, filter_linear_mipmap, repeat_disable;
+        uniform vec4 tint : source_color = vec4(1.0);
+
+        #include "res://shaders/csky_facade.gdshaderinc"
+
+        void vertex() {
+            mat3 face = csky_facade_spherical(MODEL_MATRIX[3].xyz, CAMERA_POSITION_WORLD);
+            MODELVIEW_MATRIX = VIEW_MATRIX * mat4(
+                vec4(face[0], 0.0), vec4(face[1], 0.0), vec4(face[2], 0.0), MODEL_MATRIX[3]);
+            MODELVIEW_MATRIX[0] *= length(MODEL_MATRIX[0].xyz);
+            MODELVIEW_MATRIX[1] *= length(MODEL_MATRIX[1].xyz);
+            MODELVIEW_MATRIX[2] *= length(MODEL_MATRIX[2].xyz);
+        }
+
+        void fragment() {
+            vec4 tex = texture(albedo_tex, UV) * COLOR;
+            ALBEDO = tint.rgb * tex.rgb;
+            ALPHA = tint.a * tex.a;
+        }
+        """;
+
     // Non-prop subtrees that make no sense in an exterior view: cockpit interiors are
     // separate (differently-scaled) models; damage/destroyed are alternate states.
     // player_damage_off holds the intact duplicates (pdpNi) of the panels that
@@ -58,7 +88,7 @@ public sealed class PlaneBuilder
     private PatternLibrary _patterns;
     private PlanePainter? _painter;
     private string? _skinPrefix;
-    private StandardMaterial3D? _flareMaterial;
+    private ShaderMaterial? _flareMaterial;
 
     /// <param name="spinningProps">Spins the blur layers instead of the static disc; implies damage panels.</param>
     /// <param name="damagePanels">Builds exterior pdpN panels hidden, for the --damage lab.</param>
@@ -408,21 +438,17 @@ public sealed class PlaneBuilder
     }
 
     // Shared additive glow material for every flare quad (colour/texture: WingLights.cs).
-    // ⚠ No billboard: forcing the quad to face the camera flattened the star burst into a blob.
-    private StandardMaterial3D FlareMaterial() => _flareMaterial ??= new StandardMaterial3D
+    private ShaderMaterial FlareMaterial()
     {
-        ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
-        AlbedoTexture = _textures.Find(WingLights.FlareTexture),
-        AlbedoColor = WingLights.FlareColor,
-        VertexColorUseAsAlbedo = true,
-        Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
-        BlendMode = BaseMaterial3D.BlendModeEnum.Add,
-        DepthDrawMode = BaseMaterial3D.DepthDrawModeEnum.Disabled,
-        // The flare quad draws its texture exactly once; with the engine-default repeat on,
-        // bilinear filtering at the UV border bleeds the opposite edge in (the same artifact
-        // once seen as a tracer-tail streak).
-        TextureRepeat = false,
-    };
+        if (_flareMaterial == null)
+        {
+            _flareMaterial = new ShaderMaterial { Shader = new Shader { Code = FlareShaderCode } };
+            if (_textures.Find(WingLights.FlareTexture) is { } tex)
+                _flareMaterial.SetShaderParameter("albedo_tex", tex);
+            _flareMaterial.SetShaderParameter("tint", WingLights.FlareColor);
+        }
+        return _flareMaterial;
+    }
 
     private bool Skip(GameZNode node)
     {

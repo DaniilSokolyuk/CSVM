@@ -159,8 +159,9 @@ term, so left and right settle at different angles. Decode: [../org/flightModel.
 Single source of truth for wingtip nav lights: the flare-node predicate (wing_flare1/2), the glow
 texture (oil_liteflare), the warm-amber flash colour (0.88, 0.78, 0.36 = wing_light.json's
 LIGHT_STATE COLOR), the blink period (1.5 s = its LOOP SEQUENCE_OFFSET) and the point-light range
-(0.5-1.25 m, also LIGHT_STATE). PlaneBuilder hides and re-skins the flares (additive tint, one-sided
-as authored, no billboard); WingLightBlinker flashes them and emits a matching OmniLight3D per side.
+(0.5-1.25 m, also LIGHT_STATE). PlaneBuilder hides and re-skins the flares (additive tint, posed
+through `csky_facade_spherical` as the SphericalY facade model 1261 is, never Godot's billboard
+mode); WingLightBlinker flashes them and emits a matching OmniLight3D per side.
 
 ## src/Mech3/WorldBuilder.cs
 Builds a chapter world (fullbright): the World node's children plus every partition-referenced

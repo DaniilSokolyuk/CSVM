@@ -1353,6 +1353,106 @@ internal static class WorldAndToolSuites
         ctx.Note($"{chapter}/{template}: {examined} card kinds examined, glow and post read apart");
     }
 
+    // The wing-light flare is a SphericalY facade in the plane data, so it takes the same look-at
+    // as every other population of that class. The side view is the discriminating pose: the
+    // authored quad lies in its local XY plane, so an unposed copy seen along X draws nothing.
+    [Suite("wing-flare-pose",
+        "a player plane's wing-light flares pose through the facade look-at and never through the "
+        + "camera's basis, and a flare seen from its authored quad's edge still draws, against an "
+        + "unposed copy of the same quad that draws nothing there")]
+    internal static void WingFlarePose(TestContext ctx)
+    {
+        const string plane = "player_pfighter";
+        const int paneEdge = 64;
+        const float range = 6f;
+        ctx.RequireData(ctx.PlanesGamezPath, $"planes gamez");
+        string texturesPath = SessionPaths.ChapterTextures(ctx.DataRoot, "C1");
+        ctx.RequireData(texturesPath, $"C1 textures");
+
+        var planesGamez = GameZ.Load(ctx.PlanesGamezPath);
+        using var textures = new TextureArchive(texturesPath);
+        var builder = new PlaneBuilder(planesGamez, textures, spinningProps: true);
+        var built = builder.Build(plane);
+        Mesh? quad = null;
+        Material? flareMaterial = null;
+        foreach (var flare in builder.WingFlares)
+        {
+            foreach (var child in flare.GetChildren())
+            {
+                if (child is not MeshInstance3D { Name: var name } mi || name.ToString() != "mesh")
+                {
+                    continue;
+                }
+                string code = mi.MaterialOverride is ShaderMaterial { Shader: { } shader } ? shader.Code : "";
+                ctx.Check(code.Contains("csky_facade_spherical(MODEL_MATRIX[3].xyz, CAMERA_POSITION_WORLD)", System.StringComparison.Ordinal)
+                          && code.Contains("res://shaders/csky_facade.gdshaderinc", System.StringComparison.Ordinal),
+                    $"{flare.Name} poses through the facade look-at");
+                ctx.Check(!code.Contains("INV_VIEW_MATRIX", System.StringComparison.Ordinal),
+                    $"{flare.Name} builds no basis from the camera's columns");
+                ctx.Check(code.Contains("blend_add", System.StringComparison.Ordinal),
+                    $"{flare.Name} keeps the additive blend");
+                quad ??= mi.Mesh;
+                flareMaterial ??= mi.MaterialOverride;
+            }
+        }
+        built.Free();
+        ctx.Check(builder.WingFlares.Count == 2, $"{plane} carries two wing flares count={builder.WingFlares.Count}");
+        if (quad == null || flareMaterial == null)
+        {
+            ctx.Check(false, $"{plane} built a flare mesh");
+            return;
+        }
+
+        var pane = new SubViewport
+        {
+            Size = new Vector2I(paneEdge, paneEdge),
+            OwnWorld3D = true,
+            World3D = new World3D(),
+            RenderTargetUpdateMode = SubViewport.UpdateMode.Always,
+            RenderTargetClearMode = SubViewport.ClearMode.Always,
+        };
+        var eye = new Camera3D { Fov = 30f, Current = true, Near = 0.1f, Far = 100f };
+        var subject = new MeshInstance3D { Mesh = quad, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+        pane.AddChild(eye);
+        pane.AddChild(subject);
+        ctx.Host.AddChild(pane);
+        // The control: the same quad, unposed and two-sided, so only the pose can tell the frames apart.
+        var unposed = new StandardMaterial3D
+        {
+            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+            CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+            AlbedoColor = Colors.White,
+        };
+        try
+        {
+            int Drawn(Vector3 from, Material material)
+            {
+                eye.Transform = new Transform3D(Basis.Identity, from).LookingAt(Vector3.Zero, Vector3.Up);
+                subject.MaterialOverride = material;
+                subject.Visible = false;
+                byte[] bare = PaneShot(pane);
+                subject.Visible = true;
+                return PaneDiffering(bare, PaneShot(pane));
+            }
+
+            var side = new Vector3(range, 0f, 0f);
+            var front = new Vector3(0f, 0f, range);
+            int controlFront = Drawn(front, unposed);
+            int controlSide = Drawn(side, unposed);
+            int flareFront = Drawn(front, flareMaterial);
+            int flareSide = Drawn(side, flareMaterial);
+            ctx.Check(controlFront > 100, $"the unposed quad draws face on pixels={controlFront}");
+            ctx.Check(controlSide < 10, $"the unposed quad seen along its edge draws nothing pixels={controlSide}");
+            ctx.Check(flareFront > 100, $"the flare draws face on pixels={flareFront}");
+            ctx.Check(flareSide > 100, $"the flare seen from its quad's edge still faces the eye pixels={flareSide}");
+            ctx.Note($"{plane}: control front={controlFront} side={controlSide}; flare front={flareFront} side={flareSide}");
+        }
+        finally
+        {
+            pane.Free();
+        }
+    }
+
     // The DirectionalLight3D is pointed by the flown zone's authored SUNLIGHT_ORIENTATION and keeps
     // following it when the camera's weather state moves to another zone. The CSVM.Tests units pin the
     // parse and the euler-to-direction mapping; neither can see the light wired to the wrong seam, or
@@ -2459,5 +2559,37 @@ internal static class WorldAndToolSuites
             foreach (var nested in Meshes(child))
                 yield return nested;
         }
+    }
+
+    // A SubViewport's pixels after a forced draw, as Rgb8. Twice, since an upload lands with the
+    // frame after the write; transforms are pushed first because a suite never reaches a flush.
+    private static byte[] PaneShot(SubViewport pane)
+    {
+        foreach (var node in pane.GetChildren())
+        {
+            (node as Node3D)?.ForceUpdateTransform();
+        }
+        RenderingServer.ForceDraw();
+        RenderingServer.ForceDraw();
+        var img = pane.GetTexture()?.GetImage();
+        return img == null || img.IsEmpty() ? System.Array.Empty<byte>() : img.GetData();
+    }
+
+    // Rgb8 pixels that differ between two shots of one pane, or -1 when either shot is empty.
+    private static int PaneDiffering(byte[] a, byte[] b)
+    {
+        if (a.Length == 0 || a.Length != b.Length)
+        {
+            return -1;
+        }
+        int changed = 0;
+        for (int i = 0; i + 3 <= a.Length; i += 3)
+        {
+            if (a[i] != b[i] || a[i + 1] != b[i + 1] || a[i + 2] != b[i + 2])
+            {
+                changed++;
+            }
+        }
+        return changed;
     }
 }
