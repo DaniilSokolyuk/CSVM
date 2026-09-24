@@ -46,6 +46,10 @@ public sealed class BuiltInPresentation : IMenuPresentation
     /// <see cref="LaunchMenu.PlaneStore"/>; null leaves it on <c>user://Planes</c>.</summary>
     public CustomPlaneStore? Planes { get; init; }
 
+    /// <summary>The campaign profile store handed to the launchscreen it builds, the same seam as
+    /// <see cref="LaunchMenu.CampaignProfiles"/>; null leaves it on <c>user://Profiles</c>.</summary>
+    public Session.Campaign.CampaignProfileStore? CampaignProfiles { get; init; }
+
     public void Activate(IMenuHost host, MenuReturnDestination destination)
     {
         ArgumentNullException.ThrowIfNull(host);
@@ -53,6 +57,7 @@ public sealed class BuiltInPresentation : IMenuPresentation
         {
             _menu = LaunchMenu.Build(_zrdrPath, _dataRoot, host, _player1);
             _menu.PlaneStore = Planes;
+            _menu.CampaignProfiles = CampaignProfiles;
             _menu.SetProcess(false);
             _parent.AddChild(_menu);
         }

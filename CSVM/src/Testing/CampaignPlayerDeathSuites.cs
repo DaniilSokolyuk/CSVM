@@ -80,6 +80,34 @@ internal static class CampaignPlayerDeathSuites
         ctx.Note($"{Chapter}/{Mission}: the player's death ends the mission lost, and --no-crash-loss keeps it flying");
     }
 
+    // The human rig, built the way the sibling campaign suites build theirs. It is a real aircraft
+    // node with real damage state, so DebugForceCrash goes through the production death path.
+    internal static FlightController HumanRig(TestContext ctx, GameZ planesGamez,
+        TextureArchive textures, ProjectilePool live, Vector3 pos, Vector3 lookAt)
+    {
+        var stats = PlaneStats.Load(ctx.ZrdrPath, ctx.PlaneName);
+        var model = new PlaneBuilder(planesGamez, textures).Build(ctx.PlaneName);
+        var rig = new FlightController
+        {
+            PlaneModel = model,
+            Collider = PlaneCollider.Build(model),
+            Damage = stats.DestroyableParts.Count > 0 || stats.VehicleHealth is > 0f
+                ? PlaneDamage.For(stats) : null,
+            PlayerIndex = FlightRoster.ShooterIdBase - 1,
+            IsHumanPiloted = true,
+            Projectiles = live,
+            UseKeyboard = false,
+            PadDevices = Array.Empty<int>(),
+            AllowPause = false,
+            Team = AimAssist.PlayerTeam,
+        };
+        rig.AddChild(model);
+        rig.Setup(new FlightModel(stats), null, new CamParams(), pos, pos + lookAt);
+        rig.Name = "player1";
+        ctx.Host.AddChild(rig);
+        return rig;
+    }
+
     // Why this mission is the case that distinguishes the rule: C3/M01 authors NO loss at all, so
     // a Lost outcome here can only be the player's own death. Four of the 21 shipped campaign
     // missions are like it (docs/formats/objectives.md, "Win and loss").
@@ -214,34 +242,6 @@ internal static class CampaignPlayerDeathSuites
         {
             human.Free();
         }
-    }
-
-    // The human rig, built the way the sibling campaign suites build theirs: a real aircraft node
-    // with real damage state, so DebugForceCrash goes through the production death path.
-    private static FlightController HumanRig(TestContext ctx, GameZ planesGamez,
-        TextureArchive textures, ProjectilePool live, Vector3 pos, Vector3 lookAt)
-    {
-        var stats = PlaneStats.Load(ctx.ZrdrPath, ctx.PlaneName);
-        var model = new PlaneBuilder(planesGamez, textures).Build(ctx.PlaneName);
-        var rig = new FlightController
-        {
-            PlaneModel = model,
-            Collider = PlaneCollider.Build(model),
-            Damage = stats.DestroyableParts.Count > 0 || stats.VehicleHealth is > 0f
-                ? PlaneDamage.For(stats) : null,
-            PlayerIndex = FlightRoster.ShooterIdBase - 1,
-            IsHumanPiloted = true,
-            Projectiles = live,
-            UseKeyboard = false,
-            PadDevices = Array.Empty<int>(),
-            AllowPause = false,
-            Team = AimAssist.PlayerTeam,
-        };
-        rig.AddChild(model);
-        rig.Setup(new FlightModel(stats), null, new CamParams(), pos, pos + lookAt);
-        rig.Name = "player1";
-        ctx.Host.AddChild(rig);
-        return rig;
     }
 
     private readonly record struct Leg

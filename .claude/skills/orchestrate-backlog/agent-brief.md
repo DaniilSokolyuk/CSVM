@@ -69,7 +69,13 @@ Never launch Godot or the game so that a window appears on the user's screen, an
 `Start-Process` anything. Every engine run, capture and golden render goes through
 `.\RunTests.ps1` (hidden desktop `csvm-tests`) or `.\RunProbe.ps1`, or a launcher flag that renders
 headless or on that desktop. A one-off capture those cannot take is described in your report, not
-taken. Before any `--campaign=` probe, copy and rename the user's profile AND set the copy's internal `"name"` field in its `profile.json` to the new folder name (a copy that keeps the original's `"name"` saves into the original; this has overwritten a real profile), check after the run that the original's `profile.json` timestamp is unchanged, and delete the copy afterwards; if you cannot do both, do not run the probe. Kill any Godot you started before you report.
+taken. Every `--campaign=` probe also passes `--profiles=<dir>`, the ABSOLUTE path of a store inside
+your worktree's `.scratch\` (seed it with `CampaignProfileStore.Save`, or copy a profile folder into it;
+never write under `user://Profiles\`), so the run reads and writes only that store
+(`docs/cli.md`). Note the `LastWriteTime` of every `profile.json` under
+`%APPDATA%\Godot\app_userdata\CSVM\Profiles\` before the run and check it is unchanged after; if
+one moved, stop and report it. A `--campaign=` launch without `--profiles=` is not a probe you may
+run. Kill any Godot you started before you report.
 
 ## Closing the item
 

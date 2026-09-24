@@ -382,8 +382,8 @@ member, and it does not go here.
   another worktree before believing an error census.** The signature is a repeating per-frame
   `NullReferenceException` and two `viewport is null` lines.
 - **LOG-20**, **Every tree of this project shares one `user://`, so a probe reads and writes the
-  real saved profiles; copy a profile under a new name before naming it in `--campaign=`, and
-  delete the copy.**
+  real saved profiles unless it names its own store; pass `--profiles=` with an absolute path under
+  `.scratch/` alongside every `--campaign=`.**
 - **LOG-22**, **A `*.godot.log` mirror is not that run's log: exclude it when sweeping
   `.scratch/logs/` for what a run did or did not print.** Every quit copies Godot's shared log, so
   one deliberate probe was replayed by every later mirror.

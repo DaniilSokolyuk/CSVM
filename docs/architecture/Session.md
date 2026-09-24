@@ -212,14 +212,14 @@ cannot reach one and miss another. The table, its addresses and the row it can n
 [../org/pause-screen.md](../org/pause-screen.md).
 
 ## src/Session/Campaign/CampaignProfileStore.cs
-JSON persistence for one named campaign profile under `user://Profiles/<name>/profile.json`,
-following `ScoreStore` and `CustomPlaneStore`'s precedent: funds, owned planes with their per-gun
-ammunition and per-pylon ordnance picks, each mission's record in the original's two halves
-(latest attempt and best-of merge) with its failed-attempt counter, the completed-mission count,
-the granted aircraft awards, the cabin's chosen memento and the cross-mission destruction log. An owned plane names a build
-in the global `user://Planes/` store rather than copying it, so deleting a profile orphans
-nothing. A file saved before a field existed reads it at rest rather than failing to load. Save
-format: [../formats/saved-games.md](../formats/saved-games.md).
+JSON persistence for one campaign profile under `user://Profiles/<folder>/profile.json`, after
+`ScoreStore` and `CustomPlaneStore`: funds, owned planes with their ammunition and ordnance picks,
+each mission's latest and best-of record with its failed-attempt counter, the completed-mission
+count, granted awards, the chosen memento and the destruction log. An owned plane names a build in
+`user://Planes/` rather than copying it. A field a file predates reads at rest. The folder is the
+identity: `Save` writes a loaded profile back to its `Folder`, and a file whose `"name"` points at
+another folder (a copy, a hand rename) is read under the folder's name with a warning. `ForSession`
+is a launch's store, `--profiles=` or `user://Profiles/`. Format: [../formats/saved-games.md](../formats/saved-games.md).
 
 ## src/Session/Campaign/ChapterCinema.cs
 Which film plays before a campaign chapter, and the one handoff to the passenger cabin that

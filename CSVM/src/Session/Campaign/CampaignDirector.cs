@@ -294,7 +294,7 @@ public sealed class CampaignDirector
     public static SessionSpec ResolveSeatedPlane(SessionSpec spec)
     {
         if (spec.CampaignProfile == null
-            || CampaignProfileStore.UserProfiles().Load(spec.CampaignProfile) is not { } profile
+            || CampaignProfileStore.ForSession(spec.ProfilesDir).Load(spec.CampaignProfile) is not { } profile
             || profile.Planes.Count == 0)
         {
             return spec;
@@ -336,7 +336,12 @@ public sealed class CampaignDirector
             return null;
         }
 
-        var store = CampaignProfileStore.UserProfiles();
+        var store = CampaignProfileStore.ForSession(spec.ProfilesDir);
+        if (spec.ProfilesDir is { } profilesDir)
+        {
+            Log.Info("core", $"campaign: profile store {System.IO.Path.GetFullPath(profilesDir)} (--profiles)");
+        }
+
         if (store.Load(spec.CampaignProfile) is not { } profile)
         {
             GD.PushWarning($"--campaign={spec.CampaignProfile}: " +
@@ -1160,7 +1165,7 @@ public sealed class CampaignDirector
     // The seated profile's own directory, where the scrapbook resolves a Snap_ capture. Null with
     // no store bound, which is every suite that builds a director without one.
     private string? ProfileDirectory() =>
-        _store is { } store && _profile.Name.Length > 0 ? store.DirFor(_profile.Name) : null;
+        _store is { } store && _profile.Name.Length > 0 ? store.DirOf(_profile) : null;
 
     // The far end of the leaving hold: the world has stood still for its length and the session may
     // go. The original reaches here when its fade over the last flown frame has run out and the next

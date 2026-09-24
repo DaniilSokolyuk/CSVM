@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using CSVM.Utils;
 
 namespace CSVM.Session.Campaign;
 
@@ -124,6 +125,11 @@ public sealed class CampaignProfileDef
     /// mission of the same chapter; see <see cref="CampaignPersistLog"/>.</summary>
     public CampaignPersistLog PersistLog { get; } = new();
 
+    /// <summary>The store directory this profile was read from, its leaf name; empty for a profile
+    /// no store has loaded. Never written to the file. <see cref="CampaignProfileStore.Save"/>
+    /// writes a loaded profile back here, whatever <see cref="Name"/> says.</summary>
+    public string Folder { get; internal set; } = string.Empty;
+
     /// <summary>A fresh profile per the traced reset (<c>FUN_004113b0</c>, <c>docs/org/hangar.md</c>
     /// "The campaign wallet"): zero funds, two prebuilt Devastators (<c>langui</c> 511 "Gypsy
     /// Magic", 512 "The Knave"), nothing flown. The pilot flies Gypsy Magic and the wingman The
@@ -230,6 +236,12 @@ public sealed class CampaignProfileStore
     /// <summary>The production store, <c>user://Profiles/</c> resolved to its OS path.</summary>
     public static CampaignProfileStore UserProfiles() =>
         new(Path.Combine(Godot.ProjectSettings.GlobalizePath("user://"), "Profiles"));
+
+    /// <summary>The store a session reads and writes: <paramref name="directory"/> when a launch
+    /// named one (<c>--profiles=</c>), else <see cref="UserProfiles"/>. A relative directory
+    /// resolves against the process's working directory once, here.</summary>
+    public static CampaignProfileStore ForSession(string? directory) =>
+        string.IsNullOrWhiteSpace(directory) ? UserProfiles() : new(Path.GetFullPath(directory));
 
     /// <summary>The canonical JSON text for <paramref name="def"/>.</summary>
     public static string Serialize(CampaignProfileDef def)
@@ -435,7 +447,7 @@ public sealed class CampaignProfileStore
         {
             foreach (var sub in Directory.GetDirectories(_dir))
             {
-                if (TryRead(Path.Combine(sub, FileName)) is { } def)
+                if (ReadFolder(sub) is { } def)
                 {
                     names.Add(def.Name);
                 }
@@ -447,12 +459,13 @@ public sealed class CampaignProfileStore
     }
 
     /// <summary>The stored profile of that name, or null when its file is absent or malformed, or
-    /// the name itself cannot be a profile directory.</summary>
+    /// the name itself cannot be a profile directory. The name is the folder's: the one
+    /// <see cref="List"/> reports, which a file naming some other profile does not change.</summary>
     public CampaignProfileDef? Load(string name)
     {
         try
         {
-            return TryRead(Path.Combine(DirFor(name), FileName));
+            return ReadFolder(DirFor(name));
         }
         catch (ArgumentException)
         {
@@ -495,9 +508,9 @@ public sealed class CampaignProfileStore
                 $"{path} is schema version {stored}, and this build reads version {Version}");
     }
 
-    /// <summary>Writes <paramref name="def"/> to its name's directory, creating it on first save
-    /// and overwriting any existing profile of the same name (the name IS the identity, same as
-    /// <see cref="Flight.Hangar.CustomPlaneStore"/>). Returns the file's absolute path.</summary>
+    /// <summary>Writes <paramref name="def"/> to <see cref="DirOf"/>, creating the directory on
+    /// first save, and returns the file's absolute path. ⚠ A loaded profile goes back to the folder
+    /// it came from, never to its name's: a copied folder still names the original.</summary>
     public string Save(CampaignProfileDef def)
     {
         if (string.IsNullOrWhiteSpace(def.Name))
@@ -505,7 +518,7 @@ public sealed class CampaignProfileStore
             throw new ArgumentException("a campaign profile cannot be saved without a name");
         }
 
-        var dir = DirFor(def.Name);
+        var dir = DirOf(def);
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, FileName);
         File.WriteAllText(path, Serialize(def), new UTF8Encoding(false));
@@ -572,6 +585,12 @@ public sealed class CampaignProfileStore
 
         return Path.Combine(_dir, safe);
     }
+
+    /// <summary>The directory <paramref name="def"/> persists to: the folder it was loaded from
+    /// when a store loaded it (<see cref="CampaignProfileDef.Folder"/>), else
+    /// <see cref="DirFor"/> its name.</summary>
+    public string DirOf(CampaignProfileDef def) =>
+        def.Folder.Length > 0 ? Path.Combine(_dir, def.Folder) : DirFor(def.Name);
 
     // The version claimed by the file at that path, or -1 when nothing readable claims one. Read
     // straight off the JSON rather than through Deserialize, which rejects the whole file on a
@@ -742,4 +761,40 @@ public sealed class CampaignProfileStore
         && v.TryGetInt32(out int value)
             ? value
             : fallback;
+
+    // The profile in that directory, carrying the folder it came from. A file whose own name
+    // resolves elsewhere takes the folder's name. The roster, a later Load and every DirFor caller
+    // then land back in this folder.
+    private CampaignProfileDef? ReadFolder(string dir)
+    {
+        if (TryRead(Path.Combine(dir, FileName)) is not { } def)
+        {
+            return null;
+        }
+
+        string folder = Path.GetFileName(dir);
+        def.Folder = folder;
+        if (!NamesFolder(def.Name, dir))
+        {
+            Log.Warn("core", $"campaign profile {dir} names itself '{def.Name}'; it is read and saved as '{folder}', the folder's name");
+            def.Name = folder;
+        }
+
+        return def;
+    }
+
+    // Whether a profile's own name sanitises to this directory. Case-blind, as the Windows file
+    // system is; Save writes to the loaded folder either way.
+    private bool NamesFolder(string name, string dir)
+    {
+        try
+        {
+            return string.Equals(
+                Path.GetFullPath(DirFor(name)), Path.GetFullPath(dir), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
 }

@@ -825,8 +825,8 @@ call and maps the return destination onto it, the top level being the Mode scree
 the wizard's first screen over the setup that flew, `CabinReturn` the profile's cabin and
 `DebriefReturn` the scrapbook on the flown mission; the `--menu=` aid is consumed on that first
 call, so a return from flight lands on Mode with the cursors kept. `Tick` runs the menu's frame,
-`Hide` takes it off screen and `Deactivate` frees the node. `Menu` exposes the launchscreen for
-what is Built-in's alone; `Planes` hands it a suite's scratch plane store. Read `LaunchMenu.cs` next.
+`Hide` takes it off screen and `Deactivate` frees the node. `Menu` exposes the launchscreen;
+`Planes` and `CampaignProfiles` hand it a scratch plane store and profile store. Read `LaunchMenu.cs` next.
 
 ## src/UI/Menu/BuiltIn/BuiltInSeat.cs
 A pad-side `IMenuInputSource`: wraps one `MenuInput`, polls it and translates the result into a

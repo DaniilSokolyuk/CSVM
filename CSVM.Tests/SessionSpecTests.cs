@@ -1045,6 +1045,20 @@ public class SessionSpecTests
         Assert.Empty(s.Warnings);
     }
 
+    /// <summary>`--profiles=` is the raw directory of the campaign profile store, absent unless
+    /// given. It selects no content, and a cabin launch derived from the command line keeps it.</summary>
+    [Fact]
+    public void ProfilesIsARawDirectoryThatACabinLaunchKeeps()
+    {
+        Assert.Null(S("--campaign=Zachary:3").ProfilesDir);
+        var s = S("--campaign=Zachary:3", @"--profiles=.scratch\probe\Profiles");
+        Assert.Equal(@".scratch\probe\Profiles", s.ProfilesDir);
+        Assert.Empty(s.Warnings);
+        Assert.False(S("--profiles=x").HasContentArg);
+        var cabin = SessionSpec.FromCampaign(S("--menu", "--profiles=x"), "Zachary", 3, new[] { "player_bhawk" }, 1);
+        Assert.Equal("x", cabin.ProfilesDir);
+    }
+
     /// <summary>Globals are recorded, never applied, that is what keeps the type reachable from
     /// here, with no engine under it.</summary>
     [Fact]
