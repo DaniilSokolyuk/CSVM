@@ -11,12 +11,12 @@ namespace CSVM.Flight.Weapons;
 /// <summary>
 /// The <c>FLYOUT</c> <c>MODEL_ANIMATION</c> half of the pool. Every ordnance round runs its own
 /// instance of the weapon's def (<c>he_rocket</c>, <c>sonic</c>, <c>torpedo_trail</c>, …) on the
-/// real sequence interpreter, the pool standing in as the <see cref="ISequenceHost"/> for the
-/// event kinds those defs author: node visibility, from-to tweens, spins, puffers, sounds and
-/// sequence calls, all against the round's own model instance. The original starts the def at
-/// spawn (<c>FUN_005aef40</c> hands weapon <c>+0x110</c> to <c>FUN_004edda0</c>) and its timeline
-/// runs on the anim clock alone; nothing about it is gated on distance. Decode:
-/// docs/org/ordnanceTypes.md, "The launch look is the def's timeline".
+/// real sequence interpreter. The pool is the <see cref="ISequenceHost"/> for the event kinds those
+/// defs author, all against the round's own model instance. Those are node visibility, from-to
+/// tweens and fades, spins, puffers, sounds and sequence calls. The original starts the def at spawn
+/// (<c>FUN_005aef40</c> hands weapon <c>+0x110</c> to <c>FUN_004edda0</c>). Its timeline runs on the
+/// anim clock alone and is never gated on distance (docs/org/ordnanceTypes.md, "The launch look is
+/// the def's timeline").
 /// </summary>
 public sealed partial class ProjectilePool : ISequenceHost
 {
@@ -27,6 +27,9 @@ public sealed partial class ProjectilePool : ISequenceHost
     // shares the object and TrailEmitter reuse can match on identity.
     private readonly Dictionary<AnimEvent, PufferState> _pufferStates = new();
     private readonly HashSet<string> _flyoutAnimLogged = new();
+    // The world runtime's per-instance opacity path. A round's fade never edits the prototype's
+    // shared material, which the pylon-mounted copies also draw with.
+    private readonly OpacityWriter _opacityWriter = new();
     // The round whose instance is being advanced, and its pose for anything the dispatch places:
     // the interpreter's host seam carries no round identity, so the caller pins it around Advance.
     private int _animSlot = -1;
@@ -61,6 +64,29 @@ public sealed partial class ProjectilePool : ISequenceHost
                             tween.Seek(runTime);
                         else
                             AddMotion(rig, tween);
+                    }
+                    duration = instant ? 0f : runTime;
+                    return true;
+                }
+
+            case "ObjectOpacityFromTo":
+                {
+                    // A literal lerp of the two opacity numbers, the endpoint state flags unread,
+                    // as the world runtime's own dispatch does.
+                    float runTime = ev.Data.Num("run_time") ?? 0f;
+                    if (ev.Data.Obj("opacity_from")?.Num("opacity") is not { } from
+                        || ev.Data.Obj("opacity_to")?.Num("opacity") is not { } to)
+                    {
+                        Unsupported(def, ev.Kind);
+                        return true;
+                    }
+                    if (TargetOf(rig, def, ev) is { } faded)
+                    {
+                        var fade = new FlyoutFade(_opacityWriter, faded, from, to, runTime);
+                        if (instant || runTime <= 0f)
+                            fade.Seek(runTime);
+                        else
+                            AddMotion(rig, fade);
                     }
                     duration = instant ? 0f : runTime;
                     return true;
@@ -216,13 +242,14 @@ public sealed partial class ProjectilePool : ISequenceHost
         }
     }
 
-    // A later motion on the same node replaces the earlier one, the runtime's own eviction rule.
+    // A later motion on the same node and channel replaces the earlier one, the runtime's own
+    // eviction rule. ⚠ Keep the channel in the test: the flare's star scales and fades at once.
     private static void AddMotion(FlyoutRig rig, IAnimMotion motion)
     {
         rig.Motions ??= new List<IAnimMotion>();
         for (int i = rig.Motions.Count - 1; i >= 0; i--)
         {
-            if (rig.Motions[i].Target == motion.Target)
+            if (rig.Motions[i].Target == motion.Target && rig.Motions[i].Channel == motion.Channel)
                 rig.Motions.RemoveAt(i);
         }
         rig.Motions.Add(motion);
@@ -395,6 +422,42 @@ public sealed partial class ProjectilePool : ISequenceHost
         public AnimDefinition Def = null!;
         public AnimInstance Inst = null!;
         public List<IAnimMotion>? Motions;
+    }
+
+    // An OBJECT_OPACITY_FROM_TO on a flyout node: OpacityFade's rule without the world runtime. It
+    // drives the opacity channel, so it runs beside a transform tween on the same node.
+    private sealed class FlyoutFade : IAnimMotion
+    {
+        private readonly OpacityWriter _writer;
+        private readonly float _from, _to, _runTime;
+        private float _t;
+
+        public FlyoutFade(OpacityWriter writer, Node3D target, float from, float to, float runTime)
+        {
+            _writer = writer;
+            Target = target;
+            _from = from;
+            _to = to;
+            _runTime = Mathf.Max(runTime, 0f);
+            Seek(0f);
+        }
+
+        public Node3D Target { get; }
+
+        public (AnimDefinition Def, Node3D? Anchor) Owner { get; set; }
+
+        public MotionChannel Channel => MotionChannel.Opacity;
+
+        public bool Finished => _t >= _runTime;
+
+        public void Tick(float dt) => Seek(_t + dt);
+
+        public void Seek(float t)
+        {
+            _t = t;
+            float u = _runTime <= 0f ? 1f : Mathf.Clamp(t / _runTime, 0f, 1f);
+            _writer.Apply(Target, Mathf.Lerp(_from, _to, u));
+        }
     }
 
     // An OBJECT_MOTION_FROM_TO on a flyout node: FromToMotion's rule without the world runtime.

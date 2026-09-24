@@ -84,6 +84,7 @@ GameZ→Godot builders, and the animation runtime that drives the world.
 - `src/Mech3/Anim/SoundChannel.cs`, one runtime's `SOUND_NODE`/`SOUND` events: the pooled ambient emitters, the one-shot player, and the late-failure census.
 - `src/Mech3/Anim/LightChannel.cs`, one runtime's `LIGHT_STATE`/`LIGHT_ANIMATION` events: the live point-light table, the tween, the `WorldLights` submission.
 - `src/Mech3/Anim/PoseChannel.cs`, one runtime's object-pose and visual events: the pose helpers, the opacity/fade machinery and the motion-builder role.
+- `src/Mech3/Anim/OpacityWriter.cs`, a subtree's per-instance opacity: the instance parameter and the translucent twin override, never a shared-material edit.
 - `src/Mech3/Anim/NameResolver.cs`, name to node resolution: the index, wildcard matcher, scope tier chain, symbol authority, anchors and the bind census.
 - `src/Mech3/Anim/CutsceneFastForward.cs`, the rate one cutscene episode's own definitions run at while the player holds a key through a scene that offers no skip.
 - `src/Mech3/SequenceRunner.cs`, the engine-free sequence interpreter (event clock, LOOP, IF/ELSEIF, WAIT_FOR_COMPLETION) behind the `ISequenceHost` seam.

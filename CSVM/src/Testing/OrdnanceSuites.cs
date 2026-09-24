@@ -859,8 +859,10 @@ internal static class OrdnanceSuites
         "a FLYOUT body built for a pylon is posed at its MODEL_ANIMATION def's RESET_STATE: the " +
         "flare's sflsh star is hidden and rapolys shown, where the raw prototype instance shows " +
         "both; the torpedo's wings and prop are folded away; every reset event on a non-root node " +
-        "of every FLYOUT weapon holds on the built body; and a fired flare still starts " +
-        "deploy_reararc at spawn, so its star is on the round the frame it leaves")]
+        "of every FLYOUT weapon holds on the built body; a fired flare still starts " +
+        "deploy_reararc at spawn, so its star is on the round the frame it leaves; and the star's " +
+        "per-instance opacity follows the authored ramp (0 at spawn, 1 at 0.05 s, down over 2.25 s) " +
+        "while it scales 1 to 2, with the rack copy's opacity, overrides and materials untouched")]
     internal static void FlyoutRackPose(TestContext ctx)
     {
         ctx.RequireData(ctx.ZrdrPath, $"weapon definitions");
@@ -958,6 +960,59 @@ internal static class OrdnanceSuites
                 var round = bodies.Count > 0 ? bodies[0] : null;
                 ctx.Check(round is { Visible: true } && Named(round, "sflsh") is { Visible: true } && Named(round, "rapolys") is { Visible: true },
                     $"a flare just fired is drawn with its star on: body={round?.Visible} sflsh={(round != null ? Named(round, "sflsh")?.Visible : null)}");
+
+                // deploy_reararc's third sequence fades sflsh 0 to 1 over 0.05 s, then 1 to 0 over
+                // 2.25 s. Its second sequence scales the star 1 to 2 over 0.3 s meanwhile.
+                var star = round != null ? Named(round, "sflsh") : null;
+                var rackStar = rack != null ? Named(rack, "sflsh") : null;
+                var starMeshes = star != null ? MeshesUnder(star) : new List<MeshInstance3D>();
+                var rackMeshes = rackStar != null ? MeshesUnder(rackStar) : new List<MeshInstance3D>();
+                var rackMaterials = rackMeshes.Select(SurfaceMaterials).ToList();
+                ctx.Check(starMeshes.Count > 0 && rackMeshes.Count == starMeshes.Count
+                          && starMeshes.Zip(rackMeshes).All(pair => SurfaceMaterials(pair.First).SequenceEqual(SurfaceMaterials(pair.Second))),
+                    $"the fired and the rack star draw the same shared materials, so an edit to one would show on the other: fired {starMeshes.Count} mesh(es), rack {rackMeshes.Count}");
+                ctx.Check(starMeshes.Count > 0 && starMeshes.All(HasAlphaPath),
+                    $"every star mesh on the fired round has an alpha path for the fade to show on");
+
+                const float step = 1f / 60f;
+                float simTime = 0f;
+                var readings = new List<string>();
+                int off = 0;
+                void Probe(float at)
+                {
+                    while (simTime < at - (step * 0.5f))
+                    {
+                        live.SimStep(step);
+                        simTime += step;
+                    }
+                    float expected = simTime <= 0.05f ? simTime / 0.05f : 1f - ((simTime - 0.05f) / 2.25f);
+                    float read = starMeshes.Count > 0 ? OpacityOf(starMeshes[0]) : -1f;
+                    readings.Add($"{simTime:0.000}s:{read:0.00}/{expected:0.00}");
+                    if (Mathf.Abs(read - expected) > 0.03f)
+                        off++;
+                }
+                Probe(0f);
+                Probe(0.05f);
+                Probe(0.3f);
+                float scaleAt03 = star?.Scale.X ?? 0f;
+                Probe(1.15f);
+                Probe(1.9f);
+                ctx.Check(starMeshes.Count > 0 && off == 0,
+                    $"the fired star's opacity follows the authored ramp (read/expected) [{string.Join(" ", readings)}]");
+                ctx.Check(Mathf.Abs(scaleAt03 - 2f) < 0.05f,
+                    $"the fade runs beside the scale tween on the same node: sflsh scale at 0.3 s is {scaleAt03:0.00} (want 2)");
+
+                bool rackUntouched = rackMeshes.Count > 0;
+                for (int i = 0; i < rackMeshes.Count; i++)
+                {
+                    var mi = rackMeshes[i];
+                    var now = SurfaceMaterials(mi);
+                    rackUntouched &= mi.GetInstanceShaderParameter(SceneBuilder.OpacityParam).VariantType == Variant.Type.Nil
+                                     && now.SequenceEqual(rackMaterials[i])
+                                     && Enumerable.Range(0, mi.GetSurfaceOverrideMaterialCount()).All(s => mi.GetSurfaceOverrideMaterial(s) == null);
+                }
+                ctx.Check(rackUntouched,
+                    $"the rack flare's star has no opacity written, no surface override and the same shared materials after the fired star's fade");
             }
             finally
             {
@@ -2984,6 +3039,49 @@ internal static class OrdnanceSuites
                 return mesh;
         }
         return null;
+    }
+
+    private static List<MeshInstance3D> MeshesUnder(Node3D node)
+    {
+        var meshes = Descendants(node).OfType<MeshInstance3D>().ToList();
+        if (node is MeshInstance3D self)
+            meshes.Insert(0, self);
+        return meshes;
+    }
+
+    // Each surface's shared material and its shader, by reference: an in-place edit or a swap
+    // shows up as a changed pair.
+    private static List<(Material?, Shader?)> SurfaceMaterials(MeshInstance3D mi)
+    {
+        var pairs = new List<(Material?, Shader?)>();
+        for (int s = 0; mi.Mesh != null && s < mi.Mesh.GetSurfaceCount(); s++)
+        {
+            var m = mi.Mesh.SurfaceGetMaterial(s);
+            pairs.Add((m, (m as ShaderMaterial)?.Shader));
+        }
+        return pairs;
+    }
+
+    // Whether every surface draws through a shader that multiplies in the opacity parameter,
+    // either its own material or the fade twin installed over it.
+    private static bool HasAlphaPath(MeshInstance3D mi)
+    {
+        if (mi.Mesh == null || mi.Mesh.GetSurfaceCount() == 0)
+            return false;
+        for (int s = 0; s < mi.Mesh.GetSurfaceCount(); s++)
+        {
+            var drawn = mi.GetSurfaceOverrideMaterial(s) ?? mi.Mesh.SurfaceGetMaterial(s);
+            if (drawn is not ShaderMaterial { Shader: { } sh }
+                || !sh.Code.Contains(SceneBuilder.OpacityTerm, System.StringComparison.Ordinal))
+                return false;
+        }
+        return true;
+    }
+
+    private static float OpacityOf(GeometryInstance3D g)
+    {
+        var alpha = g.GetInstanceShaderParameter(SceneBuilder.OpacityParam);
+        return alpha.VariantType == Variant.Type.Nil ? 1f : alpha.AsSingle();
     }
 
     private static IEnumerable<Node> Descendants(Node node)

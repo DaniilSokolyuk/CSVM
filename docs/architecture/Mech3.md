@@ -545,6 +545,15 @@ container, while the tick spine stays in `AnimRuntime.Advance`. The two `AT_NODE
 and the SI-script duration rules are on their own members. Spellings and census:
 docs/formats/anim-definitions/cutscenes.md.
 
+## src/Mech3/Anim/OpacityWriter.cs
+Writes a subtree's opacity per instance: the `csky_opacity` instance shader parameter on every
+geometry node, and a translucent twin of a material with no alpha path, installed as that
+instance's surface override while the opacity is partial and removed at 1. It owns the twin caches.
+`PoseChannel.SetSubtreeOpacity` writes through one (adding the dedup and the faded-collider rule),
+and so do the projectile pool's flyout fades (`ProjectileFlyoutAnim.cs`), so a round's fade never
+edits the prototype material the rack copies share. The fade shader itself is
+`SceneBuilder.FadeShaderFor`.
+
 ## src/Mech3/Anim/NameResolver.cs
 Name to node resolution as one public module, generic over the node type (`NameResolver<TNode>`):
 the index, the wildcard `Matcher`, the memoized `FindAll`, the scoped tier chain

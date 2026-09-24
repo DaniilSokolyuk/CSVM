@@ -54,9 +54,16 @@ over 5 s, the prop comes on and spins, `atpayload` grows, `snd_propstart` and fo
 world `AnimProgram` and runs the def as a per-round `AnimInstance` on the sequence interpreter
 (`ProjectileFlyoutAnim.cs`), the pool being the host: every `PUFFER_STATE` the timeline switches
 on becomes a pooled `Puffer` fed each step (`DISTANCE_INTERVAL` and `TIME_INTERVAL` alike), the
-spinner rate rolls the FLYOUT body, node visibility and from-to tweens drive the round's own model
-instance, and the def's sounds play at the round. Not run on a round: `ObjectOpacityFromTo`
-(the rear-arc flare's fade), logged once and skipped.
+spinner rate rolls the FLYOUT body, node visibility, from-to tweens and `ObjectOpacityFromTo` fades
+drive the round's own model instance, and the def's sounds play at the round. A fade is written per
+instance, as the world runtime writes one (the `csky_opacity` instance parameter, plus a translucent
+twin material as that instance's surface override where the shader has no alpha path), so the
+shared prototype material the pylon-mounted copies draw with is never edited. The rear-arc flare's
+`sflsh` therefore fades in over 0.05 s and out over 2.25 s while it scales 1 to 2. The round's def
+ends with the round: at the 2.0 s `DETONATION_TIME` the body is freed with the star still at about
+13 % opacity, and the def's own `rear_flash_effect` call at 4.0 s is never reached. The detonation
+plays the same `rear_flash_effect` through the flare's `IMPACT` `default` and `player` rows. Whether the original keeps the
+round's `MODEL_ANIMATION` instance running past detonation is not decoded.
 
 `large_fireball` / `small_fireball` (bound by `FIRE`/`IMPACT` on the heaviest ordnance) are the
 **shared** destruction fireballs defined in `flame_ball.zrd.json` and reused by nearly every

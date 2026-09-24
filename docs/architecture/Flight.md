@@ -339,7 +339,7 @@ runs its own `AnimInstance` of the weapon's def (`he_rocket`, `sonic`, `torpedo_
 sequence interpreter with the pool standing in as the `ISequenceHost`: `StartFlyoutAnim` poses
 `RESET_STATE` and fires the t=0 events inside `Spawn`, and `AdvanceFlyoutAnim` runs the instance
 each sim step once the round has moved. `Dispatch` covers the kinds these defs author (node
-visibility and scale, from-to tweens, spins, puffer trails, sounds, sequence and animation calls)
+visibility and scale, from-to tweens, opacity fades through `OpacityWriter`, spins, puffer trails, sounds, sequence and animation calls)
 and logs anything else once. The trail puffers, the sonic's body roll and the torpedo's launch look
 all come off this instance; `PoseAtResetState` gives every `BuildFlyoutBody` body the reset pose. Decode: [../org/ordnanceTypes.md](../org/ordnanceTypes.md).
 
