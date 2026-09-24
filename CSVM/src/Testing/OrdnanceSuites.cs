@@ -853,6 +853,122 @@ internal static class OrdnanceSuites
         });
     }
 
+    // A FLYOUT body built for the rack wears its def's RESET_STATE, not the authored ACTIVE bits.
+    // A fired round still starts the def at spawn. The raw BuildSubtree instance is the control.
+    [Suite("flyout-rack-pose",
+        "a FLYOUT body built for a pylon is posed at its MODEL_ANIMATION def's RESET_STATE: the " +
+        "flare's sflsh star is hidden and rapolys shown, where the raw prototype instance shows " +
+        "both; the torpedo's wings and prop are folded away; every reset event on a non-root node " +
+        "of every FLYOUT weapon holds on the built body; and a fired flare still starts " +
+        "deploy_reararc at spawn, so its star is on the round the frame it leaves")]
+    internal static void FlyoutRackPose(TestContext ctx)
+    {
+        ctx.RequireData(ctx.ZrdrPath, $"weapon definitions");
+        string texturesPath = SessionPaths.ChapterTextures(ctx.DataRoot, "C1");
+        ctx.RequireData(texturesPath, $"C1 textures");
+        ctx.RequireData(ctx.MessagesPath, $"messages.json");
+        var weapons = WeaponDefs.Load(ctx.ZrdrPath, Messages.Load(ctx.MessagesPath));
+        if (!weapons.TryGet("wep_15", out var flare) || !weapons.TryGet("wep_14", out var torpedo))
+        {
+            ctx.Check(false, $"wep_15 and wep_14 both resolve");
+            return;
+        }
+
+        static Node3D? Named(Node3D root, string name)
+        {
+            if (root.HasMeta(AnimRuntime.NameMeta) && root.GetMeta(AnimRuntime.NameMeta).AsString() == name)
+                return root;
+            foreach (var n in root.FindChildren("*", "Node3D", recursive: true, owned: false))
+            {
+                if (n is Node3D n3d && n3d.HasMeta(AnimRuntime.NameMeta)
+                    && n3d.GetMeta(AnimRuntime.NameMeta).AsString() == name)
+                    return n3d;
+            }
+            return null;
+        }
+
+        ctx.WithWorld("C1", collision: false, world =>
+        {
+            var textures = new TextureArchive(texturesPath);
+            ProjectilePool? live = null;
+            var built = new List<Node3D>();
+            try
+            {
+                live = new ProjectilePool(textures, null, null,
+                    flyoutGamez: world.Gamez, flyoutScene: world.Session.Builder.Scene,
+                    flyoutAnims: world.Session.Program);
+                ctx.Host.AddChild(live);
+
+                // The control: the prototype as authored shows the star.
+                var raw = world.Gamez.FindByName("reararc") is { } proto
+                    ? world.Session.Builder.Scene.BuildSubtree(proto, skip: null, collisionSkip: _ => true)
+                    : null;
+                if (raw != null)
+                    built.Add(raw);
+                ctx.Check(raw != null && Named(raw, "sflsh") is { Visible: true } && Named(raw, "rapolys") is { Visible: true },
+                    $"CONTROL: the raw reararc instance shows sflsh and rapolys, both ACTIVE in the chapter record");
+
+                var rack = live.BuildFlyoutBody(flare);
+                if (rack != null)
+                    built.Add(rack);
+                ctx.Check(rack != null && Named(rack, "sflsh") is { Visible: false } && Named(rack, "rapolys") is { Visible: true },
+                    $"the flare built for the rack has sflsh hidden and rapolys shown sflsh={(rack != null ? Named(rack, "sflsh")?.Visible : null)}");
+
+                var torp = live.BuildFlyoutBody(torpedo);
+                if (torp != null)
+                    built.Add(torp);
+                ctx.Check(torp != null && Named(torp, "rightwing") is { Visible: false }
+                          && Named(torp, "leftwing") is { Visible: false } && Named(torp, "atprop") is { Visible: false }
+                          && Named(torp, "atbody") is { Visible: true },
+                    $"the torpedo built for the rack has its wings and prop folded away and its body shown");
+
+                // The general rule, over every FLYOUT weapon whose def resolves in this chapter.
+                int checkedEvents = 0, wrong = 0;
+                var bad = new List<string>();
+                foreach (var w in weapons.All)
+                {
+                    if (w.Flyout?.ModelAnimation is not { } animName || w.Flyout.Model is not { } modelName)
+                        continue;
+                    var def = world.Session.Program.ByAnimName(animName).FirstOrDefault();
+                    if (def?.ResetState == null || live.BuildFlyoutBody(w) is not { } body)
+                        continue;
+                    built.Add(body);
+                    foreach (var ev in def.ResetState.Events)
+                    {
+                        if (ev.Kind != "ObjectActiveState" || ev.Data.Str("node") is not { } node
+                            || node == modelName || Named(body, node) is not { } target)
+                            continue;
+                        checkedEvents++;
+                        if (target.Visible != ev.Data.Bool("state"))
+                        {
+                            wrong++;
+                            bad.Add($"{w.Id}:{node}");
+                        }
+                    }
+                }
+                ctx.Check(checkedEvents >= 5 && wrong == 0,
+                    $"every non-root reset event of every FLYOUT def holds on its built body: {checkedEvents} checked, wrong [{string.Join(",", bad)}]");
+
+                // The in-flight half: the spawn starts deploy_reararc, whose initial sequence shows
+                // the star at t=0 over the reset that hid it.
+                var muzzle = new Transform3D(Basis.LookingAt(Vector3.Forward, Vector3.Up), new Vector3(6000f, 3000f, 0f));
+                live.Spawn(flare, muzzle, Vector3.Zero, shooterId: 7, team: InstantActionRuntime.EnemyTeam);
+                var bodies = new List<Node3D>();
+                live.CollectFlyoutBodies(bodies);
+                var round = bodies.Count > 0 ? bodies[0] : null;
+                ctx.Check(round is { Visible: true } && Named(round, "sflsh") is { Visible: true } && Named(round, "rapolys") is { Visible: true },
+                    $"a flare just fired is drawn with its star on: body={round?.Visible} sflsh={(round != null ? Named(round, "sflsh")?.Visible : null)}");
+            }
+            finally
+            {
+                foreach (var b in built)
+                    b.Free();
+                live?.Free();
+                textures.Dispose();
+            }
+        });
+    }
+
     // B6-B9 on a live pool with a lab tag list beside it: the turn clamp and its speed penalty, the
     // sentinel rate under the same gate, the target-free decay, LOCK_ON_LEAD's blend on a lab def
     // (no shipped carrier reaches its onset), the seeker's per-frame pick, and the beeper's paint.

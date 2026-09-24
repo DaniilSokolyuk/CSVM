@@ -224,27 +224,6 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   clear and the hull does not (CM13's dbase arch on dzpath2) in both games; if the original passes,
   sweep the player's probes too. *Cross-refs:* `PlaneStats.CollisionProbes`, `docs/formats/vehicle.md`.
 
-- `BL-1040` `[Bug]` `[S]` `[Next: code]` `[Impact: low]` `[Evidence: data]` **A mounted FLARE
-  (`wep_15`) shows its blue star burst on the rack before it is fired.** *Verdict at the controls:*
-  "FLARE shows the explosion sprite (blue star) while unfired". *Evidence:* the round's `FLYOUT`
-  `MODEL` is `reararc`, whose subtree carries `rapolys` (the body) and `sflsh` (the flash sprite),
-  both `active: true` in the chapter record (`extracted/C1/gamez/nodes.json`). What turns `sflsh`
-  off is the deploy definition `deploy_reararc`'s `RESET_STATE`
-  (`extracted/C1/cam_anim/reararc-deploy_reararc.json`: `rapolys` true, `sflsh` false); its
-  sequences then activate `sflsh`, scale it 1 to 2 over 0.3 s, fade it in over 0.05 s and out over
-  2.25 s, deactivate it, and call `rear_flash_effect` at 4.0 s. `Projectile.BuildFlyoutBody`
-  instances the prototype root through `SceneBuilder.BuildSubtree` at each node's own ACTIVE bit and
-  never applies the definition's reset state, and `PylonOrdnance` hangs that copy on the pylon, so
-  the sprite draws on the rack, and on the round from release unless the flight runs the
-  definition. *Fix shape:* a flyout body applies its `MODEL_ANIMATION` definition's `RESET_STATE` at
-  instancing (`AnimRuntime` poses pooled library copies that way, `RunResetStateEvents`), so `sflsh`
-  starts hidden; whether the in-flight round runs `deploy_reararc` at all is the second thing to
-  read. *⚠ Traps:* do not hide `sflsh` by name; the reset state is the authored rule, and the other
-  `FLYOUT` models' definitions are read for the same shape before the flare is assumed alone.
-  *Playtest after fix:* a plane loaded with FLARE, on the ground and in flight, the rack shows the
-  body only; fire one, the star appears when the round goes off. *Cross-refs:*
-  `docs/org/ordnanceTypes.md` (`wep_15`), `PylonOrdnance.cs`, `git log --grep=BL-1040`.
-
 ## Flight model & collision physics
 
 - `BL-562` `[Perf]` `[M]` `[Next: data]` `[Impact: low]` `[Evidence: data]` `[CM11]` **CM11 (C2/M02) still spends a single physics tick of about 36 ms on the sortie's

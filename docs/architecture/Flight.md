@@ -341,7 +341,7 @@ sequence interpreter with the pool standing in as the `ISequenceHost`: `StartFly
 each sim step once the round has moved. `Dispatch` covers the kinds these defs author (node
 visibility and scale, from-to tweens, spins, puffer trails, sounds, sequence and animation calls)
 and logs anything else once. The trail puffers, the sonic's body roll and the torpedo's launch look
-all come off this instance. Decode: [../org/ordnanceTypes.md](../org/ordnanceTypes.md).
+all come off this instance; `PoseAtResetState` gives every `BuildFlyoutBody` body the reset pose. Decode: [../org/ordnanceTypes.md](../org/ordnanceTypes.md).
 
 ## src/Flight/Hud/WarningShotCue.cs
 The incoming-fire shield's shipped accumulator (player.json `warning_shot_max` / `_dissipation` /
@@ -1013,9 +1013,9 @@ skipped in `Advance`. Advanced each `_Process`, frozen while paused or crashed; 
 
 ## src/Flight/Weapons/PylonOrdnance.cs
 The rockets mounted under a plane's wings. `Build` instances ONE flyout model body per loaded pylon
-through `ProjectilePool.BuildFlyoutBody` (the same gamez prototype the round flies) and parents it
-to that pylon marker at identity local transform, which is the launch pose; `Update` shows or hides
-each per its live `Hardpoint.Ammo`. `FlightController` drives `Update` after the rockets, and the
+through `ProjectilePool.BuildFlyoutBody` (the same gamez prototype the round flies, posed at its
+def's `RESET_STATE`) and parents it to that pylon marker at identity local transform, which is the
+launch pose; `Update` shows or hides each per its live `Hardpoint.Ammo`, the root's only owner. `FlightController` drives `Update` after the rockets, and the
 mounted body rides the plane and is freed with it. `Unmount` takes the set back off, detaching each
 body from its pylon immediately rather than queueing it, so the weapon lab's rebuild-on-swap cannot
 leave the old ordnance hanging beside the new. `--fly` only.

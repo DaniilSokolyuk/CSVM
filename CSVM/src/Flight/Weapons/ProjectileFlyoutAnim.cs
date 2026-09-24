@@ -48,18 +48,8 @@ public sealed partial class ProjectilePool : ISequenceHost
         switch (ev.Kind)
         {
             case "ObjectActiveState":
-                if (TargetOf(rig, def, ev) is { } shown)
-                    shown.Visible = ev.Data.Bool("state");
-                return true;
-
             case "ObjectScaleState":
-                if (TargetOf(rig, def, ev) is { } scaled)
-                {
-                    var held = scaled.Transform;
-                    scaled.Transform = new Transform3D(
-                        held.Basis.Orthonormalized().Scaled(AnimRuntime.NonSingularScale(ev.Data.Vec3("state"))),
-                        held.Origin);
-                }
+                ApplyNodeState(rig, def, ev);
                 return true;
 
             case "ObjectMotionFromTo":
@@ -145,6 +135,32 @@ public sealed partial class ProjectilePool : ISequenceHost
             default:
                 Unsupported(def, ev.Kind);
                 return true;
+        }
+    }
+
+    // The two node-state kinds every shipped FLYOUT def's RESET_STATE is made of. False for any
+    // other kind, which the caller decides what to do with.
+    private static bool ApplyNodeState(FlyoutRig rig, AnimDefinition def, AnimEvent ev)
+    {
+        switch (ev.Kind)
+        {
+            case "ObjectActiveState":
+                if (TargetOf(rig, def, ev) is { } shown)
+                    shown.Visible = ev.Data.Bool("state");
+                return true;
+
+            case "ObjectScaleState":
+                if (TargetOf(rig, def, ev) is { } scaled)
+                {
+                    var held = scaled.Transform;
+                    scaled.Transform = new Transform3D(
+                        held.Basis.Orthonormalized().Scaled(AnimRuntime.NonSingularScale(ev.Data.Vec3("state"))),
+                        held.Origin);
+                }
+                return true;
+
+            default:
+                return false;
         }
     }
 
@@ -285,6 +301,22 @@ public sealed partial class ProjectilePool : ISequenceHost
         }
         foreach (var e in rig.Emitters)
             e.Puffer.Emit(pos, basis, dt);
+    }
+
+    // Poses a fresh body at its def's RESET_STATE, the pose before any spawn starts the def. A
+    // mounted round then hides the nodes only the flight turns on (the flare's star, the torpedo's
+    // wings). The caller owns the root's visibility. Other event kinds are skipped.
+    private void PoseAtResetState(Node3D body, WeaponDef weapon)
+    {
+        if (FlyoutDefFor(weapon) is not { ResetState: { } reset } def)
+            return;
+        var rig = new FlyoutRig { Def = def };
+        IndexRigNodes(rig, body);
+        foreach (var ev in reset.Events)
+        {
+            if (!ApplyNodeState(rig, def, ev))
+                Unsupported(def, ev.Kind);
+        }
     }
 
     private AnimDefinition? FlyoutDefFor(WeaponDef weapon)

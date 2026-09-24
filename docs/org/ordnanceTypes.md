@@ -611,7 +611,7 @@ data:
 
 | Anim time | Event | What is seen or heard |
 |---|---|---|
-| reset | `RESET_STATE`: `rightwing`, `leftwing`, `atprop` INACTIVE, `atpayload` scale 1 | the wings folded and the prop absent, so the round that leaves the rail is the same `a_torpedo` model as the pylon-mounted one with three nodes off, which reads as a different, wingless body |
+| reset | `RESET_STATE`: `rightwing`, `leftwing`, `atprop` INACTIVE, `atpayload` scale 1 | the wings folded and the prop absent: the round leaves the rail as the `a_torpedo` prototype with three nodes off, which reads as a different, wingless body |
 | 0 s | `CALL_SEQUENCE torpuffer_trail1` | `torpuffertrail1`, a `DISTANCE_INTERVAL 0.2` puffer AT_NODE `a_torpedo (0, −0.2, 1.5)` cycling `fire_f01`…`fire_f06`: the orange rocket-flame ribbon |
 | 3.5 s | `torpuffertrail1` INACTIVE at `ANIMATION_OFFSET 3.5` | the flame stops; its last puffs live up to 1 s more |
 | 3.5 s | `CALL_SEQUENCE rightwing`, `leftwing` (`EVENT_OFFSET 3.5`) | both wings ACTIVE and swung from ±90° yaw to 0 over 5 s (`OBJECT_MOTION_FROM_TO`) |
@@ -628,6 +628,17 @@ which is also why the `torpedo_trail` def carries them in its `static_sounds` ta
 has **no reader**: every instruction naming either offset was enumerated and none is in the
 projectile system, and the block's base `+0xf8` is formed only by the parser, so the loop is dead
 in this build. `torpuffer_trail2` (a second fire trail off at 29 s) is defined and never called.
+
+**The mounted round wears the def's `RESET_STATE`.** Every `FLYOUT` prototype is authored with all
+its nodes `ACTIVE` in the chapter record, including nodes only the flight shows: the flare's
+`reararc` carries `sflsh`, the blue star its `deploy_reararc` def switches on at 0 s (scaled 1 to 2
+over 0.3 s, faded in over 0.05 s and out over 2.25 s, `rear_flash_effect` called at 4.0 s), and
+`a_torpedo` carries the wings and prop above. The def's `RESET_STATE` is what turns them off, so
+the pylon-mounted body is posed by it too: the rack shows `rapolys` without the star and the
+torpedo folded. Ten of the twelve `FLYOUT` defs' resets hide only their own root, which is the
+unspawned prototype's state; the rack's root visibility is the pylon's armed state instead. The
+original's own rack-mount routine is not decoded; the pose is read off the data, and the user's
+report that the unfired flare must not show its star.
 
 **How long the flight is, and how fast.** The spawn's `+0x38 == 0.0 && !(flags & 0x800)` test picks
 the branch for a weapon without `ACCELERATION` and without `INSTANT` (bit `0x800` is `INSTANT`,
