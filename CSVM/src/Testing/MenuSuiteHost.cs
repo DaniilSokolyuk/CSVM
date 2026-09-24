@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using CSVM.Bindings;
+using CSVM.Flight.Hangar;
 using CSVM.Flight.Weapons;
 using CSVM.Mech3;
 using CSVM.Session.Campaign;
@@ -67,6 +69,37 @@ internal static class MenuSuiteHost
     {
         var host = Bare(new List<MenuExit>(), ctx.DataRoot, out var seat);
         return LaunchMenu.Build(ctx.ZrdrPath, ctx.DataRoot, host, seat.Input);
+    }
+
+    /// <summary>A saved-plane store over a fresh <c>Planes</c> folder in <paramref name="suite"/>'s
+    /// scratch directory, holding <paramref name="customs"/> builds written through the store's own
+    /// writer. An Original presentation handed it reads this roster and not the player's
+    /// <c>user://Planes</c>, whose contents would otherwise decide what the suite sees.
+    /// <see cref="DropScratchPlanes"/> removes it.</summary>
+    internal static CustomPlaneStore ScratchPlanes(TestContext ctx, string suite, int customs = 0)
+    {
+        DropScratchPlanes(ctx, suite);
+        var store = new CustomPlaneStore(Path.Combine(ctx.ScratchDir, suite, "Planes"));
+        for (int i = 0; i < customs; i++)
+        {
+            store.Save(new CustomPlaneDef
+            {
+                Name = $"Scratch Build {i + 1:D2}",
+                Airframe = i % (CustomPlaneDef.MaxAirframe + 1),
+            });
+        }
+
+        return store;
+    }
+
+    /// <summary>Deletes the folder <see cref="ScratchPlanes"/> made for <paramref name="suite"/>.</summary>
+    internal static void DropScratchPlanes(TestContext ctx, string suite)
+    {
+        string dir = Path.Combine(ctx.ScratchDir, suite, "Planes");
+        if (Directory.Exists(dir))
+        {
+            Directory.Delete(dir, recursive: true);
+        }
     }
 
     /// <summary>An audio service that plays nothing and records nothing: a scripted run has no

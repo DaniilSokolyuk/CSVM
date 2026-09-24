@@ -16,16 +16,11 @@ using CSVM.UI.Screens;
 namespace CSVM.Testing;
 
 /// <summary>
-/// The hangar in both presentations. Built-in's journey, characterized: a real
-/// <see cref="LaunchMenu"/> is driven through both doors, the nine screens in the flow's order
-/// with the airframe-defaults ask, a commit under a scratch name, the edit and the delete of that
-/// plane, the residue-free cancel, the aids and the campaign wallet door over the aid's scratch
-/// profile; every check pins what the screens do today. Then Original's hangar through a real
-/// <see cref="MenuHost"/> over the install's layout: the Instant Action screen's Build Custom
-/// Plane, the name screen, the hub's tabs, the totals page committing the same scratch plane into
-/// the shared roster and back onto the Instant Action screen, the inventory selling it back, and
-/// the switch discarding an open build. The scratch plane is written into the user's store under
-/// a name no player would type and removed before the suite ends.
+/// The hangar in both presentations: Built-in's journey through a real <see cref="LaunchMenu"/>,
+/// then Original's through a real <see cref="MenuHost"/> over the install's layout. The suite
+/// descriptions list what each pins. Built-in's scratch plane goes into the user's store under a
+/// name no player would type and is removed before the suite ends. Original's presentation reads
+/// and writes a scratch store of the suite's own.
 /// </summary>
 internal static class MenuHangarSuites
 {
@@ -103,7 +98,7 @@ internal static class MenuHangarSuites
         + "baseline clear of the strips' bottom, a dropdown steps and picks "
         + "through the shared feature with the running total following, READY TO PURCHASE and the commit "
         + "(reading Export on this door, centred on its paper plaque) save the scratch plane into the "
-        + "user's store and the shared roster and return to the "
+        + "suite's scratch plane store and the shared roster and return to the "
         + "Instant Action screen with it in the Pilot Plane list, SELL PLANES opens the inventory, which "
         + "wallet-free builds no Export row and deletes instead of selling, standing the picked plane's "
         + "line centred in its dashed box and leaving its "
@@ -139,16 +134,22 @@ internal static class MenuHangarSuites
         var exits = new List<MenuExit>();
         var seat = new ScriptedSeat();
         var registry = new PresentationRegistry();
+        var store = MenuSuiteHost.ScratchPlanes(ctx, "menu-original-hangar");
         registry.Register(PresentationId.BuiltIn, () => new BuiltInPresentation(
-            ctx.Host, ctx.ZrdrPath, ctx.DataRoot, string.Empty, new MenuInput { Keyboard = true }));
+            ctx.Host, ctx.ZrdrPath, ctx.DataRoot, string.Empty, new MenuInput { Keyboard = true })
+        {
+            Planes = store,
+        });
         registry.Register(PresentationId.Original, () => new OriginalPresentation(
-            ctx.Host, ctx.DataRoot, layout, string.Empty, new MenuInput { Keyboard = true }));
+            ctx.Host, ctx.DataRoot, layout, string.Empty, new MenuInput { Keyboard = true })
+        {
+            Planes = store,
+        });
         var host = new MenuHost(registry, new MenuSuiteHost.SilentMenuAudio(), exits.Add);
         MenuSuiteHost.AddFeatures(host, ctx.DataRoot);
         host.AddSeat(seat);
-        var store = CustomPlaneStore.UserPlanes();
         string scratch = ScratchName();
-        ctx.Check(store.Load(scratch) == null, $"the scratch name {scratch} is free in the user's store before the run");
+        ctx.Check(store.List().Count == 0, $"the suite's scratch store starts empty ({store.List().Count})");
         try
         {
             host.Select(forceBuiltIn: false, cliOverride: "original");
@@ -175,12 +176,10 @@ internal static class MenuHangarSuites
         }
         finally
         {
-            store.Delete(scratch);
             host.Deactivate();
             Godot.Input.MouseMode = Godot.Input.MouseModeEnum.Visible;
+            MenuSuiteHost.DropScratchPlanes(ctx, "menu-original-hangar");
         }
-
-        ctx.Check(store.Load(scratch) == null, $"the scratch plane is gone from the user's store after the run");
     }
 
     // A name no player would type, distinct per run, inside the name screen's own character set.

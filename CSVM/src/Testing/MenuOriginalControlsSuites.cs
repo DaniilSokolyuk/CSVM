@@ -57,10 +57,17 @@ internal static class MenuOriginalControlsSuites
         var seat = new ScriptedSeat();
         var player1 = new MenuInput { Keyboard = true };
         var registry = new PresentationRegistry();
+        var planes = MenuSuiteHost.ScratchPlanes(ctx, "menu-original-controls");
         registry.Register(PresentationId.BuiltIn, () => new BuiltInPresentation(
-            ctx.Host, ctx.ZrdrPath, ctx.DataRoot, string.Empty, new MenuInput { Keyboard = true }));
+            ctx.Host, ctx.ZrdrPath, ctx.DataRoot, string.Empty, new MenuInput { Keyboard = true })
+        {
+            Planes = planes,
+        });
         registry.Register(PresentationId.Original, () => new OriginalPresentation(
-            ctx.Host, ctx.DataRoot, layout, string.Empty, player1));
+            ctx.Host, ctx.DataRoot, layout, string.Empty, player1)
+        {
+            Planes = planes,
+        });
         var host = new MenuHost(registry, new MenuSuiteHost.SilentMenuAudio(), exits.Add);
         MenuSuiteHost.AddFeatures(host, ctx.DataRoot, (player, profile) =>
         {
@@ -92,6 +99,7 @@ internal static class MenuOriginalControlsSuites
             host.Deactivate();
             BindingStore.DirectoryOverride = previous;
             Godot.Input.MouseMode = Godot.Input.MouseModeEnum.Visible;
+            MenuSuiteHost.DropScratchPlanes(ctx, "menu-original-controls");
         }
     }
 

@@ -362,6 +362,11 @@ public sealed partial class LaunchMenu : CanvasLayer
     /// cached, so a store set after the build applies to the next door press.</summary>
     public CampaignProfileStore? CampaignProfiles { get; set; }
 
+    /// <summary>The saved-plane store the pickers, the hangar and the campaign's exports use. It is
+    /// <c>user://Planes</c> unless a driven suite hands in a scratch store first. What a scripted
+    /// journey sees then never depends on the player's own builds. Resolved on every read.</summary>
+    public CustomPlaneStore? PlaneStore { get; set; }
+
     /// <summary>The layout every campaign flow opened after this reads its fixed chrome through,
     /// or null for the data root's own decoded layout. A suite sets <see cref="CampaignLayout.Fallback"/>
     /// to compose the same screens with the hardcoded chrome and compare; the game never sets
@@ -1861,7 +1866,7 @@ public sealed partial class LaunchMenu : CanvasLayer
     private void OpenHangar(Screen returnTo)
     {
         _hangarReturn = returnTo;
-        _hangar = new HangarFlow(_hangarFeature, CustomPlaneStore.UserPlanes(), _dataRoot,
+        _hangar = new HangarFlow(_hangarFeature, SavedPlanes(), _dataRoot,
             nameRng: Rng.NewSystemRandom(Rng.PlaneName));
         _screen = Screen.Hangar;
         _error = "";
@@ -2010,7 +2015,7 @@ public sealed partial class LaunchMenu : CanvasLayer
     // as fit-less.
     private CampaignFlow NewCampaignFlow(CampaignProfileStore store, CustomPlaneStore? planes = null)
     {
-        _campaignFeature.Open(store, planes ?? CustomPlaneStore.UserPlanes(), Fits, _dataRoot);
+        _campaignFeature.Open(store, planes ?? SavedPlanes(), Fits, _dataRoot);
         return new CampaignFlow(_campaignFeature, CampaignLayoutOverride);
     }
 
@@ -2386,13 +2391,15 @@ public sealed partial class LaunchMenu : CanvasLayer
     // _roster.Count, which PlaneRowCount - 1 still admits.
     private void RefreshRoster()
     {
-        var customs = CustomPlaneStore.UserPlanes().List();
+        var customs = SavedPlanes().List();
         _customDefs = customs;
         _roster = PlanePickerRoster.Build(Planes, customs);
         _setup.SetRoster(MenuRoster(customs));
         foreach (var slot in _slots)
             slot.PlaneIndex = Math.Min(slot.PlaneIndex, PlaneRowCount - 1);
     }
+
+    private CustomPlaneStore SavedPlanes() => PlaneStore ?? CustomPlaneStore.UserPlanes();
 
     // The stock display name behind a roster row: the row's own name for a stock pick, the
     // airframe's stock aircraft for a custom, for consumers that speak ia.json's vocabulary.

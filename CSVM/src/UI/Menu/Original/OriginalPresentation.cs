@@ -267,9 +267,17 @@ public sealed class OriginalPresentation : IMenuPresentation
     /// show or between shows.</summary>
     public CampaignProfileStore? CampaignProfiles { get; set; }
 
+    /// <summary>The saved-plane store the roster, the hangar and Instant Action's custom pilot use.
+    /// It is <c>user://Planes</c> unless a suite sets a scratch store here. What a driven journey
+    /// sees then never depends on the player's own builds. The first show hands it to the shell,
+    /// so it is set with the presentation.</summary>
+    public CustomPlaneStore? Planes { get; init; }
+
     /// <summary>The viewer showing the wrap-up page's open photograph, for a suite reading it back;
     /// null while the presentation has no layer.</summary>
     internal ShotViewer? PhotoViewer => _shotViewer;
+
+    private CustomPlaneStore PlaneStore => Planes ?? CustomPlaneStore.UserPlanes();
 
     /// <summary>The board palette the shell's inks resolve to: list text in the file-wide
     /// disabled grey with the active white for the focused row, plaque labels in the paper
@@ -339,7 +347,7 @@ public sealed class OriginalPresentation : IMenuPresentation
             _shell = new OriginalShell(_layout, host.Features.Get<FreeFlightFeature>(), setup, _sizes.Measure, _devices.FlightPads,
                 instantAction: host.Features.Get<InstantActionFeature>(),
                 hangar: host.Features.TryGet<HangarFeature>(out var hangar) ? hangar : null,
-                planes: CustomPlaneStore.UserPlanes(),
+                planes: PlaneStore,
                 campaign: host.Features.TryGet<CampaignFeature>(out var campaign) ? campaign : null,
                 profiles: () => CampaignProfiles ?? CampaignProfileStore.UserProfiles(),
                 stock: () => StockLoadouts.Load(),
@@ -372,7 +380,7 @@ public sealed class OriginalPresentation : IMenuPresentation
 
         // Re-read on every show, so a plane saved in the hangar or by another presentation is
         // offered without a restart; cursors past a shrunk roster come back onto it.
-        setup.SetRoster(Roster(CustomPlaneStore.UserPlanes().List()));
+        setup.SetRoster(Roster(PlaneStore.List()));
         foreach (var seat in setup.Seats)
         {
             seat.Cursor = Math.Clamp(seat.Cursor, 0, Math.Max(0, setup.Roster.Count - 1));

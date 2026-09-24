@@ -1,4 +1,5 @@
 using System;
+using CSVM.Flight.Hangar;
 using CSVM.UI.Screens;
 using Godot;
 
@@ -41,12 +42,17 @@ public sealed class BuiltInPresentation : IMenuPresentation
     /// one-shot debug aids and the failed-build note.</summary>
     public LaunchMenu? Menu => _menu;
 
+    /// <summary>The saved-plane store handed to the launchscreen it builds, the same seam as
+    /// <see cref="LaunchMenu.PlaneStore"/>; null leaves it on <c>user://Planes</c>.</summary>
+    public CustomPlaneStore? Planes { get; init; }
+
     public void Activate(IMenuHost host, MenuReturnDestination destination)
     {
         ArgumentNullException.ThrowIfNull(host);
         if (_menu == null)
         {
             _menu = LaunchMenu.Build(_zrdrPath, _dataRoot, host, _player1);
+            _menu.PlaneStore = Planes;
             _menu.SetProcess(false);
             _parent.AddChild(_menu);
         }

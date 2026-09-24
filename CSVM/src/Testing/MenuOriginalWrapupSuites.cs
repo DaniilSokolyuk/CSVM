@@ -49,10 +49,17 @@ internal static class MenuOriginalWrapupSuites
         var exits = new List<MenuExit>();
         var seat = new ScriptedSeat();
         var registry = new PresentationRegistry();
+        var planes = MenuSuiteHost.ScratchPlanes(ctx, "menu-original-wrapup");
         registry.Register(PresentationId.BuiltIn, () => new BuiltInPresentation(
-            ctx.Host, ctx.ZrdrPath, ctx.DataRoot, string.Empty, new MenuInput { Keyboard = true }));
+            ctx.Host, ctx.ZrdrPath, ctx.DataRoot, string.Empty, new MenuInput { Keyboard = true })
+        {
+            Planes = planes,
+        });
         registry.Register(PresentationId.Original, () => new OriginalPresentation(
-            ctx.Host, ctx.DataRoot, layout, string.Empty, new MenuInput { Keyboard = true }));
+            ctx.Host, ctx.DataRoot, layout, string.Empty, new MenuInput { Keyboard = true })
+        {
+            Planes = planes,
+        });
         var host = new MenuHost(registry, new MenuSuiteHost.SilentMenuAudio(), exits.Add);
         MenuSuiteHost.AddFeatures(host, ctx.DataRoot);
         host.AddSeat(seat);
@@ -79,6 +86,7 @@ internal static class MenuOriginalWrapupSuites
         {
             host.Deactivate();
             Godot.Input.MouseMode = Godot.Input.MouseModeEnum.Visible;
+            MenuSuiteHost.DropScratchPlanes(ctx, "menu-original-wrapup");
         }
     }
 

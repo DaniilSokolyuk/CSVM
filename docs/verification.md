@@ -829,6 +829,11 @@ member, and it does not go here.
   reaching a distance can be 70 dB down there. Read the level the line prints, never the cull
   distance beside it.** An AI aeroplane's `snd_30cal` at 398 m of its 413 m cull measured -72 dB,
   and a turret cue whose scaled radius is 1000 m stands at -30 dB there.
+- **INSTR-93**, **A suite that reads a `user://` store passes on what the machine holds, not on what
+  the suite set up: hand the presentation a scratch store, and prove nothing reads the production
+  one by making its accessor throw for one run, with an unconverted suite failing as the
+  control.** `menu-original-tracer`'s aircraft column scrolled only on a profile holding a saved
+  custom plane, because the eleven stock airframes exactly fill the column's eleven-row window.
 
 ## SRC, sources and documents
 

@@ -43,6 +43,9 @@ internal static class MenuOriginalSuites
     private const float AuthoredGameOptionPitch = 62f;
     private const float AuthoredPlaqueY = 457f;
 
+    // How many rows the tracer's roster runs past the aircraft column's window.
+    private const int ScrollingCustoms = 3;
+
     private static readonly MenuCommands Accept = new() { Accept = true };
     private static readonly MenuCommands Down = new() { MoveY = 1 };
     private static readonly MenuCommands Up = new() { MoveY = -1 };
@@ -53,7 +56,8 @@ internal static class MenuOriginalSuites
     [Suite("menu-original-tracer",
         "Original Free Flight through the presentation boundary over the install's decoded layout: "
         + "selected by the CLI override, shown at the top level with the pointer hidden and the "
-        + "Free Flight door focused, a pointer frame over Quit takes focus and cues the rollover, a "
+        + "Free Flight door focused and the roster's builds read from a scratch store of the suite's "
+        + "own, a pointer frame over Quit takes focus and cues the rollover, a "
         + "press on a plaque arms it and opens nothing while the pointer over it draws the active "
         + "bitmap, a release on another plaque activates neither, a "
         + "click on the door opens Free Flight, keyboard frames pick a chapter and an airframe and "
@@ -111,8 +115,15 @@ internal static class MenuOriginalSuites
         var audio = new RecordingAudio();
         var seat = new ScriptedSeat();
         var registry = new PresentationRegistry();
+        // The aircraft column scrolls only once the roster outruns its window. The scratch store
+        // carries enough builds past the stock airframes for the wheel and the drag to move.
+        var planes = MenuSuiteHost.ScratchPlanes(ctx, "menu-original-tracer",
+            OriginalShell.AirframeWindow - OriginalRosters.Airframes.Count + ScrollingCustoms);
         registry.Register(PresentationId.BuiltIn, () => new BuiltInPresentation(
-            ctx.Host, ctx.ZrdrPath, ctx.DataRoot, string.Empty, new MenuInput { Keyboard = true }));
+            ctx.Host, ctx.ZrdrPath, ctx.DataRoot, string.Empty, new MenuInput { Keyboard = true })
+        {
+            Planes = planes,
+        });
         // ⚠ The debrief return below opens the campaign, so the presentation is pointed at a
         // scratch store: nothing here may read or write user://Profiles.
         string profiles = System.IO.Path.Combine(ctx.ScratchDir, "menu-original-tracer", "Profiles");
@@ -121,6 +132,7 @@ internal static class MenuOriginalSuites
             ctx.Host, ctx.DataRoot, layout, string.Empty, player1)
         {
             CampaignProfiles = new CSVM.Session.Campaign.CampaignProfileStore(profiles),
+            Planes = planes,
         });
         var host = new MenuHost(registry, audio, exits.Add);
         MenuSuiteHost.AddFeatures(host, ctx.DataRoot);
@@ -133,6 +145,10 @@ internal static class MenuOriginalSuites
                 return;
             }
 
+            var customs = host.Features.Get<PlayerSetupFeature>().Roster.Where(a => a.IsCustom).Select(a => a.Name);
+            var scratch = planes.List().Select(p => p.Name);
+            ctx.Check(customs.SequenceEqual(scratch),
+                $"the roster's builds are the suite's scratch store's and no player's ({string.Join(", ", customs)})");
             Pointer(ctx, host, seat, shell, audio);
             Fly(ctx, host, seat, shell, exits);
             Return(ctx, host, shell, exits);
@@ -154,6 +170,7 @@ internal static class MenuOriginalSuites
         {
             host.Deactivate();
             Godot.Input.MouseMode = Godot.Input.MouseModeEnum.Visible;
+            MenuSuiteHost.DropScratchPlanes(ctx, "menu-original-tracer");
         }
 
         ctx.Check(host.Active == null && !host.Shown, $"Deactivate leaves the host holding no presentation");
@@ -182,8 +199,12 @@ internal static class MenuOriginalSuites
         var seat = new ScriptedSeat();
         var registry = new PresentationRegistry();
         var player1 = new MenuInput { Keyboard = true };
+        var planes = MenuSuiteHost.ScratchPlanes(ctx, "menu-join-board");
         registry.Register(PresentationId.Original, () => new OriginalPresentation(
-            ctx.Host, ctx.DataRoot, layout, string.Empty, player1));
+            ctx.Host, ctx.DataRoot, layout, string.Empty, player1)
+        {
+            Planes = planes,
+        });
         var host = new MenuHost(registry, new RecordingAudio(), _ => { });
         MenuSuiteHost.AddFeatures(host, ctx.DataRoot);
         host.AddSeat(seat);
@@ -206,6 +227,7 @@ internal static class MenuOriginalSuites
         {
             host.Deactivate();
             Godot.Input.MouseMode = Godot.Input.MouseModeEnum.Visible;
+            MenuSuiteHost.DropScratchPlanes(ctx, "menu-join-board");
         }
     }
 
