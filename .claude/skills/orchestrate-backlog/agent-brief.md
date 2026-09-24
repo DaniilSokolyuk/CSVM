@@ -69,8 +69,7 @@ Never launch Godot or the game so that a window appears on the user's screen, an
 `Start-Process` anything. Every engine run, capture and golden render goes through
 `.\RunTests.ps1` (hidden desktop `csvm-tests`) or `.\RunProbe.ps1`, or a launcher flag that renders
 headless or on that desktop. A one-off capture those cannot take is described in your report, not
-taken. Before any `--campaign=` probe, copy and rename the user's profile and delete the copy
-afterwards. Kill any Godot you started before you report.
+taken. Before any `--campaign=` probe, copy and rename the user's profile AND set the copy's internal `"name"` field in its `profile.json` to the new folder name (a copy that keeps the original's `"name"` saves into the original; this has overwritten a real profile), check after the run that the original's `profile.json` timestamp is unchanged, and delete the copy afterwards; if you cannot do both, do not run the probe. Kill any Godot you started before you report.
 
 ## Closing the item
 
