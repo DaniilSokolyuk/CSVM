@@ -107,6 +107,23 @@ public static class BindingLabels
         return text.ToString();
     }
 
+    /// <summary>A stick control by number, counted from 1 as VKB's configuration tool and Windows
+    /// count, so the label matches the stick's own software. The profile file and
+    /// <c>--dump-sticks</c> keep the raw 0-based index. Hat 0 is the only hat most sticks have, so
+    /// it drops its number.</summary>
+    public static string StickControl(BindingControl c)
+    {
+        string index = (c.Index + 1).ToString(CultureInfo.InvariantCulture);
+        return c.Kind switch
+        {
+            ControlKind.Button => "Button " + index,
+            ControlKind.Axis => "Axis " + index + (c.Sign < 0 ? " -" : " +"),
+            ControlKind.FullAxis => "Axis " + index + (c.Inverted ? " inverted" : string.Empty),
+            ControlKind.Hat => (c.Index == 0 ? "Hat " : "Hat " + index + " ") + c.Direction,
+            _ => c.Kind + " " + index,
+        };
+    }
+
     // The original's own caption for an action it binds, quoted from its keybind pages
     // (`OriginalScreenshots/Keybinds *.png`, decoded in docs/org/input.md), or null for an action
     // this port added. Its targeting and weapon rows are deliberately unprefixed and lowercase where
@@ -151,21 +168,6 @@ public static class BindingLabels
         InputAction.Pause => "Pause/Quit/Objectives",
         _ => ThrottleFraction(action),
     };
-
-    // A stick control by its raw index, the number the profile file and --dump-sticks print, since a
-    // stick's controls have no names. Hat 0 is the only hat most sticks have, so it drops its index.
-    private static string StickControl(BindingControl c)
-    {
-        string index = c.Index.ToString(CultureInfo.InvariantCulture);
-        return c.Kind switch
-        {
-            ControlKind.Button => "Button " + index,
-            ControlKind.Axis => "Axis " + index + (c.Sign < 0 ? " -" : " +"),
-            ControlKind.FullAxis => "Axis " + index + (c.Inverted ? " inverted" : string.Empty),
-            ControlKind.Hat => (c.Index == 0 ? "Hat " : "Hat " + index + " ") + c.Direction,
-            _ => c.Kind + " " + index,
-        };
-    }
 
     // The nine absolute-throttle actions, captioned as the original's Throttle page spells them:
     // "Throttle 0/8" for idle through "Throttle 8/8" for full.

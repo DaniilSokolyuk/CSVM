@@ -353,10 +353,13 @@ stick binding the keymap carries. There are two folders. The shipped profiles ar
 - `companions` lists the other models that must all be connected for the file to apply. The
   model itself is dropped from the list and duplicates collapse. One malformed entry refuses the
   whole file: reading it as fewer companions would make the file active on the wrong hardware.
-- `name` is the short label screens print ("R", "L"); empty when absent.
+- `name` is the short label screens print ("R", "L"); empty when absent. An unnamed stick prints
+  as `Stick 231D/0200` on the remake Controls screen and in status lines, so two unnamed sticks
+  read apart, and as its control alone in the KEYS AND BUTTONS page's narrow Stick column.
 - `ignore: true` makes the model yield no bindings while the file is active, for a device that
   enumerates as a joystick but flies nothing (a gaming keypad). It still counts as a profiled
-  device, so the generic single-stick default does not claim it.
+  device, so the generic single-stick default does not claim it. The shipped `1532-022B.json`
+  ignores the Razer Tartarus keypad this way; a user file for `1532/022B` overrides it.
 - `contexts` holds the rows, per context and action, with the keymap file's context and action
   names. A row is an array of tokens in the keymap grammar above, written bare, without the
   device, since the file's model is the device: `button:#27`, `axis:#3+@0.1`, `fullaxis:1+@0.02`,
@@ -364,6 +367,11 @@ stick binding the keymap carries. There are two folders. The shipped profiles ar
   nothing on a stick. A full keymap token naming this file's model (`pad:stick:231d/0200/button:#27`)
   also reads. Only button, axis, full-axis and hat controls are readable. A full axis follows the
   keymap file's rules: written once under the pair's positive row, the lever row taking one too.
+- **The file counts from 0; the screens count from 1.** Button, axis and hat numbers in a file are
+  SDL2's 0-based indices, the numbers `--dump-sticks` prints. The Controls screens label each one
+  higher, matching VKB's configuration tool and Windows: `button:#4` shows as "R Button 5",
+  `fullaxis:2-@0.02` as "R Axis 3 inverted", `hat:1:Left` as "R Hat 2 Left". Hat 0 shows without a
+  number ("R Hat Up"). A hand edit uses the file's number, one lower than the label.
 - Only bound actions are written. A profile has no defaults, so an absent action is unbound.
 - A row is read whole or not at all. An unreadable row (an unknown context or action, a token for
   another device, a deadzone outside 0 to 0.95) binds nothing, and a re-save writes it back
@@ -420,7 +428,9 @@ two candidates leave no way to tell which one should fly.
   which from then on is the model's profile; an unchanged save writes nothing.
 - A device that enumerates as a joystick but is no flight stick (a gaming keypad whose axes rest
   centred) passes the shape test, so the default can claim it once it is the only unprofiled
-  device. A profile file with `"ignore": true` for that model keeps it off.
+  device. A profile file with `"ignore": true` for that model keeps it off. The Razer Tartarus
+  (`1532/022B`, six centred axes under SDL2) ships with one, so it neither takes the default nor
+  counts against a stick beside it.
 
 ## Force feedback
 

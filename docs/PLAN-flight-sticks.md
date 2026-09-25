@@ -850,8 +850,8 @@ side: folders, `Live`, `Start`/`Stop`), and `CSVM/src/Bindings/IStickRows.cs`, t
   `StickProfileSet.ModelsOf(roster)`.
 - Tests: `StickProfiles.DirectoryOverride` points the user folder elsewhere.
 
-**Left open.** The five new `.cs` files have no Godot `.uid` yet. `data/stick_profiles/` is empty
-until E13. Reading shipped files through `DirAccess` inside an exported pck is not exercised by any
+**Left open.** The five new `.cs` files have no Godot `.uid` yet. `data/stick_profiles/` holds only
+C8's Tartarus ignore file until E13. Reading shipped files through `DirAccess` inside an exported pck is not exercised by any
 run. Comments and unknown top-level fields do not survive a re-save.
 
 **Verified.** Unit: `StickProfileTests` 26 cases (companion selection R alone vs R+L, L alone,
@@ -939,9 +939,15 @@ zeros) and, with three unprofiled stick-shaped devices, claims nothing. `CheckCo
 `CheckDocEntries.ps1` clean. The full `RunTests.ps1` passes on the merged branch with the 19
 goldens hash-identical and no quit hang.
 
-**Left open.** The Tartarus rests centred on all six axes and passes the shape test, so with both
-VKBs profiled it would get the generic default; the fix is a shipped ignore profile for
-`1532/022B` (E13) or a tighter test, and that choice is the user's. Rz as axis 5 and the lever
+**The Tartarus.** It rests centred on all six axes and passes the shape test, so the shape test
+alone would hand it the generic default once both VKBs carry profiles. A shipped ignore profile
+keeps it off: `CSVM/data/stick_profiles/1532-022B.json` (`"name": "Tartarus"`, `"ignore": true`,
+no rows), exported by the preset's `data/*.json` include filter, whose `*` crosses `/` in Godot's
+`matchn`, and not matched by the `config.json` exclude. `GenericStickDefaultTests` loads the
+committed folder: the Tartarus alone is active on that shipped file, ignored, with no generic
+default, and a stick beside it still takes the default.
+
+**Left open.** Rz as axis 5 and the lever
 direction are unmeasured: `--dump-sticks=20` with the R grip twisted and the lever swept answers
 both. A stick held deflected during its sample is judged not a stick until it is replugged. The
 two new `.cs` files have no Godot `.uid` yet. The controls screen's "needs binding" text is D11's.
@@ -1072,10 +1078,13 @@ through a new engine-free `CSVM/src/Bindings/StickCapture.cs`. No edit to `Contr
   registered seam, set by `CSVM/src/Sticks/StickLabels.cs` from `StickPump.Start` before its
   `--no-pads` check, so it is set in every launch. The prefix is the active profile's `name`
   (`StickProfiles.Live?.ActiveFor(model)?.Name`), else `Stick <model>` (`Stick 231D/0201`), so two
-  unnamed sticks never read alike. The control part uses the **raw 0-based index**, the number the
-  profile file and `--dump-sticks` print: `R Button 17`, `R Axis 3`, `R Axis 1 inverted` (full axis),
-  `R Axis 4 -` (half axis), `R Hat Up` (hat 0 drops its index), `R Hat 1 Left`.
-  `BindingLabels.Describe(binding, stickName)` is a pure overload for tests.
+  unnamed sticks never read alike. The control part **counts from 1**, as VKB's configuration tool
+  and Windows do, one above the 0-based index the profile file, the tokens and `--dump-sticks`
+  keep: `button:#17` reads `R Button 18`, and `R Axis 4` (full axis 3), `R Axis 2 inverted`,
+  `R Axis 5 -` (half axis 4), `R Hat Up` (hat 0 drops its index), `R Hat 2 Left` (hat 1) follow
+  the same rule (`BindingLabels.StickControl`). `BindingLabels.Describe(binding, stickName)` is a
+  pure overload for tests. The KEYS AND BUTTONS Stick column is the one place an unnamed stick drops
+  its `Stick <model>` prefix (D12).
 
 **Wiring contract** (what D11 and D12 call):
 
@@ -1091,8 +1100,7 @@ through a new engine-free `CSVM/src/Bindings/StickCapture.cs`. No edit to `Contr
   full axis (it sits on both rows), so D11's `Offer` should drop `AxisPairs.PartnerOf(Focused)` from
   the losers before prompting, and commit through `ActionMap.Assign` (which puts it on both rows).
 - **Labels:** `BindingLabels.Describe`/`Row` already print stick bindings with the profile name; no
-  screen call changes. A D12 cell that wants a shorter form can call
-  `StickLabels.Prefix(device, nameOf)` itself.
+  screen call changes. D12's Stick cell uses the shorter `StickLabels.Column(binding)`.
 - **Deadzones:** read `StickCapture.DeadzoneFor(row)` if a screen shows or re-stamps one.
 - **Tests:** `CSVM.Tests/StickCaptureTests.cs` shows the rig: `SeatDeviceState(AnyPad, () => null,
   sticks: new StickDeviceState(() => seat, () => roster))` over `FakeStickNative` (which gained
@@ -1105,8 +1113,6 @@ through a new engine-free `CSVM/src/Bindings/StickCapture.cs`. No edit to `Contr
 - A lever resting within 0.5 of the end the player pushes toward (for example R's -0.57 when full
   is -1) cannot travel `MoveThreshold`; the player moves it the other way and gets the opposite
   invert, which `MoveThreshold` (TUNE) or a prompt at D11 may need to address.
-- Labels use 0-based indices; VKB's configuration tool and Windows number buttons from 1, so a label
-  reads one lower than the stick's own software. The user's call at E13.
 - `StickCapture.cs`, `IStickDevices.cs` and `StickLabels.cs` have no Godot `.uid` yet.
 - No engine suite drives a stick capture, since no headless run opens SDL2; the unit suite carries
   the rules.
@@ -1242,7 +1248,12 @@ rather than wrap. A new `CSVM/src/UI/Menu/Original/KeysStickColumn.cs` splits ea
 stick-identity bindings go to the Stick column, the rest to Control A (first) and Control B (the
 others), and `SlotOfOther` keeps a stick bound ahead of the keys from shifting which binding A or B
 replaces. With several sticks on a row the cell prints the first caption and a count
-("R Button 6 +1"), since the column is half a panel wide. The cursor order per action is
+("R Button 6 +1"), since the column is half a panel wide. A cell caption comes from
+`StickLabels.Column`: a named stick keeps its profile name ("R Button 5"), and a stick with no
+active profile name prints the control alone ("Button 5"), because "Stick 231D/0200 Button 5"
+does not fit the column even at the smallest face. The remake Controls screen and the status lines
+keep the `Stick 231D/0200` prefix, which has room there and tells two unnamed sticks apart. The
+cursor order per action is
 Control A, Stick, Control B, and ACCEPT CHANGES moved to the Control B column. A Stick cell press
 calls the additive `ControlsFeature.BeginStickCapture` (a `ControlCapture` with
 `sticksOnly: true` over the focused row). What it hears goes through the additive
@@ -1264,9 +1275,9 @@ show the column with profile-named sticks fitting on one line. The full `RunTest
 merged branch with D11's partner rule in `Offer`, which removes the steal prompt on recapturing a
 full axis already on the row.
 
-**Left open.** A stick with no active profile is labelled "Stick 231D/0200 Button 4", which does
-not fit the column even at the smallest face and wraps into the row below. `KeysStickColumn.cs` has
-no `.uid` yet. The page's look is the user's call.
+**Left open.** Two unnamed sticks bound on one row read alike in the column ("Button 5 +1"); the
+remake Controls screen tells them apart. `KeysStickColumn.cs` has no `.uid` yet. The page's look
+is the user's call.
 
 **Original approach (kept for reference).**
 

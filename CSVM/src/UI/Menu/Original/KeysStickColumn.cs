@@ -51,7 +51,8 @@ internal static class KeysStickColumn
     }
 
     /// <summary>The Stick cell's text: the first stick binding's caption and, when more sticks hold
-    /// the row, how many more. The column is half a panel wide, so a second caption would not fit.
+    /// the row, how many more. The column is half a panel wide, so a second caption would not fit,
+    /// and an unnamed stick prints its control alone (<see cref="StickLabels.Column(Binding)"/>).
     /// </summary>
     public static string Text(IReadOnlyList<Binding> sticks)
     {
@@ -60,7 +61,7 @@ internal static class KeysStickColumn
             return string.Empty;
         }
 
-        string first = BindingLabels.Describe(sticks[0]);
+        string first = StickLabels.Column(sticks[0]);
         return sticks.Count == 1
             ? first
             : first + " +" + (sticks.Count - 1).ToString(CultureInfo.InvariantCulture);

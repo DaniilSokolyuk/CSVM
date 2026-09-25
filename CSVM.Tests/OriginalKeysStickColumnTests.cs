@@ -44,9 +44,10 @@ public class OriginalKeysStickColumnTests
         Assert.False(rig.Controls.Capturing);
         Assert.Equal(before.Append(r5), rig.Controls.Bindings(InputContext.Flight, action));
         var text = rig.Shell.Options.KeysCellText(0);
-        Assert.Equal(BindingLabels.Describe(r5), text.Stick);
+        // No profile set is live here, so R is unnamed: the column prints the control alone, from 1.
+        Assert.Equal("Button 6", text.Stick);
         Assert.Equal(BindingLabels.Describe(before[0]), text.A);
-        Assert.DoesNotContain(BindingLabels.Describe(r5), text.B);
+        Assert.DoesNotContain("Button 6", text.B);
     }
 
     [Fact]
@@ -131,7 +132,7 @@ public class OriginalKeysStickColumnTests
         rig.Controls.CancelCapture();
         var text = rig.Shell.Options.KeysCellText(0);
         Assert.Equal(BindingLabels.Describe(shipped[0]), text.A);
-        Assert.Equal(BindingLabels.Describe(r1), text.Stick);
+        Assert.Equal("Button 2", text.Stick);
     }
 
     [Fact]

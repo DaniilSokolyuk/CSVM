@@ -285,18 +285,30 @@ public class StickCaptureTests
         Assert.Equal(DefaultBindings.AnyPad, capture.Poll(seat)!.Value.Device);
     }
 
+    // Indices count from 1 on screen, as VKB's tool and Windows count; the file's index is one lower.
     [Fact]
-    public void AStickLabelLeadsWithItsProfilesShortName()
+    public void AStickLabelLeadsWithItsProfilesShortNameAndCountsFromOne()
     {
         Func<DeviceId, string?> names = d => StickLabels.Prefix(d, m => m == VkbR ? "R" : null);
 
-        Assert.Equal("R Button 17", BindingLabels.Describe(new Binding(VkbR.Device, BindingControl.Button(17)), names));
-        Assert.Equal("R Axis 3", BindingLabels.Describe(new Binding(VkbR.Device, BindingControl.FullAxis(3, false, 0.02f)), names));
-        Assert.Equal("R Axis 1 inverted", BindingLabels.Describe(new Binding(VkbR.Device, BindingControl.FullAxis(1, true, 0.02f)), names));
-        Assert.Equal("R Axis 4 -", BindingLabels.Describe(new Binding(VkbR.Device, BindingControl.Axis(4, -1, 0.5f)), names));
+        Assert.Equal("R Button 18", BindingLabels.Describe(new Binding(VkbR.Device, BindingControl.Button(17)), names));
+        Assert.Equal("R Axis 4", BindingLabels.Describe(new Binding(VkbR.Device, BindingControl.FullAxis(3, false, 0.02f)), names));
+        Assert.Equal("R Axis 2 inverted", BindingLabels.Describe(new Binding(VkbR.Device, BindingControl.FullAxis(1, true, 0.02f)), names));
+        Assert.Equal("R Axis 5 -", BindingLabels.Describe(new Binding(VkbR.Device, BindingControl.Axis(4, -1, 0.5f)), names));
         Assert.Equal("R Hat Up", BindingLabels.Describe(new Binding(VkbR.Device, BindingControl.Hat(0, HatDirection.Up)), names));
-        Assert.Equal("R Hat 1 Left", BindingLabels.Describe(new Binding(VkbR.Device, BindingControl.Hat(1, HatDirection.Left)), names));
-        Assert.Equal("Stick 231D/0201 Button 0", BindingLabels.Describe(new Binding(VkbL.Device, BindingControl.Button(0)), names));
+        Assert.Equal("R Hat 2 Left", BindingLabels.Describe(new Binding(VkbR.Device, BindingControl.Hat(1, HatDirection.Left)), names));
+        Assert.Equal("Stick 231D/0201 Button 1", BindingLabels.Describe(new Binding(VkbL.Device, BindingControl.Button(0)), names));
+    }
+
+    [Fact]
+    public void TheStickColumnDropsTheModelOfAnUnnamedStickAndKeepsANamedOnesName()
+    {
+        Func<StickModel, string?> names = m => m == VkbR ? "R" : null;
+
+        Assert.Equal("R Button 5", StickLabels.Column(new Binding(VkbR.Device, BindingControl.Button(4)), names));
+        Assert.Equal("Button 5", StickLabels.Column(new Binding(VkbL.Device, BindingControl.Button(4)), names));
+        Assert.Equal("Axis 2 inverted", StickLabels.Column(new Binding(VkbL.Device, BindingControl.FullAxis(1, true, 0.02f)), names));
+        Assert.Equal("Hat Up", StickLabels.Column(new Binding(VkbL.Device, BindingControl.Hat(0, HatDirection.Up)), _ => "  "));
     }
 
     [Fact]

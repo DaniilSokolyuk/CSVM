@@ -1105,7 +1105,8 @@ How the KEYS AND BUTTONS page splits a row's bindings: those on a stick model's 
 port's Stick column, the rest to the authored Control A and Control B. `SlotOfOther` maps Control A
 and Control B to the first and second non-stick binding, so a stick bound ahead of the keys never
 shifts which binding those cells replace. The Stick cell prints the first stick binding's caption
-and a count of the others, since the column is half a panel wide. The page placing the column:
+and a count of the others, since the column is half a panel wide; an unnamed stick's caption is
+its control alone (`Sticks/StickLabels.cs`'s `Column`). The page placing the column:
 `OriginalOptionsScreen.cs`; the stick-only capture it arms: `ControlsFeature.cs`.
 
 ## src/UI/Menu/Original/OriginalJoinBoard.cs

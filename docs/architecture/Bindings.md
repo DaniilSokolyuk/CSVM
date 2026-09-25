@@ -155,8 +155,8 @@ from. An action the original binds prints the original's own keybind-page captio
 its own case, since those pages read under a category heading; a modified key prints `Shift+E`. A
 row states how many bindings it is not showing, because the original draws only the first two of
 four slots (`FUN_00449fc0`, [../org/input.md](../org/input.md)) and hides the rest silently. A stick
-control prints its registered `StickName` prefix and raw index ("R Button 17", "R Hat Up").
-Separate from `BindingStore`'s tokens: a file is parsed back and a label is only read.
+control prints its `StickName` prefix and its index counted from 1, as VKB's tool and Windows
+count, so `button:#17` reads "R Button 18". Separate from `BindingStore`'s tokens.
 
 ## src/Bindings/ActionSnapshot.cs
 The tick's resolved held/how-far pair per action, so two consumers asking the same question in one

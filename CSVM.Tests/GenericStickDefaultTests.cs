@@ -28,6 +28,9 @@ public sealed class GenericStickDefaultTests
     private static readonly StickModel Generic = new(0x044F, 0xB10A);
     private static readonly StickModel Pedals = new(0x044F, 0xB679);
 
+    // The committed shipped folder, res://data/stick_profiles/ in the game.
+    private static readonly string ShippedProfiles = Path.Combine(TestData.RepoRoot, "CSVM", "data", "stick_profiles");
+
     private readonly string _shipped = TestData.TempDir();
     private readonly string _user = TestData.TempDir();
 
@@ -43,8 +46,8 @@ public sealed class GenericStickDefaultTests
         Assert.Equal(StickFit.NotStick, StickShape.Judge(2, new[] { 0f, 0f }).Fit);
     }
 
-    // Pins an open decision: the keypad rests with every axis centred, so only a profile marking it
-    // ignored keeps the default off it.
+    // The keypad rests with every axis centred, so the shape test passes it and only the shipped
+    // ignore profile keeps the default off it.
     [Fact]
     public void TheTartarusRestingCentredPassesTheShapeTest()
     {
@@ -198,6 +201,36 @@ public sealed class GenericStickDefaultTests
             var set = Set(roster);
 
             Assert.True(set.Active[VkbR].Profile.Ignore);
+            Assert.Equal(StickProfileSource.Generic, set.Active[Generic].Source);
+        }
+    }
+
+    [Fact]
+    public void TheShippedProfilesIgnoreTheTartarusSoItNeverTakesTheDefault()
+    {
+        var (_, roster) = Roster((4, Tartarus));
+        using (roster)
+        {
+            var set = Set(roster, shipped: ShippedProfiles);
+
+            var tartarus = set.Active[Tartarus];
+            Assert.Equal(StickProfileSource.Shipped, tartarus.Source);
+            Assert.Equal("1532-022B.json", tartarus.FileName);
+            Assert.True(tartarus.Profile.Ignore);
+            Assert.DoesNotContain(set.Active.Values, f => f.Source == StickProfileSource.Generic);
+            Assert.DoesNotContain(set.Map(InputContext.Flight).Bindings(InputAction.FireGuns), StickProfileResolver.IsStick);
+        }
+    }
+
+    [Fact]
+    public void WithTheShippedProfilesAStickBesideTheTartarusStillTakesTheDefault()
+    {
+        var (_, roster) = Roster((1, Generic), (4, Tartarus));
+        using (roster)
+        {
+            var set = Set(roster, shipped: ShippedProfiles);
+
+            Assert.True(set.Active[Tartarus].Profile.Ignore);
             Assert.Equal(StickProfileSource.Generic, set.Active[Generic].Source);
         }
     }
@@ -364,15 +397,16 @@ public sealed class GenericStickDefaultTests
         }
     }
 
-    private StickProfileSet Set(StickRoster roster, bool settle = true)
+    private StickProfileSet Set(StickRoster roster, bool settle = true, string? shipped = null)
     {
         if (settle)
         {
             Settle(roster);
         }
 
+        string shippedDirectory = shipped ?? _shipped;
         var set = new StickProfileSet(
-            new StickProfileStore(() => StickProfileStore.ReadDirectory(_shipped), _user),
+            new StickProfileStore(() => StickProfileStore.ReadDirectory(shippedDirectory), _user),
             () => StickProfileSet.ModelsOf(roster),
             model => StickShape.Of(roster, model));
         set.Reload();
