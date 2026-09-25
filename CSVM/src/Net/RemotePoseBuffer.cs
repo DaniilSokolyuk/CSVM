@@ -34,6 +34,37 @@ public readonly record struct RemotePose(
     float Rudder,
     bool Nitro);
 
+/// <summary>What one or more <see cref="RemotePoseBuffer"/>s took and answered. It holds samples
+/// accepted and dropped as stale, and the owner's reads by feed. It also holds each accepted
+/// sample's extrapolation error against the one before it. A sample no flight could reach is a
+/// jump, a placement the wire carried, counted instead of measured. <see cref="Plus"/> sums the
+/// remote aeroplanes on a machine.</summary>
+public readonly record struct RemotePoseTally(
+    int Accepted,
+    int Stale,
+    int Interpolating,
+    int Extrapolating,
+    int Starved,
+    int ErrorSamples,
+    double ErrorSum,
+    float WorstExtrapolationError,
+    int Jumps)
+{
+    /// <summary>Every owner read counted, whatever its feed.</summary>
+    public int Answers => Interpolating + Extrapolating + Starved;
+
+    /// <summary>The mean extrapolation error in metres, zero before two samples have landed.
+    /// </summary>
+    public float MeanExtrapolationError => ErrorSamples > 0 ? (float)(ErrorSum / ErrorSamples) : 0f;
+
+    /// <summary>The two tallies as one, the worst error being the worse of the two.</summary>
+    public RemotePoseTally Plus(in RemotePoseTally other) => new(
+        Accepted + other.Accepted, Stale + other.Stale, Interpolating + other.Interpolating,
+        Extrapolating + other.Extrapolating, Starved + other.Starved,
+        ErrorSamples + other.ErrorSamples, ErrorSum + other.ErrorSum,
+        Math.Max(WorstExtrapolationError, other.WorstExtrapolationError), Jumps + other.Jumps);
+}
+
 /// <summary>
 /// The received history of one remote aircraft, and the pose to draw it at now. Samples go in
 /// with the local time they arrived at. A read asks for a render time and gets the state
@@ -64,10 +95,26 @@ public sealed class RemotePoseBuffer
     private readonly (double Time, AircraftStateMessage Sample)[] _entries =
         new (double, AircraftStateMessage)[Capacity];
 
+    private readonly int[] _answers = new int[3];
+    private readonly float _sampleSeconds;
     private int _start;          // ring index of the oldest entry
     private int _count;
     private ushort _newestSequence;
     private bool _seenAny;       // whether _newestSequence means anything yet
+    private int _accepted;
+    private int _stale;
+    private int _errorCount;
+    private double _errorSum;
+    private float _errorWorst;
+    private int _jumps;
+
+    /// <summary>A buffer whose sender puts one sample on the wire every
+    /// <paramref name="sampleSeconds"/>. That turns a sequence gap into flown time for the
+    /// extrapolation error.</summary>
+    public RemotePoseBuffer(float sampleSeconds = AircraftStateCadence.SampleSeconds)
+    {
+        _sampleSeconds = sampleSeconds;
+    }
 
     /// <summary>The buffer's own receive clock, in seconds, advanced by its owner's sim step. An
     /// arrival is stamped with it and a read is asked for it. Both sides then share one scale,
@@ -79,6 +126,26 @@ public sealed class RemotePoseBuffer
 
     /// <summary>The newest sequence accepted, meaningless until one has been.</summary>
     public ushort NewestSequence => _newestSequence;
+
+    /// <summary>What this buffer has taken and answered since it was built or last reset.
+    /// <see cref="Clear"/> keeps it, since a respawn is not a new link.</summary>
+    public RemotePoseTally Tally => new(
+        _accepted, _stale, _answers[(int)RemotePoseFeed.Interpolating],
+        _answers[(int)RemotePoseFeed.Extrapolating], _answers[(int)RemotePoseFeed.Starved],
+        _errorCount, _errorSum, _errorWorst, _jumps);
+
+    /// <summary>Zeroes <see cref="Tally"/> and nothing else, so a soak can read one stretch of a
+    /// run on its own.</summary>
+    public void ResetTally()
+    {
+        Array.Clear(_answers);
+        _accepted = 0;
+        _stale = 0;
+        _errorCount = 0;
+        _errorSum = 0.0;
+        _errorWorst = 0f;
+        _jumps = 0;
+    }
 
     /// <summary>Moves <see cref="Now"/> on by one step of the owner's clock.</summary>
     public void Advance(float dt) => Now += dt;
@@ -93,13 +160,18 @@ public sealed class RemotePoseBuffer
     public bool Add(in AircraftStateMessage sample, double time)
     {
         if (_seenAny && !IsNewer(sample.Sequence, _newestSequence))
+        {
+            _stale++;
             return false;
+        }
 
+        _accepted++;
         if (_count > 0)
         {
-            double newestTime = _entries[Index(_count - 1)].Time;
-            if (time < newestTime)
-                time = newestTime;
+            var newest = _entries[Index(_count - 1)];
+            if (time < newest.Time)
+                time = newest.Time;
+            Measure(newest.Sample, sample);
         }
 
         int slot;
@@ -131,8 +203,16 @@ public sealed class RemotePoseBuffer
         _newestSequence = 0;
     }
 
-    /// <summary>The state to draw at <see cref="Now"/>.</summary>
-    public bool TrySample(out RemotePose pose) => TrySample(Now, out pose);
+    /// <summary>The state to draw at <see cref="Now"/>, the owner's one read per step, so this is
+    /// the read <see cref="Tally"/> counts by feed. A read at any other time counts nothing.
+    /// </summary>
+    public bool TrySample(out RemotePose pose)
+    {
+        if (!TrySample(Now, out pose))
+            return false;
+        _answers[(int)pose.Feed]++;
+        return true;
+    }
 
     /// <summary>The state to draw at <paramref name="renderTime"/>, which the buffer answers
     /// <see cref="BufferDelaySeconds"/> behind. False only when there is no sample at all to build
@@ -211,6 +291,26 @@ public sealed class RemotePoseBuffer
             Mathf.Lerp(a.Elevator, b.Elevator, t),
             Mathf.Lerp(a.Rudder, b.Rudder, t),
             t >= 0.5f ? b.Nitro : a.Nitro);
+
+    // How far a sample landed from where the one before it predicted, flown on its velocity across
+    // the gap. That is the error a forced extrapolation would show. Flying, the aeroplane lands
+    // within twice its reach of that point. A sample past it was placed there (a respawn ahead of
+    // its spawn event), so it is a jump, not an error.
+    private void Measure(in AircraftStateMessage before, in AircraftStateMessage after)
+    {
+        float flown = (ushort)(after.Sequence - before.Sequence) * _sampleSeconds;
+        float error = (before.Position + (before.Velocity * flown)).DistanceTo(after.Position);
+        float reach = Math.Max(before.Velocity.Length(), after.Velocity.Length()) * flown;
+        if (error > 2f * reach)
+        {
+            _jumps++;
+            return;
+        }
+
+        _errorCount++;
+        _errorSum += error;
+        _errorWorst = Math.Max(_errorWorst, error);
+    }
 
     private int Index(int offset) => (_start + offset) % Capacity;
 }

@@ -36,9 +36,9 @@ Two or more transports wired to each other in one process through delivery queue
 reorder instead of waiting for the jitter to draw one. `Mesh` builds the set and links it; nothing
 arrives until `Step` advances that end's own clock, which is what gives a test delivery time.
 The guarantees are enforced, not imitated: loss is drawn only for the unreliable classes, a
-reliable stream's deadlines are held monotonic per sender so jitter cannot reorder it, and a
-sequenced payload at or below the newest already delivered on its channel is discarded. Read
-`CSVM.Tests/LoopbackTransportTests.cs` for the contract in assertions.
+reliable stream's deadlines are held monotonic per sender, and a sequenced payload at or below
+the newest delivered on its channel is discarded. `Lost` (sender) and `DiscardedStale` (receiver)
+count both, the truth `NetInstruments`' gap count is checked against. Read `LoopbackTransportTests.cs`.
 
 ## src/Net/EnetTransport.cs
 The shipped carrier: the seam over Godot's ENet peer, UDP under ENet's own three delivery classes,
@@ -133,10 +133,10 @@ One remote aircraft's received history, and the pose to draw it at now: `Aircraf
 samples go in stamped with the buffer's own clock, and a read gets the state
 `BufferDelaySeconds` behind, interpolated between the two samples straddling it. Past the newest
 sample the answer rides that sample's velocity for at most `ExtrapolationCapSeconds` and then
-holds, and `RemotePoseFeed` says which of the three cases (interpolating, extrapolating, starved)
-each answer came out of, so an instrument counts them without re-deriving the decision. Both
-constants are accepted at the harness conditions, where no read starves. A sample at or below the
-newest sequence is dropped, wrap included. Read `Flight/FlightController.cs`'s `RemoteOwned` for what consumes it.
+holds, and `RemotePoseFeed` names which case each answer came from. A sample at or below the
+newest sequence is dropped, wrap included. `Tally` counts the owner's reads by feed, the stale
+drops, and each sample's miss against the one before it flown on its velocity (the one position
+error a machine reads without the owner); a miss past twice the sample's reach is a jump, counted apart.
 
 ## src/Net/AircraftStateCadence.cs
 The send half of aircraft replication, and the only thing in it that is not the session's own
@@ -145,7 +145,7 @@ sequence each sample carries, counted per seat because a receiver decides stalen
 sample holds is the session's to fill and what happens to it is `RemotePoseBuffer.cs`'s, so this
 module knows neither. `SendStepInterval` is accepted as measured; at the fixed step it puts two send
 intervals inside the buffer's own read-behind, which is what lets one lost sample still leave a
-pair to read between.
+pair to read between. `SampleSeconds` is that interval in seconds, what a sequence gap is worth.
 
 ## src/Net/MatchStateCadence.cs
 When a host repeats the match state, counted in simulation steps. It exists only for the clock:
@@ -166,9 +166,18 @@ falls back to `Events`, which costs ordering rather than delivery.
 ## src/Net/NetSession.cs
 The one object a session owns to talk to its peers: it holds the transport, implements the
 listener, sends a typed message under the class the type declares, and routes an arrival to
-the handler registered on its type word. `Step` is the only thing it does on its own. The
-only meaning it knows is the join, a host answering each peer with the handshake (which names
+the handler registered on its type word. The only meaning it knows is the join, a host answering each peer with the handshake (which names
 the seat) and then the roster; `On` refuses those two types. The star's relay is here too:
 `SendToSeat` addresses a seat through whoever owns it, and a host's `RelayToOthers` and
-`RelayToSeatOwner` forward an arrival's own bytes, never back to its sender. `Sent`,
-`Received`, `Relayed`, `DroppedUnknown` and `Malformed` are the counters a suite reads.
+`RelayToSeatOwner` forward an arrival's own bytes, never back to its sender. `Sent`, `Received`,
+`Relayed`, `DroppedUnknown` and `Malformed` are the counters a suite reads; `Instruments` is fed
+every arrival before its handler and every send once, a broadcast included.
+
+## src/Net/NetInstruments.cs
+One machine's desync counters over its own traffic, engine-free, read by `net-soak` and the
+`--debug-net` readout. Rules: a seat's first state or fire sample sets its ladder, and each later
+gap counts as dropped; an arrival at or below the newest is stale; a hit or a burst for a seat
+reported dead and not placed again is late; a score line adding deaths nobody reported, or a
+respawn for a known seat nobody reported dead, is out of order. A seat's first score line and a
+line whose deaths fall (a rematch) only set the baseline. Position error needs the owner's path
+and is the soak's to measure. `Describe` writes the one readout line.

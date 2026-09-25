@@ -308,6 +308,9 @@ public partial class Launcher : Node3D
     // The version stamp drawn in the menu's corner, shown and hidden off the host's own "the menu
     // is up" so no presentation has to carry one and no flight capture ever sees it.
     private UI.BuildStamp _buildStamp = null!;
+    // The --debug-net readout, null without the flag, and the wall time since it last refreshed.
+    private UI.NetReadout? _netReadout;
+    private double _sinceNetReadout;
     private Rid _viewportRid;
     // The previous frame's QPC stamp, so the monitor is fed a raw wall cost rather than Godot's
     // post-processed `delta`. 0 on the first frame, which reports 0 ms and trips nothing.
@@ -831,6 +834,13 @@ public partial class Launcher : Node3D
         _buildStamp = new UI.BuildStamp();
         AddChild(_buildStamp);
 
+        // --debug-net, process-wide like the two above: the session it reads comes and goes.
+        if (_spec.DebugNet)
+        {
+            _netReadout = new UI.NetReadout();
+            AddChild(_netReadout);
+        }
+
         // The music channel, once per process and after every early-quit probe: one player that
         // outlives every session, over a sound archive of its own for the same reason (D37's
         // wiring contract, step 1).
@@ -1016,6 +1026,7 @@ public partial class Launcher : Node3D
         // Early-quit probes do not construct the readout, but Godot may process one shutdown frame.
         _perfHud?.Tick(frameMs, counters);
         _buildStamp?.Tick(_menuHost is { Shown: true });
+        TickNetReadout(delta);
         if (_spec.Perf)
         {
             (_gcTrace ??= Utils.GcTrace.Create(_spec.GcTypes)).Tick();
@@ -2289,6 +2300,42 @@ public partial class Launcher : Node3D
             return;
         }
         BlankAndQuit();
+    }
+
+    // --debug-net: once a wall second, the session's desync counters to the log and the corner.
+    // Wall time, so a paused or stalled session still reports what its wire is doing.
+    private void TickNetReadout(double delta)
+    {
+        if (_netReadout is not { } readout)
+        {
+            return;
+        }
+
+        _sinceNetReadout += delta;
+        if (_sinceNetReadout < 1.0)
+        {
+            return;
+        }
+
+        _sinceNetReadout = 0.0;
+        if (_session?.NetLink is not { } net)
+        {
+            readout.Show(null);
+            return;
+        }
+
+        var poses = default(Net.RemotePoseTally);
+        foreach (var rig in _session.SeatRigs)
+        {
+            if (rig.Controller?.RemotePoses is { } buffer)
+            {
+                poses = poses.Plus(buffer.Tally);
+            }
+        }
+
+        string line = Net.NetInstruments.Describe(net, poses);
+        Log.Info("core", $"{line}");
+        readout.Show(line);
     }
 
     // The end of a network flight: the wire the match ran on is dropped, and the door gives the

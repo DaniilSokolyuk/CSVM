@@ -830,7 +830,7 @@ internal static class NetCombatSuites
     // The process-global state several sessions in one process share. Saved before the first is
     // opened and put back after the last is freed. This suite cannot then shift the streams, or
     // the ambient clock, of every suite after it in the shard.
-    private readonly record struct Ambient(ulong Master, bool Pinned, GameClock? Clock, StartupProfile? Profile)
+    internal readonly record struct Ambient(ulong Master, bool Pinned, GameClock? Clock, StartupProfile? Profile)
     {
         public static Ambient Save() =>
             new(Rng.Master, Rng.Pinned, GameClock.Current, StartupProfile.Current);
@@ -844,7 +844,7 @@ internal static class NetCombatSuites
     }
 
     // One peer's whole rig: its own pane, its own world, its own session node.
-    private sealed record Ends(SubViewport Pane, GameSession Session, bool Built)
+    internal sealed record Ends(SubViewport Pane, GameSession Session, bool Built)
     {
         public static Ends Open(TestContext ctx, SessionSpec spec, INetTransport transport,
             bool isHost, ulong seed, IReadOnlyList<NetSeat>? roster)

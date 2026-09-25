@@ -1228,6 +1228,36 @@ usual.
   silence; the first is a lobby question. *⚠ Traps:* do not let a guest's request restart the
   match directly, the host is the only writer of match state.
 
+- `BL-1041` `[Tuning]` `[S]` `[Next: look]` `[Impact: low]` `[Evidence: trace]` **The soak's
+  position-error bars are regression tripwires, not what a player accepts.** *Evidence:*
+  `Testing/NetSoakSuites.cs` flies a scripted Dogfight through four loopback cells and fails a
+  cell whose worse direction exceeds its bar (mean/worst metres): clean 0.25/0.5, 50 ms and 5 per
+  cent loss 1.5/3, 100 ms and 10 per cent 2/6, 200 ms and 20 per cent 3.5/10. The seeded run
+  measures 0.01/0.01, 0.57/0.89, 0.81/3.03 and 1.43/4.67, so each bar is the measurement with two
+  to three times headroom. Nothing says a player notices 3 m of worst error at 200 ms, or that
+  1.5 m at 50 ms is fine. *Fix shape:* fly a two-machine match over a shaped link with
+  `--debug-net` up, note at which cell a remote aeroplane first reads as wrong (a jump, a lag
+  behind its own tracers), and set the bars from that instead. *⚠ Traps:* the error is read after
+  the fitted lag is removed, so a large render delay does not show here at all; judge the delay
+  (`RemotePoseBuffer.BufferDelaySeconds`) separately. *Cross-refs:* `BL-1018` (the same sitting),
+  `BL-1042` (the fire discards the same run surfaced).
+
+- `BL-1042` `[Bug]` `[S]` `[Next: code]` `[Impact: low]` `[Evidence: trace]` **A seat's fire
+  events share its state channel, so jitter discards gunfire behind a newer state sample.**
+  *Evidence:* `GameSession.SendFire` and `BroadcastAircraftState` both send on
+  `NetChannels.ForSeat(seat)` as `UnreliableSequenced`, and a sequenced carrier discards anything
+  that arrives behind a newer payload on its channel. The seeded `net-soak` run at 50 ms, 10 ms
+  jitter and 5 per cent loss has the carriers discarding 10 payloads as overtaken beside 12 lost,
+  although 50 ms between state samples leaves 10 ms of jitter almost nothing of their own to
+  reorder; 11 fire events go missing against 54 rounds fired, where 5 per cent loss alone would
+  take about 3. A discarded fire event is a burst the far machine never draws. *Fix shape:* give
+  fire a channel of its own per seat (`NetChannels` gains a fire range above the state range,
+  `EnetTransport`'s channel count grows to match, and `SendFire` names the new channel), then
+  re-run `net-soak` and expect the discard count to fall to the few state samples jitter really
+  reorders. *⚠ Traps:* making fire `Reliable` instead would stall a seat's bursts behind a
+  retransmission, which is worse than losing one. *Cross-refs:* `BL-1041`,
+  `docs/architecture/Net.md` (`NetChannels`).
+
 - `BL-284` `[Bug]` `[Blocked: CAP-34]` `[M]` `[Next: look]` `[Impact: low]` `[Evidence: footage]` **Wing-light flare: soft round glow vs the original's sharp star burst; view-dependence
   unproven.** Follow-up from `BL-119` (landed 2026-08-05): with the authored one-sided quad restored
   and the blink at the measured ~1 frame, the flare reads as a compact soft amber glow, much closer

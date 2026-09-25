@@ -188,7 +188,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 ### Wave D, hardening
 
-31. ☐ Latency and loss soaks, desync instruments and a `--debug-net` readout
+31. ☑ Latency and loss soaks, desync instruments and a `--debug-net` readout
 32. ☑ The Steam transport flag: a build-time gate with a stub, so the seam is proven before any SDK arrives
 
 ## Dependency and parallelism notes
@@ -1180,7 +1180,68 @@ host is in the cabin and briefing; a waiting board is the least work>
 
 # Wave D, hardening
 
-## D31 ☐ Latency and loss soaks, desync instruments and a `--debug-net` readout
+## D31 ☑ Latency and loss soaks, desync instruments and a `--debug-net` readout
+
+**Landed.** `CSVM/src/Net/NetInstruments.cs` is one machine's desync counters over its own
+traffic, engine-free: state and fire samples dropped (read off the gaps in each seat's sequence,
+the first sample only setting the baseline), stale arrivals, hits and bursts landing for a seat
+already reported dead, and reliable events out of their causal order (a score line adding deaths
+nobody reported, a respawn for a known seat nobody reported dead; a first score line and a
+rematch only set the baseline). `NetInstrumentReading` subtracts, so a soak reads one stretch, and
+`Describe` writes the one readout line with the invariant culture.
+`CSVM/src/Net/NetSession.cs` owns an `Instruments`, feeds it every arrival after the header
+check and before relay and handler, and every send once: `Broadcast` now writes the payload once
+and counts it once for the instruments however many peers take it, still one `Sent` per peer.
+`CSVM/src/Net/LoopbackTransport.cs` counts `Lost` (sender side) and `DiscardedStale` (receiver
+side), the carrier's truth the inferred gap count is checked against.
+`CSVM/src/Net/RemotePoseBuffer.cs` keeps a `RemotePoseTally`: samples accepted and stale, the
+owner's reads by feed (the `TrySample(out)` overload alone counts, so a suite's probe read does
+not), and each accepted sample's extrapolation error against the one before it flown on its
+velocity across the sequence gap, the one position error a machine reads without the owner. A
+miss past twice the sample's reach is a jump (a placement, such as a respawn sample overtaking its
+spawn event) and is counted apart. `CSVM/src/Net/AircraftStateCadence.cs` gained `SampleSeconds`.
+`CSVM/src/Testing/NetSoakSuites.cs` is `net-soak`: a host and a guest on one seeded mesh fly four
+cells (clean; 50 ms, 10 ms jitter, 5 per cent loss; 100 ms, 20 ms, 10 per cent; 200 ms, 40 ms,
+20 per cent), each a 240-step curve with both guns held, a kill each way with the shooter
+claiming hits until the death reaches it, and both aeroplanes back in play. Each cell notes
+position error against the owner's own path (`NetSessionSuites.Track`, now internal), the tally,
+both machines' instrument deltas and the carriers' own loss and discard counts. It asserts zero
+order violations and zero stale arrivals everywhere, the position bars below, a clean cell that
+drops nothing and starves no read in flight, the inferred drop count equal to the carriers'
+`Lost` plus `DiscardedStale` both ways after a clean flush, and two able-to-fail controls (the
+worst cell drops and its deaths reach the shooter later than the clean cell's; an injected
+respawn for a flying seat moves the order counter by exactly one). `NetCombatSuites`' `Ambient`
+and `Ends` are internal so the soak reuses the rig.
+`--debug-net` (`CSVM/src/SessionSpec.cs`) makes `CSVM/src/Session/Launcher.cs` build a
+`CSVM/src/UI/NetReadout.cs` and, once a wall second, log `Describe`'s line under `core` and show
+it in the top-left corner on `HudLayers.Debug`, the tallies summed over every seat's buffer. It
+reads `GameSession.NetLink` and `SeatRigs`, which already exist, so no hook in `GameSession` was
+needed. Units: `CSVM.Tests/NetInstrumentsTests.cs` (new), and additions to
+`RemotePoseBufferTests`, `LoopbackTransportTests` and `SessionSpecTests`. The suite's weight is
+in `analysis/engine-suite-weights.json`. Docs: `docs/architecture/Net.md` (a new entry, four
+entries changed), `docs/architecture/UI.md`, the index bullets in `docs/architecture.md`, and
+`docs/cli.md`. Backlog: `BL-1041`, `BL-1042`.
+
+**Verified.** <pending orchestrator run>
+
+**Owed.** Fire rides its seat's state channel, so jitter discards gunfire behind a newer state
+sample (`BL-1042`): at 50 ms and 5 per cent the carriers discard 10 payloads beside 12 lost, and
+11 fire events go missing against 54 rounds. The hook is in `GameSession.SendFire`, the one
+argument `Net.NetChannels.ForSeat(seat)` becoming a per-seat fire channel (a new
+`NetChannels.ForSeatFire(seat)` above the state range, with `EnetTransport`'s channel count grown
+to match); `net-soak`'s discard count is the measure. It was left out because `GameSession.cs`
+is another item's file in this run. The readout itself has not been seen on a real two-machine
+link: no suite drives `Launcher.TickNetReadout`, so the corner text and the log line are owed a
+look at the controls.
+
+**Co-op mission soak (sharpened marker, no code).** The same cells over one co-op mission, once
+Wave C lands: a host and a guest in `CampaignDirector`'s shared mission, reading the same
+instruments plus the director's transitions (`DirectorTransitionMessage`) as a sixth reliable
+stream whose order is checked the way the score line's is. It reuses `NetSoakSuites`' `Pair`,
+cells and `Judge` unchanged; what it adds is a scripted objective each way and a check that both
+machines reach the same transition sequence.
+
+**Original approach (kept for reference).**
 
 **Goal.** A soak on the harness at chosen latency and loss reports position error, event order
 violations and dropped-message counts, and a live session can show the same numbers on screen.
@@ -1192,12 +1253,24 @@ instruments; the acceptable numbers are unmeasured.
 latency and loss; a `--debug-net` flag in the pattern of `--debug-anim` that prints the counters to
 the HUD and the log.
 
-**Model recommendation.** <TODO: not settled in the scoping session>
+**Model recommendation.** High. The counters are only worth something if each rule is right
+about causal order across the star's relay (a broadcast counted once, a late joiner's baseline,
+a rematch), and the soak's controls have to be able to fail; a cheaper tier would ship counters
+that read zero for the wrong reason.
 
-**Verify.** <TODO: the soak's own thresholds, once measured>
+**Verify.** `net-soak` alone and the Net suites it shares code with. Measured on the seeded run
+(worse direction, mean/worst metres of position error after the fitted lag): clean 0.01/0.01,
+50 ms/5 per cent 0.57/0.89, 100 ms/10 per cent 0.81/3.03, 200 ms/20 per cent 1.43/4.67. The bars
+are 0.25/0.5, 1.5/3, 2/6 and 3.5/10, two to three times the measurement. They are TUNE
+(`BL-1041`): what a player accepts is unmeasured, so a bar is a regression tripwire. Exact on
+every link: zero order violations, zero stale arrivals, and the inferred drop count equal to the
+carriers' own. The clean cell drops nothing and starves no read in flight.
 
 **⚠ Traps.** The file sink takes only `Log.*` lines and debug lines are flag-gated; absence of a
-line is not evidence.
+line is not evidence. After a respawn every buffer starts empty and starves for the render delay
+on any link (10 reads a cell here), so a starve count read over a whole match is not a link
+measure. A respawn sample can overtake its reliable spawn event on a lossy link, which the
+buffer's error counts as a jump rather than a thousand-metre miss.
 
 ## D32 ☑ The Steam transport flag: a build-time gate with a stub, so the seam is proven before any SDK arrives
 

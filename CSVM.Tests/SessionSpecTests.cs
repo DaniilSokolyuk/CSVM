@@ -1060,5 +1060,17 @@ public class SessionSpecTests
         Assert.Empty(s.LogSpecs);
     }
 
+    /// <summary>`--debug-net` records itself and leaves the log spec and every other debug flag
+    /// alone; off unless given.</summary>
+    [Fact]
+    public void DebugNetIsItsOwnFlag()
+    {
+        Assert.False(S().DebugNet);
+        var s = S("--debug-net");
+        Assert.True(s.DebugNet);
+        Assert.False(s.DebugAnim);
+        Assert.Empty(s.LogSpecs);
+    }
+
     private static SessionSpec S(params string[] args) => SessionSpec.Parse(args);
 }

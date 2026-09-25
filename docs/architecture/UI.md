@@ -548,6 +548,13 @@ nowhere to put one. It draws on `HudLayers.PerfReadout`, above the boards, for t
 that readout does. Hidden in flight, so no golden screenshot ever sees it. The number itself is
 `Utils/BuildVersion.cs`.
 
+## src/UI/NetReadout.cs
+The `--debug-net` corner readout: a network match's desync counters as
+`Net/NetInstruments.cs`'s `Describe` writes them, one section to a line. Built by `Launcher` only
+under the flag, so an ordinary run and the golden sweep never build it, and fed once a wall
+second from `Launcher.TickNetReadout`, which logs the same line. Hidden while no session holds a
+wire. Drawn on `HudLayers.Debug`, unscaled, in the top-left corner.
+
 ## src/UI/NoGameDataScreen.cs
 The dead end a launch with no extraction under the data root reaches instead of the menu: the
 title, the sentence naming the step that produces the data, the path that was looked in, and Esc

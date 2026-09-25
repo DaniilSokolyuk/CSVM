@@ -60,6 +60,9 @@ public sealed class LoopbackTransportTests
         mesh[1].Step(1.0);
 
         Assert.Equal(new[] { 3 }, guest.Tags);
+        // The sender counts its losses, which is what a receiver's gap count is checked against.
+        Assert.Equal(2, mesh[0].Lost);
+        Assert.Equal(0, mesh[1].Lost);
     }
 
     [Fact]
@@ -102,6 +105,8 @@ public sealed class LoopbackTransportTests
         mesh[1].Step(0.5);
 
         Assert.Equal(expected, guest.Tags);
+        // The receiving end counts what it discarded, and a plain unreliable payload never is.
+        Assert.Equal(expected.Length == 1 ? 1 : 0, mesh[1].DiscardedStale);
     }
 
     [Fact]

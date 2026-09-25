@@ -42,6 +42,14 @@ public sealed class LoopbackTransport : INetTransport
     /// <summary>Seconds this end has been stepped, the clock every deadline is measured on.</summary>
     public double Now => _now;
 
+    /// <summary>Payloads this end sent that the loss model threw away. The ground truth a
+    /// receiver's inferred drop count is checked against.</summary>
+    public int Lost { get; private set; }
+
+    /// <summary>Sequenced payloads that reached this end behind a newer one on their channel and
+    /// were discarded, the other half of what a receiver never sees.</summary>
+    public int DiscardedStale { get; private set; }
+
     /// <summary>Builds <paramref name="peerCount"/> transports with ids 0 upwards, every one linked
     /// to every other under <paramref name="conditions"/>. All of them draw from the one
     /// <paramref name="rng"/>, so a seeded generator replays the whole mesh.</summary>
@@ -121,6 +129,7 @@ public sealed class LoopbackTransport : INetTransport
         // rather than a run the receiver would accept out of order.
         if (reliability != NetReliability.Reliable && conditions.Drops(_rng))
         {
+            Lost++;
             return;
         }
 
@@ -250,6 +259,7 @@ public sealed class LoopbackTransport : INetTransport
                 _newest.TryGetValue(key, out int newest);
                 if (pending.Sequence <= newest)
                 {
+                    DiscardedStale++;
                     continue;
                 }
 

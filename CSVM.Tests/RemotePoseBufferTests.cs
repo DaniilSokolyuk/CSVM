@@ -188,6 +188,73 @@ public class RemotePoseBufferTests
         Assert.True(pose.Attitude.Y > 0.3f && pose.Attitude.Y < 0.45f);
     }
 
+    [Fact]
+    public void TheTallyCountsStaleSamplesAndOnlyTheOwnersReadsByFeed()
+    {
+        var buffer = new RemotePoseBuffer();
+        buffer.Receive(Sample(1, 0f));
+        buffer.Receive(Sample(1, 0f));
+        buffer.Advance(1f);
+        buffer.Receive(Sample(2, 1f));
+        buffer.TrySample(out _);
+        buffer.TrySample(buffer.Now, out _);
+        buffer.Advance(1f);
+        buffer.TrySample(out _);
+
+        var tally = buffer.Tally;
+        Assert.Equal(2, tally.Accepted);
+        Assert.Equal(1, tally.Stale);
+        // The explicit-time read is a probe and counts nothing; the owner's two reads do.
+        Assert.Equal(1, tally.Interpolating);
+        Assert.Equal(1, tally.Starved);
+        Assert.Equal(2, tally.Answers);
+
+        // A respawn keeps the tally; only a reset zeroes it.
+        buffer.Clear();
+        Assert.Equal(2, buffer.Tally.Accepted);
+        buffer.ResetTally();
+        Assert.Equal(default, buffer.Tally);
+    }
+
+    [Fact]
+    public void TheExtrapolationErrorIsHowFarASampleLandsFromTheOneBeforeItsVelocity()
+    {
+        // One second per sample, so a sequence step is a second of flight at one metre a second.
+        var buffer = new RemotePoseBuffer(sampleSeconds: 1f);
+        buffer.Add(Sample(1, 0f), 0.0);
+        buffer.Add(Sample(2, 1f), 1.0);   // exactly where predicted
+        buffer.Add(Sample(4, 3.5f), 2.0); // two steps on, half a metre past the prediction
+
+        var tally = buffer.Tally;
+        Assert.Equal(2, tally.ErrorSamples);
+        Assert.Equal(0.25f, tally.MeanExtrapolationError, 3);
+        Assert.Equal(0.5f, tally.WorstExtrapolationError, 3);
+        Assert.Equal(0, tally.Jumps);
+    }
+
+    [Fact]
+    public void ASampleNoFlightCouldReachIsAJumpAndNotAnError()
+    {
+        var buffer = new RemotePoseBuffer(sampleSeconds: 1f);
+        buffer.Add(Sample(1, 0f), 0.0);
+        // Two metres of reach either way at one metre a second, and it landed a hundred away.
+        buffer.Add(Sample(2, 100f), 1.0);
+
+        var tally = buffer.Tally;
+        Assert.Equal(1, tally.Jumps);
+        Assert.Equal(0, tally.ErrorSamples);
+        Assert.Equal(0f, tally.WorstExtrapolationError);
+    }
+
+    [Fact]
+    public void TalliesSumAndKeepTheWorseWorst()
+    {
+        var a = new RemotePoseTally(1, 2, 3, 4, 5, 6, 1.5, 2f, 1);
+        var b = new RemotePoseTally(10, 20, 30, 40, 50, 60, 3.0, 7f, 2);
+
+        Assert.Equal(new RemotePoseTally(11, 22, 33, 44, 55, 66, 4.5, 7f, 3), a.Plus(b));
+    }
+
     // One sample of an aeroplane one metre per second along +X, at x = position. The lever and
     // the stick carry that same number, so a read tells which sample it came from.
     private static AircraftStateMessage Sample(ushort sequence, float position) =>

@@ -669,6 +669,10 @@ public sealed record SessionSpec
 
     public bool DebugAnim { get; private set; }
     public bool DebugAnimUi { get; private set; }
+
+    /// <summary><c>--debug-net</c>: log a network match's desync counters once a second and draw
+    /// them in a corner of the screen. Nothing is shown outside a network match.</summary>
+    public bool DebugNet { get; private set; }
     public string? PlayAnim { get; private set; }
     public bool DebugDzPaths { get; private set; }
     /// <summary><c>--debug-ainets[=name,…]</c>: open the AI patrol-net overlay (F13) at
@@ -955,6 +959,7 @@ public sealed record SessionSpec
             else if (arg.StartsWith("--seed=")) { s.Seed = ulong.Parse(arg["--seed=".Length..]); }
             else if (arg == "--debug-anim-ui") { s.DebugAnimUi = true; s.HasContentArg = true; }
             else if (arg == "--debug-anim") { s.DebugAnim = true; }
+            else if (arg == "--debug-net") { s.DebugNet = true; }
             else if (arg == "--no-pads") { s.NoPads = true; }
             else if (arg == "--no-crash-loss") { s.NoCrashLoss = true; }
             else if (arg == "--det") { s._detArg = true; }

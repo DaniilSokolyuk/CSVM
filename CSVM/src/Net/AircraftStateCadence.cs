@@ -17,6 +17,10 @@ public sealed class AircraftStateCadence
     /// two constants, where jitter and not the rate bounds the residual.</summary>
     public const int SendStepInterval = 3;
 
+    /// <summary>Seconds between two consecutive sequence numbers of one seat, at the fixed step.
+    /// A receiver turns a sequence gap into flown time with it.</summary>
+    public const float SampleSeconds = SendStepInterval * Utils.GameClock.FixedDt;
+
     private readonly ushort[] _sequence = new ushort[NetSeats.SeatCapacity];
     private int _steps;
 

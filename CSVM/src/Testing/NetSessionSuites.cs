@@ -196,6 +196,43 @@ internal static class NetSessionSuites
         }
     }
 
+    // The error between an owner's own path and the path the far peer showed for it. The shown
+    // path is DELIBERATELY late, by the buffer's read-behind plus the link. The lag is fitted
+    // first, and the residual at it is the tracking error (METHOD-32). ⚠ The fit is in fractions
+    // of a step. A whole-step grid leaves up to half a step of misalignment, most of a metre at
+    // 80 m/s. The fitted lag is reported with the error, since a fit at an end of the search is
+    // a fit that failed.
+    internal static (float Lag, float Mean, float Max) Track(
+        IReadOnlyList<Vector3> own, IReadOnlyList<Vector3> shown)
+    {
+        float best = 0f;
+        float bestMean = float.MaxValue;
+        int n = shown.Count - MaxLagSteps;
+        for (int step = 0; step <= MaxLagSteps * LagFitSteps; step++)
+        {
+            float lag = (float)step / LagFitSteps;
+            float sum = 0f;
+            for (int i = MaxLagSteps; i < shown.Count; i++)
+            {
+                sum += shown[i].DistanceTo(Along(own, i - lag));
+            }
+
+            if (sum / n < bestMean)
+            {
+                bestMean = sum / n;
+                best = lag;
+            }
+        }
+
+        float max = 0f;
+        for (int i = MaxLagSteps; i < shown.Count; i++)
+        {
+            max = Mathf.Max(max, shown[i].DistanceTo(Along(own, i - best)));
+        }
+
+        return (best, bestMean, max);
+    }
+
     // One tracked flight: both sessions stepped together, with the four paths that matter
     // recorded after every step. The case the guest's buffer answered from is counted
     // beside them.
@@ -215,7 +252,7 @@ internal static class NetSessionSuites
             // opening, and it says nothing about the stream.
             if (i >= MaxLagSteps
                 && guest.SeatRigs[0].Controller?.RemotePoses is { } received
-                && received.TrySample(out var answer))
+                && received.TrySample(received.Now, out var answer))
             {
                 flight.Feeds[(int)answer.Feed]++;
             }
@@ -270,43 +307,6 @@ internal static class NetSessionSuites
         var wrong = Track(flight.GuestOwn, flight.GuestShown);
         ctx.Check(wrong.Mean > there.Mean * 10f,
             $"ABLE-TO-FAIL CONTROL: matched against the other aeroplane's path the same metric reads {wrong.Mean:0.0} m mean, against {there.Mean:0.00} m for the right one");
-    }
-
-    // The error between an owner's own path and the path the far peer showed for it. The shown
-    // path is DELIBERATELY late, by the buffer's read-behind plus the link. The lag is fitted
-    // first, and the residual at it is the tracking error (METHOD-32). ⚠ The fit is in fractions
-    // of a step. A whole-step grid leaves up to half a step of misalignment, most of a metre at
-    // 80 m/s. The fitted lag is reported with the error, since a fit at an end of the search is
-    // a fit that failed.
-    private static (float Lag, float Mean, float Max) Track(
-        IReadOnlyList<Vector3> own, IReadOnlyList<Vector3> shown)
-    {
-        float best = 0f;
-        float bestMean = float.MaxValue;
-        int n = shown.Count - MaxLagSteps;
-        for (int step = 0; step <= MaxLagSteps * LagFitSteps; step++)
-        {
-            float lag = (float)step / LagFitSteps;
-            float sum = 0f;
-            for (int i = MaxLagSteps; i < shown.Count; i++)
-            {
-                sum += shown[i].DistanceTo(Along(own, i - lag));
-            }
-
-            if (sum / n < bestMean)
-            {
-                bestMean = sum / n;
-                best = lag;
-            }
-        }
-
-        float max = 0f;
-        for (int i = MaxLagSteps; i < shown.Count; i++)
-        {
-            max = Mathf.Max(max, shown[i].DistanceTo(Along(own, i - best)));
-        }
-
-        return (best, bestMean, max);
     }
 
     // Where a path was between two of its steps, which is what a fractional lag asks for. The

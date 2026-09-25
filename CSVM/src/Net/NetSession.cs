@@ -120,6 +120,10 @@ public sealed class NetSession : INetTransportListener
     /// </summary>
     public int Malformed { get; private set; }
 
+    /// <summary>The desync counters over everything this end sent and everything that reached it,
+    /// fed before any handler or relay sees an arrival.</summary>
+    public NetInstruments Instruments { get; } = new();
+
     /// <summary>Opens the match's own end: <paramref name="roster"/> is the whole field as this
     /// machine has it, <paramref name="seed"/> the master every peer draws from, and
     /// <paramref name="clock"/> what the handshake stamps. Every peer already on the transport is
@@ -162,19 +166,25 @@ public sealed class NetSession : INetTransportListener
     {
         int length = message.Write(_scratch);
         _transport.Send(peer, _scratch.AsSpan(0, length), T.Reliability, channel);
+        Instruments.Said(_scratch.AsSpan(0, length));
         Sent++;
     }
 
-    /// <summary>Sends one message to every peer on the roster.</summary>
+    /// <summary>Sends one message to every peer on the roster. The instruments hear it once,
+    /// since it is one thing this machine said however many peers it reached.</summary>
     /// <typeparam name="T">The message being sent.</typeparam>
     public void Broadcast<T>(in T message, int channel = 0)
         where T : struct, INetMessage<T>
     {
+        int length = message.Write(_scratch);
         var peers = _transport.Peers;
         for (int i = 0; i < peers.Count; i++)
         {
-            Send(peers[i], message, channel);
+            _transport.Send(peers[i], _scratch.AsSpan(0, length), T.Reliability, channel);
+            Sent++;
         }
+
+        Instruments.Said(_scratch.AsSpan(0, length));
     }
 
     /// <summary>The peer <paramref name="seat"/> is reached through, <see cref="NoPeer"/> for a
@@ -285,6 +295,8 @@ public sealed class NetSession : INetTransportListener
             DroppedUnknown++;
             return;
         }
+
+        Instruments.Arrived(payload);
 
         // The relay runs before the handler, and on the bytes as they arrived. A host that also
         // flies the message's subject still applies it below.
