@@ -180,7 +180,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 10. ☑ Stick capture: full range, hats, full-axis inference, deadzone stamping, labels
 11. ☑ Remake Controls screen: stick rows saved to the active profile, "Open profiles folder"
-12. ☐ Original-style KEYS AND BUTTONS page: Stick column, replace per device
+12. ☑ Original-style KEYS AND BUTTONS page: Stick column, replace per device
 
 ### Wave E, shipped profiles
 
@@ -755,8 +755,8 @@ for pads in this item.
 `LeverTakeover.cs` has no `.uid` yet. No
 engine suite drives the lever, since no device source produces a full axis until A3; the unit suite
 `ThrottleLeverTests` carries the mapping, the store, the steal rule and the takeover rule. The
-original-style KEYS AND BUTTONS page lists its throttle rows explicitly
-(`OriginalOptionsScreen.cs:444`) and was not touched; D11/D12 decide where the lever row shows there.
+original-style KEYS AND BUTTONS page lists its throttle rows explicitly, and D12 appends the lever
+row to them (see D12).
 
 **Verified.** The full `RunTests.ps1` passes on the merged branch. No lever has moved at the
 controls yet.
@@ -1232,7 +1232,43 @@ Accept; the row already shows any number of bindings (`:29`, `LaunchMenu.cs:2937
 **⚠ Traps.** An edit made while a flight is in progress reaches the live seats through the
 `Accepted` event (`ControlsFeature.cs:47-51`); stick rows must follow the same route.
 
-## D12 ☐ Original-style KEYS AND BUTTONS page: Stick column, replace per device
+## D12 ☑ Original-style KEYS AND BUTTONS page: Stick column, replace per device
+
+**Landed.** The KEYS AND BUTTONS page has a **Stick** column between Control A and Control B. The
+plate art paints three panels (Action, then two control panels), so the column takes the empty
+right half of Control A's panel: Control A is narrowed to 455..531 and Stick stands at 535..612,
+while Control B keeps its authored place. Control A and Stick shrink a long caption to one line
+rather than wrap. A new `CSVM/src/UI/Menu/Original/KeysStickColumn.cs` splits each row's bindings:
+stick-identity bindings go to the Stick column, the rest to Control A (first) and Control B (the
+others), and `SlotOfOther` keeps a stick bound ahead of the keys from shifting which binding A or B
+replaces. With several sticks on a row the cell prints the first caption and a count
+("R Button 6 +1"), since the column is half a panel wide. The cursor order per action is
+Control A, Stick, Control B, and ACCEPT CHANGES moved to the Control B column. A Stick cell press
+calls the additive `ControlsFeature.BeginStickCapture` (a `ControlCapture` with
+`sticksOnly: true` over the focused row). What it hears goes through the additive
+`ControlsFeature.OfferStick`, which replaces the row's binding on the same stick model or appends
+when that model holds none, then runs the ordinary `Offer` steal rule. The Throttle tab gains the
+Throttle (lever) row after the original's eleven, so the tab now scrolls. Saving is unchanged
+(`ControlsFeature.Accept`). The column always shows, empty when no stick is bound.
+
+**Verified.** `CSVM.Tests/OriginalKeysStickColumnTests.cs` drives a whole `OriginalShell` over a
+fake L and R: the Stick cell ignores a held key and pad button then binds an R button; an R capture
+replaces R's binding and leaves L's, the keys and the pad; an R full axis replaces R's old axis on
+both pitch rows and leaves L's; Control A and B slots skip a stick at index 0; a sideways step
+crosses A, Stick, B; the heads stand in that order without overlap; the lever row is last and
+captures R's lever. `OriginalOptionsTests` asserts the twelve Throttle rows and the Stick head;
+`menu-original-controls` counts four heads. `RunTests.ps1 -SkipEngine -SkipGoldens`: units 5010
+passed, 0 failed, 2 skipped. Engine suites `menu-original-controls` and `menu-controls-seats` pass.
+No golden shows the KEYS page. Hidden-desktop shots of the Throttle tab with posed stick bindings
+show the column with profile-named sticks fitting on one line. The full `RunTests.ps1` passes on the
+merged branch with D11's partner rule in `Offer`, which removes the steal prompt on recapturing a
+full axis already on the row.
+
+**Left open.** A stick with no active profile is labelled "Stick 231D/0200 Button 4", which does
+not fit the column even at the smallest face and wraps into the row below. `KeysStickColumn.cs` has
+no `.uid` yet. The page's look is the user's call.
+
+**Original approach (kept for reference).**
 
 **Goal.** The original-style page shows a third **Stick** column beside Control A and B that lists
 and captures only stick bindings from the active profile; a capture there replaces that stick

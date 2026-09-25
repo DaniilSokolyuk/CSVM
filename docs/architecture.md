@@ -466,6 +466,7 @@ else in `UI`, and nothing names `Labs`.
 - `src/UI/Menu/Original/OriginalDropList.cs`, the one open-dropdown window rule every Original page stands on: the authored window, the hidden rows outside it, the arrows and the thumb.
 - `src/UI/Menu/Original/SliderControl.cs`, the shell's continuous control: a slider row's hold-and-move under the pointer, and the clamped sideways step.
 - `src/UI/Menu/Original/OriginalOptionsScreen.cs`, the five pages behind the Options hub's doors as one standalone module: the Game Options and VIDEO tables, AUDIO's slider rows, the seat chooser and the seven category tabs of rebinding.
+- `src/UI/Menu/Original/KeysStickColumn.cs`, the KEYS AND BUTTONS page's split of a row's bindings between Control A/B and the port's Stick column.
 - `src/UI/Menu/Original/OriginalCredits.cs`, the shell's credits screen (a `partial`): the painted background pane, ABOUT drawn disabled, the DONE plaque.
 - `src/UI/Menu/Original/OriginalJoinBoard.cs`, the join board as one standalone module: the crew manifest, the articles of the crew, and the one place a pad signs onto a seat.
 - `src/UI/Menu/Original/OriginalSeats.cs`, the shell's two sortie screens (a `partial`): the chapters, the windowed aircraft column, FLY.

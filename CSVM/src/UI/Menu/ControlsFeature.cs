@@ -36,6 +36,7 @@ public sealed class ControlsFeature : IMenuFeature
 
     private InputContext _context = InputContext.Flight;
     private ControlCapture? _capture;
+    private ControlCapture? _stickCapture;
     private int _player;
     private int _row;
     private int _slot;
@@ -282,6 +283,39 @@ public sealed class ControlsFeature : IMenuFeature
 
         Capturing = false;
         _capture = null;
+        return ReferenceEquals(capture, _stickCapture) ? OfferStick(binding) : Offer(binding);
+    }
+
+    /// <summary>Starts listening for a stick control alone, the original-style page's Stick column.
+    /// Keys and pad controls are not read, and what it hears goes through <see cref="OfferStick"/>.
+    /// </summary>
+    public void BeginStickCapture()
+    {
+        var seat = _seats[_player];
+        Pending = null;
+        Capturing = true;
+        _capture = _stickCapture = new ControlCapture(
+            seat.PadOf(_context), seat.ReadsKeyboard, Focused, sticksOnly: true);
+        _capture.Arm(seat.Devices.For(_context));
+        Status = $"Move or press a stick control for {BindingLabels.Name(Focused)}.";
+    }
+
+    /// <summary>Proposes a stick control in place of the focused action's binding on the same stick
+    /// model, or beside the others when that model holds none. One stick's capture never takes
+    /// another stick's, a key's or a pad's control (Decision 15b, docs/PLAN-flight-sticks.md).</summary>
+    public bool OfferStick(Binding binding)
+    {
+        var bindings = FocusedBindings;
+        _slot = bindings.Count;
+        for (int i = 0; i < bindings.Count; i++)
+        {
+            if (bindings[i].Device == binding.Device)
+            {
+                _slot = i;
+                break;
+            }
+        }
+
         return Offer(binding);
     }
 

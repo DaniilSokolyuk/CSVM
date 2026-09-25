@@ -266,6 +266,10 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
     // The two control cells' key prefixes, each followed by the action's index in the standing tab.
     private const string KeysCellA = "KB:A:";
     private const string KeysCellB = "KB:B:";
+    private const string KeysCellStick = "KB:S:";
+
+    // The cells each action row carries, in cursor order: Control A, Stick, Control B.
+    private const int KeysCellsPerRow = 3;
 
     // The KEYS AND BUTTONS page's authored geometry, used where a layout does not carry the
     // section. It is the list's corner, pitch and window, the three column heads, and the tab
@@ -284,6 +288,18 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
     private const float KeysPlateX = 9f;
     private const float KeysPlateWidth = 788f;
     private const float KeysArrowWidth = 16f;
+
+    // The Stick column is the port's own, so no widget authors it. The plate paints two dividers,
+    // leaving three panels, and the Control A panel's right half is the one space its keys leave
+    // empty. The column stands there, ending short of the divider before Control B.
+    private const string KeysStickHead = "Stick";
+    private const float KeysStickX = 535f;
+    private const float KeysStickWidth = 77f;
+    private const float KeysColumnGap = 4f;
+
+    // A face's line runs a little taller than the 16-pixel pitch, so a one-line box is sized in
+    // pitches. One and a half holds a line and refuses a second.
+    private const float KeysCellFitLines = 1.5f;
 
     // The rows under the category heading are indented, which is what the page's own still shows.
     private const float KeysRowIndent = 14f;
@@ -428,7 +444,8 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
     };
 
     // The six named tabs are the original's own action categories, over this port's flight actions,
-    // each in that page's own row order (`OriginalScreenshots/Keybinds *.png`). The seventh, Other,
+    // each in that page's own row order (`OriginalScreenshots/Keybinds *.png`). The Throttle tab
+    // appends the port's Throttle (lever) row after the original's eleven. The seventh, Other,
     // takes its own flight rows first, then every action the six leave over, in context then enum
     // order. A new action therefore lands on a page rather than nowhere. The reading is in
     // docs/org/menu-inventory.md.
@@ -444,7 +461,7 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
             InputAction.ThrottleUp, InputAction.ThrottleDown, InputAction.ThrottleSet0,
             InputAction.ThrottleSet1, InputAction.ThrottleSet2, InputAction.ThrottleSet3,
             InputAction.ThrottleSet4, InputAction.ThrottleSet5, InputAction.ThrottleSet6,
-            InputAction.ThrottleSet7, InputAction.ThrottleSet8,
+            InputAction.ThrottleSet7, InputAction.ThrottleSet8, InputAction.ThrottleLever,
         },
         new[]
         {
@@ -666,6 +683,11 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
     /// authored Control A and Control B columns.</summary>
     public static string KeysCellKey(int row, bool second) =>
         (second ? KeysCellB : KeysCellA) + row.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>The key of that row's Stick cell, which lists and captures stick controls alone.
+    /// </summary>
+    public static string KeysStickCellKey(int row) =>
+        KeysCellStick + row.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>Whether the screen showing is one of this module's five.</summary>
     public bool Owns(OriginalScreen screen) =>
@@ -908,37 +930,29 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
         _host.FocusedRow = -1;
     }
 
-    /// <summary>What the KEYS AND BUTTONS page prints in that row's Control A and Control B cells.
-    /// The first control stands in A and the rest in B, which is what keeps a third binding from
-    /// being hidden by two authored columns.</summary>
-    public (string A, string B) KeysCellText(int row)
+    /// <summary>What the KEYS AND BUTTONS page prints in that row's Control A, Control B and Stick
+    /// cells. Stick controls stand in Stick alone (<see cref="KeysStickColumn"/>). Of the rest the
+    /// first stands in A and the others in B, which keeps a third binding from being hidden.</summary>
+    public (string A, string B, string Stick) KeysCellText(int row)
     {
         if (_controls is not { } controls || controls.Players.Count == 0
             || row < 0 || row >= KeysTabs[_keysTab].Rows.Count)
         {
-            return (string.Empty, string.Empty);
+            return (string.Empty, string.Empty, string.Empty);
         }
 
         var cell = KeysTabs[_keysTab].Rows[row];
-        var bindings = controls.Bindings(cell.Context, cell.Action);
-        if (bindings.Count == 0)
+        var (others, sticks) = KeysStickColumn.Split(controls.Bindings(cell.Context, cell.Action));
+        string stick = KeysStickColumn.Text(sticks);
+        if (others.Count == 0)
         {
-            return (string.Empty, string.Empty);
+            return (string.Empty, string.Empty, stick);
         }
 
-        string a = BindingLabels.Describe(bindings[0]);
-        if (bindings.Count == 1)
-        {
-            return (a, string.Empty);
-        }
-
-        var rest = new List<Binding>(bindings.Count - 1);
-        for (int i = 1; i < bindings.Count; i++)
-        {
-            rest.Add(bindings[i]);
-        }
-
-        return (a, BindingLabels.Row(rest, 1));
+        string a = BindingLabels.Describe(others[0]);
+        return others.Count == 1
+            ? (a, string.Empty, stick)
+            : (a, BindingLabels.Row(others.GetRange(1, others.Count - 1), 1), stick);
     }
 
     // The rest of this class stays in the five pages' own narrative order. A helper stands beside
@@ -2237,16 +2251,29 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
         return 0;
     }
 
-    private static (int Row, bool Second)? KeysCellOf(string key)
+    private static (int Row, KeysColumn Column)? KeysCellOf(string key)
     {
-        bool second = key.StartsWith(KeysCellB, StringComparison.Ordinal);
-        if (!second && !key.StartsWith(KeysCellA, StringComparison.Ordinal))
+        KeysColumn column;
+        if (key.StartsWith(KeysCellA, StringComparison.Ordinal))
+        {
+            column = KeysColumn.A;
+        }
+        else if (key.StartsWith(KeysCellB, StringComparison.Ordinal))
+        {
+            column = KeysColumn.B;
+        }
+        else if (key.StartsWith(KeysCellStick, StringComparison.Ordinal))
+        {
+            column = KeysColumn.Stick;
+        }
+        else
         {
             return null;
         }
 
+        // The three prefixes are one length, so the row number starts at the same place in each.
         return int.TryParse(key[KeysCellA.Length..], NumberStyles.Integer, CultureInfo.InvariantCulture, out int row)
-            ? (row, second)
+            ? (row, column)
             : null;
     }
 
@@ -2293,9 +2320,9 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
     }
 
     // The KEYS AND BUTTONS page's rows in cursor order. The seven tabs stand in their own column.
-    // Each action's two control cells are interleaved, so a sideways step crosses from Control A to
-    // Control B of the same action. RESET and CANCEL stand under the left column with ACCEPT under
-    // the right. A cell outside the list's window keeps its place for the cursor, unseen and unhit.
+    // Each action's three control cells are interleaved in the order they stand. A sideways step
+    // crosses Control A, Stick and Control B of the same action. RESET and CANCEL stand under the left
+    // column with ACCEPT under Control B. A cell outside the list's window keeps its place, unseen.
     private void BuildKeysRows(List<OriginalRow> rows)
     {
         var screen = _layout.Screen(KeysSection);
@@ -2320,21 +2347,23 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
             bool visible = i >= _keysTop && i < _keysTop + window;
             rows.Add(new OriginalRow(KeysCellKey(i, false), string.Empty, OriginalRowKind.TextButton,
                 page.ControlAX, y, page.ControlAWidth, page.ItemHeight, live, 1, null, visible));
+            rows.Add(new OriginalRow(KeysStickCellKey(i), string.Empty, OriginalRowKind.TextButton,
+                page.StickX, y, page.StickWidth, page.ItemHeight, live, 2, null, visible));
             rows.Add(new OriginalRow(KeysCellKey(i, true), string.Empty, OriginalRowKind.TextButton,
-                page.ControlBX, y, page.ControlBWidth, page.ItemHeight, live, 2, null, visible));
+                page.ControlBX, y, page.ControlBWidth, page.ItemHeight, live, 3, null, visible));
         }
 
         if (screen == null)
         {
             rows.Add(_host.PlaqueRow(KeysResetKey, "RESET TO DEFAULT", 0, live, 1));
             rows.Add(_host.PlaqueRow(KeysCancelKey, "CANCEL CHANGES", 1, true, 1));
-            rows.Add(_host.PlaqueRow(KeysAcceptKey, "ACCEPT CHANGES", 2, true, 2));
+            rows.Add(_host.PlaqueRow(KeysAcceptKey, "ACCEPT CHANGES", 2, true, 3));
             return;
         }
 
         AddStrip(screen, rows, KeysResetKey, OriginalRowKind.Button, live, 1);
         AddStrip(screen, rows, KeysCancelKey, OriginalRowKind.Button, true, 1);
-        AddStrip(screen, rows, KeysAcceptKey, OriginalRowKind.Button, true, 2);
+        AddStrip(screen, rows, KeysAcceptKey, OriginalRowKind.Button, true, 3);
     }
 
     // The page's row shape off the section's own widgets, each falling back to the authored number
@@ -2358,6 +2387,11 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
         var arrow = StripArt(list?.Art ?? Array.Empty<string>(), 1);
         var arrowSize = StripSize(arrow, KeysArrowWidth, KeysArrowWidth);
         float controlBX = second?.Int("X", (int)KeysControlBX) ?? KeysControlBX;
+        float controlAX = first?.Int("X", (int)KeysControlAX) ?? KeysControlAX;
+        // Control A gives up the panel half the Stick column takes.
+        float controlAWidth = Math.Min(
+            first?.Int("Width", (int)KeysControlAWidth) ?? KeysControlAWidth,
+            Math.Max(1f, KeysStickX - KeysColumnGap - controlAX));
         return new KeysPage(
             list?.Int("X", (int)KeysListX) ?? KeysListX,
             list?.Int("Y", (int)KeysListY) ?? KeysListY,
@@ -2366,8 +2400,10 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
             Math.Max(1, (list?.Int("TotalDisplayed", KeysWindowRows) ?? KeysWindowRows) - 1),
             action?.Int("X", (int)KeysActionX) ?? KeysActionX,
             action?.Int("Width", (int)KeysActionWidth) ?? KeysActionWidth,
-            first?.Int("X", (int)KeysControlAX) ?? KeysControlAX,
-            first?.Int("Width", (int)KeysControlAWidth) ?? KeysControlAWidth,
+            controlAX,
+            controlAWidth,
+            KeysStickX,
+            KeysStickWidth,
             controlBX,
             Math.Min(second?.Int("Width", (int)KeysControlBWidth) ?? KeysControlBWidth, Math.Max(1f, right - controlBX)),
             action?.Int("Y", (int)KeysHeadY) ?? KeysHeadY,
@@ -2495,15 +2531,24 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
             return null;
         }
 
-        FocusCell(cell.Row, cell.Second);
-        controls.BeginCapture();
+        FocusCell(cell.Row, cell.Column);
+        if (cell.Column == KeysColumn.Stick)
+        {
+            controls.BeginStickCapture();
+        }
+        else
+        {
+            controls.BeginCapture();
+        }
+
         return null;
     }
 
     // Points the feature at the control the cell stands for: the tab's context and action, then the
-    // slot the column is. Control B is the second position, which on an action holding one control
-    // is the empty slot past it. A press there therefore adds rather than replaces.
-    private void FocusCell(int row, bool second)
+    // slot the column is. Control A is the first control no stick holds and Control B the second.
+    // On an action holding one, B is the empty slot past the list, so a press there adds. A Stick
+    // cell's slot is chosen once the capture knows which stick answered (ControlsFeature.OfferStick).
+    private void FocusCell(int row, KeysColumn column)
     {
         if (_controls is not { } controls || row < 0 || row >= KeysTabs[_keysTab].Rows.Count)
         {
@@ -2514,9 +2559,9 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
         controls.Context = cell.Context;
         int index = IndexOfAction(controls, cell.Action);
         controls.Focus(index);
-        if (second)
+        if (column != KeysColumn.Stick)
         {
-            controls.MoveSlot(1);
+            controls.MoveSlot(KeysStickColumn.SlotOfOther(controls.FocusedBindings, column == KeysColumn.B ? 1 : 0));
         }
     }
 
@@ -2620,9 +2665,9 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
         int last = Math.Max(0, count - page.Rows);
         int top = Math.Clamp(_keysTop, 0, last);
         int focus = _host.FocusedRow - KeysTabCount;
-        if (focus >= 0 && focus < count * 2)
+        if (focus >= 0 && focus < count * KeysCellsPerRow)
         {
-            int at = focus / 2;
+            int at = focus / KeysCellsPerRow;
             if (at < top)
             {
                 top = at;
@@ -2731,9 +2776,9 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
         }
     }
 
-    // The KEYS AND BUTTONS page as drawn. It is the plate, the title, the three column heads, and
-    // the tab strip with the standing tab in its depressed frame. The category heading stands over
-    // its rows in the list's window, beside the two control columns. The instruction line closes
+    // The KEYS AND BUTTONS page as drawn. It is the plate, the title, the three authored column heads
+    // and the Stick head, and the tab strip with the standing tab depressed. The category heading
+    // stands over its rows in the list's window, beside the control columns. The instruction line closes
     // it, replaced by the status while the feature has something to say.
     private void ComposeKeys(IReadOnlyList<OriginalRow> rows, int focus, BoardLayers layers)
     {
@@ -2763,6 +2808,8 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
             }
         }
 
+        lines.Add(new BoardLine(KeysStickHead, page.StickX, page.HeadY, page.StickWidth, KeysHeadFont,
+            BoardInk.Row, -1, false, BoardJustify.Left, Bold: true));
         var tab = KeysTabs[_keysTab];
         lines.Add(new BoardLine(tab.Name, page.ActionX, page.ListY, page.ActionWidth, KeysRowFont,
             BoardInk.RowFocused, -1, false, BoardJustify.Left, Bold: true));
@@ -2772,7 +2819,17 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
             lines.Add(new BoardLine(BindingLabels.Name(tab.Rows[i].Action), page.ActionX + KeysRowIndent, y,
                 page.ActionWidth - KeysRowIndent, KeysRowFont, BoardInk.Row));
             var text = KeysCellText(i);
-            lines.Add(new BoardLine(text.A, page.ControlAX, y, page.ControlAWidth, KeysRowFont, BoardInk.Row));
+            // The two half-panel columns step a long caption down a point at a time rather than
+            // wrapping it onto the row below. The box holds one line of the face and not two.
+            float fit = page.ItemHeight * KeysCellFitLines;
+            lines.Add(new BoardLine(text.A, page.ControlAX, y, page.ControlAWidth, KeysRowFont, BoardInk.Row)
+            {
+                Height = fit,
+            });
+            lines.Add(new BoardLine(text.Stick, page.StickX, y, page.StickWidth, KeysRowFont, BoardInk.Row)
+            {
+                Height = fit,
+            });
             lines.Add(new BoardLine(text.B, page.ControlBX, y, page.ControlBWidth, KeysRowFont, BoardInk.Row));
         }
 
@@ -2962,13 +3019,21 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
         float BoxX, float BoxY, float BoxWidth, float BoxHeight,
         float DescX, float DescY, float DescWidth, BoardArt? Box);
 
+    // Which of a KEYS AND BUTTONS row's three control cells a key names.
+    private enum KeysColumn
+    {
+        A,
+        B,
+        Stick,
+    }
+
     // The KEYS AND BUTTONS page's row shape in authored pixels. It is the list's corner, its pitch,
-    // and the rows it shows under the category heading. The three columns, the head line, and the
+    // and the rows it shows under the category heading. The four columns, the head line, and the
     // scrollbar's own column at the plate's right edge follow.
     private sealed record KeysPage(
         float ListX, float ListY, float ItemHeight, int Rows,
         float ActionX, float ActionWidth, float ControlAX, float ControlAWidth,
-        float ControlBX, float ControlBWidth, float HeadY,
+        float StickX, float StickWidth, float ControlBX, float ControlBWidth, float HeadY,
         float BarX, float ArrowWidth, float ArrowHeight, float ThumbHeight)
     {
         // The window's own first line, where the scrollbar stands. ⚠ Do not anchor the bar at
