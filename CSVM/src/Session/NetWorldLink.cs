@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using CSVM.Flight;
 using CSVM.Mech3;
 using CSVM.Net;
+using CSVM.Utils;
 using Godot;
 
 namespace CSVM.Session;
@@ -12,8 +13,9 @@ namespace CSVM.Session;
 /// and destructible pools. The host flies every AI, zeppelin and hull, draws every warp and decides
 /// every world hit, then says what happened. A guest's AI flies <see cref="AiStateMessage"/>, its
 /// zeppelins and hulls chase their state messages, and its pools spend nothing of their own. Both
-/// ends must admit AI and place zeppelins in the same order, since those indices name them; a
-/// hull's index is checked against its name. The phase mapping is in
+/// ends must admit AI and place zeppelins in the same order, since those indices name them. A guest
+/// builds a generator's aircraft only when the host's <see cref="AiSpawnMessage"/> names its
+/// ordinal, and a hull's index is checked against its name. The phase mapping is in
 /// <c>docs/org/multiplayer-messages.md</c>.
 /// </summary>
 internal sealed class NetWorldLink
@@ -37,6 +39,8 @@ internal sealed class NetWorldLink
     private ZeppelinRuntime? _zeppelins;
     private SurfaceVehicleRuntime? _surface;
     private CampaignDirector? _director;
+    private AiGeneratorRuntime? _generators;
+    private Func<IReadOnlyList<FlightController>>? _roster;
     private int _steps;
 
     /// <summary>Wires one session's end. A host hears the guests' hit claims and publishes its
@@ -92,6 +96,15 @@ internal sealed class NetWorldLink
 
     /// <summary>Surface-vehicle samples a guest has taken into a hull.</summary>
     internal int SurfaceSamplesTaken { get; private set; }
+
+    /// <summary>Generator aircraft launches the host has put on the wire.</summary>
+    internal int SpawnsSent { get; private set; }
+
+    /// <summary>Host launches a guest has built at the host's ordinal.</summary>
+    internal int SpawnsTaken { get; private set; }
+
+    /// <summary>Host launches a guest could not build at the named ordinal, and so dropped.</summary>
+    internal int SpawnsRefused { get; private set; }
 
     /// <summary>A stable name for one destructible pool, the guard a guest checks the host's
     /// registration index against. <see cref="NameKey"/> over the definition and anchor names.</summary>
@@ -164,6 +177,26 @@ internal sealed class NetWorldLink
         }
     }
 
+    /// <summary>Puts the mission's generator aircraft under the link. The host announces each
+    /// launch with the ordinal it admits the aircraft at. A guest refuses its own cycles' aircraft
+    /// (<see cref="AiGeneratorRuntime.Replicate"/>) and builds the host's instead.
+    /// <paramref name="roster"/> is the AI list <see cref="Admit"/> is fed from.</summary>
+    internal void FollowGenerators(AiGeneratorRuntime generators, Func<IReadOnlyList<FlightController>> roster)
+    {
+        ArgumentNullException.ThrowIfNull(generators);
+        ArgumentNullException.ThrowIfNull(roster);
+        _generators = generators;
+        _roster = roster;
+        if (_net.IsHost)
+        {
+            generators.AircraftLaunched += SendAiSpawn;
+            return;
+        }
+
+        generators.Replicate();
+        _net.On<AiSpawnMessage>((_, spawn) => TakeAiSpawn(spawn));
+    }
+
     /// <summary>Admits every AI the roster gained since the last call, in roster order. Run at the
     /// start of each step, before any AI is stepped, so a guest's copy never flies a step of its
     /// own.</summary>
@@ -180,6 +213,7 @@ internal sealed class NetWorldLink
                 ai.WeaponFired += (weapon, origin, direction) => SendAiFire(ordinal, weapon, origin, direction);
                 ai.Downed += (_, killer) => SendAiDowned(ordinal, killer);
                 ai.DamageApplied += (hurt, _) => SendAiHull(ordinal, hurt);
+                ai.InertChanged += changed => SendAiPresence(ordinal, changed);
                 ai.HitRouter = HostRoutes;
             }
             else
@@ -337,6 +371,75 @@ internal sealed class NetWorldLink
         _net.Broadcast(
             new WorldEventMessage((ushort)NetWorldEvent.AiHull, (ushort)ordinal, 0, damage.SummaryHealthFraction),
             NetChannels.Events);
+    }
+
+    // Admitted here rather than at the next step's admission, so the ordinal on the wire is the
+    // one every later message about this aircraft names.
+    private void SendAiSpawn(GeneratorAircraftLaunch launch, FlightController aircraft)
+    {
+        if (_roster is { } roster)
+        {
+            Admit(roster());
+        }
+
+        int ordinal = _admitted.LastIndexOf(aircraft);
+        if (ordinal is < 0 or > ushort.MaxValue || launch.Generator is < 0 or > byte.MaxValue
+            || launch.Net is < 0 or > byte.MaxValue || launch.LaunchOrdinal is < 0 or > ushort.MaxValue)
+        {
+            Log.Warn("core", $"net world: generator launch '{aircraft.Name}' not sent, ordinal {ordinal} generator {launch.Generator} net {launch.Net} launch {launch.LaunchOrdinal}");
+            return;
+        }
+
+        _net.Broadcast(
+            new AiSpawnMessage((ushort)ordinal, (ushort)launch.LaunchOrdinal, (byte)launch.Generator,
+                (byte)launch.Net, launch.Position, launch.Drop, launch.Velocity, launch.CarrierDrop,
+                launch.Throttle),
+            NetChannels.Events);
+        SpawnsSent++;
+    }
+
+    // A cutscene park is each end's own, since every end runs the cutscene. The host's park would
+    // arrive a transit late on top of the guest's.
+    private void SendAiPresence(int ordinal, FlightController ai)
+    {
+        if (ai.Parked)
+        {
+            return;
+        }
+
+        _net.Broadcast(
+            new WorldEventMessage((ushort)NetWorldEvent.AiPresence, (ushort)ordinal, ai.Inert ? 0 : 1, 0f),
+            NetChannels.Events);
+    }
+
+    // Reliable delivery is ordered, so the named ordinal is this end's next one unless the two
+    // rosters have already parted. Building at any other index would misname every later sample.
+    private void TakeAiSpawn(in AiSpawnMessage spawn)
+    {
+        if (_generators is not { } generators || _roster is not { } roster)
+        {
+            return;
+        }
+
+        Admit(roster());
+        if (spawn.Ai != _admitted.Count)
+        {
+            SpawnsRefused++;
+            Log.Warn("core", $"net world: host launch at ordinal {spawn.Ai} dropped, this end's next ordinal is {_admitted.Count}");
+            return;
+        }
+
+        var built = generators.LaunchReplicated(new GeneratorAircraftLaunch(spawn.Generator, spawn.LaunchOrdinal,
+            spawn.Net, spawn.Position, spawn.Drop, spawn.Velocity, spawn.CarrierDrop, spawn.Throttle));
+        Admit(roster());
+        if (built == null || !ReferenceEquals(AiAt(spawn.Ai), built))
+        {
+            SpawnsRefused++;
+            Log.Warn("core", $"net world: host launch at ordinal {spawn.Ai} did not build here");
+            return;
+        }
+
+        SpawnsTaken++;
     }
 
     private void SendDestructible(DestructibleRegistry.Instance inst)
@@ -526,6 +629,15 @@ internal sealed class NetWorldLink
                 if (_director != null)
                 {
                     _director.TakeHostWarp(e.Argument, e.Subject);
+                    WorldEventsApplied++;
+                }
+
+                break;
+            case NetWorldEvent.AiPresence:
+                if (AiAt(e.Subject) is { } present && GodotObject.IsInstanceValid(present)
+                    && present.Inert != (e.Argument == 0))
+                {
+                    present.Inert = e.Argument == 0;
                     WorldEventsApplied++;
                 }
 

@@ -519,6 +519,10 @@ public partial class GameSession : Node3D
     /// admitted AI and the applied events off it.</summary>
     internal NetWorldLink? NetWorld => _netWorld;
 
+    /// <summary>The mission's enemy generators, null on a stage without them. The harness suites
+    /// credit them and read their launch counters.</summary>
+    internal AiGeneratorRuntime? Generators => _generators;
+
     /// <summary>The session's subject plane (null until the build lands one), the Launcher's
     /// capture tick reads it, because CaptureDirector only shoots once a plane exists.</summary>
     internal Node3D? Plane => _plane;
@@ -3191,6 +3195,8 @@ public partial class GameSession : Node3D
                         var hullLaunch = new LaunchedVehicle(null, generatorSurface.Spawn(hull, pos, look - pos, hullName));
                         _campaign?.RegisterGeneratorLaunch(hullName, hullLaunch, hull);
                         return hullLaunch;
+                    case GeneratorLaunch.Airframe when _generators is { RefusesOwnAircraft: true }:
+                        return LaunchedVehicle.Refusal;
                     case GeneratorLaunch.Airframe:
                         // ⚠ shippedSkins: a generated aircraft is the mission's enemy, so it
                         // keeps its own textures rather than the player militia's default.
@@ -3198,6 +3204,10 @@ public partial class GameSession : Node3D
                             _spec.GeneratorsPlane, pos, look, pilot, ShippedSkins: true,
                             NodeName: EnemyGenerators.LaunchName(_spec.GeneratorsPlane, ordinal)));
                 }
+                // A guest builds a generator aircraft only when the host's launch arrives, at the
+                // admission ordinal the host gave it.
+                if (_generators is { RefusesOwnAircraft: true })
+                    return LaunchedVehicle.Refusal;
                 var template = plan!;
                 string launchName = EnemyGenerators.LaunchName(EnemyGenerators.LaunchBase(template.Name), ordinal);
                 var launched = flightRoster.SpawnAi(CampaignRosterPlan.SpawnFor(template, pos, look, pilot, launchName));
@@ -4326,6 +4336,10 @@ public partial class GameSession : Node3D
         }
 
         _netWorld.FollowVehicles(_surfaceVehicles, _campaign);
+        if (_generators != null)
+        {
+            _netWorld.FollowGenerators(_generators, () => AiPlanes);
+        }
 
         Log.Info("core", $"net world: {(net.IsHost ? $"host (flying every AI and deciding every world hit, {world?.Destructibles.Count ?? 0} pool(s))" : "guest (AI replicated from the host, world pools spending nothing of their own)")}");
     }

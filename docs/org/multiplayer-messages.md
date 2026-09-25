@@ -205,7 +205,7 @@ score, `0x17` match state, `0x22` hit and `0x27` seat roster. Damage, spawn, the
 director transition, the join handshake and a seat's ask to be spawned again have no
 counterpart, so they are minted at `0x40`, `0x41`, `0x42`, `0x43` and `0x44`, above the ceiling
 above. The host-owned world's four (AI state, AI fire, a guest's hit claim on an AI, and a world
-event) are minted at `0x45` to `0x48`, below, the clock ping at `0x49`, the lobby's session advert at `0x4A`, the zeppelin path at `0x4B` and the surface-vehicle patrol at `0x4D`. The handshake carries the master seed, the host's clock and the seat the joining peer was
+event) are minted at `0x45` to `0x48`, below, the clock ping at `0x49`, the lobby's session advert at `0x4A`, the zeppelin path at `0x4B`, a generator's AI launch at `0x4C` and the surface-vehicle patrol at `0x4D`. The handshake carries the master seed, the host's clock and the seat the joining peer was
 given; the original needs none of the three, because it draws from no shared stream and hands
 out no seat. The ask carries a seat and nothing else: the original's client takes its own
 respawn, while here the host owns every placement and answers the ask with a spawn event.
@@ -272,9 +272,11 @@ What a guest replays, and what it derives from what it replayed:
   `WAKEUP_GENERATOR`, `SET_AI_TEAM`, `SET_AI_NET`, `SET_AI_ATTACK_RADIUS`,
   `COMPLETED_ZEPCANNONS`, `COMPLETED_STOPPOINT` and `START_TAXI` run through the guest's own world
   seam. A guest's AI aircraft is a replicated airframe (below), so a warp, a net or a team set on
-  it is overwritten by the host's next sample, and the wake is what takes it out of `Inert` so the
-  samples show. Turrets and generators still act on these locally. A guest's zeppelin or surface
-  vehicle takes the net but walks nothing, since its path is the host's samples.
+  it is overwritten by the host's next sample. `WAKEUP_ENEMIES` does not wake it: the host's wake
+  arrives as a presence event (below), which is what takes it out of `Inert` so the samples show.
+  `WAKEUP_GENERATOR` credits the guest's own cycles, whose aircraft launches are refused (below).
+  Turrets still act on these locally. A guest's zeppelin or surface vehicle takes the net but walks
+  nothing, since its path is the host's samples.
 - **Drawn by the host, world.** `WARP_VEHICLE` picks one of its waypoints on the world stream, and
   its only authored use hides an aircraft that stays `Inert`, which the host sends no samples for.
   The host sends the pick as world event 4, and a guest's directive draws nothing: it places the
@@ -288,7 +290,9 @@ What a guest replays, and what it derives from what it replayed:
   graph; the host's own code 13 decides the ending and codes 10 and 11 carry it. The condition
   hooks (a player lost, a danger zone completed) and a direct wake are refused the same way.
 - **Not the director's.** 801 to 803 (a Black Hat launch), 968 (a wingman taken out) and 800 (a
-  generator's credit) change AI world state and still run locally on each end. 965 to 967 (the
+  generator's credit) change AI world state and still run locally on each end. A Black Hat launch
+  reactivates a block built dormant with its ordinal, so on a guest it waits for the host's presence
+  event like `WAKEUP_ENEMIES`; 800's credit launches nothing there of its own. 965 to 967 (the
   airframe swap) belong to the episode's owner. Definitions started by a player's position (the
   landing approach rows, the `PlayerRange` conditions, the ladder switch) are not graph events.
   The escorting wingman is a roster block spawned at build, not a director event.
@@ -318,7 +322,10 @@ replays nothing that draws from the AI stream (`Session/NetWorldLink.cs`). The s
 same AI: the mode machine rolls on the AI stream every step, so two ends running one AI would part
 on the first roll that landed differently. An AI is named on the wire by its admission ordinal, its
 index in the roster's append-only AI list, which both ends grow in the same order for the aircraft
-built with the world.
+built with the world. The one source that grows it later is a generator's aircraft launch, and a
+guest builds those only from the host's `0x4C`, so the two lists cannot part on a launch timed
+differently or credited on one end alone. Black Hat launches and `WAKEUP_ENEMIES` add nothing to
+the list: they reactivate blocks built dormant, whose ordinals already stand.
 
 | Id | Message | Class | Carries |
 |---|---|---|---|
@@ -327,7 +334,17 @@ built with the world.
 | `0x47` | AI hit | reliable, guest to host | ordinal, shooter seat, weapon, damage share, part, impact in the AI's body space (28 bytes) |
 | `0x48` | World event | reliable, host to all | code, subject, argument, value (16 bytes) |
 | `0x4B` | Zeppelin state | unreliable, host to all | placement index, per-zeppelin sequence, position, speed, pitch, yaw (32 bytes) |
+| `0x4C` | AI spawn | reliable, host to all | admission ordinal, launch counter, generator index, net index, flags, lever, position, drop direction, velocity (44 bytes) |
 | `0x4D` | Surface vehicle state | unreliable, host to all | spawn index, per-hull sequence, name hash, position, speed, yaw (32 bytes) |
+
+`0x4C` is one generator aircraft launch. The host admits the aircraft as it launches and sends the
+ordinal it got; the guest builds the launch only when that ordinal is its own next one, which
+reliable ordered delivery makes the normal case, and drops it otherwise. The guest builds with the
+host's net pick, pose, launch velocity and lever, and forms the name from the host's launch counter,
+so the mission script names the same aircraft on both ends. A guest's own cycles still run their
+timers and doors, but its spawner refuses every aircraft launch they come due for. No take-off run
+is started on the guest, since the host's samples fly the copy along it. A surface hull launch is
+not carried here.
 
 `0x4B` is one zeppelin of the original's `0x1e`, its first `0x18` bytes in the original's order, on the
 same half second. A zeppelin is named by its placement index, which both ends build from the same
@@ -354,7 +371,10 @@ stale one by the per-AI sequence. It rides the seat stream's cadence. The world 
 3 a destructible pool's health after a stage change or a kill (the subject is its registration
 index, the argument a hash of its definition and anchor names, which the guest checks before
 applying and searches by when the index has shifted), 4 a `WARP_VEHICLE` pick (the subject is the
-drawn waypoint index, the argument the hash of the warped vehicle's name).
+drawn waypoint index, the argument the hash of the warped vehicle's name), 5 an AI's presence (the argument is 1 for in
+play and 0 for deactivated). The host sends 5 whenever an AI's `Inert` changes outside a cutscene
+park, which covers a script wake, a Black Hat launch and a wingman taken out. A cutscene park (913)
+is not sent, because each end's own cutscene parks its own copy.
 
 A hit on an AI is decided once: by the host for its own rounds and for every round no seat fired,
 and by a guest for its own seat's rounds, which it claims with `0x47`. A world pool is spent only
@@ -373,7 +393,7 @@ Each simulation phase, as a guest runs it:
 | Captured AI aircraft | **Replicated**: each AI flies from `0x45` samples; fire arrives as `0x46`, hull and death as `0x48`. |
 | Zeppelins | **Replicated path**: each hull chases the host's `0x4B` samples. Part and cannon deaths arrive as pool events; the broadside still fires locally. |
 | Turret emplacements | Replayed locally and cosmetic: a guest's turret round spends nothing, the host's decides. Deaths arrive as pool events. |
-| Generators | Replayed locally. Their launches spawn AI on each end by its own timers, which is not yet host-owned. |
+| Generators | **Host-owned launches**: each aircraft launch arrives as `0x4C` at the host's ordinal. The guest's cycles and doors run on its own timers and are cosmetic; their aircraft launches are refused. |
 | Surface vehicles | **Replicated patrol**: each hull chases the host's `0x4D` samples. A hull's death arrives as a pool event; its gun still fires locally. |
 | Instant action | Not run in a network match. |
 | Campaign | The director replay above. |

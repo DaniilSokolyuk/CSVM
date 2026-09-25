@@ -222,13 +222,13 @@ for the event's sounds. It then has `AnimRuntime.CatchUp` step the instances the
 
 ## src/Session/NetWorldLink.cs
 The host-owned world over the wire, one per network session. `Admit` names each AI by its roster
-ordinal: the host hooks its fire, death and hull; a guest gives it a pose buffer and claims its own
-seat's rounds. `StepSends` sends every host AI on the seat cadence and every zeppelin and hull path
-each half second; `FollowZeppelins` puts a guest's zeppelins on those samples by placement index,
-`FollowVehicles` its hulls by spawn index and `NameKey` hash, and carries the host director's
-`WARP_VEHICLE` picks to a guest's, which draws none. Pool stage changes go out through
-`AnimRuntime.DestructibleDamaged` and apply through `ApplyReplicatedHealth`. `NetWorldSeats` is its
-seat lookups. Layouts: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
+ordinal: the host hooks its fire, death, hull and presence; a guest gives it a pose buffer and
+claims its own seat's rounds. `StepSends` sends every host AI on the seat cadence and every zeppelin
+and hull path each half second. `FollowZeppelins` puts a guest's zeppelins on those samples by
+placement index, `FollowVehicles` its hulls by spawn index and `NameKey` hash plus the host's
+`WARP_VEHICLE` picks, and `FollowGenerators` has it build the host's generator launches at the
+host's ordinals instead of its own. Pools go out through `AnimRuntime.DestructibleDamaged` and apply
+through `ApplyReplicatedHealth`; `NetWorldSeats` holds its seat lookups. Layouts: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
 
 ## src/Session/CampaignProgression.cs
 The campaign's progression rules over a profile: recording one mission attempt with the original's
@@ -415,11 +415,11 @@ Census of the shipped shapes: [../formats/ai-nets.md](../formats/ai-nets.md).
 Runs a mission's egen generators behind `--generators`: one `GeneratorCycle` per surviving
 `EnemyGeneratorDef`, host altitude read live off the resolved host node, and spawns through the
 handed roster callback at the origin node's live position. An air host drops its launch; a surface
-host flies its own take-off path held and hands the aircraft to the flight model at the decoded
-release point. Door transitions play the authored open and close anims scoped to the host,
-`GrantWaveCapacity` is the one credit, and `NotifyHostDied` puts the matching cycles on the wreck
-grace. Every drop, launch and door prints an `egen:` line. Decode:
-[../formats/mission-entities/enemy-generators.md](../formats/mission-entities/enemy-generators.md).
+host flies its own take-off path held to the decoded release point. Doors play the authored anims
+scoped to the host, `GrantWaveCapacity` is the one credit, and `NotifyHostDied` starts the wreck
+grace. `AircraftLaunched` reports each aircraft launch; after `Replicate` the spawner refuses the
+cycles' own and `LaunchReplicated` builds the host's. Every drop, launch and door prints an `egen:`
+line. Decode: [../formats/mission-entities/enemy-generators.md](../formats/mission-entities/enemy-generators.md).
 
 ## src/Session/ZeppelinRuntime.cs
 Runs a mission's zeppelins behind `--zeppelins`: a `ZeppelinDef` whose node and net resolve is

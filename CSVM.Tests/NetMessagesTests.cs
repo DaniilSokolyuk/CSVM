@@ -486,6 +486,34 @@ public class NetMessagesTests
         Assert.NotEqual(CSVM.Session.NetWorldLink.NameKey("patrolboat_1"), CSVM.Session.NetWorldLink.NameKey("patrolboat_2"));
     }
 
+    // A take-off run carries a lever and no carrier drop; a zeppelin drop carries a velocity.
+    [Fact]
+    public void AiSpawnRoundTripsBothLaunchShapes()
+    {
+        Span<byte> buffer = stackalloc byte[64];
+        var run = new AiSpawnMessage(7, 12, 1, 3, new Vector3(-2520.5f, 31.25f, 4410f),
+            new Vector3(0f, 0f, -1f), Vector3.Zero, false, 1f);
+        Assert.Equal(AiSpawnMessage.Size, run.Write(buffer));
+        Assert.True(AiSpawnMessage.TryRead(buffer[..AiSpawnMessage.Size], out var gotRun));
+        Assert.Equal(run, gotRun);
+        Assert.False(AiStateMessage.TryRead(buffer[..AiSpawnMessage.Size], out _));
+
+        var drop = new AiSpawnMessage(0, 0, 0, 0, new Vector3(10f, 400f, -20f),
+            new Vector3(1f, 0f, 0f), new Vector3(4.5f, -22.352f, 0f), true, null);
+        Assert.Equal(AiSpawnMessage.Size, drop.Write(buffer));
+        Assert.True(AiSpawnMessage.TryRead(buffer[..AiSpawnMessage.Size], out var gotDrop));
+        Assert.Equal(drop, gotDrop);
+
+        var bare = drop with { Velocity = null, CarrierDrop = false };
+        bare.Write(buffer);
+        Assert.True(AiSpawnMessage.TryRead(buffer[..AiSpawnMessage.Size], out var gotBare));
+        Assert.Null(gotBare.Velocity);
+        Assert.Null(gotBare.Throttle);
+        Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.AiSpawn));
+        Assert.Equal(0x004C, (int)NetMessageType.AiSpawn);
+        Assert.False(NetMessage.IsOriginalId(NetMessageType.AiSpawn));
+    }
+
     [Fact]
     public void WorldEventRoundTripsANegativeArgument()
     {

@@ -98,10 +98,10 @@ The host-owned world's messages, beside the vocabulary rather than in it: `AiSta
 (an AI's pose by admission ordinal, plain unreliable because every AI shares one channel, with
 `AsAircraftState` for the pose buffer), `AiFireMessage`, `AiHitMessage` (a guest's claim on an AI,
 to the host alone), `ZeppelinStateMessage` (one zeppelin of the original's `0x1e`, by placement
-index), `SurfaceVehicleStateMessage` (one hull's patrol by spawn index and name hash) and
-`WorldEventMessage`, whose `NetWorldEvent` code says what its subject, argument and
-value carry. Their ids and the phase mapping they serve are
-[../org/multiplayer-messages.md](../org/multiplayer-messages.md)'s.
+index), `AiSpawnMessage` (a host generator launch at the ordinal it claims, reliable and ordered),
+`SurfaceVehicleStateMessage` (one hull's patrol by spawn index and name hash) and
+`WorldEventMessage`, whose `NetWorldEvent` code says what its subject, argument and value carry.
+Ids and phase mapping: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
 
 ## src/Net/NetMessageWriter.cs
 The two cursors every serialiser and deserialiser runs on, `NetMessageWriter` and

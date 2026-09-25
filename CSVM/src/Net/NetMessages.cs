@@ -71,6 +71,10 @@ public enum NetMessageType : ushort
     /// speed.</summary>
     ZeppelinState = 0x004B,
 
+    /// <summary>An AI aircraft a host generator launched: its admission ordinal, the generator and
+    /// the pose it left from.</summary>
+    AiSpawn = 0x004C,
+
     /// <summary>One surface vehicle's patrol position as the host has it: where it is, its heading
     /// and its speed.</summary>
     SurfaceVehicleState = 0x004D,
@@ -109,6 +113,11 @@ public enum NetWorldEvent : ushort
     /// <summary>The host drew a <c>WARP_VEHICLE</c> waypoint. The subject is the drawn index into
     /// the directive's list, the argument a hash of the vehicle's name.</summary>
     VehicleWarped = 4,
+
+    /// <summary>An AI aircraft went out of the mission or came back into it. The subject is its
+    /// admission ordinal and the argument 1 for in play, 0 for deactivated. A cutscene park is not
+    /// sent, since each end's own cutscene parks its own copy.</summary>
+    AiPresence = 5,
 }
 
 /// <summary>Why a pilot died, the original's own cause word
@@ -1036,6 +1045,7 @@ public static class NetMessage
         NetMessageType.ClockPing => ClockPingMessage.Reliability,
         NetMessageType.SessionAdvert => SessionAdvertMessage.Reliability,
         NetMessageType.ZeppelinState => ZeppelinStateMessage.Reliability,
+        NetMessageType.AiSpawn => AiSpawnMessage.Reliability,
         NetMessageType.SurfaceVehicleState => SurfaceVehicleStateMessage.Reliability,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "no such message type"),
     };

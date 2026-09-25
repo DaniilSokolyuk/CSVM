@@ -196,7 +196,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 ### Wave E, the rest of the host-owned world
 
-41. ☐ Host-owned AI spawns: generator launches, Black Hat launches and `WAKEUP_*` as spawn events carrying the host's admission ordinal
+41. ☑ Host-owned AI spawns: generator launches, Black Hat launches and `WAKEUP_*` as spawn events carrying the host's admission ordinal
 42. ☑ Zeppelin paths from the host: the path position as a periodic state message, in the original's `0x1e` shape
 43. ☑ Surface vehicles from the host: patrols and `WARP_VEHICLE` placed by the host, not replayed from a diverging draw
 44. ☐ Destructible chip damage: a pool's health between stages mirrored on every guest
@@ -1226,10 +1226,8 @@ replicated AI, which runs no mode machine). Not run: instant action. The campaig
 phases are C21's and B14's.
 
 **Markers (not landed).**
-- Host-owned AI spawns: a guest's generator launches, Black Hat launches (callback codes 801 to 803)
-  and `WAKEUP_*` directives spawn or wake AI on its own timers, which can shift the admission
-  ordinals against the host's. A spawn event carrying the host's ordinal is the fix; until then an
-  AI with no host counterpart holds at its spawn and a shifted one tracks the wrong host AI.
+- Host-owned AI spawns: closed by E41 (generator launches as `0x4C` at the host's ordinal; Black
+  Hat launches and `WAKEUP_ENEMIES` as presence events on the ordinals they already hold).
 - Zeppelin paths: the original sends the zeppelin's path position as `0x1e` every 0.5 s; the remake
   replays the path locally from the shared seed and clock.
 - Surface-vehicle patrols and `WARP_VEHICLE` (its random draw diverges): replayed locally.
@@ -1712,7 +1710,59 @@ C22 made AI aircraft and destructible stages host-owned and left four world phas
 on a guest. Each item below takes one of them to the host. The phase table is in
 `docs/org/multiplayer-messages.md`, "The host-owned world"; C22's **Markers** list states each gap.
 
-## E41 ☐ Host-owned AI spawns: generator launches, Black Hat launches and `WAKEUP_*` as spawn events carrying the host's admission ordinal
+## E41 ☑ Host-owned AI spawns: generator launches, Black Hat launches and `WAKEUP_*` as spawn events carrying the host's admission ordinal
+
+**Landed.** The trace narrowed the item. A Black Hat launch (801 to 803, `FirstDormantOf` then
+`ActivateDormantRoster`) and `WAKEUP_ENEMIES` add no AI: they reactivate roster blocks built inert
+at build time, which already hold their ordinals on both ends. What they can part is presence, not
+the ordinal. The one run-time source that grows the AI list in a network session is a generator's
+aircraft launch (`AiGeneratorRuntime.Spawn` into `FlightRoster.SpawnAi`), since Instant Action
+does not run there. By file:
+- `CSVM/src/Net/NetMessages.cs`, `CSVM/src/Net/NetWorldMessages.cs`: `AiSpawnMessage`, id
+  **`0x4C`**, 44 bytes, reliable on `NetChannels.Events`, host to all: admission ordinal, launch
+  counter, live generator index, net index, flags, lever, position, drop direction, velocity.
+  `NetWorldEvent.AiPresence = 5` on the existing `0x48` (4 is E43's).
+- `CSVM/src/Session/AiGeneratorRuntime.cs`: `GeneratorAircraftLaunch`; `AircraftLaunched` after
+  each aircraft launch; `Replicate`, `RefusesOwnAircraft` and `RefusedLaunches`;
+  `LaunchReplicated`, which builds the host's launch with its net, pose, velocity, lever and launch
+  counter and starts no take-off run; `LaunchedVehicle.Refusal`, on which `Spawn` hands the cycle's
+  slot back.
+- `CSVM/src/Session/GameSession.cs`: the generator spawner returns `Refusal` for an airframe or
+  roster-template launch while `RefusesOwnAircraft` holds (surface hulls untouched);
+  `WireNetWorld` calls `FollowGenerators`; `Generators` accessor for the harness.
+- `CSVM/src/Session/NetWorldLink.cs`: `FollowGenerators`. The host admits the launched aircraft at
+  once and broadcasts its ordinal; a guest builds it only when that ordinal is its next, else drops
+  it (`SpawnsSent`, `SpawnsTaken`, `SpawnsRefused`). The host sends `AiPresence` on every
+  `InertChanged` outside a cutscene park; a guest applies it.
+- `CSVM/src/Session/CampaignDirector.cs`: `ActivateDormantRoster` leaves a remote-owned copy
+  inert, so a guest's own `WAKEUP_ENEMIES` and 801 to 803 wait for the host's presence event.
+- `CSVM/src/Testing/NetAiSpawnSuites.cs` (new): `net-ai-spawn`; its weight in
+  `analysis/engine-suite-weights.json`.
+- Tests: an `0x4C` round trip in `NetMessagesTests`.
+- Docs: `docs/org/multiplayer-messages.md` (id list, `0x4C` row and prose, code 5, the director's
+  wake and 801 to 803 bullets, the Generators phase row), the Session and Net entries and index.
+
+**Verified.** The complete battery on the merged tree (E41 over E43, E42 and everything before it,
+with `WireNetWorld` calling `FollowVehicles` and then `FollowGenerators`): build clean, 4947 units
+passed with 0 failed and 2 skipped, 395 engine suites passed with engine errors clean, and 19
+goldens hash-identical. `net-ai-spawn` passes inside it.
+
+**Owed.**
+- The guest's own campaign wake refusal is not driven by a suite: `net-ai-spawn` runs `--fly`, with
+  no director. Presence is exercised by setting `Inert` on the host directly.
+- A guest's generator cycles and doors still run on its own timers and credits, which is cosmetic.
+- A late joiner has missed every earlier launch and presence event (C24's).
+
+**Verify.** `.\RunTests.ps1 -Suite net-ai-spawn -SkipUnits -SkipGoldens`: a host and a guest session
+on C1/M02 with `--generators` over a 30 ms, 10 ms jitter, 25 per cent loss loopback. The host
+credits eairg32 and, once that has launched, eairg31; the guest credits eairg31 alone, so its own
+cycle would launch first at the other airfield. The guest must refuse its own launch, build the
+host's two at the host's ordinals, first-seen within 20 m of the host's launch point (the two points
+stand about 120 m apart), with the host's names, then track each host path (0.08 and 0.13 m mean,
+about 118 m against the other). A sample for an unadmitted ordinal admits nothing; the host's
+`Inert` reaches the guest both ways, and a cutscene park does not. Units: `NetMessagesTests`.
+
+**Original approach (kept for reference).**
 
 **Goal.** Every AI a generator launches, a Black Hat launch spawns (callback codes 801 to 803) or a
 `WAKEUP_*` directive wakes exists on every guest under the same admission ordinal as on the host.
@@ -1729,9 +1779,6 @@ from the event, in the shape of B13's `GrantSpawn`.
 
 **Model recommendation.** Opus. The ordinal contract is shared by every world message, and a wrong
 order shows only as an AI tracking another's path.
-
-**Verify.** <TODO: a harness run of a mission with a generator or a Black Hat launch, asserting the
-guest's AI set and ordinals equal the host's after the launch>
 
 **⚠ Traps.** The spawn event must arrive before the first `0x45` sample for that ordinal; a sample
 for an unknown ordinal is held or dropped, never admitted.

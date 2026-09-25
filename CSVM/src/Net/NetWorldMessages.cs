@@ -246,6 +246,90 @@ public readonly record struct ZeppelinStateMessage(
 }
 
 /// <summary>
+/// One AI aircraft a host generator launched, which every guest builds at the same admission
+/// ordinal. It names the generator by its live index and the patrol net by its index in that
+/// generator's list. It carries the launch pose, velocity and lever as the host applied them.
+/// Reliable and ordered, because every later message about the AI names it by the ordinal this
+/// one claims.</summary>
+public readonly record struct AiSpawnMessage(
+    ushort Ai,
+    ushort LaunchOrdinal,
+    byte Generator,
+    byte Net,
+    Vector3 Position,
+    Vector3 Drop,
+    Vector3? Velocity,
+    bool CarrierDrop,
+    float? Throttle) : INetMessage<AiSpawnMessage>
+{
+    /// <summary>The fixed width of the message, header included.</summary>
+    public const int Size = 44;
+
+    private const byte CarrierDropFlag = 1;
+    private const byte VelocityFlag = 2;
+    private const byte ThrottleFlag = 4;
+
+    /// <inheritdoc/>
+    public static NetMessageType Type => NetMessageType.AiSpawn;
+
+    /// <inheritdoc/>
+    public static NetReliability Reliability => NetReliability.Reliable;
+
+    /// <inheritdoc/>
+    public static bool TryRead(ReadOnlySpan<byte> from, out AiSpawnMessage message)
+    {
+        message = default;
+        var reader = new NetMessageReader(from);
+        if (!reader.Is(Size) || reader.Type != Type)
+            return false;
+
+        ushort ai = reader.ReadUInt16();
+        ushort launch = reader.ReadUInt16();
+        byte generator = reader.ReadByte();
+        byte net = reader.ReadByte();
+        byte flags = reader.ReadByte();
+        float throttle = reader.ReadByte() / 255f;
+        var position = new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+        var drop = new Vector3(reader.ReadUnit(), reader.ReadUnit(), reader.ReadUnit());
+        _ = reader.ReadUInt16();
+        var velocity = new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+        message = new AiSpawnMessage(
+            ai, launch, generator, net, position, drop,
+            (flags & VelocityFlag) != 0 ? velocity : null,
+            (flags & CarrierDropFlag) != 0,
+            (flags & ThrottleFlag) != 0 ? throttle : null);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public int Write(Span<byte> into)
+    {
+        var writer = new NetMessageWriter(into, Type);
+        writer.WriteUInt16(Ai);
+        writer.WriteUInt16(LaunchOrdinal);
+        writer.WriteByte(Generator);
+        writer.WriteByte(Net);
+        byte flags = (byte)((CarrierDrop ? CarrierDropFlag : 0)
+            | (Velocity != null ? VelocityFlag : 0)
+            | (Throttle != null ? ThrottleFlag : 0));
+        writer.WriteByte(flags);
+        writer.WriteByte((byte)Math.Round(Math.Clamp(Throttle ?? 0f, 0f, 1f) * 255f));
+        writer.WriteSingle(Position.X);
+        writer.WriteSingle(Position.Y);
+        writer.WriteSingle(Position.Z);
+        writer.WriteUnit(Drop.X);
+        writer.WriteUnit(Drop.Y);
+        writer.WriteUnit(Drop.Z);
+        writer.WriteUInt16(0);
+        var velocity = Velocity ?? Vector3.Zero;
+        writer.WriteSingle(velocity.X);
+        writer.WriteSingle(velocity.Y);
+        writer.WriteSingle(velocity.Z);
+        return writer.Close();
+    }
+}
+
+/// <summary>
 /// One surface vehicle's patrol as the host drives it: position, speed and heading. It keeps
 /// <see cref="ZeppelinStateMessage"/>'s order and drops the pitch, since a hull sits on the water.
 /// A hull is named by its index in the runtime's build order and guarded by its name's hash. A

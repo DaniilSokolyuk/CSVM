@@ -1314,6 +1314,14 @@ public sealed class CampaignDirector
             return false;
         }
 
+        // A guest's copy is the host's aircraft. The host's own wake arrives as a presence event
+        // and its samples place it. Waking it here would put it in play before the host has.
+        if (rig.RemoteOwned)
+        {
+            Log.Info("core", $"campaign: '{name}' wakes on the host, not here");
+            return true;
+        }
+
         var (pos, fwd) = _rosterPlacedPose.TryGetValue(name, out var placed)
             ? placed
             : (plan.Position, plan.Forward);
