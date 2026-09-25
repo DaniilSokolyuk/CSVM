@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using CSVM.Utils;
 using Godot;
 
@@ -23,9 +24,10 @@ public enum UpnpPortMapOutcome
 }
 
 /// <summary>One attempt's result: what happened, the port it was about, the external address when
-/// one was learned, and the gateway's own word for it.</summary>
+/// one was learned, and the gateway's own word for it. <c>LeaseSeconds</c> is the lease granted,
+/// 0 for a permanent one or none.</summary>
 public readonly record struct UpnpPortMapResult(
-    UpnpPortMapOutcome Outcome, int Port, string ExternalAddress, string Detail)
+    UpnpPortMapOutcome Outcome, int Port, string ExternalAddress, string Detail, int LeaseSeconds = 0)
 {
     /// <summary>Whether the port is mapped.</summary>
     public bool IsMapped => Outcome == UpnpPortMapOutcome.Mapped;
@@ -34,10 +36,10 @@ public readonly record struct UpnpPortMapResult(
 /// <summary>
 /// A best-effort port mapping through Godot's UPnP client, for a host that wants to be reachable
 /// from outside its own router. It is attempted and reported, never required. Every path returns
-/// a result and none throws. A refused mapping costs the host a line on the board, and a guest on
-/// the same network still joins.
+/// a result and none throws. The lease rules are <see cref="UpnpLease"/>'s; this class is the
+/// engine's gateway under them and the user's <see cref="UpnpPortMemory"/>.
 /// ⚠ Both calls block for as long as the gateway search takes, so neither belongs on a frame or
-/// in a transport step. Run them once when hosting opens and once when it closes.
+/// in a transport step. Run them on the door's mapping thread and where hosting closes.
 /// </summary>
 public static class UpnpPortMap
 {
@@ -48,38 +50,30 @@ public static class UpnpPortMap
     // ENet carries the match over UDP, so a TCP mapping would open the wrong door.
     private const string Protocol = "UDP";
 
-    /// <summary>Asks the gateway to forward <paramref name="port"/> to this machine.
+    // The port this process holds mapped, so a second Map of it is a renewal rather than a fresh
+    // mapping that deletes before it adds.
+    private static int _held;
+
+    /// <summary>Asks the gateway to forward <paramref name="port"/> to this machine on a finite
+    /// lease. When this process already holds it, the call renews the lease.
     /// <paramref name="description"/> is what the router's own mapping table shows.</summary>
     public static UpnpPortMapResult Map(int port, string description = "CSVM")
     {
-        if (port is < 1 or > 65535)
-        {
-            return new UpnpPortMapResult(UpnpPortMapOutcome.Refused, port, "", "port out of range");
-        }
-
         try
         {
             using var upnp = new Upnp();
-            var found = (Upnp.UpnpResult)upnp.Discover(DiscoverTimeoutMs);
-            if (found != Upnp.UpnpResult.Success)
+            var memory = UserMemory();
+            bool renewing = Volatile.Read(ref _held) == port;
+            var result = UpnpLease.Map(new EngineGateway(upnp), port, description, memory.Recall(), renewing);
+            if (result.IsMapped)
             {
-                return new UpnpPortMapResult(OutcomeOf(found), port, "", found.ToString());
+                Volatile.Write(ref _held, port);
+                memory.Remember(port);
             }
 
-            using var gateway = upnp.GetGateway();
-            if (gateway == null || !gateway.IsValidGateway())
-            {
-                return new UpnpPortMapResult(UpnpPortMapOutcome.NoGateway, port, "", "no valid gateway");
-            }
-
-            var mapped = (Upnp.UpnpResult)upnp.AddPortMapping(port, port, description, Protocol, 0);
-            if (mapped != Upnp.UpnpResult.Success)
-            {
-                return new UpnpPortMapResult(OutcomeOf(mapped), port, "", mapped.ToString());
-            }
-
-            return new UpnpPortMapResult(
-                UpnpPortMapOutcome.Mapped, port, upnp.QueryExternalAddress(), "mapped");
+            string verb = renewing ? "renewal" : "mapping";
+            Log.Info("core", $"upnp {verb} port={port} outcome={result.Outcome} lease={result.LeaseSeconds}s detail={result.Detail}");
+            return result;
         }
         catch (Exception e)
         {
@@ -89,18 +83,22 @@ public static class UpnpPortMap
     }
 
     /// <summary>Takes the mapping back down. False when there was no gateway, no mapping, or the
-    /// gateway declined; a host that stops hosting reports nothing either way.</summary>
+    /// gateway declined; a host that stops hosting reports nothing either way. The remembered
+    /// port is forgotten only once its mapping is gone.</summary>
     public static bool Unmap(int port)
     {
+        Interlocked.CompareExchange(ref _held, 0, port);
         try
         {
             using var upnp = new Upnp();
-            if ((Upnp.UpnpResult)upnp.Discover(DiscoverTimeoutMs) != Upnp.UpnpResult.Success)
+            var gateway = new EngineGateway(upnp);
+            if (!gateway.Discover().Succeeded || !gateway.Delete(port))
             {
                 return false;
             }
 
-            return (Upnp.UpnpResult)upnp.DeletePortMapping(port, Protocol) == Upnp.UpnpResult.Success;
+            UserMemory().Forget(port);
+            return true;
         }
         catch (Exception e)
         {
@@ -109,8 +107,10 @@ public static class UpnpPortMap
         }
     }
 
-    // Godot returns one flat result code for both the search and the request, so the two calls
-    // above share this reading of it.
+    private static UpnpPortMemory UserMemory() => new(ProjectSettings.GlobalizePath("user://"));
+
+    // Godot returns one flat result code for both the search and the request, so every call
+    // below shares this reading of it.
     private static UpnpPortMapOutcome OutcomeOf(Upnp.UpnpResult result) => result switch
     {
         Upnp.UpnpResult.Success => UpnpPortMapOutcome.Mapped,
@@ -120,4 +120,38 @@ public static class UpnpPortMap
             => UpnpPortMapOutcome.TimedOut,
         _ => UpnpPortMapOutcome.Refused,
     };
+
+    // The lease rules' gateway over one Godot client, which holds the device the search found.
+    private sealed class EngineGateway : IUpnpGateway
+    {
+        private readonly Upnp _upnp;
+
+        public EngineGateway(Upnp upnp) => _upnp = upnp;
+
+        public UpnpReply Discover()
+        {
+            var found = (Upnp.UpnpResult)_upnp.Discover(DiscoverTimeoutMs);
+            if (found != Upnp.UpnpResult.Success)
+            {
+                return new UpnpReply(OutcomeOf(found), found.ToString());
+            }
+
+            using var gateway = _upnp.GetGateway();
+            return gateway != null && gateway.IsValidGateway()
+                ? new UpnpReply(UpnpPortMapOutcome.Mapped, "found")
+                : new UpnpReply(UpnpPortMapOutcome.NoGateway, "no valid gateway");
+        }
+
+        public UpnpReply Add(int port, string description, int leaseSeconds)
+        {
+            var added = (Upnp.UpnpResult)_upnp.AddPortMapping(port, port, description, Protocol, leaseSeconds);
+            return new UpnpReply(OutcomeOf(added), added.ToString(),
+                added == Upnp.UpnpResult.OnlyPermanentLeaseSupported);
+        }
+
+        public bool Delete(int port) =>
+            (Upnp.UpnpResult)_upnp.DeletePortMapping(port, Protocol) == Upnp.UpnpResult.Success;
+
+        public string ExternalAddress() => _upnp.QueryExternalAddress();
+    }
 }

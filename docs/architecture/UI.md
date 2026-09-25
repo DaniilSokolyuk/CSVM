@@ -1195,7 +1195,7 @@ port-mapping calls arrive as delegates, so the launcher passes `Net/NetCarrier.c
 a suite passes a loopback mesh and no router. Every open wraps its carrier in a `Net/NetLobby.cs`.
 `OpenHost`, `OpenCoopHost` (the campaign's, whose `Offer` names the mission) and `OpenJoin` open;
 `Step` carries the link and re-advertises; `BuildLaunch` hands the lobby on; `Close` unmaps. The
-map runs on its own thread because the gateway search blocks. Boards: `LaunchMenu.cs`.
+map runs on its own thread, which renews the lease until `Close`. Boards: `LaunchMenu.cs`.
 
 ## src/UI/Menu/CoopDoorText.cs
 The words the campaign's network door is drawn in, engine-free and built off the door alone: the

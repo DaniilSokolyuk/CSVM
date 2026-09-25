@@ -63,6 +63,8 @@ public sealed class NetPlayFeature : IMenuFeature
     private string _hostName = "";
     private int _localPlayers = 1;
     private Task<UpnpPortMapResult>? _mapping;
+    private Task? _lease;
+    private CancellationTokenSource? _renewal;
     private bool _released;
     private double _joining;
     private int _mappedPort;
@@ -313,6 +315,33 @@ public sealed class NetPlayFeature : IMenuFeature
         Fault = "";
     }
 
+    // The mapping thread's whole life. It runs on after a launch takes the socket, since a match
+    // never steps this door. A lease that lapsed mid-match would shut every guest out.
+    private static void HoldLease(Func<int, UpnpPortMapResult> map, int port,
+        TaskCompletionSource<UpnpPortMapResult> first, CancellationToken stop)
+    {
+        UpnpPortMapResult latest;
+        try
+        {
+            latest = map(port);
+        }
+        catch (Exception e)
+        {
+            first.SetException(e);
+            throw;
+        }
+
+        first.SetResult(latest);
+        int held = latest.IsMapped ? latest.LeaseSeconds : 0;
+        var wait = UpnpLease.NextRenewal(latest, held);
+        while (wait != Timeout.InfiniteTimeSpan && !stop.WaitHandle.WaitOne(wait))
+        {
+            latest = map(port);
+            held = latest.IsMapped ? latest.LeaseSeconds : held;
+            wait = UpnpLease.NextRenewal(latest, held);
+        }
+    }
+
     // Both host doors open the same socket; only the advert's kind tells them apart.
     private void OpenHost(int maxGuests, NetSessionKind kind)
     {
@@ -348,14 +377,38 @@ public sealed class NetPlayFeature : IMenuFeature
         return new SessionAdvertMessage(_kind, seq, (byte)players, _hostName);
     }
 
-    // Asked for once, where hosting opens, and away from the frame. ⚠ The call blocks for the
-    // gateway search, so it runs on a dedicated thread, never the pool, which starves. The board shows the answer on the step that
-    // finds it, rather than holding the menu still for two seconds.
+    // Asked for where hosting opens, and away from the frame. ⚠ The call blocks for the gateway
+    // search, so it runs on a dedicated thread, never the pool, which starves. The board shows the
+    // first answer on the step that finds it. The same thread renews the lease until Close.
     private void MapPort()
     {
+        if (_map is not { } map)
+        {
+            _mapping = null;
+            return;
+        }
+
         int port = Port;
-        _mapping = _map == null ? null : Task.Factory.StartNew(() => _map(port), CancellationToken.None,
+        var first = new TaskCompletionSource<UpnpPortMapResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var stop = new CancellationTokenSource();
+        _mapping = first.Task;
+        _renewal = stop;
+        _lease = Task.Factory.StartNew(() => HoldLease(map, port, first, stop.Token), CancellationToken.None,
             TaskCreationOptions.LongRunning, TaskScheduler.Default);
+    }
+
+    // Stopped and waited for before the unmap, so a renewal in flight cannot put the mapping back.
+    private void StopRenewal()
+    {
+        _renewal?.Cancel();
+        if (_lease != null)
+        {
+            Task.WaitAny(_lease);
+        }
+
+        _renewal?.Dispose();
+        _renewal = null;
+        _lease = null;
     }
 
     private void TakeMapping()
@@ -376,6 +429,7 @@ public sealed class NetPlayFeature : IMenuFeature
     // wait falls on the way out of hosting, not in front of a player waiting to fly.
     private void UnmapPort()
     {
+        StopRenewal();
         TakeMapping();
         if (_mapping != null)
         {

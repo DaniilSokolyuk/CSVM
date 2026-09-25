@@ -70,10 +70,25 @@ and are null for a carrier that is reachable without one, which a door shows as 
 ## src/Net/UpnpPortMap.cs
 A best-effort port mapping through Godot's UPnP client, so a host behind a router is reachable
 from outside it. `Map` returns one of four outcomes a board can show (mapped, no gateway, refused,
-timed out) with the external address when one was learned, `Unmap` takes it back down, and neither
-throws: a refused mapping costs a host nothing but a line on the board, and a guest on the same
-network still joins. Both calls block for the length of the gateway search, so they belong at the
-moment hosting opens and closes, never on a frame and never in a transport step.
+timed out) with the external address and the lease the router granted, `Unmap` takes it back down,
+and neither throws: a refused mapping costs a host nothing but a line on the board, and a guest on
+the same network still joins. Both calls block for the length of the gateway search, so they belong
+on the door's own thread, never on a frame and never in a transport step. The rules are
+`UpnpLease.cs`'s; this file is the engine adapter under them and the only one that names `Upnp`.
+
+## src/Net/UpnpLease.cs
+The router mapping's rules, engine-free behind `IUpnpGateway`. A mapping asks a finite lease of
+`LeaseSeconds` (TUNE, `BL-1043`), so a host that crashes leaves nothing open past it. A gateway
+that answers error 725 gets a permanent one. Before a fresh add it deletes the stale mapping on the
+port and on the port the last run remembered, by exact port only. A renewal only adds again.
+`NextRenewal` says when the door asks next: half the lease after a grant, an eighth after a failed
+renewal, never for a permanent lease. Read `UpnpLeaseTests.cs`.
+
+## src/Net/UpnpPortMemory.cs
+The one port this machine last mapped, kept in `upnp_port.txt` under the user directory so a run
+after a crash can delete the mapping it left. Apart from `options.json` because the mapping thread
+writes it. A missing or unreadable file recalls no port, and a failed write costs only the stale
+clear, so nothing here throws.
 
 ## src/Net/NetLobby.cs
 A carrier's first listener, standing between the socket a menu opens and the session that later
@@ -116,7 +131,9 @@ Little-endian primitives over the caller's span, plus the two quantised forms th
 unit-range field as a 16-bit integer, and a fixed-width UTF-8 field that truncates on a whole
 character. The writer opens with the header and patches the total length in on `Close`; the
 reader reads the header in its constructor, so `Type`, `Length` and `Valid` answer before any
-payload byte is touched.
+payload byte is touched. A text field decodes on the stack, so a read allocates only its string.
+`NetMessageFuzzTests.cs` feeds every reader random, truncated and mislabelled bytes.
+
 ## src/Net/NetClockSlew.cs
 How a guest holds its session clock against the host's, as one offset that is walked rather than
 written: `HostTime(guest) = guest + Offset`, and a fresh `Observe` sets a target the offset
@@ -201,13 +218,13 @@ falls back to `Events`, which costs ordering rather than delivery.
 
 ## src/Net/NetSession.cs
 The one object a session owns to talk to its peers: it holds the transport, implements the
-listener, sends a typed message under the class the type declares, and routes an arrival to
-the handler registered on its type word. The only meaning it knows is the join, a host answering each peer with the handshake (which names
-the seat) and then the roster; `On` refuses those two types. The star's relay is here too:
-`SendToSeat` addresses a seat through whoever owns it, and a host's `RelayToOthers` and
-`RelayToSeatOwner` forward an arrival's own bytes, never back to its sender. `Sent`, `Received`,
-`Relayed`, `DroppedUnknown` and `Malformed` are the counters a suite reads; `Instruments` is fed
-every arrival before its handler and every send once, a broadcast included.
+listener, sends a typed message under the class the type declares, and routes an arrival to the
+handler registered on its type word. The only meaning it knows is the join, a host answering each
+peer with the handshake (which names the seat) and then the roster; `On` refuses those two types,
+and a guest refuses a join `NetSeats.Validate` would throw on. The star's relay: `SendToSeat`
+addresses a seat through whoever owns it, and a host's `RelayToOthers` and `RelayToSeatOwner`
+forward an arrival's own bytes, never back to its sender. A suite reads the counters (`Sent`,
+`Received`, `Relayed`, `DroppedUnknown`, `Malformed`) and `Instruments`, fed before any handler.
 
 ## src/Net/NetInstruments.cs
 One machine's desync counters over its own traffic, engine-free, read by `net-soak` and the

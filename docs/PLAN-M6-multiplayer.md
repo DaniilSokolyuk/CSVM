@@ -193,7 +193,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 31. ☑ Latency and loss soaks, desync instruments and a `--debug-net` readout
 32. ☑ The Steam transport flag: a build-time gate with a stub, so the seam is proven before any SDK arrives
-33. ☐ The router mapping on a finite lease with a stale mapping cleared, and a fuzz of every message reader
+33. ☑ The router mapping on a finite lease with a stale mapping cleared, and a fuzz of every message reader
 
 ### Wave E, the rest of the host-owned world
 
@@ -1905,7 +1905,52 @@ your own copy" model OpenTTD uses, Valve's review) and is not this plan's to tak
 a `const`, so a consumer inlines it: a stale `CSVM.Tests` build against a freshly reflavoured
 `CSVM.dll` would report the old flavour, which is why the flavoured unit run rebuilds both.
 
-## D33 ☐ The router mapping on a finite lease with a stale mapping cleared, and a fuzz of every message reader
+## D33 ☑ The router mapping on a finite lease with a stale mapping cleared, and a fuzz of every message reader
+
+**Landed.** The remembered port lives in its own `user://upnp_port.txt`, not in `options.json`:
+the mapping thread writes it, and the options store is written from the main thread only. The
+fuzz found no reader that throws. It found two faults in the join's listener and one unbounded
+allocation, all fixed. By file:
+- `CSVM/src/Net/UpnpLease.cs` (new): `IUpnpGateway`, `UpnpReply` and `UpnpLease`. `Map` asks
+  `LeaseSeconds = 3600` (TUNE, `BL-1043`) clamped to the IGD range 120 to 86400. It falls back to
+  lease 0 only on error 725, and on a fresh map it deletes the remembered port and then the port
+  itself, by exact port. A renewal only adds. `NextRenewal` returns half the lease after a grant,
+  an eighth of the held lease after a failed renewal, and never for a permanent lease.
+- `CSVM/src/Net/UpnpPortMemory.cs` (new): `Recall`, `Remember`, `Forget` over one file in an
+  absolute directory. Neither throws.
+- `CSVM/src/Net/UpnpPortMap.cs`: `UpnpPortMapResult.LeaseSeconds`. `Map` runs `UpnpLease.Map` over
+  a private `EngineGateway` adapter, remembers the port, logs `upnp mapping` or `upnp renewal`
+  with the lease, and treats a second map of the held port as a renewal. `Unmap` forgets the port.
+- `CSVM/src/UI/Menu/NetPlayFeature.cs` (lease renewal only): `MapPort` starts `HoldLease` on the
+  existing dedicated thread. It hands the first answer to the board and then renews on
+  `NextRenewal` until `Close`. `UnmapPort` stops and joins that thread before the unmap. The
+  thread outlives `BuildLaunch` because a launch stops the board's steps.
+- `CSVM/src/Net/NetSession.cs` (fuzz fixes): a guest refuses a handshake whose seat is past
+  `NetSeats.SeatCapacity` (the old code took seat 109 from a fuzz payload) and a roster not
+  numbered 0 to n-1 without a gap, counting each in `Malformed`. `Joined` also requires the roster
+  to hold the guest's own seat. Before this, a crafted join reached `GameSession`'s
+  `NetSeats.Validate`, which throws.
+- `CSVM/src/Net/NetMessageWriter.cs`, `CSVM/src/Net/NetMessages.cs` (fuzz fixes): `ReadText`
+  decodes on the stack, which cuts a malformed 16-byte field from 480 to 56 bytes.
+  `SeatRosterMessage.TryRead` no longer copies its seat array twice. A full malformed roster now
+  allocates 1176 bytes, down from about 4.7 KB.
+- `CSVM.Tests/UpnpLeaseTests.cs` (new, Quick): 11 facts over a fake gateway, a scratch directory
+  and a fake mapper. The door's fact renews a 1-second lease until `Close` and then stops.
+- `CSVM.Tests/NetMessageFuzzTests.cs` (new, Quick): 8 facts. Every `INetMessage<T>` value type is
+  enumerated by reflection and the count is checked against `NetMessageType`. Each reader gets
+  random payloads of lengths 0 to 664, a valid header over random bytes, every truncated prefix of
+  a valid encoding, every wrong length word and all 65536 type words. Allocation per read is
+  bounded at 2048 bytes. The same stream goes through a lobby and the guest session behind it,
+  and through a host with every type routed and relayed.
+- Docs: the `Net.md` entries for `UpnpPortMap`, `UpnpLease` (new), `UpnpPortMemory` (new),
+  `NetMessageWriter` and `NetSession`, the `UI.md` `NetPlayFeature` entry, and the index bullets.
+  `backlog.md` `BL-1043`.
+
+**Verified.** The complete battery on the merged tree (D33 over C26 and everything before it): build
+clean, 4969 units passed with 0 failed and 2 skipped (the lease and fuzz tests among them), 397
+engine suites passed with engine errors clean, and 19 goldens hash-identical.
+
+**Original approach (kept for reference).**
 
 **Goal.** A host's router never keeps a CSVM port mapping longer than the host needs it, even when
 the game dies without closing, and no payload a peer can send makes a reader throw or allocate

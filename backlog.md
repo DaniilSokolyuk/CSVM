@@ -1243,6 +1243,20 @@ usual.
   the fitted lag is removed, so a large render delay does not show here at all; judge the delay
   (`RemotePoseBuffer.BufferDelaySeconds`) separately. *Cross-refs:* `BL-1018` (the same sitting).
 
+- `BL-1043` `[Tuning]` `[S]` `[Next: look]` `[Impact: low]` `[Evidence: trace]` **The router
+  mapping's lease length and renewal fractions are chosen, and its permanent-lease fallback has
+  met no real router.** *Evidence:* `Net/UpnpLease.cs` asks `LeaseSeconds = 3600`, renews at
+  `RenewAtFraction = 0.5` of the grant and retries a failed renewal after `RetryFraction = 0.125`.
+  The hour bounds what a crashed host leaves open; the fractions leave room for three retries,
+  each paying a whole gateway search, before the lease runs out, which `UpnpLeaseTests` asserts.
+  Every test runs over a fake gateway, so no router has yet answered a finite lease, error 725
+  (permanent leases only) or a delete of a stale mapping. *Fix shape:* host through a home router
+  with UPnP on, read the `upnp mapping` and `upnp renewal` log lines and the router's own mapping
+  table across more than one renewal, then kill the process and confirm the next host's stale
+  clear removes the entry. Shorten the lease if routers keep stale entries visibly long. *⚠ Traps:*
+  never widen the stale clear past the exact remembered port; a range delete would take another
+  program's mapping on the same router.
+
 - `BL-284` `[Bug]` `[Blocked: CAP-34]` `[M]` `[Next: look]` `[Impact: low]` `[Evidence: footage]` **Wing-light flare: soft round glow vs the original's sharp star burst; view-dependence
   unproven.** Follow-up from `BL-119` (landed 2026-08-05): with the authored one-sided quad restored
   and the blink at the measured ~1 frame, the flare reads as a compact soft amber glow, much closer

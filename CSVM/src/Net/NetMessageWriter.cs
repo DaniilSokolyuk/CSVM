@@ -192,12 +192,16 @@ public ref struct NetMessageReader
     /// <summary>Reads a unit-range field back off its 16-bit integer.</summary>
     public float ReadUnit() => ReadInt16() / (float)NetMessageWriter.UnitScale;
 
-    /// <summary>Reads a fixed-width UTF-8 field, stopping at the first zero byte.</summary>
+    /// <summary>Reads a fixed-width UTF-8 field, stopping at the first zero byte. Decoded on the
+    /// stack, so the one allocation is the string, however malformed the bytes.</summary>
     public string ReadText(int bytes)
     {
         var field = _buffer.Slice(_at, bytes);
         _at += bytes;
         int end = field.IndexOf((byte)0);
-        return Encoding.UTF8.GetString(end < 0 ? field : field[..end]);
+        var text = end < 0 ? field : field[..end];
+        Span<char> chars = stackalloc char[text.Length];
+        int count = Encoding.UTF8.GetChars(text, chars);
+        return new string(chars[..count]);
     }
 }

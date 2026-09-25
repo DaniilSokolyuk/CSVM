@@ -624,6 +624,8 @@ original's own message set, with ids and guarantees, is in [`org/multiplayer-mes
 - `src/Net/SteamTransport.cs`, the Steam carrier's place in the seam with no SDK behind it: every way in throws "not built with the Steamworks SDK", and `SteamBuild` is the `CSVM_STEAM` define.
 - `src/Net/NetCarrier.cs`, which carrier a match runs over, chosen once: the door's registration and the command line both open through it, and a build define is the whole of the choice.
 - `src/Net/UpnpPortMap.cs`, a best-effort port mapping through Godot's UPnP client: four outcomes a host can show, never a throw, and never required for a match to be joinable.
+- `src/Net/UpnpLease.cs`, the router mapping's rules behind a gateway seam: a finite lease, the stale mapping cleared by exact port, and when the door renews.
+- `src/Net/UpnpPortMemory.cs`, the one port this machine last mapped, kept in the user directory so the next run can clear what a crash left.
 - `src/Net/NetLobby.cs`, a carrier's first listener before any session binds it: the host's session advert out, the latest advert in, every other payload held for the session.
 - `src/Net/NetMessages.cs`, the message vocabulary: one struct per message, each declaring its type word and reliability class, over a shared four-byte header.
 - `src/Net/NetWorldMessages.cs`, the host-owned world's messages: an AI's pose, fire and hit claim, a generator launch, a zeppelin's and a surface vehicle's path sample, and the world event.
@@ -638,7 +640,7 @@ original's own message set, with ids and guarantees, is in [`org/multiplayer-mes
 - `src/Net/AircraftStateCadence.cs`, when an owner puts its own aeroplane on the wire, in simulation steps, and the per-seat sequence each sample carries.
 - `src/Net/MatchStateCadence.cs`, when a host repeats the match clock, in simulation steps: a second between ticks, and every change sent where it happens instead.
 - `src/Net/NetChannels.cs`, which channel a message rides: one per seat for state and another per seat for fire, since sequenced discard is per sender and channel, and one for the join and every reliable event.
-- `src/Net/NetSession.cs`, a session's own end of the wire: typed sends under each type's declared class, dispatch to per-type handlers, the join a host answers with, the host's relay between guests, and the counters a suite reads.
+- `src/Net/NetSession.cs`, a session's own end of the wire: typed sends under each type's declared class, dispatch to per-type handlers, the join a host answers with and a guest checks, the host's relay between guests, and the counters a suite reads.
 - `src/Net/NetInstruments.cs`, one machine's desync counters over its own traffic: sequence gaps as drops, stale and late arrivals, and reliable events out of their causal order.
 
 ### Session root and tests

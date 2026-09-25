@@ -909,6 +909,13 @@ public readonly struct SeatRosterMessage : INetMessage<SeatRosterMessage>
             _seats[i] = seats[i];
     }
 
+    // The reader's own array, taken as it stands rather than copied a second time.
+    private SeatRosterMessage(NetSeatEntry[] seats, uint seed)
+    {
+        Seed = seed;
+        _seats = seats;
+    }
+
     /// <inheritdoc/>
     public static NetMessageType Type => NetMessageType.SeatRoster;
 
@@ -950,7 +957,7 @@ public readonly struct SeatRosterMessage : INetMessage<SeatRosterMessage>
                 seat, team, plane, (flags & 1) != 0, reader.ReadText(CallsignBytes));
         }
 
-        message = new SeatRosterMessage(seed, seats);
+        message = new SeatRosterMessage(seats, seed);
         return true;
     }
 

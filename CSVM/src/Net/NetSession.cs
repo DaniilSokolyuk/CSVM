@@ -86,9 +86,10 @@ public sealed class NetSession : INetTransportListener
     /// </summary>
     public NetHandshake Handshake => _handshake ?? new NetHandshake(_seed, _clock());
 
-    /// <summary>Whether this session has everything it needs to build: a host always does, a guest
-    /// once both the handshake and the roster have arrived.</summary>
-    public bool Joined => IsHost || (_handshake != null && _rosterArrived);
+    /// <summary>Whether this session has everything it needs to build. A host always does. A guest
+    /// does once the handshake and the roster have arrived and the roster holds the guest's seat.
+    /// </summary>
+    public bool Joined => IsHost || (_handshake != null && _rosterArrived && HoldsLocalSeat());
 
     /// <summary>Every peer this session can send to, this end excluded.</summary>
     public IReadOnlyList<int> Peers => _transport.Peers;
@@ -314,6 +315,28 @@ public sealed class NetSession : INetTransportListener
         handler(peer, payload);
     }
 
+    // NetSeats.Validate's numbering rule, asked of the wire's entries rather than thrown.
+    private static bool NumberedFromZero(IReadOnlyList<NetSeatEntry> seats)
+    {
+        if (seats.Count == 0 || seats.Count > NetSeats.MaxPlayers)
+        {
+            return false;
+        }
+
+        Span<bool> seen = stackalloc bool[NetSeats.MaxPlayers];
+        foreach (var entry in seats)
+        {
+            if (entry.Seat >= seats.Count || seen[entry.Seat])
+            {
+                return false;
+            }
+
+            seen[entry.Seat] = true;
+        }
+
+        return true;
+    }
+
     private void Forward(int peer, NetMessageType type, int channel, ReadOnlySpan<byte> payload)
     {
         _transport.Send(peer, payload, NetMessage.ReliabilityOf(type), channel);
@@ -380,8 +403,16 @@ public sealed class NetSession : INetTransportListener
         return NetMessage.NoSeat;
     }
 
+    // ⚠ Refuse a seat past the tables and a roster that is not numbered 0 upward without a gap.
+    // Either would index every seat-wide table past its end once the guest builds its field.
     private void TakeHandshake(int peer, HandshakeMessage message)
     {
+        if (message.Seat != NetMessage.NoSeat && message.Seat >= NetSeats.SeatCapacity)
+        {
+            Malformed++;
+            return;
+        }
+
         _handshake = new NetHandshake(message.Seed, message.HostClock);
         LocalSeat = message.Seat;
         RebuildSeats(peer);
@@ -389,6 +420,12 @@ public sealed class NetSession : INetTransportListener
 
     private void TakeRoster(int peer, SeatRosterMessage message)
     {
+        if (!NumberedFromZero(message.Seats))
+        {
+            Malformed++;
+            return;
+        }
+
         _received.Clear();
         _received.AddRange(message.Seats);
         _rosterArrived = true;
@@ -420,6 +457,19 @@ public sealed class NetSession : INetTransportListener
                 PlaneNode = AirframeName(entry.Plane),
             });
         }
+    }
+
+    private bool HoldsLocalSeat()
+    {
+        foreach (var seat in _seats)
+        {
+            if (seat.IsLocal)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private byte AirframeIndex(string plane)
