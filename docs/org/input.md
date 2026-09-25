@@ -417,8 +417,8 @@ two candidates leave no way to tell which one should fly.
   again. While any candidate is still unsampled nothing is claimed.
 - **The layout.** Axis 0 (X) is roll and axis 1 (Y) pitch, each a full axis with deadzone 0.02 and
   pitch not inverted (pulled back is positive, as on a pad). Axis 5 (Rz, the twist) is yaw when the
-  device has six axes or more; this follows DirectInput's usual X, Y, Z, Rx, Ry, Rz order and has
-  not been measured on a stick through SDL2. Axis 2 (Z) is the absolute Throttle (lever), inverted
+  device has six axes or more, DirectInput's usual X, Y, Z, Rx, Ry, Rz order; on the VKB Gladiator
+  EVO R the twist reads -1..1 on axis 5 through SDL2. Axis 2 (Z) is the absolute Throttle (lever), inverted
   so the lever's low end is full throttle, deadzone 0.02; that direction is also unmeasured, and
   the lever's takeover rule keeps a parked lever from moving the throttle until it is moved. Button
   0 fires the guns and button 1 the rockets. In menus the hat moves the cursor, button 0 confirms

@@ -947,9 +947,9 @@ no rows), exported by the preset's `data/*.json` include filter, whose `*` cross
 committed folder: the Tartarus alone is active on that shipped file, ignored, with no generic
 default, and a stick beside it still takes the default.
 
-**Left open.** Rz as axis 5 and the lever
-direction are unmeasured: `--dump-sticks=20` with the R grip twisted and the lever swept answers
-both. A stick held deflected during its sample is judged not a stick until it is replugged. The
+**Left open.** `--dump-sticks=20` on the user's rig shows the R grip's twist on axis 5 (full -1..1,
+centred at 0) and the R lever sweeping axis 2 over -1..1; which physical lever end reads -1, and so
+whether the default's inverted lever is right, is the user's to say. A stick held deflected during its sample is judged not a stick until it is replugged. The
 two new `.cs` files have no Godot `.uid` yet. The controls screen's "needs binding" text is D11's.
 
 **Original approach (kept for reference).**
