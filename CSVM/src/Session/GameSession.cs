@@ -3361,6 +3361,8 @@ public partial class GameSession : Node3D
             _campaign?.BindCallbackHost(callbackRuntime);
         }
 
+        WireNetDirector();
+
         // F15 / --debug-targets: who is aiming at whom. Reads the live gunners through closures
         // rather than a snapshot, waves activate, AI planes spawn and emplacements die long
         // after this line runs. The roster list is reused, not rebuilt per frame.
@@ -4224,6 +4226,28 @@ public partial class GameSession : Node3D
         {
             _versus?.ApplyScore(score.Seat, score.Score, score.Kills, score.Deaths);
         }
+    }
+
+    // The campaign's objectives over the wire, once the graph is armed. The host's graph runs the
+    // mission and says what it did; a guest's replays that and decides nothing, the way a guest's
+    // match does. ⚠ Nothing is sent from here: the join stays the two payloads it is counted as.
+    private void WireNetDirector()
+    {
+        if (_net is not { } net || _netSeats.Count == 0 || _campaign?.Graph is not { } graph)
+        {
+            return;
+        }
+
+        if (net.IsHost)
+        {
+            NetDirectorLink.Publish(net, graph);
+        }
+        else
+        {
+            NetDirectorLink.Follow(net, graph);
+        }
+
+        Log.Info("core", $"net director: {(net.IsHost ? $"host (every transition of {graph.Count} objective(s), and the ending, as they happen)" : $"guest (replaying the host's transitions over {graph.Count} objective(s), evaluating none of its own)")}");
     }
 
     // The match clock, its limits and its ending over the wire. The host is the only writer: it

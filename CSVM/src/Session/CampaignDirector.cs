@@ -1091,6 +1091,18 @@ public sealed class CampaignDirector
             plane?.Name ?? string.Empty,
             (int[])_kills.Clone(),
             (int[])_aceKills.Clone());
+        // ⚠ A replicated mission is another machine's attempt, and that machine records it.
+        // Nothing below the hold may write a profile, a photograph or an award.
+        if (graph.Replicated)
+        {
+            Result = new CampaignMissionResult(outcome, attempt,
+                new MissionRecorded(false, false, 0, Array.Empty<int>(), Array.Empty<CustomPlaneDef>()),
+                _mission.Campaign);
+            _leaving = LeavingHoldS;
+            Log.Info("core", $"campaign: mission {_mission.Ordinal} {outcome} as the host ended it, recorded on the host's profile alone; holding the world {LeavingHoldS:0.#}s before leaving it");
+            return;
+        }
+
         if (_world?.Runtime is { } runtime && CampaignPersistLog.CommitsOn(outcome))
         {
             _profile.PersistLog.Merge(_mission.Campaign, _mission.Seq, CampaignPersistLog.Capture(runtime));

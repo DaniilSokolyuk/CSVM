@@ -178,3 +178,52 @@ score message is one seat rather than the whole table, and its roster carries th
 which the original has no need of because it never draws from a shared stream. The packed angle
 and motion dwords are not taken either; the remake spends 8 bytes on a quantised quaternion and
 12 on a float velocity, which is the trade `Net/NetMessages.cs`'s width budget exists to hold.
+
+## The mission director
+
+`0x42` carries one event of the host's objectives graph as a code and an id, reliable, in the
+order the graph raised it. The host is the only sender; a guest's graph is replicated and changes
+only by replaying these (`Session/NetDirectorLink.cs`). The codes are `NetDirectorEvent`:
+
+| Code | Event | Id |
+|---|---|---|
+| 1 to 7 | Woke, Napped, Completed, Killed, Slept, Expired, Hidden | objective number in the low 16 bits, the objective whose completion caused it in the high 16 (0 for none) |
+| 8 | Settled: a completion and every chain it ran are done | objective number |
+| 9 | The mission countdown expired | 0 |
+| 10 | Ending decided | outcome, plus `0x100` when the objectives-won or objectives-lost sound played |
+| 11 | Mission ended, after the host's wrap-up | outcome |
+
+A code the guest does not know is dropped. `Hidden` exists because `HIDE_OBJ` retires an objective
+without the completion bookkeeping, and a guest that did not hear it would complete that objective
+later by a rule of its own. Nap lengths are not sent: the guest reads them off the same script,
+from the source objective's `NAP_OBJECTIVE_WHEN_I_COMPLETE` or the objective's own nap.
+
+What a guest replays, and what it derives from what it replayed:
+
+- **Replayed, presentation.** Each transition runs the same bookkeeping on the guest as on the
+  host: `WAKE_ANIM` and `SLEEP_ANIM`, the wake, completed, class-complete and ending sound groups,
+  `STOP_QUEUED_SOUNDS`, the objective and other target lists, the help labels, the countdown's
+  reset, adjust and end actions, and the display rows. The countdown's display runs locally
+  between events, pinned at zero, and only the host's code 9 expires it.
+- **Replayed for now, world.** `WAKEUP_ENEMIES`, `WAKEUP_TURRETS`, `WAKEUP_ZEP_TURRETS`,
+  `WAKEUP_GENERATOR`, `WARP_VEHICLE`, `SET_AI_TEAM`, `SET_AI_NET`, `SET_AI_ATTACK_RADIUS`,
+  `COMPLETED_ZEPCANNONS`, `COMPLETED_STOPPOINT` and `START_TAXI` run through the guest's own world
+  seam, which moves AI the host owns. They belong to the host once AI replication lands, and
+  `WARP_VEHICLE`'s random draw already diverges between the two ends. `DEDG`'s engagement widening
+  is a side effect of testing a condition, so a guest never runs it.
+- **Derived, cutscene codes.** The presentation codes (20, 2, 11, 1, 10, 913 and 914, 666 and 667,
+  951, 86) are raised on the guest by its own animation runtime, playing the definitions its
+  replayed `WAKE_ANIM` or the shared start list started. Sending them as well would apply each one
+  twice.
+- **Refused on a guest.** Code 13, the docking's mission completion, is refused by a replicated
+  graph; the host's own code 13 decides the ending and codes 10 and 11 carry it. The condition
+  hooks (a player lost, a danger zone completed) and a direct wake are refused the same way.
+- **Not the director's.** 801 to 803 (a Black Hat launch), 968 (a wingman taken out) and 800 (a
+  generator's credit) change AI world state and still run locally on each end. 965 to 967 (the
+  airframe swap) belong to the episode's owner. Definitions started by a player's position (the
+  landing approach rows, the `PlayerRange` conditions, the ladder switch) are not graph events.
+  The escorting wingman is a roster block spawned at build, not a director event.
+
+A guest applies each event on arrival, one link latency after the host, and its mission end holds
+the world and builds the result without writing a profile, a photograph or an award. A guest that
+joins late has missed every earlier event.

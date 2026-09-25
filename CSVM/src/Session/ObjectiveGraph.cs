@@ -54,6 +54,10 @@ public enum ObjectiveTransitionKind
 
     /// <summary>Retired by its own deadline.</summary>
     Expired,
+
+    /// <summary>Marked complete and retired by another objective's <c>HIDE_OBJ</c>, running none
+    /// of its own completion actions.</summary>
+    Hidden,
 }
 
 /// <summary>
@@ -157,6 +161,12 @@ public readonly record struct ObjectiveCompleted(
 public readonly record struct ObjectiveTransition(
     int Number, ObjectiveTransitionKind Kind, int Source, float Elapsed, float Seconds, bool Gated);
 
+/// <summary>A win or loss the graph has just decided, before its wrap-up runs down.
+/// <c>ObjectivesSound</c> says the objectives-won or objectives-lost group played ahead of the
+/// mission sound. The aggregate ending and the docking play it; an instant ending does not.
+/// </summary>
+public readonly record struct MissionEnding(MissionOutcome Outcome, bool ObjectivesSound);
+
 /// <summary>One row of the player-visible objectives display: unique <c>priority</c> is the row
 /// key and the sort key, the message key is its label, and the row is marked when an objective of
 /// that priority completes.</summary>
@@ -234,6 +244,16 @@ public sealed class ObjectiveGraph
     /// <summary>Fired whenever a target-list edit or a help-label write changes the display
     /// state.</summary>
     public event Action? TargetsChanged;
+
+    /// <summary>Fired once, as a win or loss is decided and its sounds have played, ahead of the
+    /// wrap-up that <see cref="MissionEnded"/> closes.</summary>
+    public event Action<MissionEnding>? EndingDecided;
+
+    /// <summary>Whether this graph mirrors another machine's instead of running its own rules. A
+    /// replicated graph evaluates no condition, runs no timer to a transition and decides no
+    /// ending. It changes only through the <c>Apply</c> calls. Set once, by
+    /// <see cref="Replicate"/>.</summary>
+    public bool Replicated { get; private set; }
 
     /// <summary>Mission time in seconds since the graph started ticking.</summary>
     public float Elapsed { get; private set; }
@@ -325,7 +345,7 @@ public sealed class ObjectiveGraph
     /// altitude: the under-map backstop teleports without one (docs/verification.md INSTR-22).</summary>
     public bool NotifyPlayerLost()
     {
-        if (_playerLost || Ended)
+        if (_playerLost || Ended || Replicated)
         {
             return false;
         }
@@ -358,13 +378,12 @@ public sealed class ObjectiveGraph
     /// mission.</summary>
     public bool NotifyDockingComplete()
     {
-        if (Ended || Ending)
+        if (Ended || Ending || Replicated)
         {
             return false;
         }
 
-        PlayIfNamed(_script.ObjectivesWonSound);
-        End(MissionOutcome.Won, DockingWrapUpS);
+        End(MissionOutcome.Won, DockingWrapUpS, objectivesSound: true);
         // ⚠ Landed here, never left to the next step: the world under the film that raised the code
         // is held, so a graph waiting for a step of its own would not get one until the film ended
         // and the view had cut back to the pilot (docs/formats/objectives.md).
@@ -377,6 +396,11 @@ public sealed class ObjectiveGraph
     /// count for it.</summary>
     public void NotifyDangerZoneCompleted(string zone)
     {
+        if (Replicated)
+        {
+            return;
+        }
+
         foreach (var live in _live)
         {
             if (live.Alive && live.State == ObjectiveState.Awake && live.Def.DangerZones.Count > 0)
@@ -403,6 +427,12 @@ public sealed class ObjectiveGraph
             return;
         }
 
+        if (Replicated)
+        {
+            StepReplicated(dt);
+            return;
+        }
+
         if (dt <= 0f || _live.Count == 0)
         {
             StepWrapUp(dt);
@@ -424,10 +454,161 @@ public sealed class ObjectiveGraph
     /// <summary>Wakes an objective from outside the graph, the way one objective's chain does. The
     /// cutscene and mission-start paths use it; the already-awake truncation does not apply to a
     /// single call.</summary>
-    public void Wake(int number) => WakeOne(number);
+    public void Wake(int number)
+    {
+        if (!Replicated)
+        {
+            WakeOne(number);
+        }
+    }
+
+    /// <summary>Hands this graph over to another machine's. From here it changes only through the
+    /// <c>Apply</c> calls. Each replays one of that graph's events with the same state change and
+    /// the same world actions. ⚠ Nothing it replays is decided here, so a replicated
+    /// graph must never evaluate a condition or run a timer to a transition. Two machines would
+    /// then disagree about which objective completed first.</summary>
+    public void Replicate() => Replicated = true;
+
+    /// <summary>Replays one transition the owning graph made. The objective's state and its world
+    /// actions are the owner's; <see cref="ObjectiveTransition.Elapsed"/> and the nap length are
+    /// this graph's own reading. A completion's display row and class sound wait for
+    /// <see cref="ApplySettled"/>, which is where the owner plays them.</summary>
+    public void ApplyTransition(ObjectiveTransitionKind kind, int number, int source)
+    {
+        if (!Replicated || Target(number) is not { } live)
+        {
+            return;
+        }
+
+        _source = source;
+        switch (kind)
+        {
+            case ObjectiveTransitionKind.Woke:
+                WakeLive(live);
+                break;
+            case ObjectiveTransitionKind.Completed:
+                live.Complete = true;
+                live.State = ObjectiveState.Retired;
+                live.Zones.Clear();
+                Note(live, kind, 0f);
+                RunCompletionActions(live.Def);
+                break;
+            case ObjectiveTransitionKind.Napped:
+                live.State = ObjectiveState.Napping;
+                live.NapRemaining = NapLengthOf(live, source);
+                live.Timer = 0f;
+                live.Complete = false;
+                Note(live, kind, live.NapRemaining);
+                break;
+            case ObjectiveTransitionKind.Killed:
+                live.Alive = false;
+                live.State = ObjectiveState.Retired;
+                Note(live, kind, 0f);
+                break;
+            case ObjectiveTransitionKind.Slept:
+                live.State = ObjectiveState.Retired;
+                Note(live, kind, 0f);
+                if (live.Def.SleepAnim is { } anim)
+                {
+                    _world.WakeAnim(anim, null);
+                }
+
+                break;
+            case ObjectiveTransitionKind.Expired:
+                live.State = ObjectiveState.Retired;
+                Note(live, kind, 0f);
+                break;
+            case ObjectiveTransitionKind.Hidden:
+                live.Complete = true;
+                live.State = ObjectiveState.Retired;
+                Note(live, kind, 0f);
+                break;
+            default:
+                break;
+        }
+
+        _source = 0;
+    }
+
+    /// <summary>Replays the close of a completion the owning graph made: the display row, the
+    /// class complete sound and the <see cref="Completed"/> event, after everything its chain
+    /// did.</summary>
+    public void ApplySettled(int number)
+    {
+        if (!Replicated || Target(number) is not { } live)
+        {
+            return;
+        }
+
+        var def = live.Def;
+        string? classSound = MarkRow(def);
+        Completed?.Invoke(new ObjectiveCompleted(
+            def.Number, def.CompletedSoundGroup, classSound, def.Identity));
+    }
+
+    /// <summary>Replays the owning graph's countdown running out: the notice, and the clock
+    /// stopped at zero.</summary>
+    public void ApplyTimerExpired()
+    {
+        if (!Replicated)
+        {
+            return;
+        }
+
+        TimerRemaining = 0f;
+        TimerRunning = false;
+        TimerExpired?.Invoke();
+    }
+
+    /// <summary>Replays a win or loss the owning graph decided, with the sounds it played. The
+    /// wrap-up is the owner's, so this graph waits for <see cref="ApplyEnded"/>.</summary>
+    public void ApplyEnding(MissionEnding ending)
+    {
+        if (Replicated)
+        {
+            End(ending.Outcome, float.PositiveInfinity, ending.ObjectivesSound);
+        }
+    }
+
+    /// <summary>Replays the owning graph's mission end, the moment its wrap-up ran out.</summary>
+    public void ApplyEnded(MissionOutcome outcome)
+    {
+        if (!Replicated || Ended || outcome == MissionOutcome.None)
+        {
+            return;
+        }
+
+        _pending = outcome;
+        Outcome = outcome;
+        MissionEnded?.Invoke(outcome);
+    }
 
     private static bool CountMet(int matched, int? authored, int entries) =>
         matched >= (authored ?? entries) && entries > 0;
+
+    // A replicated graph's own step: the mission time and the countdown's display, which are
+    // readings of the clock. The countdown pins at zero, since running out is the owner's to
+    // decide and arrives as ApplyTimerExpired.
+    private void StepReplicated(float dt)
+    {
+        if (dt <= 0f || Ended)
+        {
+            return;
+        }
+
+        Elapsed += dt;
+        if (TimerRunning)
+        {
+            TimerRemaining = MathF.Max(0f, TimerRemaining - dt);
+        }
+    }
+
+    // The nap a replayed Napped entered, which the wire does not carry: a completion's
+    // NAP_OBJECTIVE_WHEN_I_COMPLETE when a source names one, the objective's own nap otherwise.
+    private float NapLengthOf(Live live, int source) =>
+        Target(source) is { Def.NapWhenComplete: { } nap } && nap.Target == live.Def.Number
+            ? nap.Seconds
+            : live.Def.NapDuration ?? 0f;
 
     private void BuildRows()
     {
@@ -804,6 +985,7 @@ public sealed class ObjectiveGraph
         {
             hide.Complete = true;
             hide.State = ObjectiveState.Retired;
+            Note(hide, ObjectiveTransitionKind.Hidden, 0f);
         }
     }
 
@@ -928,13 +1110,11 @@ public sealed class ObjectiveGraph
 
         if (AllFlaggedComplete(won: true))
         {
-            PlayIfNamed(_script.ObjectivesWonSound);
-            End(MissionOutcome.Won, WonWrapUpS);
+            End(MissionOutcome.Won, WonWrapUpS, objectivesSound: true);
         }
         else if (AllFlaggedComplete(won: false))
         {
-            PlayIfNamed(_script.ObjectivesLostSound);
-            End(MissionOutcome.Lost, 3f);
+            End(MissionOutcome.Lost, 3f, objectivesSound: true);
         }
     }
 
@@ -966,16 +1146,22 @@ public sealed class ObjectiveGraph
         }
     }
 
-    private void End(MissionOutcome outcome, float wrapUp)
+    private void End(MissionOutcome outcome, float wrapUp, bool objectivesSound = false)
     {
         if (_pending != MissionOutcome.None)
         {
             return;
         }
 
+        if (objectivesSound)
+        {
+            PlayIfNamed(outcome == MissionOutcome.Won ? _script.ObjectivesWonSound : _script.ObjectivesLostSound);
+        }
+
         _pending = outcome;
         _wrapUp = wrapUp;
         PlayIfNamed(outcome == MissionOutcome.Won ? _script.MissionWonSound : _script.MissionLostSound);
+        EndingDecided?.Invoke(new MissionEnding(outcome, objectivesSound));
     }
 
     private void StepWrapUp(float dt)

@@ -94,6 +94,48 @@ public enum NetMatchEnd : byte
     NobodyLeft = 4,
 }
 
+/// <summary>What a <see cref="DirectorTransitionMessage"/>'s code means: one event of the host's
+/// objectives graph. The seven transitions carry the objective number in the id's low 16 bits
+/// and the completing objective that caused it in the high 16. The rest are laid out on their own
+/// members. The id layout is <c>docs/org/multiplayer-messages.md</c>'s.</summary>
+public enum NetDirectorEvent : ushort
+{
+    /// <summary>An objective woke.</summary>
+    Woke = 1,
+
+    /// <summary>An objective went to sleep on a timer.</summary>
+    Napped = 2,
+
+    /// <summary>An objective's conditions read true and its completion actions ran.</summary>
+    Completed = 3,
+
+    /// <summary>An objective was killed by another's completion.</summary>
+    Killed = 4,
+
+    /// <summary>An objective was slept permanently by another's completion.</summary>
+    Slept = 5,
+
+    /// <summary>An objective's own deadline retired it.</summary>
+    Expired = 6,
+
+    /// <summary>An objective was marked complete by another's <c>HIDE_OBJ</c>.</summary>
+    Hidden = 7,
+
+    /// <summary>A completion's chain has run and its display row is marked. The id is the
+    /// objective number alone.</summary>
+    Settled = 8,
+
+    /// <summary>The mission countdown ran out. The id is zero.</summary>
+    TimerExpired = 9,
+
+    /// <summary>A win or loss was decided. The id's low byte is the outcome, and bit 8 says the
+    /// objectives sound played ahead of the mission sound.</summary>
+    Ending = 10,
+
+    /// <summary>The wrap-up ran out and the mission is over. The id is the outcome.</summary>
+    Ended = 11,
+}
+
 /// <summary>
 /// What every message implements: a serialiser onto a caller's buffer and a deserialiser off
 /// one. Its type word and reliability class are static abstracts, so a sender reads the class
@@ -576,9 +618,9 @@ public readonly record struct MatchStateMessage(
 }
 
 /// <summary>
-/// One mission-director transition, as a code and an id. Reliable, and deliberately opaque here.
-/// The vocabulary fixes the envelope so the co-op work can settle what a code means without
-/// touching the wire format again.</summary>
+/// One mission-director event, as a code and an id. Reliable, and opaque to the envelope: the code
+/// is a <see cref="NetDirectorEvent"/>, whose members say how the id is laid out. The host is the
+/// only sender.</summary>
 public readonly record struct DirectorTransitionMessage(ushort Code, int Id)
     : INetMessage<DirectorTransitionMessage>
 {

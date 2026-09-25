@@ -181,7 +181,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 ### Wave C, campaign co-op
 
-21. ☐ The host-owned mission director: objective graph transitions, cutscene codes and wingman spawns as events
+21. ☑ The host-owned mission director: objective graph transitions, cutscene codes and wingman spawns as events
 22. ☐ Host-owned AI and world: aircraft, zeppelins, turrets, generators, vehicles and destructibles as spawn, state and death events
 23. ☐ Guests as the human field: `CampaignHumanField` and the objective rules see remote humans, the scripted P1 stays the host
 24. ☐ The co-op session flow: cabin and briefing on the host, guests joining into the mission, mission end and debrief on every peer
@@ -1009,7 +1009,87 @@ address instead.
 
 # Wave C, campaign co-op
 
-## C21 ☐ The host-owned mission director: objective graph transitions, cutscene codes and wingman spawns as events
+## C21 ☑ The host-owned mission director: objective graph transitions, cutscene codes and wingman spawns as events
+
+**Landed.** The host's objectives graph runs its own rules and a guest's follows it event by event,
+over the existing `0x42` `DirectorTransitionMessage` (no new message id; the next free id is still
+`0x45`).
+`CSVM/src/Session/ObjectiveGraph.cs` gains the follow mode, modelled on `VersusMatch.Replicate`:
+`Replicate()` sets `Replicated`, after which `Step` only advances `Elapsed` and counts the
+countdown's display down (pinned at zero), and the graph changes only through `ApplyTransition`,
+`ApplySettled`, `ApplyTimerExpired`, `ApplyEnding` and `ApplyEnded`, each running the same
+bookkeeping the host's transition ran (wake actions, completion actions and chaining effects, nap
+length read off the same script, sleep animation, display rows). `NotifyPlayerLost`,
+`NotifyDockingComplete`, `NotifyDangerZoneCompleted` and `Wake` are refused on a replicated graph.
+Two host-side additions make the event stream complete: `HIDE_OBJ` now raises a `Hidden`
+transition (it retired an objective silently, so a guest would later complete it by its own
+rule), and the ending sounds moved into `End`, which raises the new `EndingDecided` with a
+`MissionEnding(Outcome, ObjectivesSound)`.
+`CSVM/src/Net/NetMessages.cs` adds `NetDirectorEvent`, the eleven codes and their id layouts.
+`CSVM/src/Session/NetDirectorLink.cs` is new: `Publish(net, graph)` subscribes to the host's
+`Transitioned`, `Completed` (sent as `Settled`, after the chain), `TimerExpired`, `EndingDecided`
+and `MissionEnded` and broadcasts each on `NetChannels.Events`; `Follow(net, graph)` replicates the
+graph and registers the one handler that replays arrivals.
+`CSVM/src/Session/CampaignDirector.cs`: a replicated graph's end builds the `Result` and the
+leaving hold but writes no profile, persist log, photograph or award.
+`CSVM/src/Session/GameSession.cs`: `WireNetDirector` runs after the callback host is bound and,
+only when a net session, net seats and a campaign graph all exist, publishes on the host and
+follows on a guest. It sends nothing at join, so a `--vs` guest still leaves `0x42` unclaimed.
+Tests: `CSVM.Tests/NetDirectorLinkTests.cs` (5 cases, Quick) and the engine suite
+`net-director-follow` in `CSVM/src/Testing/NetDirectorSuites.cs` (weight 12.0).
+Docs: `docs/org/multiplayer-messages.md` "The mission director" holds the code and id table and
+the replay and derive mapping; the Session and Net architecture entries and one index bullet.
+
+**The mapping.** Replayed by the guest, presentation: `WAKE_ANIM`/`SLEEP_ANIM`, every sound group
+(wake, completed, class complete, objectives and mission won or lost), `STOP_QUEUED_SOUNDS`, target
+lists, help labels, the countdown's reset, adjust and end actions, and display rows. Derived by the
+guest: every presentation cutscene code (20, 2, 11, 1, 10, 913/914, 666/667, 951, 86), which its own
+animation runtime raises from the definitions its replayed `WAKE_ANIM` or the shared start list
+started; sending them as well would apply each twice. Refused on the guest: code 13 (the host's
+code 13 decides the ending, and codes 10 and 11 carry it), the condition hooks and a direct wake.
+Host-owned world, **C22 marker**: `WAKEUP_ENEMIES`, `WAKEUP_TURRETS`, `WAKEUP_ZEP_TURRETS`,
+`WAKEUP_GENERATOR`, `WARP_VEHICLE` (its random draw diverges), `SET_AI_TEAM`, `SET_AI_NET`,
+`SET_AI_ATTACK_RADIUS`, `COMPLETED_ZEPCANNONS`, `COMPLETED_STOPPOINT` and `START_TAXI` are replayed
+through the guest's own world seam as an interim local simulation, and callback codes 801 to 803
+(Black Hat launch), 968 (wingman removed) and 800 (generator credit) still run locally on each
+end. **Wingman spawns are C22's:** `wingman_1` is a roster block spawned from the profile at build,
+not a director event, so nothing here sends it. **C23 marker**: 965 to 967 (the airframe swap)
+belong to the episode's owner, and definitions started by a player's position (landing approach
+rows, `PlayerRange` conditions, the ladder switch) are not graph events. **C24 marker**: the
+guest's own profile record, and a late joiner, who has missed every earlier event.
+
+**Verified.** <pending orchestrator run> On the agent's fork: `dotnet build CSVM/CSVM.sln` clean
+with zero warnings; 720 units passed under the NetDirectorLink, ObjectiveGraph, Campaign and Net
+filters; `net-director-follow`, `net-two-session`, `campaign-cutscene-ownership`,
+`campaign-objectives` and `campaign-cm09-docking` pass together with engine errors clean;
+`RunTests -Quick` green (534 units, 13 suites). No golden was re-pinned: nothing that draws changed.
+
+**Owed.**
+- The goal's "at the same moment on the shared clock" is not what landed: a guest applies each
+  event on arrival, one link latency after the host, and its cutscenes start that much later. A
+  stamped, clock-scheduled apply is possible on top of this and is the user's call.
+- No launch path yet runs a campaign mission with a net seat, so `WireNetDirector` is exercised
+  only by the suites, which drive two directors directly. The co-op campaign flow is C24's.
+- Whether the interim local replay of the world directives (above) is acceptable until C22 lands.
+
+**Model recommendation.** Opus. The work is the graph's bookkeeping order (a completion's chain,
+nap lengths from a source, the silent `HIDE_OBJ`, where the ending sounds play), where a missed
+side effect shows only as a guest whose state drifts later.
+
+**Verify.** `net-director-follow` in `CSVM/src/Testing/NetDirectorSuites.cs`, over C5/M02: two
+built worlds, two `CampaignDirector`s and two `CutsceneController`s joined by a 30 ms, 25 per
+cent lossy loopback. C5/M02 was chosen because it opens with a timer-driven completion carrying a
+world action and ends on an objective-started cutscene whose callee raises codes 11, 2 and 13, so
+one short run covers a transition, a world directive and the cutscene codes. The guest alone for
+3 s raises no transition and refuses the docking code, against the control of the host running
+three over the same time by its own rules; then the host wakes the ending, and the guest replays
+the host's transitions in order and in state per objective and row, its own playback raises the
+host's code sequence (13 included) with no code sent, only the host's graph accepts code 13, both
+end Won with the same ending sounds, both directors hold the result, and only the host's profile
+records the attempt. Off-engine: `CSVM.Tests/NetDirectorLinkTests.cs`, including C1/M04's real
+chain replayed in state and in world actions with zero condition queries on the guest.
+
+**Original approach (kept for reference).**
 
 **Goal.** A guest sees every objective transition, cutscene, letterbox, radio line and wingman
 spawn the host's `CampaignDirector` produces, at the same moment on the shared clock.
@@ -1024,12 +1104,6 @@ replicated state, is unmapped.
 code becomes a reliable event a guest's director applies in "follow" mode: it does not evaluate
 rules, it replays transitions. Cutscenes then play locally on the guest from the code, as they do
 today.
-
-**Model recommendation.** <TODO: not settled in the scoping session>
-
-**Verify.** <TODO: a harness suite running one campaign mission with a scripted host flight and
-asserting the guest's objective state and cutscene codes match the host's log; the mission to use is
-unchosen>
 
 **⚠ Traps.** The scripted `player` token, roster leaders and anchored net trailers are a separate
 P1 identity (`CampaignHumanField`'s entry); the host is P1 and a guest never is.
