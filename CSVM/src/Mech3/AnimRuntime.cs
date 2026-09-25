@@ -227,9 +227,14 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
     public Action<string>? DestructibleKilled;
 
     /// <summary>Raised when a spend moves a destructible to a new damage stage or kills it, after
-    /// the stage and the death have run. A network host sends these, and the chip hits between
-    /// stages change nothing another machine draws.</summary>
+    /// the stage and the death have run. A network host sends each one at once.</summary>
     public Action<DestructibleRegistry.Instance>? DestructibleDamaged;
+
+    /// <summary>Raised when a spend lowers a destructible's health without moving its stage or
+    /// killing it. A network host sends one sample per pool per tick. The target bar, a hull's injure
+    /// ladder and <c>ANIM_HEALTH</c> all read health between stages.
+    /// </summary>
+    public Action<DestructibleRegistry.Instance>? DestructibleChipped;
 
     /// <summary>While set, <see cref="DamageAt"/> still reports a hit as landed but spends nothing.
     /// A network guest's world runs this way, and its pools move only through
@@ -3871,6 +3876,8 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
         }
         if (destroyed || inst.DamageStage != stageBefore)
             DestructibleDamaged?.Invoke(inst);
+        else if (inst.Health < before)
+            DestructibleChipped?.Invoke(inst);
     }
 
     // Runs a destructible's death the instant its HP reaches zero.

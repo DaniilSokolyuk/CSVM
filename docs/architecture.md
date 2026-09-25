@@ -548,7 +548,7 @@ clusters they delegate to.
 - `src/Session/CampaignDirector.cs`, the engine side of a campaign mission: the graph armed against the built world, the roster spawned and launched off its hooks, the attempt recorded.
 - `src/Session/NetDirectorLink.cs`, the objectives graph over the wire: the host publishes every event its graph raises, stamped with its clock, and a guest's replicated graph replays them in order.
 - `src/Session/NetDirectorCatchUp.cs`, a guest's catch-up on a late director event: applies it, then advances the timers, cutscenes and sounds it started by how late it arrived.
-- `src/Session/NetWorldLink.cs`, the host-owned world over the wire: AI aircraft as launch, pose, fire, hit, presence and death messages, zeppelin and surface-vehicle paths as periodic samples, and destructible stage changes, deaths and warp picks as events.
+- `src/Session/NetWorldLink.cs`, the host-owned world over the wire: AI aircraft as launch, pose, fire, hit, presence and death messages, zeppelin and surface-vehicle paths as periodic samples, destructible health, stage changes and deaths as events, and warp picks.
 - `src/Session/CampaignDangerZones.cs`, a campaign mission's own danger zones: the `dzpathN` gates its script arms, tracked per human by the stunt gate rule, each carrying its mission's objective number.
 - `src/Session/CampaignSnapshot.cs`, the Danger Zone photograph a campaign mission writes into the flying profile's directory under the scrapbook row's own `Snap_<mission>_<objective>` name.
 - `src/Session/AirframeSwap.cs`, the three `CALLBACK` codes that hand the player a different airframe in mid mission, and the def and node each names.

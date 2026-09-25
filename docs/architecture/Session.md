@@ -227,8 +227,8 @@ claims its own seat's rounds. `StepSends` sends every host AI on the seat cadenc
 and hull path each half second. `FollowZeppelins` puts a guest's zeppelins on those samples by
 placement index, `FollowVehicles` its hulls by spawn index and `NameKey` hash plus the host's
 `WARP_VEHICLE` picks, and `FollowGenerators` has it build the host's generator launches at the
-host's ordinals instead of its own. Pools go out through `AnimRuntime.DestructibleDamaged` and apply
-through `ApplyReplicatedHealth`; `NetWorldSeats` holds its seat lookups. Layouts: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
+host's ordinals. Pools go out off `DestructibleDamaged` at once and `DestructibleChipped` once per
+seat tick, and apply through `ApplyReplicatedHealth`. Layouts: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
 
 ## src/Session/CampaignProgression.cs
 The campaign's progression rules over a profile: recording one mission attempt with the original's

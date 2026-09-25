@@ -368,13 +368,22 @@ AI state is plain unreliable rather than sequenced because every AI shares one c
 transport sequence would drop one AI's sample against another's; each AI's own pose buffer drops a
 stale one by the per-AI sequence. It rides the seat stream's cadence. The world event codes are
 `NetWorldEvent`: 1 an AI downed (the argument is the killer's seat or -1), 2 an AI's hull fraction,
-3 a destructible pool's health after a stage change or a kill (the subject is its registration
+3 a destructible pool's health (the subject is its registration
 index, the argument a hash of its definition and anchor names, which the guest checks before
 applying and searches by when the index has shifted), 4 a `WARP_VEHICLE` pick (the subject is the
 drawn waypoint index, the argument the hash of the warped vehicle's name), 5 an AI's presence (the argument is 1 for in
 play and 0 for deactivated). The host sends 5 whenever an AI's `Inert` changes outside a cutscene
 park, which covers a script wake, a Black Hat launch and a wingman taken out. A cutscene park (913)
 is not sent, because each end's own cutscene parks its own copy.
+
+Code 3 goes out at once for a stage change or a kill. A hit that lowers a pool without either is
+held and sent on the seat stream's next tick, one sample per pool however many hits landed, because
+three guest-visible rules read the health between stages: the target bar's fraction
+(`Flight/TargetPool.cs`), a surface hull's injure ladder (`Session/SurfaceVehicle.cs`), and every
+`ANIM_HEALTH` condition. A sample waiting when a stage change goes out is dropped, since the stage
+event carries the same health. Chip samples ride the reliable class with the stage events: a guest
+only ever lowers a pool, so an old sample arriving late changes nothing, and a lost last one would
+leave the guest's copy high until the next hit.
 
 A hit on an AI is decided once: by the host for its own rounds and for every round no seat fired,
 and by a guest for its own seat's rounds, which it claims with `0x47`. A world pool is spent only

@@ -474,7 +474,7 @@ in cell space and the two axes run opposite ways; both are in [../formats/interp
 The animation engine: bootstrap passes (mission setup, anchored RESET_STATEs, ON_STARTUP, startanims, a safety net), then dispatch-table
 event playback; an unhandled event kind is counted, never fatal. It owns the live definition instances and their condition evaluation, the
 destructible-damage entries (`DamageAt`, which also raises `DestructibleKilled` on a healthy-role
-kill, `ApplyDamageStages`, `RunDeathSequence`, `CarryState`; a host publishes each stage change and kill off `DestructibleDamaged`, and a guest's runtime is `DamageReplicated`, spending only through `ApplyReplicatedHealth`), the world-effects runtime (`PlayEffectAt` over a hidden template stage), the emitter prewarm (`PrewarmEmitters` in one call, `PrewarmSlice` resumable for a caller
+kill, `ApplyDamageStages`, `RunDeathSequence`, `CarryState`; a host publishes each stage change and kill off `DestructibleDamaged` and the health between stages off `DestructibleChipped`, and a guest's runtime is `DamageReplicated`, spending only through `ApplyReplicatedHealth`), the world-effects runtime (`PlayEffectAt` over a hidden template stage), the emitter prewarm (`PrewarmEmitters` in one call, `PrewarmSlice` resumable for a caller
 with a frame budget, which never splits one def), the range-deferred start sweep
 and the vehicle/library-root index, and hands every construction site a sealed `TemplateStage`. Its
 range gates read the players through `RangePositions`: the last pose they flew, while

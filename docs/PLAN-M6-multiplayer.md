@@ -199,7 +199,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 41. ☑ Host-owned AI spawns: generator launches, Black Hat launches and `WAKEUP_*` as spawn events carrying the host's admission ordinal
 42. ☑ Zeppelin paths from the host: the path position as a periodic state message, in the original's `0x1e` shape
 43. ☑ Surface vehicles from the host: patrols and `WARP_VEHICLE` placed by the host, not replayed from a diverging draw
-44. ☐ Destructible chip damage: a pool's health between stages mirrored on every guest
+44. ☑ Destructible chip damage: a pool's health between stages mirrored on every guest
 
 ## Dependency and parallelism notes
 
@@ -1232,8 +1232,8 @@ phases are C21's and B14's.
   replays the path locally from the shared seed and clock.
 - Surface-vehicle patrols and `WARP_VEHICLE` (its random draw diverges): replayed locally.
 - AI voice: a replicated AI's mode-driven call-outs are silent on a guest.
-- Destructible chip damage: only stage changes and deaths are sent, so a pool's health between
-  stages is not mirrored.
+- Destructible chip damage: closed by E44 (health between stages as code 3 samples, coalesced per
+  pool on the seat cadence).
 
 **Verified.** The complete battery on the merged tree (C22 over C21, D31 and Wave B): build clean,
 4906 units passed with 2 skipped, 389 of 389 engine suites passed with engine errors clean in all
@@ -1914,7 +1914,50 @@ taken from the host, or needs state samples like an AI aircraft.
 **⚠ Traps.** "Same seed" is not "same world" once any draw depends on world state; decide per vehicle
 path, as C22 did per phase.
 
-## E44 ☐ Destructible chip damage: a pool's health between stages mirrored on every guest
+## E44 ☑ Destructible chip damage: a pool's health between stages mirrored on every guest
+
+**Landed.** A host hit that lowers a pool without a stage change or a kill now reaches every guest
+as a `0x48` code 3 sample, the same event a stage change already used, so no new message id or
+world event code was needed. Three guest-visible rules read the health between stages, so the item
+was not closable by proof: the target bar's fraction (`Flight/TargetPool.cs`), a surface hull's
+injure ladder, which plays its anims at health fractions independent of the stages
+(`Session/SurfaceVehicle.cs` `StepInjureLadder`), and every `ANIM_HEALTH` condition
+(`AnimRuntime.HealthOf`). By file:
+- `CSVM/src/Mech3/AnimRuntime.cs`: `DestructibleChipped`, raised by `SpendHealth` when a spend
+  lowers health without moving the stage or killing; `DestructibleDamaged` is unchanged.
+- `CSVM/src/Session/NetWorldLink.cs`: the host marks each chipped pool once, and `StepSends`
+  flushes them on the seat stream's cadence (`AircraftStateCadence.SendStepInterval`, three steps),
+  one sample per pool however many hits landed. A stage change or kill sends at once and drops the
+  pool's waiting chip, since it carries the same health. `ChipSamplesSent` counts them. A guest
+  applies the sample through the existing `ApplyReplicatedHealth`, never `DamageAt`, so it cannot
+  spend twice.
+- `CSVM/src/Testing/NetWorldSuites.cs`: `net-ai-world` gains a chip reading.
+- Docs: `docs/org/multiplayer-messages.md` (code 3's meaning and a paragraph on the chip samples),
+  the Mech3 and Session architecture entries and the `NetWorldLink` index bullet.
+
+**Verified.** The complete battery on the merged tree (E44 over E41, E43, E42 and everything before
+it): build clean, 4947 units passed with 0 failed and 2 skipped, 395 engine suites passed with engine
+errors clean, and 19 goldens hash-identical. `net-ai-world` passes inside it with its chip reading.
+
+**Approach.** A health sample per damaged pool, coalesced per seat-cadence tick, on the reliable
+class. Reliable because a guest only lowers a pool: an old sample arriving late changes nothing, and
+a lost last sample would leave the guest's copy high until the next hit. The cost is 16 bytes per
+chipped pool per tick at most, 20 Hz only while that pool is under fire.
+
+**Model recommendation.** Medium. The spend path and the event code already existed; the work was
+the reader census and the coalescing.
+
+**Verify.** `.\RunTests.ps1 -Suite net-ai-world -SkipUnits -SkipGoldens`: after the kill reading, the
+host lands four hits of 0.5 per cent of the spared pool within one step. Checks: the host's stage is
+unchanged and its health lowered; the able-to-fail control that the guest's copy still reads full
+before any step runs; after 30 steps over the 30 ms, 25 per cent lossy loopback, the guest's health
+equals the host's with the same stage; and exactly one chip sample was sent for the four hits.
+
+**Owed.**
+- The bandwidth of chip samples under a real firefight is unmeasured; D31's soaks can measure it if
+  a busy mission shows it.
+
+**Original approach (kept for reference).**
 
 **Goal.** A destructible's health between its damage stages is the same on every peer, so a guest's
 targeting and hit feedback read the host's value.
@@ -1922,13 +1965,11 @@ targeting and hit feedback read the host's value.
 **Evidence (confidence: traced).** C22 sends only stage changes and deaths (`0x48` world event,
 `NetWorldEvent` 3), so a pool's health between stages is not mirrored.
 
-**Approach.** <TODO: a health sample per damaged pool, coalesced per tick, against the bandwidth D31
-measures; or proof that no guest-visible rule reads chip health, which closes the item>
+**Approach.** A health sample per damaged pool, coalesced per tick, against the bandwidth D31
+measures; or proof that no guest-visible rule reads chip health, which closes the item.
 
-**Model recommendation.** <TODO>
-
-**Verify.** <TODO: a harness assertion that a pool's health on the guest equals the host's after a
-burst that does not cross a stage>
+**Verify.** A harness assertion that a pool's health on the guest equals the host's after a burst
+that does not cross a stage.
 
 **⚠ Traps.** `ApplyReplicatedHealth` is a guest's only spend; a chip sample must not go through
 `DamageAt`, or a guest spends twice.

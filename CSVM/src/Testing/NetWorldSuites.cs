@@ -43,6 +43,12 @@ internal static class NetWorldSuites
     // anything, in metres. Each end places --ai off its own pane's seat.
     private const float PlacementGap = 50f;
 
+    // The chip burst: four hits of half a per cent each, within one step. Two per cent of a pool
+    // is meant to cross no damage stage, and the stage check in the reading fails if it does.
+    private const int ChipHits = 4;
+
+    private const float ChipFraction = 0.005f;
+
     private static readonly string[] Airframes = { "player_pfighter", "player_fbrand" };
 
     [Suite("net-ai-world",
@@ -50,7 +56,8 @@ internal static class NetWorldSuites
         + "admit the same AI in the same order, the guest's are replicated airframes that trace the "
         + "host's paths rather than their own placement, the host's AI gunfire is spawned on the "
         + "guest, a guest's hit on an AI spends nothing there and lands on the host, a host AI "
-        + "death reaches the guest, and a destructible dies on the guest only when the host kills it")]
+        + "death reaches the guest, a destructible dies on the guest only when the host kills it, and "
+        + "a host burst that crosses no stage reaches the guest's pool as one sample")]
     internal static void TheHostOwnsTheWorld(TestContext ctx)
     {
         ctx.RequireData(ctx.PlanesGamezPath, $"planes gamez");
@@ -275,6 +282,37 @@ internal static class NetWorldSuites
             $"and the guest's pool dies from the host's event ({follower.Status}, HP {follower.Health:0})");
         ctx.Check(spared.Status != DestructibleRegistry.State.Destroyed && sparedOnHost.Status != DestructibleRegistry.State.Destroyed,
             $"while the pool nobody killed on the host stands on both ends ({sparedOnHost.Status} on the host, {spared.Status} on the guest)");
+        Chips(ctx, host, guest, sparedOnHost, spared);
+    }
+
+    // A burst on the host that crosses no stage still reaches the guest's pool, as one sample.
+    private static void Chips(TestContext ctx, GameSession host, GameSession guest,
+        DestructibleRegistry.Instance owned, DestructibleRegistry.Instance copy)
+    {
+        var mineWorld = host.NetWorld!.World!;
+        int stage = owned.DamageStage;
+        int sent = host.NetWorld.ChipSamplesSent;
+        float chip = owned.MaxHealth * ChipFraction;
+        for (int i = 0; i < ChipHits; i++)
+        {
+            mineWorld.DamageAt(owned.DamageNode, chip);
+        }
+
+        ctx.Check(owned.DamageStage == stage && owned.Status != DestructibleRegistry.State.Destroyed
+                  && owned.Health < owned.MaxHealth,
+            $"the host's burst of {ChipHits} hits lowers '{owned.Anchor.Name}' without a stage change (HP {owned.Health:0.##} of {owned.MaxHealth:0.##}, stage {stage} to {owned.DamageStage})");
+        // ABLE-TO-FAIL CONTROL. The guest's pool reads full until the sample arrives. The equality
+        // below is then a value the wire moved, not one the two ends shared already.
+        ctx.Check(!Mathf.IsEqualApprox(copy.Health, owned.Health),
+            $"ABLE-TO-FAIL CONTROL: before the sample the guest's pool reads {copy.Health:0.##} against the host's {owned.Health:0.##}");
+        Lockstep(SettleSteps, host, guest);
+        int samples = host.NetWorld.ChipSamplesSent - sent;
+        ctx.Note($"chip damage: {samples} sample(s) for {ChipHits} hits, guest HP {copy.Health:0.##} against the host's {owned.Health:0.##}");
+        ctx.Check(Mathf.IsEqualApprox(copy.Health, owned.Health) && copy.DamageStage == owned.DamageStage
+                  && copy.Status != DestructibleRegistry.State.Destroyed,
+            $"the guest's pool takes the host's health between stages ({copy.Health:0.##} against {owned.Health:0.##}, stage {copy.DamageStage} against {owned.DamageStage})");
+        ctx.Check(samples == 1,
+            $"and the burst crossed the wire as one coalesced sample ({samples})");
     }
 
     private static bool Standing(DestructibleRegistry.Instance inst) =>

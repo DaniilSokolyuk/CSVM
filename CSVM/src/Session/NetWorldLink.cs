@@ -36,6 +36,7 @@ internal sealed class NetWorldLink
     private readonly List<ushort> _sequence = new();
     private readonly List<ushort> _zeppelinSequence = new();
     private readonly List<ushort> _surfaceSequence = new();
+    private readonly List<DestructibleRegistry.Instance> _chipped = new();
     private ZeppelinRuntime? _zeppelins;
     private SurfaceVehicleRuntime? _surface;
     private CampaignDirector? _director;
@@ -58,6 +59,7 @@ internal sealed class NetWorldLink
             if (world != null)
             {
                 world.DestructibleDamaged += SendDestructible;
+                world.DestructibleChipped += MarkChipped;
             }
 
             return;
@@ -96,6 +98,10 @@ internal sealed class NetWorldLink
 
     /// <summary>Surface-vehicle samples a guest has taken into a hull.</summary>
     internal int SurfaceSamplesTaken { get; private set; }
+
+    /// <summary>Pool health samples between stages the host has put on the wire, at most one per
+    /// chipped pool per send.</summary>
+    internal int ChipSamplesSent { get; private set; }
 
     /// <summary>Generator aircraft launches the host has put on the wire.</summary>
     internal int SpawnsSent { get; private set; }
@@ -249,6 +255,7 @@ internal sealed class NetWorldLink
             return;
         }
 
+        SendChipped();
         for (int i = 0; i < _admitted.Count; i++)
         {
             var ai = _admitted[i];
@@ -442,22 +449,54 @@ internal sealed class NetWorldLink
         SpawnsTaken++;
     }
 
+    // A stage change or a kill goes out at once and carries the health. A chip still waiting for
+    // the next send would only repeat it.
     private void SendDestructible(DestructibleRegistry.Instance inst)
+    {
+        _chipped.Remove(inst);
+        BroadcastPool(inst);
+    }
+
+    private void MarkChipped(DestructibleRegistry.Instance inst)
+    {
+        if (!_chipped.Contains(inst))
+        {
+            _chipped.Add(inst);
+        }
+    }
+
+    // Reliable, as a stage change is. A guest only ever lowers a pool, so a lost last sample would
+    // leave its copy high until the next hit.
+    private void SendChipped()
+    {
+        foreach (var inst in _chipped)
+        {
+            if (!inst.Dormant && inst.Status != DestructibleRegistry.State.Destroyed && BroadcastPool(inst))
+            {
+                ChipSamplesSent++;
+            }
+        }
+
+        _chipped.Clear();
+    }
+
+    private bool BroadcastPool(DestructibleRegistry.Instance inst)
     {
         if (_world == null)
         {
-            return;
+            return false;
         }
 
         int index = IndexOf(_world.Destructibles.All, inst);
         if (index is < 0 or > ushort.MaxValue)
         {
-            return;
+            return false;
         }
 
         _net.Broadcast(
             new WorldEventMessage((ushort)NetWorldEvent.DestructibleHealth, (ushort)index, PoolKey(inst), inst.Health),
             NetChannels.Events);
+        return true;
     }
 
     // Every hull that moves, by placement index. A hull out of the world, held or dead is skipped
