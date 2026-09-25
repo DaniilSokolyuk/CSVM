@@ -255,7 +255,8 @@ These leave the milestone's scope and are filed as `backlog.md` items in the clo
 id minted through `New-ItemId.ps1`:
 - Capture the Flag, with team play (Restrict Number of Teams, Create Team), which it needs.
 - Zeppelin vs.
-- Guests' own custom planes, together with the lobby's Allow Custom Planes and Outlaw Components.
+- Custom planes over the network: a co-op guest flying the host's custom designs or its own, and the
+  lobby's Allow Custom Planes and Outlaw Components.
 
 GitHub issue #24 already holds the lobby's Boot and an optional host password.
 
@@ -1459,9 +1460,9 @@ whose return goes to the cabin.
   the host's navigation into the same briefing and flight check. Plane construction, the memento
   and previous missions stay host-only. The host sends its screen and mission on each change (a
   reliable message, the next free id at the time).
-- **Loadout.** A guest picks plane and ammo from the host's hangar (the host's unlocked planes and
-  custom designs) with the host's ammo choices; the host sends the pick list and a guest answers
-  with an index into it. No custom-plane definition crosses the network (see the ⚠ Open point).
+- **Loadout.** A guest picks plane and ammo from the host's hangar (the host's unlocked stock
+  planes) with the host's ammo choices; the host sends the pick list and a guest answers with an
+  index into it. No plane definition crosses the network (see "Stock planes only").
 - **Ready and Launch.** A guest presses Ready and can take it back until launch. The host's Launch
   is greyed until every connected guest is Ready; the host has no override. The host backing out of
   the briefing, or changing mission, clears every Ready and the guests follow. A guest who
@@ -1486,13 +1487,11 @@ The Built-in presentation keeps C25's boards; the rules above live in presentati
 (`CampaignFeature`, `NetPlayFeature`) so the Built-in boards can follow them later, but this item
 draws only the Original screens.
 
-**⚠ Open: flying the host's custom designs.** A guest simulates its own aeroplane (Decision 1), so
-its machine must build the picked airframe, and every peer must build each guest's copy. A stock
-plane is an index both ends resolve alike; a custom design exists only in the host's save. "Custom
-designs from the host's hangar" and "no custom-plane definitions cross the network" cannot both
-hold. Settle with the user before coding: either the guest's list is the host's unlocked stock
-planes only, or the host sends the resolved build of the one picked design (which is a definition
-crossing).
+**Stock planes only.** A guest simulates its own aeroplane (Decision 1), so its machine must build
+the picked airframe, and every peer must build each guest's copy. A stock plane is an index both
+ends resolve alike; a custom design exists only in the host's save. A guest's list is therefore the
+host's unlocked stock planes. Flying a custom design as a guest, the host's or the guest's own, is a
+refinement filed at the milestone's landing, since it needs a plane build to cross the network.
 
 **Model recommendation.** Opus. It crosses the Original campaign screens, the launcher, the
 session's profile-free guest path and a new message family, and every screen is a look judgement.
