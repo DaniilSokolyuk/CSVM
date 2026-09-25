@@ -94,11 +94,12 @@ budget, `ReliabilityOf`, `IsOriginalId`, and `TryReadHeader`, the one call a rec
 before it knows which deserialiser to run. Read `NetMessageWriter.cs` next.
 
 ## src/Net/NetWorldMessages.cs
-The host-owned world's four messages, beside the vocabulary rather than in it: `AiStateMessage`
+The host-owned world's messages, beside the vocabulary rather than in it: `AiStateMessage`
 (an AI's pose by admission ordinal, plain unreliable because every AI shares one channel, with
 `AsAircraftState` for the pose buffer), `AiFireMessage`, `AiHitMessage` (a guest's claim on an AI,
-to the host alone) and `WorldEventMessage`, whose `NetWorldEvent` code says what its subject,
-argument and value carry. Their ids and the phase mapping they serve are
+to the host alone), `ZeppelinStateMessage` (one zeppelin of the original's `0x1e`, by placement
+index) and `WorldEventMessage`, whose `NetWorldEvent` code says what its subject, argument and
+value carry. Their ids and the phase mapping they serve are
 [../org/multiplayer-messages.md](../org/multiplayer-messages.md)'s.
 
 ## src/Net/NetMessageWriter.cs

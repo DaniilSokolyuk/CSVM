@@ -66,6 +66,10 @@ public enum NetMessageType : ushort
     /// <summary>What a host tells a peer about the session it is holding open before any flight:
     /// its kind, its mission and its player count.</summary>
     SessionAdvert = 0x004A,
+
+    /// <summary>One zeppelin's path position as the host has it: where it is, its facing and its
+    /// speed.</summary>
+    ZeppelinState = 0x004B,
 }
 
 /// <summary>What kind of session a host holds open, the word a join board names it by.</summary>
@@ -1023,6 +1027,7 @@ public static class NetMessage
         NetMessageType.WorldEvent => WorldEventMessage.Reliability,
         NetMessageType.ClockPing => ClockPingMessage.Reliability,
         NetMessageType.SessionAdvert => SessionAdvertMessage.Reliability,
+        NetMessageType.ZeppelinState => ZeppelinStateMessage.Reliability,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "no such message type"),
     };
 

@@ -193,6 +193,59 @@ public readonly record struct AiHitMessage(
 }
 
 /// <summary>
+/// One zeppelin's path position as the host flies it, the original's <c>0x1e</c> record for one
+/// hull. It carries position, speed, pitch and yaw in that order, on the original's half second.
+/// A zeppelin is named by its placement index.
+/// Plain unreliable with a per-zeppelin sequence, for the reason <see cref="AiStateMessage"/> is.
+/// The original's part-state word and cannon-shot tail are not carried.</summary>
+public readonly record struct ZeppelinStateMessage(
+    ushort Zeppelin, ushort Sequence, Vector3 Position, float Speed, float PitchRad, float YawRad)
+    : INetMessage<ZeppelinStateMessage>
+{
+    /// <summary>The fixed width of the message, header included.</summary>
+    public const int Size = 32;
+
+    /// <inheritdoc/>
+    public static NetMessageType Type => NetMessageType.ZeppelinState;
+
+    /// <inheritdoc/>
+    public static NetReliability Reliability => NetReliability.Unreliable;
+
+    /// <inheritdoc/>
+    public static bool TryRead(ReadOnlySpan<byte> from, out ZeppelinStateMessage message)
+    {
+        message = default;
+        var reader = new NetMessageReader(from);
+        if (!reader.Is(Size) || reader.Type != Type)
+            return false;
+
+        ushort zeppelin = reader.ReadUInt16();
+        ushort sequence = reader.ReadUInt16();
+        var position = new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+        float speed = reader.ReadSingle();
+        float pitch = reader.ReadSingle();
+        float yaw = reader.ReadSingle();
+        message = new ZeppelinStateMessage(zeppelin, sequence, position, speed, pitch, yaw);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public int Write(Span<byte> into)
+    {
+        var writer = new NetMessageWriter(into, Type);
+        writer.WriteUInt16(Zeppelin);
+        writer.WriteUInt16(Sequence);
+        writer.WriteSingle(Position.X);
+        writer.WriteSingle(Position.Y);
+        writer.WriteSingle(Position.Z);
+        writer.WriteSingle(Speed);
+        writer.WriteSingle(PitchRad);
+        writer.WriteSingle(YawRad);
+        return writer.Close();
+    }
+}
+
+/// <summary>
 /// One host decision about the world, as a code, a subject, an argument and a value. Reliable,
 /// and sent by the host alone. The code is a <see cref="NetWorldEvent"/>, whose members say what
 /// the other three fields carry.</summary>

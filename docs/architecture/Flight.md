@@ -397,11 +397,20 @@ record's stage list, where every crossed threshold fires once. The zone pools li
 The kinematic zeppelin motion law: flies a `ZeppelinDef` along its net through `AiNetFollower`,
 forward-only along the facing, speed by `max_accel` toward `max_speed`, and yaw and pitch through the
 decoded per-axis steer law, whose commanded rate eases inside 25 degrees of error and whose angle
-advances scaled by the speed fraction the hull is making, so a stopped hull cannot turn. There is no
-per-step pitch band, the record's pair being degrees compared against radians. The stop-point half is
-the decoded approach: throttle cut inside the follower's hold distance, then position, heading and
-pitch decayed onto the node, the leg's bearing and level; a seated follower station-keeps. Steering:
-[../formats/mission-entities.md](../formats/mission-entities.md). Pure state, no `Node`.
+advances scaled by the speed fraction the hull is making, so a stopped hull cannot turn. No per-step
+pitch band (the record's pair is degrees compared against radians). Stop points: throttle cut inside
+the hold distance, then pose decayed onto the node and the leg's bearing; a seated follower
+station-keeps. `Follow` takes a replicated hull's pose. Steering:
+[../formats/mission-entities.md](../formats/mission-entities.md). Read `ZeppelinReplica.cs` next.
+
+## src/Flight/ZeppelinReplica.cs
+A network guest's zeppelin, the original's receiver law: each host sample sets a target position,
+speed and facing, the target is dead-reckoned along the facing between samples, and the hull closes
+on both by `e^(-2 dt)` per step (`ChaseRatePerS`). A sample older than the newest by its per-zeppelin
+sequence is dropped; `Reseat` moves the drawn pose when a scripted motion hands the hull back. On a
+straight leg the hull trails the target by the speed over the chase rate. Pinned by
+`ZeppelinReplicaTests` and the `net-zeppelin-path` suite. Decode:
+[../org/multiplayer-messages.md](../org/multiplayer-messages.md). Pure state, no `Node`.
 
 ## src/Flight/AiPilot.cs
 The non-player `FlightModel` driver: standing orders in (heading, altitude, throttle, an optional

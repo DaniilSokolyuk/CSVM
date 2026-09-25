@@ -221,14 +221,14 @@ for the event's sounds. It then has `AnimRuntime.CatchUp` step the instances the
 [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
 
 ## src/Session/NetWorldLink.cs
-The host-owned world over the wire, one per network session. `Admit` names each AI by its ordinal
-in the roster's append-only list, before any is stepped: on the host it hooks the AI's fire, death
-and hull and a hit router that leaves a guest's round to the guest; on a guest it gives the AI a
-pose buffer, which makes it a replicated airframe, and a router that claims its own seat's rounds
-to the host. `StepSends` puts every host AI on the wire on the seat cadence. The host publishes a
-world pool's stage change or death through `AnimRuntime.DestructibleDamaged`; a guest's runtime is
-set `DamageReplicated` and applies it through `ApplyReplicatedHealth`. `NetWorldSeats` is the seat
-lookups it reads. Phase mapping and layouts: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
+The host-owned world over the wire, one per network session. `Admit` names each AI by its roster
+ordinal before any is stepped: the host hooks its fire, death and hull and leaves a guest's round to
+the guest; a guest gives it a pose buffer and claims its own seat's rounds to the host. `StepSends`
+sends every host AI on the seat cadence and every zeppelin path each `ZeppelinSendSteps` (half a
+second); `FollowZeppelins` puts a guest's zeppelins on those samples by placement index. Pool stage
+changes go out through `AnimRuntime.DestructibleDamaged`, and a guest's runtime, set
+`DamageReplicated`, applies them through `ApplyReplicatedHealth`. `NetWorldSeats` is its seat
+lookups. Phase mapping and layouts: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
 
 ## src/Session/CampaignProgression.cs
 The campaign's progression rules over a profile: recording one mission attempt with the original's
@@ -422,14 +422,14 @@ grace. Every drop, launch and door prints an `egen:` line. Decode:
 [../formats/mission-entities/enemy-generators.md](../formats/mission-entities/enemy-generators.md).
 
 ## src/Session/ZeppelinRuntime.cs
-Runs a mission's zeppelins behind `--zeppelins`: a `ZeppelinDef` whose world node and net resolve has
-its hull switched on, is placed at its authored pose and flown by `ZeppelinMotion` over
-`AiNetFollower`; an animation-driven hull is neither placed nor stepped. `WireDamage` builds the
-per-part pools, `PollDamage` owns the kill (a healthy entry is dead when its pool is destroyed or
-its own node is switched off), the Instant Action engine count and the generator disable; `CollectTargetParts` alone makes a structure selectable, and only under `TargetPool`'s
-torpedo gate. A def whose net does not resolve is held out, zones unwired; `--zep=` grafts one on a
-synthetic net. Script arms: `SetStopPoint`, `Hold`, `Wake`, `SetNet` (nearest-node seat from where
-the hull stands) and `SetTeam` (one side over every pool and gun). Decode: [../formats/mission-entities.md](../formats/mission-entities.md).
+Runs a mission's zeppelins behind `--zeppelins`: a `ZeppelinDef` whose node and net resolve is
+switched on, placed at its authored pose and flown by `ZeppelinMotion`; an animation-driven hull is
+neither placed nor stepped. `WireDamage` builds the part pools, `PollDamage` owns the kill, the
+Instant Action engine count and the generator disable; `CollectTargetParts` makes a structure
+selectable under `TargetPool`'s torpedo gate. A def with no net is held; `--zep=` grafts one on.
+Script arms: `SetStopPoint`, `Hold`, `Wake`, `SetNet` and `SetTeam`. Networked, the host sends
+`TryReadPath` and a guest's `Replicate` gives each hull a `ZeppelinReplica` that `TakePath` feeds in
+place of the follower. Decode: [../formats/mission-entities.md](../formats/mission-entities.md).
 
 ## src/Session/ZeppelinRuntime.Cannons.cs
 The broadside half of `ZeppelinRuntime`, the second file of that partial class. `WireCannons`

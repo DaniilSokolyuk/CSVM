@@ -4320,6 +4320,11 @@ public partial class GameSession : Node3D
             WeaponAt = index => _weaponDefs is { } defs && index >= 0 && index < defs.All.Count ? defs.All[index] : null,
             Projectiles = _projectiles,
         }, world);
+        if (_zeppelins != null)
+        {
+            _netWorld.FollowZeppelins(_zeppelins);
+        }
+
         Log.Info("core", $"net world: {(net.IsHost ? $"host (flying every AI and deciding every world hit, {world?.Destructibles.Count ?? 0} pool(s))" : "guest (AI replicated from the host, world pools spending nothing of their own)")}");
     }
 

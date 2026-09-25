@@ -432,6 +432,21 @@ public class NetMessagesTests
         Assert.False(HitMessage.TryRead(buffer[..AiHitMessage.Size], out _));
     }
 
+    // The original's per-zeppelin record order, position then speed, pitch and yaw, at 32 bytes.
+    [Fact]
+    public void ZeppelinStateRoundTripsInTheOriginalRecordOrder()
+    {
+        Span<byte> buffer = stackalloc byte[64];
+        var sent = new ZeppelinStateMessage(3, 65001, new Vector3(-6246f, 93.5f, -7651f), 22.5f, -0.05f, 2.75f);
+        Assert.Equal(ZeppelinStateMessage.Size, sent.Write(buffer));
+        Assert.True(ZeppelinStateMessage.TryRead(buffer[..ZeppelinStateMessage.Size], out var got));
+        Assert.Equal(sent, got);
+        Assert.Equal(NetReliability.Unreliable, NetMessage.ReliabilityOf(NetMessageType.ZeppelinState));
+        Assert.Equal(0x004B, (int)NetMessageType.ZeppelinState);
+        Assert.False(NetMessage.IsOriginalId(NetMessageType.ZeppelinState));
+        Assert.False(AiStateMessage.TryRead(buffer[..ZeppelinStateMessage.Size], out _));
+    }
+
     [Fact]
     public void WorldEventRoundTripsANegativeArgument()
     {

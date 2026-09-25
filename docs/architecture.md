@@ -143,6 +143,7 @@ from the extracted zrdr; owns the arcade physics and everything drawn over the p
 - `src/Flight/ZeppelinBroadside.cs`, the pure broadside law: the decoded side arc, the per-cannon deploy machine and re-fire timer, the lead and gasbag picks.
 - `src/Flight/ZeppelinDamage.cs`, the pure zeppelin kill arithmetic: the survivor count over the `healthy` list, the engine recount, the gasbag gate, stages.
 - `src/Flight/ZeppelinMotion.cs`, the kinematic zeppelin motion law: forward-only net flight under the record's limits, the eased steer law, the stop approach.
+- `src/Flight/ZeppelinReplica.cs`, a network guest's zeppelin: the original's chase onto the host's dead-reckoned samples.
 - `src/Flight/ManeuverExecutor.cs`, plays one library maneuver's attitude-step program as `FlightInput` per sim step, for the `evasive maneuver` mode.
 - `src/Flight/WeaponCursor.cs`, `FireControl`'s internal ammo-slot index math (`NextArmed`/`NextSelectable`); nothing else calls it.
 - `src/Flight/FlightReentryLatch.cs`, flight's consumed-input latch: a control still held when flight regains input reads as released on every command it is bound to.
@@ -547,7 +548,7 @@ clusters they delegate to.
 - `src/Session/CampaignDirector.cs`, the engine side of a campaign mission: the graph armed against the built world, the roster spawned and launched off its hooks, the attempt recorded.
 - `src/Session/NetDirectorLink.cs`, the objectives graph over the wire: the host publishes every event its graph raises, stamped with its clock, and a guest's replicated graph replays them in order.
 - `src/Session/NetDirectorCatchUp.cs`, a guest's catch-up on a late director event: applies it, then advances the timers, cutscenes and sounds it started by how late it arrived.
-- `src/Session/NetWorldLink.cs`, the host-owned world over the wire: AI aircraft as pose, fire, hit and death messages, and destructible stage changes and deaths as events.
+- `src/Session/NetWorldLink.cs`, the host-owned world over the wire: AI aircraft as pose, fire, hit and death messages, zeppelin paths as periodic samples, and destructible stage changes and deaths as events.
 - `src/Session/CampaignDangerZones.cs`, a campaign mission's own danger zones: the `dzpathN` gates its script arms, tracked per human by the stunt gate rule, each carrying its mission's objective number.
 - `src/Session/CampaignSnapshot.cs`, the Danger Zone photograph a campaign mission writes into the flying profile's directory under the scrapbook row's own `Snap_<mission>_<objective>` name.
 - `src/Session/AirframeSwap.cs`, the three `CALLBACK` codes that hand the player a different airframe in mid mission, and the def and node each names.
@@ -624,7 +625,7 @@ original's own message set, with ids and guarantees, is in [`org/multiplayer-mes
 - `src/Net/UpnpPortMap.cs`, a best-effort port mapping through Godot's UPnP client: four outcomes a host can show, never a throw, and never required for a match to be joinable.
 - `src/Net/NetLobby.cs`, a carrier's first listener before any session binds it: the host's session advert out, the latest advert in, every other payload held for the session.
 - `src/Net/NetMessages.cs`, the message vocabulary: one struct per message, each declaring its type word and reliability class, over a shared four-byte header.
-- `src/Net/NetWorldMessages.cs`, the host-owned world's messages: an AI's pose, fire and hit claim, and the world event.
+- `src/Net/NetWorldMessages.cs`, the host-owned world's messages: an AI's pose, fire and hit claim, a zeppelin's path sample, and the world event.
 - `src/Net/NetMessageWriter.cs`, the writer and reader cursors every message is packed and unpacked through: little-endian primitives, quantised unit fields, fixed-width text.
 - `src/Net/NetClockSlew.cs`, a guest's offset onto host time, walked to each fresh reading over a bounded window rather than written, with one-way readings read forward by half the measured round trip.
 - `src/Net/NetClockPing.cs`, the guest's question and the host's answer that measure the round trip, asked every ten seconds as the original's ping is.

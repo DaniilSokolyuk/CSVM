@@ -197,7 +197,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 ### Wave E, the rest of the host-owned world
 
 41. ☐ Host-owned AI spawns: generator launches, Black Hat launches and `WAKEUP_*` as spawn events carrying the host's admission ordinal
-42. ☐ Zeppelin paths from the host: the path position as a periodic state message, in the original's `0x1e` shape
+42. ☑ Zeppelin paths from the host: the path position as a periodic state message, in the original's `0x1e` shape
 43. ☐ Surface vehicles from the host: patrols and `WARP_VEHICLE` placed by the host, not replayed from a diverging draw
 44. ☐ Destructible chip damage: a pool's health between stages mirrored on every guest
 
@@ -1736,7 +1736,52 @@ guest's AI set and ordinals equal the host's after the launch>
 **⚠ Traps.** The spawn event must arrive before the first `0x45` sample for that ordinal; a sample
 for an unknown ordinal is held or dropped, never admitted.
 
-## E42 ☐ Zeppelin paths from the host: the path position as a periodic state message, in the original's `0x1e` shape
+## E42 ☑ Zeppelin paths from the host: the path position as a periodic state message, in the original's `0x1e` shape
+
+**Landed.** The original's `0x1e` is decoded in full in `docs/org/multiplayer-messages.md` ("The
+zeppelin state packet"): builder `FUN_0049adf0`, host only, every 0.5 s (the float at `0x006032e0`),
+unguaranteed to all; `0x1c` bytes per zeppelin (position, speed `zep+0xa4`, pitch `zep+0x30`, yaw
+`zep+0x2c`, a part-state word, an event count) and a cannon-shot tail; receiver `FUN_0049b0b0` sets a
+target, and the guest law `FUN_00470550` replaces the path step with an `e^(-2 dt)` chase onto a
+dead-reckoned target. By file:
+- `CSVM/src/Flight/ZeppelinReplica.cs` (new): that guest law, with a per-zeppelin sequence that drops
+  a stale sample, `Reseat` for a scripted motion's hand-back, and the two decoded constants
+  (`ChaseRatePerS = 2`, `SendSeconds = 0.5`).
+- `CSVM/src/Flight/ZeppelinMotion.cs`: `Follow`, which takes a pose and speed from outside the law.
+- `CSVM/src/Session/ZeppelinRuntime.cs`: `Replicate`, `ReplicaAt`, `TakePath` and `TryReadPath`; a
+  hull with a replica steps the replica instead of its follower and steer law.
+- `CSVM/src/Net/NetMessages.cs`, `CSVM/src/Net/NetWorldMessages.cs`: `ZeppelinStateMessage`, id
+  **`0x4B`**, 32 bytes, plain unreliable on `NetChannels.Events`, the original record's first `0x18`
+  bytes in its order, named by placement index.
+- `CSVM/src/Session/NetWorldLink.cs`: `FollowZeppelins(ZeppelinRuntime)`; the host's `StepSends`
+  samples every moving hull each `ZeppelinSendSteps` (30 steps); a guest replicates and takes them.
+- `CSVM/src/Testing/NetZeppelinSuites.cs` (new): the `net-zeppelin-path` suite.
+- Tests: `ZeppelinReplicaTests` (6) and a `0x4B` round trip in `NetMessagesTests`.
+
+**Verified.** The complete battery on the merged tree (E42 over C25, C23, the catch-up, C22, C21,
+D31 and Wave B, with `GameSession.WireNetWorld` calling `FollowZeppelins` whenever the session has
+zeppelins): build clean, 4943 units passed with 0 failed and 2 skipped, 392 engine suites passed with
+engine errors clean, and 19 goldens hash-identical. `net-zeppelin-path` passes inside it.
+
+**Owed.**
+- The lag is the original's: a guest's hull trails the host's by speed times (latency + 0.5 s). No
+  clock-slew compensation is applied, since the original applies none.
+- The part-state word and the cannon-shot tail are not carried: part deaths already arrive as pool
+  events, and each end's broadside still fires on its own. Whether a guest's broadside should be
+  driven from the host is open.
+- A late joiner's hull holds at its placement until the first sample, at most half a second.
+
+**Model recommendation.** High. The decode is a chain of six functions and the receiver law has to
+be read off the disassembly; the code itself is small.
+
+**Verify.** `.\RunTests.ps1 -Suite net-zeppelin-path -SkipUnits -SkipGoldens`: C3/M01's two
+zeppelins through net-soak's four link cells (clean, 50, 100 and 200 ms with 5, 10 and 20 per cent
+loss, mesh seed 7717), 28 s read per cell. The guest's hull must stay within speed times (latency +
+jitter + 0.5 s chase lag + 0.5 s turn slack) of the host's; a replicated guest never fed is the
+control and must exceed that bar. A guest flying its own follower is reported beside it. Units:
+`ZeppelinReplicaTests`, `NetMessagesTests`.
+
+**Original approach (kept for reference).**
 
 **Goal.** A zeppelin is where the host has it on every guest, whatever the guest's frame rate or
 join time.
@@ -1747,11 +1792,6 @@ replays the path locally from the shared seed and clock.
 
 **Approach.** The host sends each zeppelin's path parameter at the decoded period; a guest steers its
 path runtime to it instead of advancing it alone.
-
-**Model recommendation.** <TODO>
-
-**Verify.** <TODO: a harness run with a zeppelin mission, the guest's zeppelin position against the
-host's over a scripted segment under D31's latency cells>
 
 **⚠ Traps.** Zeppelin parts and cannons are already destructible pools under C22; a path message must
 not re-spawn or re-arm them.

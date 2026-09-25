@@ -8,20 +8,28 @@ using Godot;
 namespace CSVM.Session;
 
 /// <summary>
-/// The host-owned world over the wire: AI aircraft and destructible pools. The host flies every AI
-/// and decides every world hit, then says what happened. A guest's AI is a replicated airframe
-/// fed by <see cref="AiStateMessage"/>, and its world pools spend nothing of their own. An AI is
-/// named by its admission ordinal, so both ends must admit the same aircraft in the same order.
-/// Which simulation phase replays and which is replicated is in
+/// The host-owned world over the wire: AI aircraft, zeppelin paths and destructible pools. The
+/// host flies every AI and zeppelin and decides every world hit, then says what happened. A
+/// guest's AI is a replicated airframe fed by <see cref="AiStateMessage"/>, its zeppelins chase
+/// <see cref="ZeppelinStateMessage"/>, and its world pools spend nothing of their own. An AI is
+/// named by its admission ordinal and a zeppelin by its placement index. Both ends must build both
+/// lists in the same order. Which simulation phase replays and which is replicated is in
 /// <c>docs/org/multiplayer-messages.md</c>.
 /// </summary>
 internal sealed class NetWorldLink
 {
+    /// <summary>Sim steps between two zeppelin samples, the original's half second at the fixed
+    /// step.</summary>
+    internal static readonly int ZeppelinSendSteps =
+        Math.Max(1, (int)Math.Round(ZeppelinReplica.SendSeconds / Utils.GameClock.FixedDt));
+
     private readonly NetSession _net;
     private readonly NetWorldSeats _seats;
     private readonly AnimRuntime? _world;
     private readonly List<FlightController> _admitted = new();
     private readonly List<ushort> _sequence = new();
+    private readonly List<ushort> _zeppelinSequence = new();
+    private ZeppelinRuntime? _zeppelins;
     private int _steps;
 
     /// <summary>Wires one session's end. A host hears the guests' hit claims and publishes its
@@ -66,6 +74,12 @@ internal sealed class NetWorldLink
     /// <summary>AI hit claims the host has spent.</summary>
     internal int AiHitsTaken { get; private set; }
 
+    /// <summary>Zeppelin samples the host has put on the wire.</summary>
+    internal int ZeppelinSamplesSent { get; private set; }
+
+    /// <summary>Zeppelin samples a guest has taken into a replica.</summary>
+    internal int ZeppelinSamplesTaken { get; private set; }
+
     /// <summary>A stable name for one destructible pool, the guard a guest checks the host's
     /// registration index against. FNV-1a over the definition and anchor names, lower-cased.</summary>
     internal static int PoolKey(DestructibleRegistry.Instance inst)
@@ -84,6 +98,23 @@ internal sealed class NetWorldLink
     /// <summary>The AI admitted at <paramref name="ordinal"/>, or null.</summary>
     internal FlightController? AiAt(int ordinal) =>
         ordinal >= 0 && ordinal < _admitted.Count ? _admitted[ordinal] : null;
+
+    /// <summary>Puts the mission's zeppelins under the link. The host samples each path every
+    /// <see cref="ZeppelinSendSteps"/> from <see cref="StepSends"/>; a guest hands every path over
+    /// to the host (<see cref="ZeppelinRuntime.Replicate"/>) and steers to the samples. Call once
+    /// the runtime has placed its hulls.</summary>
+    internal void FollowZeppelins(ZeppelinRuntime zeppelins)
+    {
+        ArgumentNullException.ThrowIfNull(zeppelins);
+        _zeppelins = zeppelins;
+        if (_net.IsHost)
+        {
+            return;
+        }
+
+        zeppelins.Replicate();
+        _net.On<ZeppelinStateMessage>((_, state) => TakeZeppelin(state));
+    }
 
     /// <summary>Admits every AI the roster gained since the last call, in roster order. Run at the
     /// start of each step, before any AI is stepped, so a guest's copy never flies a step of its
@@ -112,10 +143,21 @@ internal sealed class NetWorldLink
     }
 
     /// <summary>The host's AI state, run after the AI phase so a sample is this step's settled
-    /// pose. On the seat stream's cadence.</summary>
+    /// pose, on the seat stream's cadence; and every zeppelin's path on its own slower one.</summary>
     internal void StepSends()
     {
-        if (!_net.IsHost || _steps++ % AircraftStateCadence.SendStepInterval != 0)
+        if (!_net.IsHost)
+        {
+            return;
+        }
+
+        int step = _steps++;
+        if (step % ZeppelinSendSteps == 0)
+        {
+            SendZeppelins();
+        }
+
+        if (step % AircraftStateCadence.SendStepInterval != 0)
         {
             return;
         }
@@ -260,6 +302,43 @@ internal sealed class NetWorldLink
         _net.Broadcast(
             new WorldEventMessage((ushort)NetWorldEvent.DestructibleHealth, (ushort)index, PoolKey(inst), inst.Health),
             NetChannels.Events);
+    }
+
+    // Every hull that moves, by placement index. A hull out of the world, held or dead is skipped
+    // with its sequence unspent. The guest's copy holds where the last sample left it.
+    private void SendZeppelins()
+    {
+        if (_zeppelins is not { } zeppelins)
+        {
+            return;
+        }
+
+        for (int i = 0; i < zeppelins.LiveCount && i <= ushort.MaxValue; i++)
+        {
+            while (_zeppelinSequence.Count <= i)
+            {
+                _zeppelinSequence.Add(0);
+            }
+
+            if (!zeppelins.TryReadPath(i, out var position, out float speed, out float yaw, out float pitch))
+            {
+                continue;
+            }
+
+            _net.Broadcast(
+                new ZeppelinStateMessage((ushort)i, _zeppelinSequence[i]++, position, speed, pitch, yaw),
+                NetChannels.Events);
+            ZeppelinSamplesSent++;
+        }
+    }
+
+    private void TakeZeppelin(in ZeppelinStateMessage state)
+    {
+        if (_zeppelins?.TakePath(state.Zeppelin, state.Sequence, state.Position, state.Speed,
+                state.YawRad, state.PitchRad) == true)
+        {
+            ZeppelinSamplesTaken++;
+        }
     }
 
     private void TakeAiState(in AiStateMessage state)

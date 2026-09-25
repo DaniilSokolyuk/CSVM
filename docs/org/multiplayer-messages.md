@@ -142,6 +142,50 @@ is re-armed to `now + 0.5` after each send). It carries a zeppelin count in the 
 event count), then `0x10` per pending event. Unlike the aircraft state it is a broadcast, and like
 the aircraft state its event tail is dropped once sent.
 
+The builder runs on the host alone (`FUN_005b4210`, my id `[0x9c7860]` against the host's
+`[0x9c7864]`), once the clock `[0x9ad748]` reaches `_DAT_0071d238`; the half second is the float at
+`0x006032e0`, re-armed at `0x0049b00b`. It walks the zeppelin vector `0x71df84`..`0x71df88` in
+order, so a zeppelin is named by its index in that vector, and sends through
+`FUN_005b2640(buf, len, 0, 0)`: unguaranteed, to everyone. One zeppelin's `0x1c` bytes:
+
+| Offset | Field | Source |
+|---|---|---|
+| `+0x00` | position, three floats | the hull node's world position, `[[zep+0x1c]+0x38]+0x54` |
+| `+0x0c` | speed, float | `zep+0xa4`, the throttle `FUN_004bf240` writes |
+| `+0x10` | pitch, float radians | `zep+0x30` |
+| `+0x14` | yaw, float radians | `zep+0x2c` |
+| `+0x18` | part states, 2 bits per part | `FUN_004c0c20` over the list at `zep+0x5c` |
+| `+0x1a` | event count in bits 0..3; above it per-part bits of the list at `zep+0x7c` | `[0x71c838] & 0xf`, `FUN_004c0d80` |
+
+Each event is `0x10` bytes, a target point as three floats and a `u16` part index at `+0xc`, taken
+from the global list `0x71c834` that `FUN_0049b030` fills when a zeppelin cannon shoots. After the
+send, when `[0x71c190]` is 0 and a zeppelin's dead flag `zep+6` is set, the builder ends the
+zeppelin match: `FUN_0046ecd0(index + 1, 3)`, `FUN_004996d0(3)` and the score table `FUN_00499270`.
+
+The receiver, `FUN_0049b0b0`, writes zeppelin `i` of the packet into entry `i` of its own vector with
+no check against its length. The position goes to a target at `zep+0xe4` and the speed to `zep+0xa4`.
+The facing becomes a unit forward at `zep+0xf0`: `(-sin yaw cos pitch, sin pitch, -cos yaw cos pitch)`.
+`FUN_004c0cb0` applies the part states (1 and 2 through `FUN_004455e0`, 0 and 3 through
+`FUN_00445620`). Each event goes to `FUN_004c0d00(part, point)`, which fires `wep_28` (the string at
+`0x62b828`) from that part toward the point through `FUN_005aef40`. The high bits of `+0x1a` are not
+read.
+
+A guest does not step its own path. `FUN_004bf9d0` asks `FUN_00470550`, which answers false on the
+host and otherwise runs the chase:
+
+- `k = FUN_0053e2e0(2 dt)`, which is `e^(-2 dt)` from a table of `exp(-i/51)` (the constants at
+  `0x60912c` and `0x609128`, clamped at the 5.0 of `0x6036bc`);
+- the hull position becomes `k * position + (1 - k) * target` (`FUN_00538c50`), written to `zep+0x20`;
+- the forward from its own yaw and pitch is blended the same way toward `zep+0xf0` and normalised
+  (`FUN_00538d20`, `FUN_00422690`); pitch is `asin(forward.y)` and yaw `atan2(-forward.x, -forward.z)`;
+- the target is carried on by `speed * dt` along the blended forward, so between packets the target
+  is dead-reckoned;
+- `FUN_004bf930` writes the pose.
+
+The guest's velocity query `FUN_004bf7f0` answers speed times the received forward. On a straight
+leg a guest's hull trails the host's by the speed times the link's latency, plus the speed over the
+chase rate, `v / 2` metres.
+
 ## The lobby roster
 
 `FUN_004135f0` sends type `0x27`, the widest message in the protocol and the only one the remake
@@ -161,7 +205,7 @@ score, `0x17` match state, `0x22` hit and `0x27` seat roster. Damage, spawn, the
 director transition, the join handshake and a seat's ask to be spawned again have no
 counterpart, so they are minted at `0x40`, `0x41`, `0x42`, `0x43` and `0x44`, above the ceiling
 above. The host-owned world's four (AI state, AI fire, a guest's hit claim on an AI, and a world
-event) are minted at `0x45` to `0x48`, below, and the clock ping at `0x49`. The handshake carries the master seed, the host's clock and the seat the joining peer was
+event) are minted at `0x45` to `0x48`, below, the clock ping at `0x49`, the lobby's session advert at `0x4A` and the zeppelin path at `0x4B`. The handshake carries the master seed, the host's clock and the seat the joining peer was
 given; the original needs none of the three, because it draws from no shared stream and hands
 out no seat. The ask carries a seat and nothing else: the original's client takes its own
 respawn, while here the host owns every placement and answers the ask with a spawn event.
@@ -277,6 +321,15 @@ built with the world.
 | `0x46` | AI fire | unreliable | ordinal, weapon index, muzzle, aim (28 bytes) |
 | `0x47` | AI hit | reliable, guest to host | ordinal, shooter seat, weapon, damage share, part, impact in the AI's body space (28 bytes) |
 | `0x48` | World event | reliable, host to all | code, subject, argument, value (16 bytes) |
+| `0x4B` | Zeppelin state | unreliable, host to all | placement index, per-zeppelin sequence, position, speed, pitch, yaw (32 bytes) |
+
+`0x4B` is one zeppelin of the original's `0x1e`, its first `0x18` bytes in the original's order, on the
+same half second. A zeppelin is named by its placement index, which both ends build from the same
+records. The part-state word and the cannon-shot tail are not carried: a part's death arrives as a
+pool event, and each end's cannons still fire on their own. A guest runs the original's chase
+(`Flight/ZeppelinReplica.cs`) in place of its follower, so the two ends cannot part on a branch
+pick. A hull the host holds, has not woken or has lost is not sent, and the guest's copy stays where
+the last sample left it.
 
 AI state is plain unreliable rather than sequenced because every AI shares one channel, and a
 transport sequence would drop one AI's sample against another's; each AI's own pose buffer drops a
@@ -301,7 +354,7 @@ Each simulation phase, as a guest runs it:
 | Projectiles | Local on every end, spawned from fire events; the guest's rounds spend nothing on the world or on an AI. |
 | Human aircraft | Replicated per seat (`0x0f`, `0x10`, `0x22`, `0x40`, `0x12`). |
 | Captured AI aircraft | **Replicated**: each AI flies from `0x45` samples; fire arrives as `0x46`, hull and death as `0x48`. |
-| Zeppelins | Replayed locally. Part and cannon deaths arrive as pool events; the zeppelin's own path is not yet replicated (the original sends it as `0x1e` every 0.5 s). |
+| Zeppelins | **Replicated path**: each hull chases the host's `0x4B` samples. Part and cannon deaths arrive as pool events; the broadside still fires locally. |
 | Turret emplacements | Replayed locally and cosmetic: a guest's turret round spends nothing, the host's decides. Deaths arrive as pool events. |
 | Generators | Replayed locally. Their launches spawn AI on each end by its own timers, which is not yet host-owned. |
 | Surface vehicles | Replayed locally. A hull's death arrives as a pool event; the patrol walk is not yet replicated. |

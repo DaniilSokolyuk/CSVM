@@ -295,6 +295,56 @@ public sealed partial class ZeppelinRuntime : Node
         return true;
     }
 
+    /// <summary>Hands every hull's path to the host: from here each is a <see cref="ZeppelinReplica"/>
+    /// started where it stands, and its follower and steer law no longer run. A zeppelin is named
+    /// by its index in placement order, which both ends build from the same records. Idempotent.
+    /// </summary>
+    public void Replicate()
+    {
+        foreach (var zep in _live)
+        {
+            zep.Replica ??= new ZeppelinReplica(zep.Motion.Position, zep.Motion.YawRad, zep.Motion.PitchRad);
+        }
+    }
+
+    /// <summary>The replica of the zeppelin at <paramref name="index"/>, or null on an end that
+    /// flies its own paths.</summary>
+    public ZeppelinReplica? ReplicaAt(int index) =>
+        index >= 0 && index < _live.Count ? _live[index].Replica : null;
+
+    /// <summary>A host sample for the zeppelin at <paramref name="index"/>. False for an index this
+    /// end did not place, an end that is not replicating, or a stale sample.</summary>
+    public bool TakePath(int index, ushort sequence, Vector3 position, float speed, float yawRad, float pitchRad) =>
+        ReplicaAt(index) is { } replica && replica.Receive(sequence, position, speed, yawRad, pitchRad);
+
+    /// <summary>What the host sends for the zeppelin at <paramref name="index"/>: where its hull
+    /// stands, its heading and pitch, and its speed. False for a hull out of the world, held or
+    /// dead, which does not move. A scripted hull reports its script's pose at speed zero.</summary>
+    public bool TryReadPath(int index, out Vector3 position, out float speed, out float yawRad, out float pitchRad)
+    {
+        position = default;
+        speed = yawRad = pitchRad = 0f;
+        if (index < 0 || index >= _live.Count || _live[index] is { Dormant: true } or { Held: true } or { Dead: true }
+            || !GodotObject.IsInstanceValid(_live[index].Host))
+        {
+            return false;
+        }
+
+        var zep = _live[index];
+        if (zep.Scripted)
+        {
+            var euler = zep.Host.GlobalTransform.Basis.Orthonormalized().GetEuler();
+            position = zep.Host.GlobalPosition;
+            (yawRad, pitchRad) = (euler.Y, euler.X);
+            return true;
+        }
+
+        position = zep.Motion.Position;
+        speed = zep.Motion.Speed;
+        (yawRad, pitchRad) = (zep.Motion.YawRad, zep.Motion.PitchRad);
+        return true;
+    }
+
     /// <summary>Current surviving healthy-entry count, or -1 for an unknown/unwired node.</summary>
     public int SurvivorsOf(string node) =>
         Find(node) is { Damage: { } damage } zep ? damage.Survivors(zep.ZoneAlive) : -1;
@@ -442,7 +492,18 @@ public sealed partial class ZeppelinRuntime : Node
                 if (zep.Scripted)
                     Resume(zep);
                 int before = zep.Motion.Follower.CurrentIndex;
-                zep.Motion.Step(dt);
+                if (zep.Replica is { } replica)
+                {
+                    // A guest's hull goes where the host's samples take it, never where its own
+                    // follower would. The two ends cannot then part on a branch pick.
+                    replica.Step(dt);
+                    zep.Motion.Follow(replica.Position, replica.YawRad, replica.PitchRad, replica.Speed);
+                }
+                else
+                {
+                    zep.Motion.Step(dt);
+                }
+
                 Place(zep.Host, zep.Motion.Position, zep.Motion.YawRad, zep.Motion.PitchRad);
                 if (zep.Motion.Follower.CurrentIndex != before && before >= 0)
                 {
@@ -491,6 +552,7 @@ public sealed partial class ZeppelinRuntime : Node
         var follower = zep.Motion.Follower;
         follower.Reseat();
         zep.Motion.ResumeAt(xform.Origin, euler.Y, euler.X);
+        zep.Replica?.Reseat(xform.Origin, euler.Y, euler.X);
         Log.Info("flight", $"zep: '{zep.Def.Node}' scripted motion ended, follower resumes from ({xform.Origin.X:0},{xform.Origin.Y:0},{xform.Origin.Z:0}) yaw {Mathf.RadToDeg(euler.Y):0.#}° pitch {Mathf.RadToDeg(euler.X):0.#}°, re-seating on '{follower.Net.Name}'");
     }
 
@@ -887,6 +949,9 @@ public sealed partial class ZeppelinRuntime : Node
         public bool Scripted { get; set; }
 
         public ZeppelinDamage? Damage { get; set; }
+
+        /// <summary>The host's path for this hull, on a guest; null where this end flies it.</summary>
+        public ZeppelinReplica? Replica { get; set; }
 
         public bool Dead { get; set; }
 
