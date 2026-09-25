@@ -42,7 +42,7 @@ public class StickRosterTests
     [Fact]
     public void FirstUpdateOpensEveryGapFillingDeviceAndNeverOpensAGodotPad()
     {
-        var native = new FakeNative();
+        var native = new FakeStickNative();
         native.Plug(1, "VKBsim Gladiator EVO L", VkbL, axes: 8, buttons: 128, hats: 1);
         native.Plug(2, "Xbox Wireless Controller", XboxPad, axes: 6, buttons: 11, hats: 1);
         native.Plug(3, "Joystick (Razer Tartarus V2)", Tartarus, axes: 6, buttons: 24, hats: 1);
@@ -59,7 +59,7 @@ public class StickRosterTests
     [Fact]
     public void HotPlugAddsAndRemovesSticksOnTheNextUpdate()
     {
-        var native = new FakeNative();
+        var native = new FakeStickNative();
         native.Plug(1, "L", VkbL);
         var godot = Array.Empty<StickModel>();
         using var roster = new StickRoster(native, () => godot, () => false);
@@ -78,7 +78,7 @@ public class StickRosterTests
     [Fact]
     public void AQuietFrameWithAnUnchangedGodotRosterDoesNotRelist()
     {
-        var native = new FakeNative();
+        var native = new FakeStickNative();
         native.Plug(1, "L", VkbL);
         var godot = Array.Empty<StickModel>();
         using var roster = new StickRoster(native, () => godot, () => false);
@@ -92,7 +92,7 @@ public class StickRosterTests
     [Fact]
     public void AStickGodotStartsReadingIsClosedAndComesBackWhenGodotLetsGo()
     {
-        var native = new FakeNative();
+        var native = new FakeStickNative();
         native.Plug(1, "R", VkbR);
         IReadOnlyCollection<StickModel> godot = Array.Empty<StickModel>();
         using var roster = new StickRoster(native, () => godot, () => false);
@@ -111,7 +111,7 @@ public class StickRosterTests
     [Fact]
     public void ReadsAreNeutralWhileBlockedButTheRosterStillFollowsPlugs()
     {
-        var native = new FakeNative();
+        var native = new FakeStickNative();
         native.Plug(1, "L", VkbL);
         bool blocked = true;
         using var roster = new StickRoster(native, Array.Empty<StickModel>, () => blocked);
@@ -144,7 +144,7 @@ public class StickRosterTests
     [Fact]
     public void ReadsPastACountOrPastTheButtonCapAreNeutral()
     {
-        var native = new FakeNative();
+        var native = new FakeStickNative();
         native.Plug(1, "Big", VkbL, axes: 2, buttons: 200, hats: 0);
         using var roster = new StickRoster(native, Array.Empty<StickModel>, () => false);
         roster.Update();
@@ -161,7 +161,7 @@ public class StickRosterTests
     [Fact]
     public void AnUnpluggedStickReadsNeutralThroughAStaleReference()
     {
-        var native = new FakeNative();
+        var native = new FakeStickNative();
         native.Plug(1, "L", VkbL);
         using var roster = new StickRoster(native, Array.Empty<StickModel>, () => false);
         roster.Update();
@@ -177,7 +177,7 @@ public class StickRosterTests
     [Fact]
     public void IdenticalUnitsOfOneModelMergeWhileLAndRStayApart()
     {
-        var native = new FakeNative();
+        var native = new FakeStickNative();
         native.Plug(1, "R", VkbR);
         native.Plug(2, "R", VkbR);
         native.Plug(3, "L", VkbL);
@@ -197,7 +197,7 @@ public class StickRosterTests
     [Fact]
     public void AFailedOpenLeavesTheDeviceOutAndTheRosterRunning()
     {
-        var native = new FakeNative();
+        var native = new FakeStickNative();
         native.Plug(1, "L", VkbL);
         native.Refuse.Add(1);
         using var roster = new StickRoster(native, Array.Empty<StickModel>, () => false);
@@ -209,7 +209,7 @@ public class StickRosterTests
     [Fact]
     public void DisposeClosesEveryStickAndTheLibrary()
     {
-        var native = new FakeNative();
+        var native = new FakeStickNative();
         native.Plug(1, "L", VkbL);
         var roster = new StickRoster(native, Array.Empty<StickModel>, () => false);
         roster.Update();
@@ -286,80 +286,5 @@ public class StickRosterTests
         Assert.Null(Sdl2Sticks.Load(paths, out string outcome));
         Assert.Contains("no SDL2.dll", outcome, StringComparison.Ordinal);
         Assert.Contains(paths[1], outcome, StringComparison.Ordinal);
-    }
-
-    private sealed class FakeNative : IStickNative
-    {
-        private readonly List<Stick> _devices = new();
-        private readonly Dictionary<(int, int), short> _axes = new();
-        private readonly HashSet<(int, int)> _buttons = new();
-        private readonly Dictionary<(int, int), byte> _hats = new();
-        private bool _plugged;
-
-        public HashSet<int> Opened { get; } = new();
-
-        public HashSet<int> Refuse { get; } = new();
-
-        public int ListCalls { get; private set; }
-
-        public bool Disposed { get; private set; }
-
-        public string Version => "2.32.10";
-
-        public string LastError => "refused";
-
-        public void Plug(int instance, string name, StickModel model, int axes = 8, int buttons = 128, int hats = 1)
-        {
-            _devices.Add(new Stick(instance, name, model, "guid" + instance, axes, buttons, hats));
-            _plugged = true;
-        }
-
-        public void Unplug(int instance)
-        {
-            _devices.RemoveAll(d => d.Instance == instance);
-            _plugged = true;
-        }
-
-        public void Set(int instance, int axis, short raw, int button, byte hat)
-        {
-            _axes[(instance, axis)] = raw;
-            _buttons.Add((instance, button));
-            _hats[(instance, 0)] = hat;
-        }
-
-        public bool Pump()
-        {
-            bool plugged = _plugged;
-            _plugged = false;
-            return plugged;
-        }
-
-        public IReadOnlyList<StickListing> List()
-        {
-            ListCalls++;
-            return _devices.ConvertAll(d => new StickListing(d.Instance, d.Name, d.Model, d.Guid));
-        }
-
-        public Stick? Open(StickListing listing)
-        {
-            var device = _devices.Find(d => d.Instance == listing.Instance);
-            if (device is null || Refuse.Contains(listing.Instance))
-            {
-                return null;
-            }
-
-            Opened.Add(listing.Instance);
-            return device;
-        }
-
-        public void Close(int instance) => Opened.Remove(instance);
-
-        public short Axis(int instance, int axis) => _axes.GetValueOrDefault((instance, axis));
-
-        public bool Button(int instance, int button) => _buttons.Contains((instance, button));
-
-        public byte Hat(int instance, int hat) => _hats.GetValueOrDefault((instance, hat));
-
-        public void Dispose() => Disposed = true;
     }
 }

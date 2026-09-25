@@ -161,7 +161,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 1. ☑ Pinned SDL2 download into `tools/sdl2/`, on the DLL path for every launch script and the release zip
 2. ☑ SDL2 P/Invoke bridge: gap-filling stick roster, hot-plug, gates, logging
-3. ☐ Stick device state: 128 buttons, 8 axes, hats, per-model identity, owned by seat 1
+3. ☑ Stick device state: 128 buttons, 8 axes, hats, per-model identity, owned by seat 1
 
 ### Wave B, binding model
 
@@ -394,7 +394,75 @@ joystick subsystem only. A probe on the hidden desktop is not evidence about dev
 (⚠ table row 2); any detection check needs the user's foreground run. The Tartarus enumerates as a
 joystick; its F13+ debug keys arrive through its keyboard interface and must keep working.
 
-## A3 ☐ Stick device state: 128 buttons, 8 axes, hats, per-model identity, owned by seat 1
+## A3 ☑ Stick device state: 128 buttons, 8 axes, hats, per-model identity, owned by seat 1
+
+**Landed.** A stick is a joypad `DeviceId` keyed by its model, and seat 1's reader answers for it
+beside the pad placeholder.
+
+- **The identity (the TODO, answered):** no new `DeviceKind`. `StickModel.Device` is
+  `DeviceId.Joypad("stick:231D/0201")` (`StickModel.DevicePrefix` is `stick:`, then the model's
+  printed form), and `StickModel.TryFromDevice(DeviceId, out StickModel)` reads it back without
+  allocating; the keyboard, the mouse, a Godot pad's GUID or name, `pad:*`, a wrong-case prefix and
+  a malformed model all read as no stick. The store token is `pad:stick:231D/0201/<control>`, for
+  example `pad:stick:231D/0200/fullaxis:1+@0.02` or `pad:stick:231D/0201/hat:0:Up`.
+  `BindingStore.Decode` splits a token at its **last** slash and no control token contains one, so
+  the model's own slash round-trips; `StickDeviceStateTests` pins `Encode(Decode(t)) == t` for a
+  button past `SdlMax`, a full axis each way and a hat, with no edit to `BindingStore`. The model
+  form in the id is the same `231D/0201` the logs and C7's profile files use. A hand-edited
+  lower-case model (`stick:231d/0201`) still *reads* as that model, but `DeviceId` equality is
+  ordinal, so `ActionMap`'s same-control and steal rules would treat it as another device; C7's
+  loader should canonicalise through `TryFromDevice(...)` then `.Device`.
+- **The reader:** `CSVM/src/Sticks/StickDeviceState.cs`, an engine-free `IDeviceState` over
+  `Func<int> playerIndex` and `Func<StickRoster?> roster`. It answers stick identities through
+  `ModelButton`/`ModelAxis`/`ModelHat`, so L and R are two devices and identical units one; keys and
+  mouse are false. Only `StickDeviceState.OwningSeat` (player index 0) reads; the index is re-read
+  per call because `FlightController.PlayerIndex` is set after construction. A null roster reads
+  nothing. It adds **no gate**: the roster's reads are already neutral under `Pads.InputBlocked`.
+  `Devices()` lists the connected models' identities in roster order (empty for other seats or no
+  roster, still listed while blocked). `StickDeviceState.Live(playerIndex)` reads `StickPump.Roster`.
+- **Seat composition:** `SeatDeviceState` gained an optional last parameter `IDeviceState? sticks`.
+  The seat's pad placeholder still goes through `Pads.For` exactly as before (no line of the pad
+  branch changed); any other identity goes to `sticks` for buttons, axes and hats, and
+  `readsPads: false` mutes `sticks` too, so a keyboard-half reader never sees a stick. Without
+  `sticks` the class behaves as before, hats included (`None`).
+- **Where seat 1 is built:** the one edit outside `Bindings/` and `Sticks/` is
+  `FlightController`'s constructor (`Flight/Airframe/FlightController.cs`, plus its `using
+  CSVM.Sticks`): `_seatState` passes `sticks: StickDeviceState.Live(() => PlayerIndex)`. The
+  pad-muted reader, the pitch/roll/yaw/throttle reads and `StickCurve` are untouched. `MenuInput`
+  (it has no player index), `SpectatorCamera` and `SeatCaptureDevices` were left alone: menus are
+  C9's and capture is D10's, and each takes the same optional parameter when its item lands. Until
+  C7 no map holds a stick binding, so nothing a player does changes yet; a hand-typed
+  `pad:stick:` token in `bindings_p1.json` already flies.
+
+**Wiring contract** (what B5, C7, C9 and D10 call):
+
+- B5: build a stick-only `ActionMap` from the active profiles (C7) and poll it through its own
+  `PlayerActions` over seat 1's `_seatState` (it already answers stick ids), or over a bare
+  `StickDeviceState.Live(() => PlayerIndex)`, which reads nothing but sticks. Either gives an
+  `ActionSnapshot` whose `Axis(PitchUp, PitchDown)` is B4's linear rescale.
+- C7: `StickModel.Device` is the device every profile row names; key a file by `StickModel`
+  (`TryParse`/`ToString`), and encode rows through `BindingStore.Encode`/`Decode` unchanged.
+  `StickDeviceState.Devices()` (or `StickPump.Roster.Sticks`) is the connected set the companion
+  rule selects over.
+- C9: `new SeatDeviceState(MenuInput.SeatPads, () => Pads, sticks: StickDeviceState.Live(() =>
+  seatIndex))` once a menu seat knows its index.
+- D10: `StickDeviceState.Devices()` is the identity list to scan, buttons below
+  `StickRoster.MaxButtons`, axes and hats per the `Stick` counts; `SeatCaptureDevices` takes the
+  same optional stick reader.
+- Tests: `new StickDeviceState(() => seat, () => roster)` over
+  `new StickRoster(new FakeStickNative(), ...)`; the fake moved to `CSVM.Tests/FakeStickNative.cs`
+  and gained `SetAxis`, `Press` and `SetHat`.
+
+**Tests.** `CSVM.Tests/StickDeviceStateTests.cs` (32 cases): the id and its token round-trip, pad
+and malformed ids are no stick, L button 1 and R button 1 resolve apart (raw and through a
+`Binding`), axes per model, each hat direction alone and a diagonal, seats 2-4 read nothing and a
+re-seated player loses the sticks, blocked reads neutral with the devices still listed, a null
+roster reads nothing, `Devices()` dedupes identical units, and `SeatDeviceState` answering sticks
+beside `AnyPad`, muted with `readsPads: false`, and silent without a stick reader.
+
+**Verified.** <pending orchestrator run>
+
+**Original approach (kept for reference).**
 
 **Goal.** `IDeviceState` answers button, axis and hat reads for a stick's model identity, and seat
 1's reader includes every connected stick, keeping L and R apart instead of merging them behind

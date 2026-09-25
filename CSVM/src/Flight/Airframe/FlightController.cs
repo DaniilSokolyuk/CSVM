@@ -10,6 +10,7 @@ using CSVM.Flight.Hud;
 using CSVM.Flight.Modes;
 using CSVM.Flight.Weapons;
 using CSVM.Mech3;
+using CSVM.Sticks;
 using CSVM.Utils;
 using Godot;
 
@@ -688,7 +689,7 @@ public partial class FlightController : Node3D
 
     public FlightController()
     {
-        _seatState = new SeatDeviceState(DefaultBindings.AnyPad, () => PadDevices);
+        _seatState = new SeatDeviceState(DefaultBindings.AnyPad, () => PadDevices, sticks: StickDeviceState.Live(() => PlayerIndex));
         _padMutedState = new SeatDeviceState(DefaultBindings.AnyPad, () => PadDevices, readsPads: false);
         _bindings = BindingProfile.Defaults(default, true);
         _rumble = new PadRumble(() => PadDevices, _bindings.Device);

@@ -70,7 +70,8 @@ reads a SET of pads while a binding names one device, so pad defaults sit on a p
 and this answers for it: buttons ORed, axes taken at the largest magnitude across the set. Pad reads
 go through `Pads.For` rather than a registry index, and only the pad half is gated, because Godot
 polls joypads regardless of window focus while key state is focus-scoped. `Refresh` takes the pad
-list once a tick. Read `PlayerActions.cs` for the seat above it.
+list once a tick. Every other joypad identity goes to an optional stick reader
+(`Sticks/StickDeviceState.cs`, seat 1's only), muted with the pads. Read `PlayerActions.cs` above it.
 
 ## src/Bindings/BindingSet.cs
 The bindings one action holds. `Resolve` ORs them, which is the original's four-slots rule

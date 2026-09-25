@@ -675,6 +675,7 @@ filling only the models Godot's pad roster lacks.
 - `src/Sticks/IStickNative.cs`, the stick library as the roster sees it: pump, list, open, close and raw reads, the seam a test fakes.
 - `src/Sticks/Sdl2Sticks.cs`, `SDL2.dll` loaded by absolute path and reduced to its DirectInput joystick backend, behind `IStickNative`.
 - `src/Sticks/StickRoster.cs`, the gap-filling roster: hot-plug, the input gate, normalised reads, identical units merged per model, the roster log.
+- `src/Sticks/StickDeviceState.cs`, the sticks as an `IDeviceState` keyed by model identity (`stick:231D/0201`), read by seat 1 alone.
 - `src/Sticks/StickPump.cs`, the node that loads SDL2 once per process, publishes the live roster and pumps it each frame; hosts `--dump-sticks`.
 
 ### `src/Video/`, the MPEG-1 cinema decoder

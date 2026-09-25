@@ -4,31 +4,33 @@ using Godot;
 
 namespace CSVM.Bindings;
 
-/// <summary>This tick's hardware for one seat: the keyboard and the mouse as the platform reports
-/// them, plus whichever pads the seat currently holds behind a single placeholder identity. A seat
-/// reads a SET of pads while a binding names one device, so pad defaults are authored on a
-/// placeholder (<see cref="DefaultBindings.AnyPad"/> and its per-site twins) and this answers for
-/// that identity alone, ORing buttons and taking the largest-magnitude axis reading across the set.
-/// ⚠ Pad reads go through <see cref="Pads.For"/>, never through a connection index from the device
-/// registry. That gate is what <c>--no-pads</c> and an unfocused window act on, and it carries the
-/// phantom-device policy (span the set, never <c>pads[0]</c>); a registry index would lose both and
-/// would pin the seat to one pad.</summary>
+/// <summary>This tick's hardware for one seat: the keyboard, the mouse, and the pads the seat holds
+/// behind one placeholder identity. A seat reads a SET of pads while a binding names one device.
+/// Pad defaults therefore sit on a placeholder (<see cref="DefaultBindings.AnyPad"/> and its
+/// per-site twins); this ORs buttons and takes the largest-magnitude axis across the set.
+/// ⚠ Pad reads go through <see cref="Pads.For"/>, never a connection index from the device registry.
+/// It carries the <c>--no-pads</c> and focus gate and the phantom-device policy (span the set, never
+/// <c>pads[0]</c>). Every other joypad identity goes to the seat's stick reader, if it has one.
+/// </summary>
 public sealed class SeatDeviceState : IDeviceState
 {
     private readonly DeviceId _seatPad;
     private readonly Func<int[]?> _seatDevices;
     private readonly bool _readsPads;
+    private readonly IDeviceState? _sticks;
     private readonly List<int> _pads = new();
 
     /// <summary>A seat reading <paramref name="seatPad"/>'s bindings off the pads
     /// <paramref name="seatDevices"/> names, re-asked each <see cref="Refresh"/> because a seat's
     /// device list changes when a splitscreen player joins. Pass <paramref name="readsPads"/> false
-    /// for the keyboard-half reader of a site that resolves both halves separately.</summary>
-    public SeatDeviceState(DeviceId seatPad, Func<int[]?> seatDevices, bool readsPads = true)
+    /// for the keyboard-half reader of a site that resolves both halves separately; it mutes
+    /// <paramref name="sticks"/> too. <paramref name="sticks"/> answers for every other identity.</summary>
+    public SeatDeviceState(DeviceId seatPad, Func<int[]?> seatDevices, bool readsPads = true, IDeviceState? sticks = null)
     {
         _seatPad = seatPad;
         _seatDevices = seatDevices ?? throw new ArgumentNullException(nameof(seatDevices));
         _readsPads = readsPads;
+        _sticks = readsPads ? sticks : null;
     }
 
     /// <summary>Takes this tick's pad list once, before anything resolves. <see cref="Pads.For"/>
@@ -57,7 +59,7 @@ public sealed class SeatDeviceState : IDeviceState
     public bool IsButtonDown(DeviceId device, int button)
     {
         if (device != _seatPad)
-            return false;
+            return _sticks is not null && _sticks.IsButtonDown(device, button);
         foreach (int pad in _pads)
         {
             if (Input.IsJoyButtonPressed(pad, (JoyButton)button))
@@ -72,7 +74,7 @@ public sealed class SeatDeviceState : IDeviceState
     public float AxisValue(DeviceId device, int axis)
     {
         if (device != _seatPad)
-            return 0f;
+            return _sticks?.AxisValue(device, axis) ?? 0f;
         float best = 0f;
         foreach (int pad in _pads)
         {
@@ -84,8 +86,9 @@ public sealed class SeatDeviceState : IDeviceState
         return best;
     }
 
-    /// <summary>Always nothing: no default authors a hat and <see cref="BindingStore"/> rejects the
-    /// token, because Godot reports a d-pad as four buttons (<see cref="DefaultBindings"/>).
+    /// <summary>A stick's hat, and nothing on the pad placeholder: Godot reports a d-pad as four
+    /// buttons (<see cref="DefaultBindings"/>), so <see cref="BindingStore"/> rejects a hat there.
     /// </summary>
-    public HatDirection HatState(DeviceId device, int hat) => HatDirection.None;
+    public HatDirection HatState(DeviceId device, int hat) =>
+        device != _seatPad && _sticks is not null ? _sticks.HatState(device, hat) : HatDirection.None;
 }
