@@ -178,7 +178,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 ### Wave D, capture and screens
 
-10. ☐ Stick capture: full range, hats, full-axis inference, deadzone stamping, labels
+10. ☑ Stick capture: full range, hats, full-axis inference, deadzone stamping, labels
 11. ☐ Remake Controls screen: stick rows saved to the active profile, "Open profiles folder"
 12. ☐ Original-style KEYS AND BUTTONS page: Stick column, replace per device
 
@@ -938,7 +938,111 @@ bindings enter menu polling, and how the join flow treats a stick (seat 1 only, 
 
 # Wave D, capture and screens
 
-## D10 ☐ Stick capture: full range, hats, full-axis inference, deadzone stamping, labels
+## D10 ☑ Stick capture: full range, hats, full-axis inference, deadzone stamping, labels
+
+**Landed.** `ControlCapture` scans every stick the seat's reader lists, over a stick's own range,
+through a new engine-free `CSVM/src/Bindings/StickCapture.cs`. No edit to `ControlsFeature`,
+`LaunchMenu`, `OriginalOptionsScreen`, `MenuInput`, the `StickProfile*` files or `FlightController`.
+
+- **Which sticks.** A new seam, `CSVM/src/Bindings/IStickDevices.cs` (`IReadOnlyList<DeviceId>
+  Devices()`), keeps `Bindings` free of `Sticks`. `StickDeviceState` implements it (its existing
+  `Devices()`), and `SeatDeviceState` passes its stick reader's list through (empty without one, or
+  on a keyboard-half reader). `ControlCapture.Arm(state)` takes the list when `state` is an
+  `IStickDevices`. A stick plugged in mid-capture is not scanned until the next `Arm`, because its
+  first readings are not its resting ones.
+- **Range.** Buttons 0..127 (`StickCapture.Buttons`), axes 0..7 (`Axes`), hats 0..3 (`Hats`), each
+  direction of a hat separately. A button or hat direction held at `Arm` is masked until released,
+  the pad rule. A read past a device's own counts is neutral (A2), so the fixed ranges are safe.
+- **Order in `Poll`.** Keys, modifier alone, pad buttons, **stick buttons, stick hats**, mouse, pad
+  axes, **stick axes**. A button beats an axis a hand rests on, as before.
+- **Axes are measured from where they rested, not from zero.** `Arm` records every stick axis; a
+  move is `value - armed` of at least `StickCapture.MoveThreshold` = **0.5** (TUNE). The pad's rest
+  band is not used for sticks, since it would mask L's lever (resting 1.00) forever. The axis moved
+  furthest wins, so a diagonal push binds the deeper axis. This answers the ⚠ trap: a HOSAS stick
+  sitting slightly off-centre is its own baseline and never latches.
+- **Blocked reads never seed.** `IStickDevices.ReadsBlocked` (the roster's `InputBlocked`, passed
+  through `SeatDeviceState`) stops the whole stick scan while it holds. The rests, button masks and
+  hat masks are recorded on the first unblocked poll (which captures nothing), not at `Arm`, and a
+  block during a capture drops them so they are re-recorded when reads resume. A capture armed while
+  the window is unfocused therefore never reads L's lever at 1.00 as a move from the blocked 0.
+- **Full-axis inference.** When the capture's row satisfies `AxisPairs.TakesFullAxis` (a pair row or
+  the Throttle (lever) row), the move becomes `AxisPairs.FullAxisFor(row, axis, sign(travel),
+  StickCapture.DeadzoneFor(row))`. On the lever row, pushing L's lever from 1.00 toward -1 infers
+  inverted; R's lever moved toward +1 does not. On any other row a stick axis becomes a half axis
+  `BindingControl.Axis(axis, sign, ControlCapture.CapturedDeadzone)`, captured only once the axis
+  sits past that deadzone in the moved direction, so the capture moment is one where it fires.
+- **Deadzones stamped (Decision 12).** `StickCapture.FlightDeadzone` **0.02** on pitch, roll, yaw and
+  the lever; `StickCapture.RateThrottleDeadzone` **0.08** on ThrottleUp/ThrottleDown. Both TUNE.
+- **Sticks-only mode (for D12).** `new ControlCapture(pad, readsKeyboard, row, sticksOnly: true)`
+  captures stick buttons, hats and axes and nothing else.
+- **Cancel (the TODO, answered).** Escape and the pad's Back stay the only cancel controls, in both
+  modes. No stick button cancels: a stick has no designated Back until C9 binds one, and every stick
+  button must stay capturable.
+- **Seat 1 only.** `SeatCaptureDevices` gained an optional `IDeviceState? sticks`, handed to every
+  context's `SeatDeviceState`. `UI/Screens/MenuControlsSeats.Sync` passes each seat
+  `StickDeviceState.Live(() => seatIndex)`, which reads only for index 0, so both controls screens
+  (they share `MenuControlsSeats`) scan sticks for player 1 and nothing for players 2-4.
+- **Labels (the TODO, answered).** `BindingLabels.StickName` (`Func<DeviceId, string?>`) is a
+  registered seam, set by `CSVM/src/Sticks/StickLabels.cs` from `StickPump.Start` before its
+  `--no-pads` check, so it is set in every launch. The prefix is the active profile's `name`
+  (`StickProfiles.Live?.ActiveFor(model)?.Name`), else `Stick <model>` (`Stick 231D/0201`), so two
+  unnamed sticks never read alike. The control part uses the **raw 0-based index**, the number the
+  profile file and `--dump-sticks` print: `R Button 17`, `R Axis 3`, `R Axis 1 inverted` (full axis),
+  `R Axis 4 -` (half axis), `R Hat Up` (hat 0 drops its index), `R Hat 1 Left`.
+  `BindingLabels.Describe(binding, stickName)` is a pure overload for tests.
+
+**Wiring contract** (what D11 and D12 call):
+
+- **Capture on a row:** `new ControlCapture(seat.PadOf(context), seat.ReadsKeyboard, row: Focused)`.
+  Today `ControlsFeature.BeginCapture` passes no row, so stick buttons and hats already capture on
+  the remake screen but a stick axis is captured as a half axis; passing the focused action is
+  D11's one-line change that turns on full-axis inference. `Arm` and `Poll` are unchanged.
+- **Stick column (D12):** `new ControlCapture(pad, readsKeyboard, row, sticksOnly: true)`, armed and
+  polled over the same `ICaptureDevices.For(context)` reader. Replace-per-device is D12's own rule on
+  top of the returned `Binding` (its `Device` is the stick model's identity).
+- **The steal prompt:** a captured full axis is a `ControlKind.FullAxis` on the stick identity.
+  `ActionMap.OwnersOf` reports the pair partner as an owner when the partner already holds that
+  full axis (it sits on both rows), so D11's `Offer` should drop `AxisPairs.PartnerOf(Focused)` from
+  the losers before prompting, and commit through `ActionMap.Assign` (which puts it on both rows).
+- **Labels:** `BindingLabels.Describe`/`Row` already print stick bindings with the profile name; no
+  screen call changes. A D12 cell that wants a shorter form can call
+  `StickLabels.Prefix(device, nameOf)` itself.
+- **Deadzones:** read `StickCapture.DeadzoneFor(row)` if a screen shows or re-stamps one.
+- **Tests:** `CSVM.Tests/StickCaptureTests.cs` shows the rig: `SeatDeviceState(AnyPad, () => null,
+  sticks: new StickDeviceState(() => seat, () => roster))` over `FakeStickNative` (which gained
+  `Release`), captured with `readsKeyboard: false` (the keyboard read is an engine call).
+
+**Left open.**
+
+- A stick axis held deflected when the capture arms is its own baseline, so letting it go back to
+  centre is a move toward centre and is captured, unlike the pad's mask-until-rest rule.
+- A lever resting within 0.5 of the end the player pushes toward (for example R's -0.57 when full
+  is -1) cannot travel `MoveThreshold`; the player moves it the other way and gets the opposite
+  invert, which `MoveThreshold` (TUNE) or a prompt at D11 may need to address.
+- Labels use 0-based indices; VKB's configuration tool and Windows number buttons from 1, so a label
+  reads one lower than the stick's own software. The user's call at E13.
+- `StickCapture.cs`, `IStickDevices.cs` and `StickLabels.cs` have no Godot `.uid` yet.
+- No engine suite drives a stick capture, since no headless run opens SDL2; the unit suite carries
+  the rules.
+
+**Verified.** `CSVM.Tests/StickCaptureTests.cs`, 34 cases: a capture armed while blocked with L's
+lever at 1.00 captures nothing on unblock and then binds the lever inverted when it moves, a block
+mid-capture re-seeds (a lever moved and a button held while blocked are not captured), button 100 captured on R, a stick button
+held at arm masked until released, each hat direction and a hat held at arm masked until it
+changes, full-axis inference with invert on PitchUp/PitchDown both ways plus RollLeft and YawRight,
+the lever row from L resting at 1.00 (inverted) and R at -0.57 (not inverted), resting-offset levers
+twitching up to 0.45 not triggering on the lever row, a pair row and a button row, deadzone 0.02 on
+pitch, roll, yaw and the lever and 0.08 on the throttle rate pair, a half axis on a button row, the
+deepest axis of a diagonal push, the last axis index, seat 2 listing and capturing no stick,
+sticks-only ignoring a pad button and still cancelling on the pad's Back, the pad beating the stick
+in one frame, and the labels. `RunTests.ps1 -SkipGoldens -Suite
+bindings-launch-load,bindings-prompt-device,menu-controls-seats,menu-original-controls`: the four
+engine suites pass, engine errors clean. `RunTests.ps1 -SkipEngine -SkipGoldens` with the
+blocked-read rule: units 5003 passed, 0 failed, 2 skipped (data-absent cinema tests).
+`CheckCommentCaps.ps1` and `CheckDocEntries.ps1` clean. The full `RunTests.ps1` passes on the
+merged branch with the 19 goldens hash-identical. No stick has been captured at the controls yet.
+
+**Original approach (kept for reference).**
 
 **Goal.** Capturing on any row accepts a stick's buttons 0..127, axes 0..7 and hat directions. A
 stick axis moved on either row of an axis pair binds the whole axis to the pair with invert

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using CSVM.Bindings;
+using CSVM.Sticks;
 using CSVM.UI.Menu;
 
 namespace CSVM.UI.Screens;
@@ -62,7 +63,10 @@ public sealed class MenuControlsSeats
             }
             else
             {
-                _controls.AddSeat(i + 1, Profile(i + 1, editable), new SeatCaptureDevices(PadOf, () => editable.Pads), editable.Keyboard);
+                // The stick reader answers only for seat index 0, so every other seat scans no stick.
+                int seat = i;
+                var devices = new SeatCaptureDevices(PadOf, () => editable.Pads, StickDeviceState.Live(() => seat));
+                _controls.AddSeat(i + 1, Profile(i + 1, editable), devices, editable.Keyboard);
             }
         }
 

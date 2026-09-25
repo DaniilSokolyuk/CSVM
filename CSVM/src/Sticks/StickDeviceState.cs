@@ -13,7 +13,7 @@ namespace CSVM.Sticks;
 /// ⚠ Do not add a gate here; the roster already reads neutral under <see cref="Pads.InputBlocked"/>,
 /// the pads' own gate.
 /// </summary>
-public sealed class StickDeviceState : IDeviceState
+public sealed class StickDeviceState : IDeviceState, IStickDevices
 {
     /// <summary>The player index that owns every stick: seat 1.</summary>
     public const int OwningSeat = 0;
@@ -28,6 +28,10 @@ public sealed class StickDeviceState : IDeviceState
         _playerIndex = playerIndex ?? throw new ArgumentNullException(nameof(playerIndex));
         _roster = roster ?? throw new ArgumentNullException(nameof(roster));
     }
+
+    /// <summary>Whether the roster's reads are neutral right now, which a capture must not take as
+    /// where a stick rests. False with no roster or for another seat, which read nothing anyway.</summary>
+    public bool ReadsBlocked => Roster() is { InputBlocked: true };
 
     /// <summary>The game's reader for a seat, over the one live roster (<see cref="StickPump.Roster"/>).
     /// </summary>

@@ -656,6 +656,8 @@ both sit on top of these types.
 - `src/Bindings/ActionMap.cs`, one player's keymap: which control fires which action, with assignment taking a control off every action that held it.
 - `src/Bindings/ControlCapture.cs`, what a rebinding screen may capture, and the release-first scan that turns a press into a binding on the seat's identity.
 - `src/Bindings/ICaptureDevices.cs`, the hardware a capture reads through: one reader per context, with the pad identity that context's bindings sit on.
+- `src/Bindings/StickCapture.cs`, the stick half of a capture: 128 buttons, hat directions, and axes measured from where they rested, a full axis on a pair or lever row.
+- `src/Bindings/IStickDevices.cs`, the seam a capture learns a seat's stick identities through, so this namespace never names the stick library.
 - `src/Bindings/SeatCaptureDevices.cs`, one seat's capture readers, a `SeatDeviceState` per context over one pad list, on that context's placeholder identity.
 - `src/Bindings/BindingLabels.cs`, what a rebinding screen prints: an action's name, a control's keycap name, and a row that counts what it is not showing.
 - `src/Bindings/ActionSnapshot.cs`, the tick's resolved values, so two consumers reading one action in one tick get the same answer. No edges and no history.
@@ -686,6 +688,7 @@ filling only the models Godot's pad roster lacks.
 - `src/Sticks/StickProfileResolver.cs`, which file is active per connected model (companions, then user over shipped, then name), and the rows it yields.
 - `src/Sticks/StickProfileSet.cs`, the profiles in force, re-selected on every roster change; merges seat 1's keymap and saves an accepted screen.
 - `src/Sticks/StickProfiles.cs`, the engine side: `res://data/stick_profiles/`, `user://stick_profiles/`, and the one live set.
+- `src/Sticks/StickLabels.cs`, a stick's caption prefix for the rebinding screens: its profile's short name, else `Stick` and its model.
 
 ### `src/Video/`, the MPEG-1 cinema decoder
 

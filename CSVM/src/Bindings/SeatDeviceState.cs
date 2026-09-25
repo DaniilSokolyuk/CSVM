@@ -12,7 +12,7 @@ namespace CSVM.Bindings;
 /// It carries the <c>--no-pads</c> and focus gate and the phantom-device policy (span the set, never
 /// <c>pads[0]</c>). Every other joypad identity goes to the seat's stick reader, if it has one.
 /// </summary>
-public sealed class SeatDeviceState : IDeviceState
+public sealed class SeatDeviceState : IDeviceState, IStickDevices
 {
     private readonly DeviceId _seatPad;
     private readonly Func<int[]?> _seatDevices;
@@ -32,6 +32,9 @@ public sealed class SeatDeviceState : IDeviceState
         _readsPads = readsPads;
         _sticks = readsPads ? sticks : null;
     }
+
+    /// <summary>Whether the seat's stick reader reads neutral right now; false without one.</summary>
+    public bool ReadsBlocked => _sticks is IStickDevices { ReadsBlocked: true };
 
     /// <summary>Takes this tick's pad list once, before anything resolves. <see cref="Pads.For"/>
     /// re-reads the connected roster on every call, and a tick would otherwise ask it once per pad
@@ -91,4 +94,9 @@ public sealed class SeatDeviceState : IDeviceState
     /// </summary>
     public HatDirection HatState(DeviceId device, int hat) =>
         device != _seatPad && _sticks is not null ? _sticks.HatState(device, hat) : HatDirection.None;
+
+    /// <summary>The stick identities the seat's stick reader answers for, empty without one or on a
+    /// keyboard-half reader.</summary>
+    public IReadOnlyList<DeviceId> Devices() =>
+        _sticks is IStickDevices sticks ? sticks.Devices() : Array.Empty<DeviceId>();
 }

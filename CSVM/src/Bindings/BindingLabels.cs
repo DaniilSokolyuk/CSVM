@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -17,6 +18,11 @@ public static class BindingLabels
 {
     /// <summary>What a row prints when the action is bound to nothing.</summary>
     public const string Unbound = "unbound";
+
+    /// <summary>The caption prefix of a stick identity ("R", or the model when no profile names it),
+    /// null for any other device. Registered by the stick side, which keeps this namespace free of
+    /// it, as <see cref="LaunchBindings.StickRows"/> does; unset, a stick reads as a pad.</summary>
+    public static Func<DeviceId, string?>? StickName { get; set; }
 
     /// <summary>An action's caption: the original's own keybind-page string where it binds that
     /// action. Otherwise it is the enum name with its words separated, so <c>FireRockets</c> reads as
@@ -45,9 +51,15 @@ public static class BindingLabels
 
     /// <summary>One control's caption, device included, because two pads' identical buttons are two
     /// different bindings and a row that hid the device would read as a duplicate.</summary>
-    public static string Describe(Binding binding)
+    public static string Describe(Binding binding) => Describe(binding, StickName);
+
+    /// <summary><see cref="Describe(Binding)"/> with the stick names taken from
+    /// <paramref name="stickName"/> instead of the registered <see cref="StickName"/>.</summary>
+    public static string Describe(Binding binding, Func<DeviceId, string?>? stickName)
     {
         var c = binding.Control;
+        if (stickName?.Invoke(binding.Device) is { } stick)
+            return stick + " " + StickControl(c);
         return c.Kind switch
         {
             ControlKind.Key => BindingControl.Prefix(c.Modifiers) + KeyName((Key)c.Index),
@@ -139,6 +151,21 @@ public static class BindingLabels
         InputAction.Pause => "Pause/Quit/Objectives",
         _ => ThrottleFraction(action),
     };
+
+    // A stick control by its raw index, the number the profile file and --dump-sticks print, since a
+    // stick's controls have no names. Hat 0 is the only hat most sticks have, so it drops its index.
+    private static string StickControl(BindingControl c)
+    {
+        string index = c.Index.ToString(CultureInfo.InvariantCulture);
+        return c.Kind switch
+        {
+            ControlKind.Button => "Button " + index,
+            ControlKind.Axis => "Axis " + index + (c.Sign < 0 ? " -" : " +"),
+            ControlKind.FullAxis => "Axis " + index + (c.Inverted ? " inverted" : string.Empty),
+            ControlKind.Hat => (c.Index == 0 ? "Hat " : "Hat " + index + " ") + c.Direction,
+            _ => c.Kind + " " + index,
+        };
+    }
 
     // The nine absolute-throttle actions, captioned as the original's Throttle page spells them:
     // "Throttle 0/8" for idle through "Throttle 8/8" for full.

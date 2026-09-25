@@ -50,6 +50,8 @@ internal sealed class FakeStickNative : IStickNative
 
     public void Press(int instance, int button) => _buttons.Add((instance, button));
 
+    public void Release(int instance, int button) => _buttons.Remove((instance, button));
+
     public void SetHat(int instance, int hat, byte bits) => _hats[(instance, hat)] = bits;
 
     public bool Pump()

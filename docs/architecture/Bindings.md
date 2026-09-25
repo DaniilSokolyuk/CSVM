@@ -112,12 +112,25 @@ position, through this map's `ContestedFor` modifier gate.
 ## src/Bindings/ControlCapture.cs
 What a rebinding screen may capture, and the scan that turns a press into a `Binding`: the bindable
 key list, Godot's pad button and SDL axis ranges, and the mouse buttons past the pointer's own. `Arm`
-masks everything already held, so the press that opened the capture is not the answer to it. Every
-pad control is stamped with the seat's own identity, not a hardware GUID. A key pressed under Shift,
-Ctrl or Alt carries them, and a modifier bound alone resolves on its release, since while one is down
-it may still be qualifying the key to come. An axis carries release-first as a rest-then-move rule,
-since a resting stick drifts, and takes a fixed `CapturedDeadzone`. Hats are not scanned, and the two
-cancel controls (Escape, the pad's Back) are never captured. Read `ICaptureDevices.cs` next.
+masks everything already held. Every pad control is stamped with the seat's own identity, not a
+hardware GUID. A key pressed under Shift, Ctrl or Alt carries them; a modifier bound alone resolves
+on its release. A pad axis is rest-then-move, since a resting stick drifts, with a fixed
+`CapturedDeadzone`. A pad's hat is not scanned; sticks are, through `StickCapture`, steered by the
+constructor's `row` and `sticksOnly`. Escape and the pad's Back cancel and are never captured.
+
+## src/Bindings/StickCapture.cs
+The stick half of a capture, over every identity the reader lists (`IStickDevices`): buttons 0..127,
+hats 0..3 per direction (release-first), and axes 0..7 measured from the value each read when the
+capture armed, since a lever rests anywhere. The axis moved furthest past `MoveThreshold` wins. On a
+row where `AxisPairs.TakesFullAxis` holds it becomes `AxisPairs.FullAxisFor`, invert inferred, with
+`DeadzoneFor(row)` (0.08 on the throttle rate pair, 0.02 elsewhere); on any other row a half axis,
+captured only once it sits past its own deadzone. Nothing is scanned while `ReadsBlocked` holds, and
+the rests and masks are taken on the first unblocked poll, never from blocked zeros.
+
+## src/Bindings/IStickDevices.cs
+The seam a capture learns the seat's stick identities through, so `Bindings` never names the stick
+library: `Sticks/StickDeviceState.cs` implements it, and `SeatDeviceState` passes its stick reader's
+list through (empty with no stick reader or on a keyboard-half reader).
 
 ## src/Bindings/ICaptureDevices.cs
 The hardware a rebinding screen captures through: one `IDeviceState` per `InputContext`, together
@@ -131,18 +144,19 @@ One seat's capture readers: a `SeatDeviceState` per `InputContext` over the same
 on the identity that context's bindings are authored on, from the single `padOf` the seat passes in
 so the two cannot disagree. The three polling sites do not share one placeholder, which is why a
 reader answers for one context and reads nothing for the other two. `For` takes this frame's pad list
-before handing the reader back, because a capture reads between the poller's own ticks. Read
-`ControlCapture.cs` next.
+before handing the reader back, because a capture reads between the poller's own ticks. An optional
+stick reader goes to every context; `UI/Screens/MenuControlsSeats.cs` passes each seat
+`StickDeviceState.Live`, which reads only for seat 1. Read `ControlCapture.cs` next.
 
 ## src/Bindings/BindingLabels.cs
 What a rebinding screen prints: an action's name, a control's name in keycap terms rather than enum
 terms, one row of an action's whole binding list, and the clause naming what a steal took a control
 from. An action the original binds prints the original's own keybind-page caption, unprefixed and in
 its own case, since those pages read under a category heading; a modified key prints `Shift+E`. A
-row states how many bindings it is not showing, because the original ships four slots per
-action and draws the first two non-empty (`FUN_00449fc0`, [../org/input.md](../org/input.md)), so its
-screen hides bindings with no way for a player to tell. Separate from `BindingStore`'s tokens on
-purpose: a file is parsed back and a label is only read.
+row states how many bindings it is not showing, because the original draws only the first two of
+four slots (`FUN_00449fc0`, [../org/input.md](../org/input.md)) and hides the rest silently. A stick
+control prints its registered `StickName` prefix and raw index ("R Button 17", "R Hat Up").
+Separate from `BindingStore`'s tokens: a file is parsed back and a label is only read.
 
 ## src/Bindings/ActionSnapshot.cs
 The tick's resolved held/how-far pair per action, so two consumers asking the same question in one

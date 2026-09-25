@@ -35,6 +35,7 @@ public sealed partial class StickPump : Node
     /// <paramref name="repoRoot"/> is null in an exported build (docs/tooling.md's load order).</summary>
     public static StickPump? Start(string? repoRoot, string? dataRoot)
     {
+        StickLabels.Register();
         if (Pads.Disabled)
         {
             Log.Info("core", $"sticks: off (--no-pads, or the --det bundle), SDL2 not loaded");

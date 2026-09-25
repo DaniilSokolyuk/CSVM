@@ -41,7 +41,8 @@ units of one model. Engine-free; read `Pads.cs` for the roster-versus-gate split
 The sticks behind the binding seam: an `IDeviceState` answering for `StickModel.Device` identities
 through the roster's `Model*` reads, so L and R are two devices and identical units one. Only
 player index 0 (seat 1) reads; any other seat, and a null roster, read nothing. It adds no gate of
-its own, the roster's is `Pads.InputBlocked`. `Devices()` lists the connected models' identities.
+its own, the roster's is `Pads.InputBlocked`. `Devices()` lists the connected models' identities,
+which is `Bindings/IStickDevices.cs`, the list a capture scans.
 `Live` reads `StickPump.Roster`; seat 1's `Bindings/SeatDeviceState.cs` in `FlightController`
 holds one. Tests build it over a `StickRoster` on `CSVM.Tests/FakeStickNative.cs`.
 
@@ -86,3 +87,9 @@ The engine side of the profiles: the shipped folder `res://data/stick_profiles/`
 Godot's file API, exported by the preset's `data/*.json` filter), the user folder
 `user://stick_profiles/` (with a suite override), and the one live `StickProfileSet`, which
 `StickPump` starts and which registers itself as `LaunchBindings.StickRows`.
+
+## src/Sticks/StickLabels.cs
+How a rebinding screen names a stick: its active profile's short name ("R"), else `Stick` and its
+model, so two unnamed sticks never read as one. `StickPump.Start` registers it as
+`BindingLabels.StickName` before any other check, so a stick row reads as a stick even with sticks
+off. `Prefix` is the pure form a test drives with its own names.
