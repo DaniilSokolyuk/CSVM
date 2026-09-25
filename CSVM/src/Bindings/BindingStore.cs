@@ -19,12 +19,12 @@ namespace CSVM.Bindings;
 /// a saved file give a pad-only splitscreen seat the keyboard back.</summary>
 public sealed class BindingStore
 {
-    /// <summary>The schema version written into every file. It says how the tokens below are
-    /// encoded, not which actions exist: an added action is already handled, since a file that does
-    /// not name one leaves it at its default. Bump it when a token's shape changes.
-    /// Version 2 is the key token's optional modifier prefix (<c>key:Shift+E</c>). A version 1 file
-    /// names no modifier and still loads whole, which is why the reader checks no version.</summary>
-    public const int Version = 2;
+    /// <summary>The schema version written into every file: how the tokens are encoded, not which
+    /// actions exist. A file not naming an action leaves it at its default. Bump it when a
+    /// token's shape changes. Version 2 is the key token's modifier prefix (<c>key:Shift+E</c>).
+    /// Version 3 adds the full-axis token and readable stick hat tokens. An older file names none of
+    /// them and still loads whole, which is why the reader checks no version.</summary>
+    public const int Version = 3;
 
     private const string MouseFlyingField = "mouseFlying";
     private const string MouseSensitivityField = "mouseSensitivity";
@@ -92,7 +92,7 @@ public sealed class BindingStore
                 foreach (var action in DefaultBindings.ActionsIn(context))
                 {
                     w.WriteStartArray(action.ToString());
-                    foreach (var binding in map.Bindings(action))
+                    foreach (var binding in StoredRow(map, action))
                     {
                         w.WriteStringValue(Encode(binding));
                     }
@@ -185,13 +185,21 @@ public sealed class BindingStore
                 c.Sign < 0 ? "-" : "+",
                 c.Deadzone),
             ControlKind.Mouse => $"{device}/mouse:{EnumName<MouseButton>(c.Index)}",
-            _ => $"{device}/hat:{c.Index}:{c.Direction}",
+            ControlKind.FullAxis => string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}/fullaxis:{1}{2}@{3}",
+                device,
+                c.Index,
+                c.Sign < 0 ? "-" : "+",
+                c.Deadzone),
+            _ => string.Format(CultureInfo.InvariantCulture, "{0}/hat:{1}:{2}", device, c.Index, c.Direction),
         };
     }
 
-    /// <summary>The binding a stored token names, or null when this build cannot read it. A hat
-    /// token is deliberately unreadable: Godot reports a d-pad as buttons, so a hat row could only
-    /// alias one of them and let two actions hold one direction (`DefaultBindings`).</summary>
+    /// <summary>The binding a stored token names, or null when this build cannot read it. A full
+    /// axis or a hat needs a joypad device. A hat on the pad placeholder is deliberately unreadable.
+    /// Godot reports a pad's d-pad as buttons, so the hat could only alias one of them
+    /// (`DefaultBindings`).</summary>
     public static Binding? Decode(string token)
     {
         int split = token.LastIndexOf('/');
@@ -205,7 +213,30 @@ public sealed class BindingStore
             return null;
         }
 
+        bool stickOnly = control.Kind is ControlKind.FullAxis or ControlKind.Hat;
+        if (stickOnly && (device.Kind != DeviceKind.Joypad
+            || (control.Kind == ControlKind.Hat && device == DefaultBindings.AnyPad)))
+        {
+            return null;
+        }
+
         return new Binding(device, control);
+    }
+
+    /// <summary>The bindings a file writes for that action's row: all of them, except that a full
+    /// axis is written once, under its pair's positive action. One copy is what a player edits by
+    /// hand, so a deadzone typed into the file cannot disagree with a second copy of itself.</summary>
+    public static IEnumerable<Binding> StoredRow(ActionMap map, InputAction action)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        bool negative = AxisPairs.SideOf(action) < 0;
+        foreach (var binding in map.Bindings(action))
+        {
+            if (!negative || binding.Control.Kind != ControlKind.FullAxis)
+            {
+                yield return binding;
+            }
+        }
     }
 
     /// <summary>That player's stored keymap, or the shipped defaults when the file is absent,
@@ -241,6 +272,9 @@ public sealed class BindingStore
         File.Move(temp, path, overwrite: true);
     }
 
+    // Every readable row is cleared before any is added, and full axes go in last. A full axis
+    // written under one row lands on both, so clearing the partner's row after it would drop it.
+    // Adding it last keeps each row's own bindings in the order the file lists them.
     private static void ReadContext(ActionMap map, InputContext context, JsonElement element, DeviceId pad)
     {
         var saved = new List<(InputAction Action, List<Binding> Bindings)>();
@@ -249,28 +283,41 @@ public sealed class BindingStore
             if (!Enum.TryParse(entry.Name, ignoreCase: true, out InputAction action)
                 || DefaultBindings.ContextOf(action) != context
                 || entry.Value.ValueKind != JsonValueKind.Array
-                || !TryRow(entry.Value, pad, out var bindings))
+                || !TryRow(entry.Value, action, pad, out var bindings))
             {
                 continue;
             }
 
-            map.Clear(action);
-            foreach (var binding in bindings)
-            {
-                map.Add(action, binding);
-            }
-
             saved.Add((action, bindings));
+        }
+
+        foreach (var (action, _) in saved)
+        {
+            map.Clear(action);
+        }
+
+        foreach (bool fullAxes in new[] { false, true })
+        {
+            foreach (var (action, bindings) in saved)
+            {
+                foreach (var binding in bindings)
+                {
+                    if ((binding.Control.Kind == ControlKind.FullAxis) == fullAxes)
+                    {
+                        map.Add(action, binding);
+                    }
+                }
+            }
         }
 
         TakeControlsTheFileClaims(map, saved);
     }
 
     // A control the file names belongs to the action the file gives it, so a default row left over
-    // on that control loses it. Without this a shipped table that moves a control between actions
-    // puts it on two at once for a file that names only one of them, which is the state the map's
-    // own steal rule forbids. Rows the file names keep sharing a control, since a saved snap-look
-    // diagonal is deliberately two actions.
+    // on that control loses it. Otherwise a shipped table that moves a control between actions puts
+    // it on two at once, which the map's steal rule forbids. Rows the file names keep sharing a
+    // control, since a saved snap-look diagonal is deliberately two actions. A full axis's partner
+    // row holds the same binding, so it is not a loser either.
     private static void TakeControlsTheFileClaims(
         ActionMap map, List<(InputAction Action, List<Binding> Bindings)> saved)
     {
@@ -284,9 +331,10 @@ public sealed class BindingStore
         {
             foreach (var binding in bindings)
             {
+                var partner = binding.Control.Kind == ControlKind.FullAxis ? AxisPairs.PartnerOf(action) : null;
                 foreach (var owner in map.OwnersOf(binding))
                 {
-                    if (owner != action && !named.Contains(owner))
+                    if (owner != action && owner != partner && !named.Contains(owner))
                     {
                         map.Unassign(owner, binding);
                     }
@@ -295,15 +343,16 @@ public sealed class BindingStore
         }
     }
 
-    // The whole row or none of it: one token this build cannot read leaves the action on its
-    // default rather than on a keymap the player never chose. An empty array reads as a row of no
-    // bindings, which is the deliberate unbind.
-    private static bool TryRow(JsonElement array, DeviceId pad, out List<Binding> bindings)
+    // The whole row or none of it. One token this build cannot read leaves the action on its
+    // default rather than on a keymap the player never chose. An empty array is the deliberate
+    // unbind. A full axis on an action in no pair is unreadable too.
+    private static bool TryRow(JsonElement array, InputAction action, DeviceId pad, out List<Binding> bindings)
     {
         bindings = new List<Binding>();
         foreach (var item in array.EnumerateArray())
         {
-            if (item.ValueKind != JsonValueKind.String || Decode(item.GetString()!) is not { } binding)
+            if (item.ValueKind != JsonValueKind.String || Decode(item.GetString()!) is not { } binding
+                || (binding.Control.Kind == ControlKind.FullAxis && AxisPairs.SideOf(action) == 0))
             {
                 return false;
             }
@@ -359,9 +408,59 @@ public sealed class BindingStore
                 return TryAxis(rest, out control);
             case "mouse":
                 return TryIndex<MouseButton>(rest, out int mouseButton) && Made(BindingControl.Mouse(mouseButton), out control);
+            case "fullaxis":
+                return TryFullAxis(rest, out control);
+            case "hat":
+                return TryHat(rest, out control);
             default:
                 return false;
         }
+    }
+
+    // "<axis><+|->@<deadzone>", the half-axis shape with the sign meaning invert. The deadzone is
+    // honoured anywhere the factory accepts, so a value a player typed survives the next save.
+    private static bool TryFullAxis(string text, out BindingControl control)
+    {
+        control = default;
+        int at = text.IndexOf('@');
+        if (at <= 1 || !float.TryParse(
+                text[(at + 1)..], NumberStyles.Float, CultureInfo.InvariantCulture, out float deadzone))
+        {
+            return false;
+        }
+
+        char signChar = text[at - 1];
+        if ((signChar != '+' && signChar != '-') || !TryIndex<JoyAxis>(text[..(at - 1)], out int axis)
+            || !(deadzone >= 0f) || deadzone > BindingControl.MaxFullAxisDeadzone)
+        {
+            return false;
+        }
+
+        control = BindingControl.FullAxis(axis, inverted: signChar == '-', deadzone);
+        return true;
+    }
+
+    // "<hat>:<direction>", one of the four direction names in any case.
+    private static bool TryHat(string text, out BindingControl control)
+    {
+        control = default;
+        int colon = text.IndexOf(':');
+        if (colon <= 0 || !int.TryParse(text[..colon], NumberStyles.None, CultureInfo.InvariantCulture, out int hat))
+        {
+            return false;
+        }
+
+        string name = text[(colon + 1)..];
+        foreach (var direction in new[] { HatDirection.Up, HatDirection.Right, HatDirection.Down, HatDirection.Left })
+        {
+            if (string.Equals(name, direction.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                control = BindingControl.Hat(hat, direction);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // A key token, with any number of modifier names in front of the key: "E", "Shift+E",
@@ -421,13 +520,14 @@ public sealed class BindingStore
 
     // A name the engine enum defines, or the raw number behind a '#' for a code it does not name.
     // Numbers are accepted on the way back in either form, so a file hand-edited to a bare code
-    // still loads.
+    // still loads. The range sentinels (SdlMax, Max) name no control, so a stick's button 21 is #21.
     private static string EnumName<T>(int index)
         where T : struct, Enum
     {
         object value = Enum.ToObject(typeof(T), index);
-        return Enum.IsDefined(typeof(T), value)
-            ? Enum.GetName(typeof(T), value)!
+        string? name = Enum.GetName(typeof(T), value);
+        return name is not null && name != "SdlMax" && name != "Max"
+            ? name
             : "#" + index.ToString(CultureInfo.InvariantCulture);
     }
 

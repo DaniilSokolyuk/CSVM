@@ -50,6 +50,7 @@ public static class BindingLabels
             ControlKind.Button => "Pad " + Spaced(EnumName<JoyButton>(c.Index)),
             ControlKind.Axis => "Pad " + Spaced(EnumName<JoyAxis>(c.Index)) + (c.Sign < 0 ? " -" : " +"),
             ControlKind.Mouse => "Mouse " + Spaced(EnumName<MouseButton>(c.Index)),
+            ControlKind.FullAxis => "Axis " + c.Index.ToString(CultureInfo.InvariantCulture) + (c.Inverted ? " inverted" : string.Empty),
             _ => "Hat " + c.Index.ToString(CultureInfo.InvariantCulture) + " " + c.Direction,
         };
     }

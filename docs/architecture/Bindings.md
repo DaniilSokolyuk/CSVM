@@ -14,20 +14,27 @@ a binding read from a file with a missing device becomes. Turning an identity in
 index is `DeviceRegistry.cs`, read next.
 
 ## src/Bindings/BindingControl.cs
-The tagged control half of a binding: `ControlKind` picks which of `Key`, `Button`, `Axis`, `Hat` and
-`Mouse` the numeric members mean, and five static factories are the only way to build one, because
-they hold the per-kind invariants. A key carries `KeyModifiers` as well, the original's own Shift,
-Ctrl and Alt bits, so `E` and Shift+`E` are two controls rather than one under a qualifier.
-`HatDirection` is a flags enum so a device can report a diagonal while a binding names one direction.
-`Deadzone` is both the noise gate and the digital threshold; the model carries no second number for
-the two jobs. The original's four fixed typed slots, and why an axis cannot be bound there at all:
-[../org/input.md](../org/input.md).
+The tagged control half of a binding: `ControlKind` picks which of `Key`, `Button`, `Axis`, `Hat`,
+`Mouse` and `FullAxis` the numeric members mean, and six static factories are the only way to build
+one, because they hold the per-kind invariants. A key carries `KeyModifiers` as well, so `E` and
+Shift+`E` are two controls. `HatDirection` is a flags enum so a device can report a diagonal while a
+binding names one direction. `Deadzone` is both the noise gate and the digital threshold; a full
+axis, a stick's whole axis over an action pair with `Sign` -1 meaning inverted, honours one up to
+`MaxFullAxisDeadzone`. The original's four fixed typed slots, and why an axis cannot be bound there
+at all: [../org/input.md](../org/input.md).
+
+## src/Bindings/AxisPairs.cs
+The four action pairs a full axis drives (pitch, roll, yaw, throttle) and which member of each is the
+positive side: the end a pad's shipped half-axis puts on raw positive travel. `SideOf` is what the
+map resolves a full axis with, `PositiveOf` is the one row a file writes it under, and `FullAxisFor`
+turns a capture on either row into the binding with invert inferred from the direction moved. One
+table for the map, the store and capture, so a stick cannot resolve backwards on one path only.
 
 ## src/Bindings/Binding.cs
 A device identity plus a control, and the whole read: `Resolve` reaches hardware only through
-`IDeviceState`, so the model is exercised without an engine. `ControlValue` is the held/how-far pair,
-with `Pressed` true exactly when `Value` is above zero, which is what lets an axis drive an action
-written as digital and a button drive one written as analogue. `ModifierGate` is the modifier rule:
+`IDeviceState`, so the model is exercised without an engine. A half axis reports raw travel; a full
+axis reads the side of its pair the caller names, rescaled from the deadzone edge. `ControlValue` is
+the held/how-far pair, with `Pressed` true exactly when `Value` is above zero. `ModifierGate` is the modifier rule:
 a key wanting modifiers wants exactly those, and a bare key stands down under a modifier the same
 keymap holds it under, which the gate reads once a tick and the map alone decides. Structural
 equality is what a rebinding screen compares when it takes a control off its previous owner. Read
@@ -87,10 +94,10 @@ One player's keymap, an action to a `BindingSet`. `Assign` is the winning half o
 returns every action that lost the control, in enum order, so a screen can name each loss instead of
 performing it silently; `OwnersOf` asks the same question without committing. `Add` is the other
 half, binding without stealing, for the shipped defaults and a loaded file where a control is
-deliberately on two actions. `SameControl` is what "the same control" means here, modifiers included,
-and `Fill` replaces a map's contents in place so the readers already holding it follow. `ResolveInto`
-reads every bound action once per tick into a reused snapshot, through a modifier gate this map's own
-`ContestedFor` feeds, so a bare key dies only under a modifier this map holds it under.
+deliberately on two actions. `SameControl` is "the same control", modifiers included, a full axis
+matching either half of its axis. A full axis sits on both rows of its pair or neither, and
+`Unassign` or `Clear` on either row clears both. `ResolveInto` reads every action once per tick,
+each full axis on its action's side, through this map's `ContestedFor` modifier gate.
 
 ## src/Bindings/ControlCapture.cs
 What a rebinding screen may capture, and the scan that turns a press into a `Binding`: the bindable
@@ -191,11 +198,11 @@ into the words.
 The keymap file: versioned JSON, one per player under `user://`, written atomically through a temp
 file and a rename. Named and versioned against the original, which writes 2400 unversioned raw bytes
 to the registry and points its live array at the loaded buffer, so a record-layout change there
-reinterprets an old save. `Encode` and `Decode` are the token grammar; version 2 is the key token's
-optional modifier prefix, and a version 1 file still loads whole, which is why the reader checks no
-version; a file without `mouseSensitivity` loads at the default. A control the file names is taken
-off any action still holding it by default. Its shape, tokens and unreadable rows:
-[../org/input.md](../org/input.md). `DirectoryOverride` keeps a suite off this machine's own keymap.
+reinterprets an old save. `Encode` and `Decode` are the token grammar (version 3 adds full-axis and
+stick hat tokens); an older file loads whole, so the reader checks no version. `StoredRow` writes a
+full axis once, under its pair's positive row. A named control leaves any default still holding it.
+Shape, tokens and unreadable rows: [../org/input.md](../org/input.md). `DirectoryOverride` keeps a
+suite off this machine's own keymap.
 
 ## src/Bindings/LaunchBindings.cs
 Where a seat's keymap comes from when the seat is built: the player's saved file, or the shipped

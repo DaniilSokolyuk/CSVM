@@ -5,13 +5,11 @@ using Godot;
 namespace CSVM.Bindings;
 
 /// <summary>The keymap the game ships with, as data: one <see cref="ActionMap"/> per
-/// <see cref="InputContext"/>, reproducing `docs/controls.md` binding for binding. It is the
-/// fallback every load falls back to, per action, so a file that cannot be read costs the player
-/// the actions it named and nothing else.
-/// ⚠ No default is a hat binding, and nothing else may author one either. Godot reports a d-pad as
-/// four buttons (`GodotDeviceState`), so a hat binding and a d-pad button binding would be one
-/// physical control under two encodings that <see cref="ActionMap.SameControl"/> reads as
-/// different, and two actions could hold it at once.
+/// <see cref="InputContext"/>, reproducing `docs/controls.md` binding for binding. Every load falls
+/// back to it per action, so an unreadable file costs the player only the actions it named.
+/// ⚠ No default is a hat binding, and nothing may author one on a pad. Godot reports a d-pad as
+/// four buttons (`GodotDeviceState`). A hat and a d-pad button are one control read as two, so two
+/// actions could hold it at once.
 /// ⚠ A pad default names <see cref="AnyPad"/>, not a real pad. <see cref="MapFor"/> substitutes the
 /// seat's own identity, because the shipped set cannot know a hardware string.</summary>
 public static class DefaultBindings

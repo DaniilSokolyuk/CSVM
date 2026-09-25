@@ -165,7 +165,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 ### Wave B, binding model
 
-4. ☐ Full-axis binding kind, and hats made bindable for sticks
+4. ☑ Full-axis binding kind, and hats made bindable for sticks
 5. ☐ Stick action source in the flight model: linear, bypassing `StickCurve`
 6. ☐ Absolute Throttle (lever) action with the takeover rule
 
@@ -420,7 +420,84 @@ the pad path's phantom-device policy (`Pads.cs:82-110`) untouched.
 
 # Wave B, binding model
 
-## B4 ☐ Full-axis binding kind, and hats made bindable for sticks
+## B4 ☑ Full-axis binding kind, and hats made bindable for sticks
+
+**Landed.** `ControlKind.FullAxis` is a new control kind built by `BindingControl.FullAxis(index,
+inverted, deadzone)`; `Sign` +1 feeds raw positive travel to the pair's positive action, -1 is the
+inverted binding, and `Inverted` reads it. `AxisPairs` (`CSVM/src/Bindings/AxisPairs.cs`) is the one
+pair table: (PitchUp, PitchDown), (RollRight, RollLeft), (YawRight, YawLeft), (ThrottleUp,
+ThrottleDown), positive first, positive being the end the pad's shipped half-axis puts on raw
+positive travel. `ActionMap.ResolveInto` passes each action's `AxisPairs.SideOf` down through
+`BindingSet.Resolve(state, gate, side)` to `Binding.Resolve(state, gate, side)`, where a full axis
+fires strictly past its deadzone and rescales linearly, `(travel - dz) / (1 - dz)`, so each side is
+0 at the deadzone edge and 1 at full travel. The two-argument `Resolve` reads a full axis as nothing
+(no side). `ActionSnapshot.Axis` and the flight model are unchanged. Pads keep their half-axis
+defaults: nothing in `DefaultBindings` changed except a comment, and a stick's full axis lives on a
+different `DeviceId`, so it never steals a pad row. No new `DeviceKind` was needed: a full axis or a
+hat is accepted on any `DeviceKind.Joypad` id.
+
+- **Token grammar.** `pad:<id>/fullaxis:<axis><+|->@<deadzone>`, for example
+  `pad:03005fcf1d2300000002000000000000/fullaxis:1+@0.02`; the sign is invert (`-` inverted). The
+  axis is written as a bare decimal and read as a number, `#<n>` or a `JoyAxis` name. The deadzone
+  is written with .NET's shortest round-trip float format, so a typed `0.0125` comes back as
+  `0.0125`; it is honoured anywhere in [0, 0.95] (`BindingControl.MaxFullAxisDeadzone`), and a
+  value outside that (or NaN) makes the row unreadable, which keeps the action's default, on the
+  store's existing rule. A full axis is **written once, under the pair's positive row**
+  (`BindingStore.StoredRow`), and loaded onto both rows; a hand edit naming it under the negative
+  row, or both, still binds the pair once. A full axis on the keyboard, the mouse, or a row in no
+  pair is unreadable. Hats: `pad:<id>/hat:<index>:<Up|Right|Down|Left>`, direction in any case on
+  read, readable on any joypad id **except the placeholder `pad:*`** (a Godot pad's d-pad is
+  buttons, so a hat there would alias one). Separately, `Encode` now writes the engine enums' range
+  sentinels as numbers (`button:#<SdlMax>`, `axis:#6`), since a stick's button 21 (Godot 4.7's
+  `JoyButton.SdlMax` is not 21; `Misc2` is) or axis 6 would otherwise read as `SdlMax`; the old
+  names still decode.
+- **SameControl and the steal rule.** A full axis is the same control as **either** half-axis
+  binding on the same axis index of the same device, and as any other full axis there whatever its
+  invert or deadzone. Consequences, all under unit test: assigning a full axis steals every half of
+  that axis from other actions and replaces any half the pair itself held; assigning a half of the
+  axis to another action takes the full axis off **both** pair rows and reports both as losers; the
+  pair partner is never reported as a loser of its own full axis; recapturing the same axis with the
+  other invert replaces it and steals nothing. A full axis sits on both rows of its pair or on
+  neither: `Assign` and `Add` put it on both (a copy with another invert or deadzone is replaced,
+  not stacked), `Unassign` and `Clear` on either row take it off both, and `Assign` throws, `Add`
+  returns false, for an action in no pair. `BindingStore`'s claim rule treats the partner row as
+  the full axis's own, so a file naming only `PitchUp` leaves `PitchDown`'s defaults in place plus
+  the full axis. The loader clears every readable row before adding any and adds full axes last, so
+  JSON order does not matter and each row keeps its own bindings in file order.
+- **Schema version.** `BindingStore.Version` is 3. The reader still checks no version, so version 1
+  and 2 files load whole (existing tests cover both); an older build reading a version 3 file keeps
+  every row it can read and leaves a row with a `fullaxis:` or stick `hat:` token on its default.
+
+**Wiring contract** (what B5, B6, C7 and D10 call):
+
+- `BindingControl.FullAxis(int index, bool inverted, float deadzone)`,
+  `BindingControl.MaxFullAxisDeadzone`, `BindingControl.Inverted`, `ControlKind.FullAxis`.
+- `AxisPairs.All`, `PartnerOf(action)`, `SideOf(action)` (+1, -1, 0), `PositiveOf(action)`, and
+  `AxisPairs.FullAxisFor(row, axis, movedSign, deadzone)`, which is D10's capture step: moving
+  toward the row's own direction binds the axis the way round that fires that row. It throws for a
+  row in no pair, so a Throttle (lever) row (B6) must route to its own absolute binding first.
+- `ActionMap.Assign(row, new Binding(stickId, control))` puts it on both rows and returns the
+  losers; `ActionMap.Unassign(eitherRow, binding)` clears both (D11's "clear from either row").
+- B5: a stick-only `ActionMap` resolved into its own `ActionSnapshot` gives
+  `snapshot.Axis(InputAction.PitchUp, InputAction.PitchDown)` already linear and rescaled; no
+  `StickCurve` should be applied on that path. `FlightController` reads the pad as
+  `-Axis(RollRight, RollLeft)` and `Axis(YawLeft, YawRight)`; B5 should read the stick snapshot
+  with those same expressions and signs, since the full axis lands on the same actions a pad
+  half-axis does. `AxisPairs`' positive/negative order only decides which row fires on raw
+  positive travel, not the sign `Axis` returns.
+- C7: `BindingStore.Encode`/`Decode` per token and `BindingStore.StoredRow(map, action)` per row,
+  so a profile writes a full axis once and its deadzone round-trips exactly.
+- Labels: `BindingLabels.Describe` prints a full axis as `Axis <n>` or `Axis <n> inverted` and a
+  hat as `Hat <n> <Direction>`; D10 owns the "R Axis 3" form.
+
+**Left open.** `AxisPairs.cs` has no `.uid` yet (Godot writes one on the next editor import; the
+orchestrator may want it in the landing commit). `ControlGlyphs` draws no glyph for a full axis and
+falls back to text. No engine suite exercises a full axis, since no device source produces one until
+A3; the unit suites carry the rules.
+
+**Verified.** <pending orchestrator run>
+
+**Original approach (kept for reference).**
 
 **Goal.** One stored binding maps a whole physical axis onto an action pair (PitchUp/PitchDown,
 RollLeft/RollRight, YawLeft/YawRight, ThrottleUp/ThrottleDown) with an invert flag and a deadzone,

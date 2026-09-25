@@ -62,6 +62,7 @@ public sealed class ActiveDevice
                     break;
                 case ControlKind.Button:
                 case ControlKind.Axis:
+                case ControlKind.FullAxis:
                 case ControlKind.Hat:
                     pad ??= binding;
                     break;

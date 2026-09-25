@@ -231,7 +231,7 @@ defaults, load from the registry over the top, then rebuild the reverse arrays.
 | Binding identity | a physical scancode plus three modifier bits, or a bare button index | a device identity plus a tagged control (`Binding`); a key control carries the same three modifier bits, so `E` and Shift+`E` are two controls |
 | Slots per action | four, fixed by type: keyboard, keyboard, joystick button, mouse button | a list of any length, ORed together (`BindingSet`) |
 | Joystick devices | exactly one, `DAT_0075c1e0`, with no index in the record | any number, named by stable hardware string and resolved to a live index per tick |
-| Bindable joystick controls | buttons 1-10 only. Axes and hats are read outside the map and cannot be bound | every button the platform reports and either half of any axis; no hat, since a d-pad arrives as buttons |
+| Bindable joystick controls | buttons 1-10 only. Axes and hats are read outside the map and cannot be bound | every button the platform reports, either half of any axis, a whole axis over an action pair, and a stick's hat directions; no pad hat, since a pad's d-pad arrives as buttons |
 | Rebinding | a keybind screen writing into the same word the defaults wrote | a screen editing an `ActionMap`, the steal rule naming every action that loses the control |
 | Persistence | 2400 raw bytes under `HKEY_CURRENT_USER` | versioned JSON per player under `user://`, in the shape below |
 
@@ -254,13 +254,14 @@ default, so adding one needs no bump.
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "player": 1,
   "mouseFlying": false,
   "contexts": {
     "flight": {
       "FireGuns": ["keyboard/key:Space", "pad:*/button:B"],
-      "PitchUp": ["pad:*/axis:LeftY+@0.25"],
+      "PitchUp": ["pad:*/axis:LeftY+@0.25", "pad:03005fcf1d2300000002000000000000/fullaxis:1+@0.02"],
+      "SelectGunGroup": ["pad:03005fcf1d2300000002000000000000/hat:0:Right"],
       "TargetPreviousEnemy": ["keyboard/key:Shift+E"],
       "TargetNextAlly": []
     },
@@ -275,10 +276,20 @@ row by hand.
 
 - The device is `keyboard`, `mouse`, or `pad:<hardware id>`. A shipped pad row is authored on the
   placeholder id `*`, which the loader replaces with the seat's own pad.
-- The control is `key:<name>`, `button:<name>`, `mouse:<name>`, `axis:<name><sign>@<deadzone>` or
-  `hat:<index>:<direction>`. A name is the engine's own enum name, or `#<number>` for a code the
-  engine does not name; a bare number is accepted on the way back in either way. An axis carries its
+- The control is `key:<name>`, `button:<name>`, `mouse:<name>`, `axis:<name><sign>@<deadzone>`,
+  `fullaxis:<index><sign>@<deadzone>` or `hat:<index>:<direction>`. A name is the engine's own enum
+  name, or `#<number>` for a code the engine does not name or names only as a range sentinel
+  (`SdlMax`, `Max`); a bare number is accepted on the way back in either way. An axis carries its
   sign and its deadzone, which is both the noise gate and the digital threshold.
+- A `fullaxis:` token is one binding over an action pair (pitch, roll, yaw, throttle), written once,
+  under the pair's positive row (`PitchUp`, `RollRight`, `YawRight`, `ThrottleUp`), and loaded onto
+  both rows. Its sign is invert: `+` feeds raw positive travel to the positive row, `-` to the
+  negative one. Each side reads 0 at the deadzone edge and 1 at full travel. The deadzone is
+  honoured anywhere in 0 to 0.95 and written back exactly as read. A full axis on a row outside
+  every pair, or on the keyboard or mouse, is unreadable.
+- A `hat:` direction is `Up`, `Right`, `Down` or `Left` in any case, on a joypad other than the
+  placeholder `*`. Version 3 of the file adds the full-axis and hat tokens; an older file names
+  neither and still loads whole.
 - A key name may carry the original's own modifiers in front of it, `key:Shift+E`, `key:Ctrl+E`,
   any of `Shift`, `Ctrl` and `Alt` in any order and any case. That prefix is version 2 of the file;
   a version 1 file names no modifier, and since a bare key token means the same thing in both, such
@@ -295,9 +306,9 @@ why it costs no version bump.
 
 Nothing costs the file. A row the reader cannot read costs that action its saved bindings and
 nothing more, leaving it on the shipped default while the rest of the file loads. That covers an
-unknown context or action name, a token in a shape this build does not know, and a `hat:` row, which
-is deliberately unreadable because Godot reports a d-pad as four buttons and a hat row would be a
-second encoding of a control the defaults already author as a button.
+unknown context or action name, a token in a shape this build does not know, and a `hat:` row on
+the placeholder pad `*`, which is deliberately unreadable because Godot reports a pad's d-pad as four
+buttons and a hat row there would be a second encoding of a control the defaults author as a button.
 
 ## Force feedback
 

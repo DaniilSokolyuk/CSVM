@@ -2,9 +2,9 @@ using System;
 
 namespace CSVM.Bindings;
 
-/// <summary>Which of the four control shapes a <see cref="BindingControl"/> carries. The tag is
-/// the discriminator: the numeric members mean different things per kind and only the ones the
-/// kind names are meaningful.</summary>
+/// <summary>Which control shape a <see cref="BindingControl"/> carries. The tag is the
+/// discriminator: the numeric members mean different things per kind and only the ones the kind
+/// names are meaningful.</summary>
 public enum ControlKind
 {
     Key,
@@ -12,6 +12,10 @@ public enum ControlKind
     Axis,
     Hat,
     Mouse,
+
+    /// <summary>A whole axis driving an action pair (<see cref="AxisPairs"/>), one side per action.
+    /// </summary>
+    FullAxis,
 }
 
 /// <summary>The modifier keys a keyboard binding names, as flags, which is the original's own
@@ -39,15 +43,18 @@ public enum HatDirection
     Left = 8,
 }
 
-/// <summary>One control on a device: a key, a button, a mouse button, one direction of one axis
-/// past a deadzone, or one direction of a hat. The tagged shape is deliberate. Four typed slots is
-/// what the original ships (`docs/org/input.md`), and it is why an axis cannot be bound there at
-/// all.
-/// ⚠ Build one through the five factories, never through the default value: they are the only
-/// place the per-kind invariants (a sign of exactly ±1, a deadzone under 1, exactly one hat
-/// direction) are enforced.</summary>
+/// <summary>One control on a device: a key, a button, a mouse button, a half axis, a full axis or
+/// a hat direction. The tagged shape is deliberate. Four typed slots
+/// is what the original ships (`docs/org/input.md`), and it is why an axis cannot be bound there.
+/// ⚠ Build one through the six factories, never through the default value. They alone enforce the
+/// per-kind invariants: a sign of exactly ±1, a deadzone in range, exactly one hat direction.
+/// </summary>
 public readonly record struct BindingControl
 {
+    /// <summary>The widest deadzone a full axis honours. Past it the rescaled side would be a switch
+    /// with a few percent of travel, which no stick setting means; the value itself is TUNE.</summary>
+    public const float MaxFullAxisDeadzone = 0.95f;
+
     private BindingControl(
         ControlKind kind, int index, int sign, float deadzone, HatDirection direction, KeyModifiers modifiers)
     {
@@ -65,14 +72,19 @@ public readonly record struct BindingControl
     /// code is the engine's own key constant, not a DirectInput scancode.</summary>
     public int Index { get; }
 
-    /// <summary>Which way the axis has to move, +1 or -1. Zero for every other kind, since a
-    /// binding on a key or a button has no direction to choose.</summary>
+    /// <summary>Which way the axis has to move, +1 or -1. On a full axis, +1 feeds raw positive travel
+    /// to the pair's positive action and -1 is the inverted binding. Zero for every other kind, since
+    /// a binding on a key or a button has no direction to choose.</summary>
     public int Sign { get; }
 
-    /// <summary>How far past centre the axis has to travel before it resolves at all, in [0, 1).
-    /// It is both the noise gate and the digital threshold; the model does not carry a second
-    /// number for the two jobs.</summary>
+    /// <summary>How far past centre the axis has to travel before it resolves at all. A half axis
+    /// takes [0, 1), a full one [0, <see cref="MaxFullAxisDeadzone"/>]. It is both the noise gate and
+    /// the digital threshold; the model carries no second number for the two jobs.</summary>
     public float Deadzone { get; }
+
+    /// <summary>Whether a full axis feeds its raw positive travel to the pair's negative action.
+    /// False for every other kind.</summary>
+    public bool Inverted => Kind == ControlKind.FullAxis && Sign < 0;
 
     /// <summary>The one hat direction this binding watches. <c>None</c> for every other kind.
     /// </summary>
@@ -129,11 +141,22 @@ public readonly record struct BindingControl
             ControlKind.Axis, NonNegative(index, nameof(index)), sign, deadzone, HatDirection.None, KeyModifiers.None);
     }
 
+    /// <summary>A whole axis over an action pair, each side reading 0 at the deadzone edge and 1 at
+    /// full travel. A flight stick needs one binding where a pad needs two. Which pair it drives is
+    /// the action that holds it (<see cref="AxisPairs"/>), not the control.</summary>
+    public static BindingControl FullAxis(int index, bool inverted, float deadzone)
+    {
+        if (!(deadzone >= 0f) || deadzone > MaxFullAxisDeadzone)
+            throw new ArgumentOutOfRangeException(nameof(deadzone), deadzone, "A full-axis deadzone lies in [0, 0.95].");
+        return new BindingControl(
+            ControlKind.FullAxis, NonNegative(index, nameof(index)), inverted ? -1 : 1, deadzone, HatDirection.None, KeyModifiers.None);
+    }
+
     /// <summary>One direction of one hat. Exactly one direction, because a binding on a diagonal
     /// would be a second, hidden combining rule beside the one the binding list already has.
-    /// ⚠ Do not author one on this backend. Godot reports a d-pad as four buttons, so a hat binding
-    /// aliases a button binding that <see cref="ActionMap.SameControl"/> reads as different, and two
-    /// actions could then hold one d-pad direction (`DefaultBindings`).</summary>
+    /// ⚠ Do not author one on a pad. Godot reports a d-pad as four buttons, so a hat binding there
+    /// aliases a button binding that <see cref="ActionMap.SameControl"/> reads as different. A
+    /// stick's hat has no button form, so there it is the only binding its directions have.</summary>
     public static BindingControl Hat(int index, HatDirection direction)
     {
         if (direction is not (HatDirection.Up or HatDirection.Right or HatDirection.Down or HatDirection.Left))
@@ -162,6 +185,7 @@ public readonly record struct BindingControl
         ControlKind.Button => $"button:{Index}",
         ControlKind.Axis => $"axis:{Index}{(Sign < 0 ? "-" : "+")}@{Deadzone:0.###}",
         ControlKind.Mouse => $"mouse:{Index}",
+        ControlKind.FullAxis => $"fullaxis:{Index}{(Sign < 0 ? "-" : "+")}@{Deadzone:0.####}",
         _ => $"hat:{Index}:{Direction}",
     };
 
