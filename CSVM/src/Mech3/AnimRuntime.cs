@@ -226,6 +226,16 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
     /// of its own.</summary>
     public Action<string>? DestructibleKilled;
 
+    /// <summary>Raised when a spend moves a destructible to a new damage stage or kills it, after
+    /// the stage and the death have run. A network host sends these, and the chip hits between
+    /// stages change nothing another machine draws.</summary>
+    public Action<DestructibleRegistry.Instance>? DestructibleDamaged;
+
+    /// <summary>While set, <see cref="DamageAt"/> still reports a hit as landed but spends nothing.
+    /// A network guest's world runs this way, and its pools move only through
+    /// <see cref="ApplyReplicatedHealth"/>.</summary>
+    public bool DamageReplicated;
+
     /// <summary>The world velocity a <c>Callback 16</c> hands the running instance, which is how a
     /// wreck inherits the aircraft's motion (docs/org/vehicleDamage.md). Supplied by the rig,
     /// because only the rig knows which vehicle is dying and how fast; null leaves the code
@@ -1700,25 +1710,21 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
             return false;
         if (inst.Status == DestructibleRegistry.State.Destroyed)
             return true;   // already dead, the death sequence owns it from here
-        float before = inst.Health;
-        inst.Health = Math.Max(0f, inst.Health - Math.Max(0f, healthDamage));
-        ApplyDamageStages(inst);
-        bool destroyed = inst.Health <= 0f;
-        if (destroyed)
-        {
-            inst.Status = DestructibleRegistry.State.Destroyed;
-            if (HealthyNodeNameOf(inst.Def) is { } healthyNode)
-                DestructibleKilled?.Invoke(healthyNode);
-            RunDeathSequence(inst);
-        }
-        // ⚠ Never let the ceiling swallow a death. It exists to keep a firefight's chip hits out of
-        // the log, and which parts died is what a sortie is read back for.
-        if (destroyed || _damagesLogged < 12)
-        {
-            if (!destroyed)
-                _damagesLogged++;
-            Log.Info("anim", $"damage: -{healthDamage:0.##} on {NameOf(inst.Anchor)} HP {before:0.##}→{inst.Health:0.##}{(destroyed ? " DESTROYED, death sequence run" : $" [stage {inst.DamageStage}]")}");
-        }
+        if (DamageReplicated)
+            return true;   // struck, but another machine decides what it cost
+        SpendHealth(inst, inst.Health - Math.Max(0f, healthDamage), healthDamage);
+        return true;
+    }
+
+    /// <summary>Sets a destructible to the health another machine decided, through the same
+    /// stages and death a local hit takes. Only ever lowers it. False when the pool is out of the
+    /// world, already dead, or at or below <paramref name="health"/> already.</summary>
+    public bool ApplyReplicatedHealth(DestructibleRegistry.Instance inst, float health)
+    {
+        ArgumentNullException.ThrowIfNull(inst);
+        if (inst.Dormant || inst.Status == DestructibleRegistry.State.Destroyed || health >= inst.Health)
+            return false;
+        SpendHealth(inst, health, inst.Health - health);
         return true;
     }
 
@@ -3785,6 +3791,34 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
             DestructibleKilled?.Invoke(healthyNode);
         RunDeathSequence(own);
         return own;
+    }
+
+    // The one place a destructible's pool is lowered, shared by a local hit and a replicated one
+    // so the two cannot stage or die differently.
+    private void SpendHealth(DestructibleRegistry.Instance inst, float health, float healthDamage)
+    {
+        float before = inst.Health;
+        int stageBefore = inst.DamageStage;
+        inst.Health = Math.Max(0f, health);
+        ApplyDamageStages(inst);
+        bool destroyed = inst.Health <= 0f;
+        if (destroyed)
+        {
+            inst.Status = DestructibleRegistry.State.Destroyed;
+            if (HealthyNodeNameOf(inst.Def) is { } healthyNode)
+                DestructibleKilled?.Invoke(healthyNode);
+            RunDeathSequence(inst);
+        }
+        // ⚠ Never let the ceiling swallow a death. It exists to keep a firefight's chip hits out of
+        // the log, and which parts died is what a sortie is read back for.
+        if (destroyed || _damagesLogged < 12)
+        {
+            if (!destroyed)
+                _damagesLogged++;
+            Log.Info("anim", $"damage: -{healthDamage:0.##} on {NameOf(inst.Anchor)} HP {before:0.##}→{inst.Health:0.##}{(destroyed ? " DESTROYED, death sequence run" : $" [stage {inst.DamageStage}]")}");
+        }
+        if (destroyed || inst.DamageStage != stageBefore)
+            DestructibleDamaged?.Invoke(inst);
     }
 
     // Runs a destructible's death the instant its HP reaches zero.

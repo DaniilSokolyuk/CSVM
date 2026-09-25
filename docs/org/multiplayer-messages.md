@@ -160,7 +160,8 @@ counterpart here: `0x0f` aircraft state, `0x10` fire, `0x12` death with its four
 score, `0x17` match state, `0x22` hit and `0x27` seat roster. Damage, spawn, the mission
 director transition, the join handshake and a seat's ask to be spawned again have no
 counterpart, so they are minted at `0x40`, `0x41`, `0x42`, `0x43` and `0x44`, above the ceiling
-above. The handshake carries the master seed, the host's clock and the seat the joining peer was
+above. The host-owned world's four (AI state, AI fire, a guest's hit claim on an AI, and a world
+event) are minted at `0x45` to `0x48`, below. The handshake carries the master seed, the host's clock and the seat the joining peer was
 given; the original needs none of the three, because it draws from no shared stream and hands
 out no seat. The ask carries a seat and nothing else: the original's client takes its own
 respawn, while here the host owns every placement and answers the ask with a spawn event.
@@ -208,9 +209,10 @@ What a guest replays, and what it derives from what it replayed:
 - **Replayed for now, world.** `WAKEUP_ENEMIES`, `WAKEUP_TURRETS`, `WAKEUP_ZEP_TURRETS`,
   `WAKEUP_GENERATOR`, `WARP_VEHICLE`, `SET_AI_TEAM`, `SET_AI_NET`, `SET_AI_ATTACK_RADIUS`,
   `COMPLETED_ZEPCANNONS`, `COMPLETED_STOPPOINT` and `START_TAXI` run through the guest's own world
-  seam, which moves AI the host owns. They belong to the host once AI replication lands, and
-  `WARP_VEHICLE`'s random draw already diverges between the two ends. `DEDG`'s engagement widening
-  is a side effect of testing a condition, so a guest never runs it.
+  seam. A guest's AI aircraft is a replicated airframe (below), so a warp, a net or a team set on
+  it is overwritten by the host's next sample, and the wake is what takes it out of `Inert` so the
+  samples show. Zeppelins, turrets, generators and surface vehicles still act on these locally.
+  `DEDG`'s engagement widening is a side effect of testing a condition, so a guest never runs it.
 - **Derived, cutscene codes.** The presentation codes (20, 2, 11, 1, 10, 913 and 914, 666 and 667,
   951, 86) are raised on the guest by its own animation runtime, playing the definitions its
   replayed `WAKE_ANIM` or the shared start list started. Sending them as well would apply each one
@@ -227,3 +229,51 @@ What a guest replays, and what it derives from what it replayed:
 A guest applies each event on arrival, one link latency after the host, and its mission end holds
 the world and builds the result without writing a profile, a photograph or an award. A guest that
 joins late has missed every earlier event.
+
+## The host-owned world
+
+The host flies every AI aircraft and decides every world hit; a guest replicates the state and
+replays nothing that draws from the AI stream (`Session/NetWorldLink.cs`). The same seed is not the
+same AI: the mode machine rolls on the AI stream every step, so two ends running one AI would part
+on the first roll that landed differently. An AI is named on the wire by its admission ordinal, its
+index in the roster's append-only AI list, which both ends grow in the same order for the aircraft
+built with the world.
+
+| Id | Message | Class | Carries |
+|---|---|---|---|
+| `0x45` | AI state | unreliable, on the event channel | ordinal, per-AI sequence, pose, velocity, lever, surfaces, nitro (48 bytes) |
+| `0x46` | AI fire | unreliable | ordinal, weapon index, muzzle, aim (28 bytes) |
+| `0x47` | AI hit | reliable, guest to host | ordinal, shooter seat, weapon, damage share, part, impact in the AI's body space (28 bytes) |
+| `0x48` | World event | reliable, host to all | code, subject, argument, value (16 bytes) |
+
+AI state is plain unreliable rather than sequenced because every AI shares one channel, and a
+transport sequence would drop one AI's sample against another's; each AI's own pose buffer drops a
+stale one by the per-AI sequence. It rides the seat stream's cadence. The world event codes are
+`NetWorldEvent`: 1 an AI downed (the argument is the killer's seat or -1), 2 an AI's hull fraction,
+3 a destructible pool's health after a stage change or a kill (the subject is its registration
+index, the argument a hash of its definition and anchor names, which the guest checks before
+applying and searches by when the index has shifted).
+
+A hit on an AI is decided once: by the host for its own rounds and for every round no seat fired,
+and by a guest for its own seat's rounds, which it claims with `0x47`. A world pool is spent only
+on the host, which simulates every round, a guest's included, from the fire events; a guest's
+world runtime reports a struck pool as hit and spends nothing. A ram on an aeroplane flown
+elsewhere spends nothing on it either, since its owner's own sweep resolves that half.
+
+Each simulation phase, as a guest runs it:
+
+| Phase | On a guest |
+|---|---|
+| Ending hold, landing approaches, radio, smoke screens, beeper tags, incoming fire | Local presentation or per-pane rules, no world authority. |
+| Capture AI aircraft | Local membership; new AI are admitted by ordinal before any is stepped. |
+| Projectiles | Local on every end, spawned from fire events; the guest's rounds spend nothing on the world or on an AI. |
+| Human aircraft | Replicated per seat (`0x0f`, `0x10`, `0x22`, `0x40`, `0x12`). |
+| Captured AI aircraft | **Replicated**: each AI flies from `0x45` samples; fire arrives as `0x46`, hull and death as `0x48`. |
+| Zeppelins | Replayed locally. Part and cannon deaths arrive as pool events; the zeppelin's own path is not yet replicated (the original sends it as `0x1e` every 0.5 s). |
+| Turret emplacements | Replayed locally and cosmetic: a guest's turret round spends nothing, the host's decides. Deaths arrive as pool events. |
+| Generators | Replayed locally. Their launches spawn AI on each end by its own timers, which is not yet host-owned. |
+| Surface vehicles | Replayed locally. A hull's death arrives as a pool event; the patrol walk is not yet replicated. |
+| Instant action | Not run in a network match. |
+| Campaign | The director replay above. |
+| AI voice | Derived locally; a replicated AI runs no mode machine, so its mode-driven call-outs are silent. |
+| Versus | The match state above. |

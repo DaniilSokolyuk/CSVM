@@ -1862,10 +1862,11 @@ public partial class FlightController : Node3D
     /// <summary>The receiving half of a plane-versus-plane ram: the striker's decoded
     /// pair spent through this plane's own ledger, the flow a projectile hit uses.
     /// ⚠ Do not suppress the struck plane hitting back. Each aircraft sweeps itself, so both
-    /// resolve the contact; that is the original's behaviour, not a double-count.</summary>
+    /// resolve the contact; that is the original's behaviour, not a double-count. A remote airframe
+    /// takes nothing here, because its owner's own sweep resolves its half.</summary>
     public void TakeCollisionHit(float armorDamage, float healthDamage, Vector3 impact, int striker)
     {
-        if (!InPlay || Damage == null)
+        if (!InPlay || Damage == null || RemoteOwned)
             return;
         EnsureCrashRig();
         var pose = new Transform3D(_model.Attitude, _model.Position);
@@ -2082,10 +2083,10 @@ public partial class FlightController : Node3D
         // pose write above, so the plume emits at this step's pose.
         ExhaustSmoke?.Update(dt, _leverGap);
 
-        // The AI gunner: acquire/hold the target and decide this tick's trigger and lead
-        // BEFORE the fire step reads them. Runs for AI pilots only; a gunner-less AI keeps the
-        // released trigger it always had.
-        if (!IsHumanPiloted && Pilot?.Gunner is { } aiGunner)
+        // The AI gunner picks this tick's target, trigger and lead BEFORE the fire step reads them.
+        // Only an AI flown here runs it. A remote AI's gunner would draw from the AI stream, and
+        // its shots arrive as events.
+        if (!IsHumanPiloted && !RemoteOwned && Pilot?.Gunner is { } aiGunner)
         {
             DriveAiGunner(aiGunner);
             // The ordnance half runs off the gunner's target, never its own acquisition, so the

@@ -364,7 +364,70 @@ public class NetMessagesTests
         Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.SeatRoster));
         Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.DirectorTransition));
         Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.Handshake));
+        Assert.Equal(NetReliability.Unreliable, NetMessage.ReliabilityOf(NetMessageType.AiState));
+        Assert.Equal(NetReliability.Unreliable, NetMessage.ReliabilityOf(NetMessageType.AiFire));
+        Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.AiHit));
+        Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.WorldEvent));
         Assert.Throws<ArgumentOutOfRangeException>(() => NetMessage.ReliabilityOf((NetMessageType)0x7fff));
+    }
+
+    // Every AI shares one channel, so the state must reach the pose buffer with its own per-AI
+    // sequence intact. The buffer is where a stale sample is dropped.
+    [Fact]
+    public void AiStateRoundTripsAndConvertsForThePoseBuffer()
+    {
+        var sent = new AiStateMessage(
+            Ai: 513, Sequence: 65000, Position: new Vector3(-10.5f, 250f, 3000.25f),
+            Attitude: new Quaternion(0f, 0.6f, 0f, 0.8f), Velocity: new Vector3(0f, -2f, 95.5f),
+            Throttle: 0.4f, Aileron: 0.5f, Elevator: -0.25f, Rudder: 0f, Nitro: true);
+
+        Span<byte> buffer = stackalloc byte[64];
+        int written = sent.Write(buffer);
+
+        Assert.Equal(AiStateMessage.Size, written);
+        Assert.True(AiStateMessage.TryRead(buffer[..written], out var got));
+        Assert.Equal(sent.Ai, got.Ai);
+        Assert.Equal(sent.Sequence, got.Sequence);
+        Assert.Equal(sent.Position, got.Position);
+        Assert.Equal(sent.Velocity, got.Velocity);
+        Assert.Equal(sent.Attitude.Y, got.Attitude.Y, QuantisedPlaces);
+        Assert.Equal(sent.Attitude.W, got.Attitude.W, QuantisedPlaces);
+        Assert.Equal(sent.Throttle, got.Throttle, QuantisedPlaces);
+        Assert.Equal(sent.Elevator, got.Elevator, QuantisedPlaces);
+        Assert.True(got.Nitro);
+        var sample = got.AsAircraftState();
+        Assert.Equal(NetMessage.NoSeat, sample.Seat);
+        Assert.Equal(sent.Sequence, sample.Sequence);
+        Assert.Equal(sent.Position, sample.Position);
+    }
+
+    [Fact]
+    public void AiFireAndAiHitRoundTrip()
+    {
+        Span<byte> buffer = stackalloc byte[64];
+        var fire = new AiFireMessage(7, 12, new Vector3(1f, 2f, 3f), new Vector3(0f, 0f, -1f));
+        Assert.Equal(AiFireMessage.Size, fire.Write(buffer));
+        Assert.True(AiFireMessage.TryRead(buffer[..AiFireMessage.Size], out var gotFire));
+        Assert.Equal(fire.Ai, gotFire.Ai);
+        Assert.Equal(fire.Weapon, gotFire.Weapon);
+        Assert.Equal(fire.Origin, gotFire.Origin);
+        Assert.Equal(-1f, gotFire.Direction.Z, QuantisedPlaces);
+
+        var hit = new AiHitMessage(300, 2, 44, 0.75f, -1, new Vector3(0.5f, -1.25f, 3f));
+        Assert.Equal(AiHitMessage.Size, hit.Write(buffer));
+        Assert.True(AiHitMessage.TryRead(buffer[..AiHitMessage.Size], out var gotHit));
+        Assert.Equal(hit, gotHit);
+        Assert.False(HitMessage.TryRead(buffer[..AiHitMessage.Size], out _));
+    }
+
+    [Fact]
+    public void WorldEventRoundTripsANegativeArgument()
+    {
+        Span<byte> buffer = stackalloc byte[WorldEventMessage.Size];
+        var sent = new WorldEventMessage((ushort)NetWorldEvent.DestructibleHealth, 1234, -559038737, 12.5f);
+        Assert.Equal(WorldEventMessage.Size, sent.Write(buffer));
+        Assert.True(WorldEventMessage.TryRead(buffer, out var got));
+        Assert.Equal(sent, got);
     }
 
     // Which ids are the original's and which this remake minted. A capture of an original packet
@@ -383,5 +446,7 @@ public class NetMessagesTests
         Assert.False(NetMessage.IsOriginalId(NetMessageType.Spawn));
         Assert.False(NetMessage.IsOriginalId(NetMessageType.DirectorTransition));
         Assert.False(NetMessage.IsOriginalId(NetMessageType.Handshake));
+        Assert.False(NetMessage.IsOriginalId(NetMessageType.AiState));
+        Assert.False(NetMessage.IsOriginalId(NetMessageType.WorldEvent));
     }
 }

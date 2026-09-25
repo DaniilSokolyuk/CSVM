@@ -192,6 +192,8 @@ public partial class GameSession : Node3D
     // When the host repeats the match state, null on a guest and outside a match. A guest never
     // holds one, which is what makes the host the only writer of the clock.
     private Net.MatchStateCadence? _matchCadence;
+    // AI aircraft and world pools over the wire, null outside a network match.
+    private NetWorldLink? _netWorld;
     // Why the match stopped, as the host named it. Written where the state is sent and where it
     // is applied, so every machine holds one reason for an end screen to read.
     private Net.NetMatchEnd _matchEnd;
@@ -503,6 +505,10 @@ public partial class GameSession : Node3D
     /// session layer reads its <see cref="CampaignDirector.ReturnToCabin"/> to know the mission is
     /// over and the player belongs back in the cabin.</summary>
     internal CampaignDirector? Campaign => _campaign;
+
+    /// <summary>The network match's world link, null outside one. The harness suites read the
+    /// admitted AI and the applied events off it.</summary>
+    internal NetWorldLink? NetWorld => _netWorld;
 
     /// <summary>The session's subject plane (null until the build lands one), the Launcher's
     /// capture tick reads it, because CaptureDirector only shoots once a plane exists.</summary>
@@ -3362,6 +3368,7 @@ public partial class GameSession : Node3D
         }
 
         WireNetDirector();
+        WireNetWorld(state.WorldRuntime);
 
         // F15 / --debug-targets: who is aiming at whom. Reads the live gunners through closures
         // rather than a snapshot, waves activate, AI planes spawn and emplacements die long
@@ -4248,6 +4255,28 @@ public partial class GameSession : Node3D
         }
 
         Log.Info("core", $"net director: {(net.IsHost ? $"host (every transition of {graph.Count} objective(s), and the ending, as they happen)" : $"guest (replaying the host's transitions over {graph.Count} objective(s), evaluating none of its own)")}");
+    }
+
+    // The host-owned world over the wire, once the pools and the combat catalogue stand. AI
+    // aircraft are admitted step by step from the roster, since waves and generators add them
+    // long after this runs.
+    private void WireNetWorld(AnimRuntime? world)
+    {
+        if (_net is not { } net || _netSeats.Count == 0)
+        {
+            return;
+        }
+
+        _netWorld = new NetWorldLink(net, new NetWorldSeats
+        {
+            SeatOfShooter = SeatOfShooter,
+            IsLocal = seat => seat >= 0 && seat < _netSeats.Count && _netSeats[seat].IsLocal,
+            ShooterOfSeat = seat => seat >= 0 && seat < _seatRigs.Count ? _seatRigs[seat].Controller?.PlayerIndex : null,
+            WeaponIndex = weapon => _weaponWire.TryGetValue(weapon.Id, out int index) ? index : -1,
+            WeaponAt = index => _weaponDefs is { } defs && index >= 0 && index < defs.All.Count ? defs.All[index] : null,
+            Projectiles = _projectiles,
+        }, world);
+        Log.Info("core", $"net world: {(net.IsHost ? $"host (flying every AI and deciding every world hit, {world?.Destructibles.Count ?? 0} pool(s))" : "guest (AI replicated from the host, world pools spending nothing of their own)")}");
     }
 
     // The match clock, its limits and its ending over the wire. The host is the only writer: it
@@ -5307,6 +5336,7 @@ public partial class GameSession : Node3D
         {
             _eligibleAiAircraft.Clear();
             _eligibleAiAircraft.AddRange(session.AiPlanes);
+            session._netWorld?.Admit(session.AiPlanes);
         }
 
         public void StepIncomingFire(float dt) => session._incomingFire?.SimStep(dt);
@@ -5336,6 +5366,7 @@ public partial class GameSession : Node3D
             foreach (var aircraft in _eligibleAiAircraft)
                 aircraft.SimStep(dt);
             AiStepCost.Close(_eligibleAiAircraft.Count);
+            session._netWorld?.StepSends();
         }
 
         public void StepLandingApproaches()

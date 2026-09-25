@@ -182,7 +182,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 ### Wave C, campaign co-op
 
 21. ☑ The host-owned mission director: objective graph transitions, cutscene codes and wingman spawns as events
-22. ☐ Host-owned AI and world: aircraft, zeppelins, turrets, generators, vehicles and destructibles as spawn, state and death events
+22. ☑ Host-owned AI and world: aircraft, zeppelins, turrets, generators, vehicles and destructibles as spawn, state and death events
 23. ☐ Guests as the human field: `CampaignHumanField` and the objective rules see remote humans, the scripted P1 stays the host
 24. ☐ The co-op session flow: cabin and briefing on the host, guests joining into the mission, mission end and debrief on every peer
 
@@ -1111,7 +1111,85 @@ today.
 **⚠ Traps.** The scripted `player` token, roster leaders and anchored net trailers are a separate
 P1 identity (`CampaignHumanField`'s entry); the host is P1 and a guest never is.
 
-## C22 ☐ Host-owned AI and world: aircraft, zeppelins, turrets, generators, vehicles and destructibles as spawn, state and death events
+## C22 ☑ Host-owned AI and world: aircraft, zeppelins, turrets, generators, vehicles and destructibles as spawn, state and death events
+
+**Landed.** The mapping plus AI aircraft and destructible deaths; the other world phases are
+sharpened markers below.
+- `CSVM/src/Net/NetMessages.cs`: ids `0x45` AI state, `0x46` AI fire, `0x47` AI hit, `0x48` world
+  event, their reliability classes, and `NetWorldEvent` (1 AI downed, 2 AI hull, 3 destructible
+  health).
+- `CSVM/src/Net/NetWorldMessages.cs` (new): the four structs. `AiStateMessage.AsAircraftState`
+  feeds the existing `RemotePoseBuffer`.
+- `CSVM/src/Session/NetWorldLink.cs` (new): the host broadcasts each AI's pose at the seat cadence,
+  its fire, hull and death, and every destructible stage change and kill; a guest flies each AI
+  from samples (`RemotePoses`), spawns its rounds from fire events, claims its own seat's hits on an
+  AI with `0x47`, and applies pool health. AIs are named by admission ordinal in the roster's
+  append-only list.
+- `CSVM/src/Session/GameSession.cs`: `WireNetWorld` after `WireNetDirector`; `NetWorld` for the
+  suites; the AI capture phase admits new AI and the AI step phase sends.
+- `CSVM/src/Mech3/AnimRuntime.cs`: `DamageAt`'s spend moved into `SpendHealth`, which raises
+  `DestructibleDamaged` on a stage change or kill; `DamageReplicated` makes a guest's `DamageAt`
+  report a hit and spend nothing; `ApplyReplicatedHealth` is the guest's only spend.
+- `CSVM/src/Flight/FlightController.cs`: a remote-owned rig runs no AI gunner and takes no collision
+  hit (its owner's sweep resolves its half). Without the second, a guest's ram destroyed its copy
+  of a host AI before the first sample arrived.
+- `CSVM/src/Testing/NetWorldSuites.cs` (new): suite `net-ai-world`; weight in
+  `analysis/engine-suite-weights.json`.
+- `CSVM.Tests/NetMessagesTests.cs`: round trips and classes for the four messages.
+- Docs: `docs/org/multiplayer-messages.md` "The host-owned world" (message table, decide-once
+  rules, the per-phase table); the Net, Session and Mech3 architecture entries and index bullets.
+
+**The mapping.** Every `ISessionSimulationRuntime` phase, as a guest runs it. State-replicated:
+captured AI aircraft (pose, fire, hull, death) and human aircraft (B11/B12). Events: destructible
+stage changes and deaths, for every pool (buildings, turrets, zeppelin parts and cannons, generator
+and vehicle hulls). Local and not authoritative: projectiles (spawned from fire events, spending
+nothing on a guest), the ending hold, landing approaches, radio, smoke screens, beeper tags and
+incoming fire. Replayed locally as an interim, **markers**: zeppelin paths, turret aim and fire
+(cosmetic on a guest), generator cycles and surface-vehicle patrols. Derived: AI voice (silent for a
+replicated AI, which runs no mode machine). Not run: instant action. The campaign and versus
+phases are C21's and B14's.
+
+**Markers (not landed).**
+- Host-owned AI spawns: a guest's generator launches, Black Hat launches (callback codes 801 to 803)
+  and `WAKEUP_*` directives spawn or wake AI on its own timers, which can shift the admission
+  ordinals against the host's. A spawn event carrying the host's ordinal is the fix; until then an
+  AI with no host counterpart holds at its spawn and a shifted one tracks the wrong host AI.
+- Zeppelin paths: the original sends the zeppelin's path position as `0x1e` every 0.5 s; the remake
+  replays the path locally from the shared seed and clock.
+- Surface-vehicle patrols and `WARP_VEHICLE` (its random draw diverges): replayed locally.
+- AI voice: a replicated AI's mode-driven call-outs are silent on a guest.
+- Destructible chip damage: only stage changes and deaths are sent, so a pool's health between
+  stages is not mirrored.
+
+**Verified.** The complete battery on the merged tree (C22 over C21, D31 and Wave B): build clean,
+4906 units passed with 2 skipped, 389 of 389 engine suites passed with engine errors clean in all
+six shards, 19 of 19 golden shots hash-identical, so the moved `AnimRuntime` spend and the
+remote-owned `FlightController` gates changed no pinned picture. `net-ai-world` tracks a guest's
+copy of a host AI at 0.27 m mean against its host path (60.0 m against the other AI, so the
+comparison can fail) and lands 6 host AI rounds on the guest. The limit: the loopback only, four
+phases left as markers, AI voice silent on a guest, and `AiState` bandwidth unmeasured.
+
+**Owed.**
+- Whether a silent AI voice on a guest is acceptable until the voice is sent or derived from state.
+- The markers above, each a follow-up item if the user wants the whole world host-owned before co-op
+  ships.
+- A late joiner has missed every earlier world event (C24's).
+- AI state costs 48 bytes at 20 Hz per AI; a busy campaign mission may want a lower rate for distant
+  AI, which D31's soaks can measure.
+
+**Model recommendation.** Opus. The work is deciding, per hit and per spend, which end decides it
+once; a wrong answer shows only as a double death or a guest whose copy dies early.
+
+**Verify.** `net-ai-world` in `CSVM/src/Testing/NetWorldSuites.cs`: a versus launch on MP1 with two
+AI fighters, two sessions over a loopback of 30 ms latency, 10 ms jitter and 25 per cent loss. Admission (both ends
+admit the same AI by ordinal, the guest's as remote-owned); tracking (each guest AI within 3 m of
+its own host AI's path, against a control over 5x that on the other AI's path and a placement gap
+over 50 m); fire (host AI rounds appear on the guest); hits in both directions with controls; deaths
+(a lethal ram on the guest's copy is a no-op, the host's forced crash reaches the guest); and
+destructibles (a guest `DamageAt` spends nothing, a host kill propagates, the spared pool stands).
+Off-engine: `CSVM.Tests/NetMessagesTests.cs`.
+
+**Original approach (kept for reference).**
 
 **Goal.** Every AI aircraft, zeppelin, turret, generator wave, surface vehicle and destructible is
 where the host has it on every guest, and dies when the host says.

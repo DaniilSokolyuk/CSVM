@@ -543,6 +543,7 @@ clusters they delegate to.
 - `src/Session/ObjectiveSites.cs`, the flown campaign mission's flagged target sites as targeting candidates, rebuilt from their live source every frame.
 - `src/Session/CampaignDirector.cs`, the engine side of a campaign mission: the graph armed against the built world, the roster spawned and launched off its hooks, the attempt recorded.
 - `src/Session/NetDirectorLink.cs`, the objectives graph over the wire: the host publishes every event its graph raises and a guest's replicated graph replays them in order.
+- `src/Session/NetWorldLink.cs`, the host-owned world over the wire: AI aircraft as pose, fire, hit and death messages, and destructible stage changes and deaths as events.
 - `src/Session/CampaignDangerZones.cs`, a campaign mission's own danger zones: the `dzpathN` gates its script arms, tracked per human by the stunt gate rule, each carrying its mission's objective number.
 - `src/Session/CampaignSnapshot.cs`, the Danger Zone photograph a campaign mission writes into the flying profile's directory under the scrapbook row's own `Snap_<mission>_<objective>` name.
 - `src/Session/AirframeSwap.cs`, the three `CALLBACK` codes that hand the player a different airframe in mid mission, and the def and node each names.
@@ -618,6 +619,7 @@ original's own message set, with ids and guarantees, is in [`org/multiplayer-mes
 - `src/Net/NetCarrier.cs`, which carrier a match runs over, chosen once: the door's registration and the command line both open through it, and a build define is the whole of the choice.
 - `src/Net/UpnpPortMap.cs`, a best-effort port mapping through Godot's UPnP client: four outcomes a host can show, never a throw, and never required for a match to be joinable.
 - `src/Net/NetMessages.cs`, the message vocabulary: one struct per message, each declaring its type word and reliability class, over a shared four-byte header.
+- `src/Net/NetWorldMessages.cs`, the host-owned world's messages: an AI's pose, fire and hit claim, and the world event.
 - `src/Net/NetMessageWriter.cs`, the writer and reader cursors every message is packed and unpacked through: little-endian primitives, quantised unit fields, fixed-width text.
 - `src/Net/NetClockSlew.cs`, a guest's offset onto host time, walked to each fresh reading over a bounded window rather than written, and applied at once only when it is too far out to hide.
 - `src/Net/NetHandshake.cs`, what a host hands a joining guest before either flies: the master seed every stream derives from, and the host's session clock at send.

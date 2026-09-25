@@ -45,6 +45,37 @@ public enum NetMessageType : ushort
 
     /// <summary>A pilot asking the host to place it again.</summary>
     SpawnRequest = 0x0044,
+
+    /// <summary>One host-flown AI aircraft's pose, motion and control state.</summary>
+    AiState = 0x0045,
+
+    /// <summary>One weapon discharge by a host-flown AI aircraft.</summary>
+    AiFire = 0x0046,
+
+    /// <summary>A guest's claim that a round of its landed on a host-flown AI aircraft.</summary>
+    AiHit = 0x0047,
+
+    /// <summary>One host decision about the world: an AI death, an AI hull, a destructible's
+    /// health.</summary>
+    WorldEvent = 0x0048,
+}
+
+/// <summary>What a <see cref="WorldEventMessage"/>'s code means. Each member says what the subject
+/// and the argument carry.</summary>
+public enum NetWorldEvent : ushort
+{
+    /// <summary>An AI aircraft died. The subject is its admission ordinal, the argument the killer's
+    /// seat or -1 when no seat is credited.</summary>
+    AiDowned = 1,
+
+    /// <summary>An AI aircraft's hull after damage. The subject is its admission ordinal and the
+    /// value its summary health fraction.</summary>
+    AiHull = 2,
+
+    /// <summary>A destructible pool's health after a stage change or a kill. The subject is its
+    /// registration index, the argument a hash of its definition and anchor names, and the value
+    /// its health.</summary>
+    DestructibleHealth = 3,
 }
 
 /// <summary>Why a pilot died, the original's own cause word
@@ -848,6 +879,10 @@ public static class NetMessage
         NetMessageType.SpawnRequest => SpawnRequestMessage.Reliability,
         NetMessageType.DirectorTransition => DirectorTransitionMessage.Reliability,
         NetMessageType.Handshake => HandshakeMessage.Reliability,
+        NetMessageType.AiState => AiStateMessage.Reliability,
+        NetMessageType.AiFire => AiFireMessage.Reliability,
+        NetMessageType.AiHit => AiHitMessage.Reliability,
+        NetMessageType.WorldEvent => WorldEventMessage.Reliability,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "no such message type"),
     };
 
