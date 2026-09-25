@@ -59,6 +59,10 @@ public enum NetMessageType : ushort
     /// health.</summary>
     WorldEvent = 0x0048,
 
+    /// <summary>A guest's clock question and the host's answer, the round trip the shared clock
+    /// reads the link latency from.</summary>
+    ClockPing = 0x0049,
+
     /// <summary>What a host tells a peer about the session it is holding open before any flight:
     /// its kind, its mission and its player count.</summary>
     SessionAdvert = 0x004A,
@@ -291,9 +295,10 @@ public readonly record struct AircraftStateMessage(
 
 /// <summary>
 /// One weapon discharge, with where the round left the aircraft and where it was aimed.
-/// Unreliable like the state it rides beside, because every peer spawns the projectile locally
-/// from this event and a lost burst is cosmetic. A target seat of
-/// <see cref="NetMessage.NoSeat"/> means no lock.</summary>
+/// Unreliable, because every peer spawns the projectile locally from this event and a lost burst
+/// is cosmetic. Not sequenced: rounds fired on one step race each other under jitter. A burst is
+/// a burst whichever lands first, so none is dropped for arriving behind another. A target
+/// seat of <see cref="NetMessage.NoSeat"/> means no lock.</summary>
 public readonly record struct FireMessage(
     byte Seat,
     byte Weapon,
@@ -309,7 +314,9 @@ public readonly record struct FireMessage(
     public static NetMessageType Type => NetMessageType.Fire;
 
     /// <inheritdoc/>
-    public static NetReliability Reliability => NetReliability.UnreliableSequenced;
+    /// <remarks>⚠ Do not make this reliable. A burst would then stall behind a retransmission,
+    /// which is worse than losing it.</remarks>
+    public static NetReliability Reliability => NetReliability.Unreliable;
 
     /// <inheritdoc/>
     public static bool TryRead(ReadOnlySpan<byte> from, out FireMessage message)
@@ -928,6 +935,48 @@ public readonly struct SeatRosterMessage : INetMessage<SeatRosterMessage>
 }
 
 /// <summary>
+/// A guest's question about the host's clock, and the host's answer. It has the shape of the
+/// original's <c>0x23</c> ping: two stamps in 12 bytes. The guest sends its own session clock as
+/// <c>AskedClock</c>; the host sends the same message back with its session clock as
+/// <c>HostClock</c>. Which one a message is follows from who receives it, since only a guest asks.
+/// Unreliable, unlike the original's: a retransmitted question would read as a longer link.
+/// </summary>
+public readonly record struct ClockPingMessage(float AskedClock, float HostClock = 0f)
+    : INetMessage<ClockPingMessage>
+{
+    /// <summary>The fixed width of the message, header included, the original's own.</summary>
+    public const int Size = 12;
+
+    /// <inheritdoc/>
+    public static NetMessageType Type => NetMessageType.ClockPing;
+
+    /// <inheritdoc/>
+    public static NetReliability Reliability => NetReliability.Unreliable;
+
+    /// <inheritdoc/>
+    public static bool TryRead(ReadOnlySpan<byte> from, out ClockPingMessage message)
+    {
+        message = default;
+        var reader = new NetMessageReader(from);
+        if (!reader.Is(Size) || reader.Type != Type)
+            return false;
+
+        float asked = reader.ReadSingle();
+        message = new ClockPingMessage(asked, reader.ReadSingle());
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public int Write(Span<byte> into)
+    {
+        var writer = new NetMessageWriter(into, Type);
+        writer.WriteSingle(AskedClock);
+        writer.WriteSingle(HostClock);
+        return writer.Close();
+    }
+}
+
+/// <summary>
 /// What the vocabulary shares: the header shape, the no-seat marker and the width budget. It
 /// also holds the two lookups a receiver needs before it knows which message it has. Nothing
 /// here holds state, and no other namespace names a message's wire layout.</summary>
@@ -972,6 +1021,7 @@ public static class NetMessage
         NetMessageType.AiFire => AiFireMessage.Reliability,
         NetMessageType.AiHit => AiHitMessage.Reliability,
         NetMessageType.WorldEvent => WorldEventMessage.Reliability,
+        NetMessageType.ClockPing => ClockPingMessage.Reliability,
         NetMessageType.SessionAdvert => SessionAdvertMessage.Reliability,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "no such message type"),
     };

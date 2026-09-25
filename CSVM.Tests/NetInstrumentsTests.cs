@@ -64,6 +64,55 @@ public sealed class NetInstrumentsTests
         Assert.Equal(2, net.Late);
     }
 
+    // Fire is not sequenced, so a burst that lands behind a newer one is drawn. It fills the gap
+    // the newer one opened rather than reading as stale, and only a second copy is stale.
+    [Fact]
+    public void A_fire_event_overtaken_in_flight_fills_its_gap_and_a_repeat_of_it_is_stale()
+    {
+        var net = new NetInstruments();
+        net.Arrived(Fire(1, 10));
+        net.Arrived(Fire(1, 13));
+        Assert.Equal(2, net.FireGaps);
+
+        net.Arrived(Fire(1, 11));
+        net.Arrived(Fire(1, 12));
+        Assert.Equal(0, net.FireGaps);
+        Assert.Equal(2, net.ReorderedFire);
+        Assert.Equal(0, net.StaleArrivals);
+
+        net.Arrived(Fire(1, 12));
+        net.Arrived(Fire(1, 13));
+        Assert.Equal(2, net.StaleArrivals);
+        Assert.Equal(0, net.FireGaps);
+
+        // A state sample behind a newer one is still stale: the carrier discards those.
+        net.Arrived(State(1, 5));
+        net.Arrived(State(1, 7));
+        net.Arrived(State(1, 6));
+        Assert.Equal(3, net.StaleArrivals);
+        Assert.Equal(1, net.StateGaps);
+    }
+
+    [Fact]
+    public void A_fire_event_further_behind_than_the_window_is_stale_and_the_wrap_is_not()
+    {
+        var net = new NetInstruments();
+        net.Arrived(Fire(1, 65534));
+        net.Arrived(Fire(1, 1));
+        net.Arrived(Fire(1, 65535));
+        net.Arrived(Fire(1, 0));
+        Assert.Equal(0, net.FireGaps);
+        Assert.Equal(2, net.ReorderedFire);
+
+        net.Arrived(Fire(1, 101));
+        Assert.Equal(99, net.FireGaps);
+        net.Arrived(Fire(1, 20));
+        Assert.Equal(1, net.StaleArrivals);
+        net.Arrived(Fire(1, 40));
+        Assert.Equal(98, net.FireGaps);
+        Assert.Equal(3, net.ReorderedFire);
+    }
+
     [Fact]
     public void A_hit_or_a_burst_for_a_seat_already_dead_is_late_until_the_seat_is_placed_again()
     {

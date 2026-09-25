@@ -1203,7 +1203,9 @@ usual.
   B11 (send rate and interpolation buffer, judged in the same sitting). The feed now has a live
   reading: `net-match-state` measures a target of 6.000 s and one snap on both guests off the
   ordinary match-state tick, so the threshold can be judged against a real link rather than
-  against nothing.
+  against nothing. `Net/NetClockPing.cs`'s `RetrySteps = 60`, how long an unanswered clock
+  question waits before it is asked again, is invented the same way and is judged in the same
+  sitting against how often a lossy link leaves the round trip unmeasured.
 
 - `BL-1025` `[Tuning]` `[S]` `[Next: look]` `[Impact: low]` `[Evidence: trace]` **The host's
   match-state tick rate is a guess at what the clock readout needs.** *Evidence:*
@@ -1239,24 +1241,7 @@ usual.
   `--debug-net` up, note at which cell a remote aeroplane first reads as wrong (a jump, a lag
   behind its own tracers), and set the bars from that instead. *⚠ Traps:* the error is read after
   the fitted lag is removed, so a large render delay does not show here at all; judge the delay
-  (`RemotePoseBuffer.BufferDelaySeconds`) separately. *Cross-refs:* `BL-1018` (the same sitting),
-  `BL-1042` (the fire discards the same run surfaced).
-
-- `BL-1042` `[Bug]` `[S]` `[Next: code]` `[Impact: low]` `[Evidence: trace]` **A seat's fire
-  events share its state channel, so jitter discards gunfire behind a newer state sample.**
-  *Evidence:* `GameSession.SendFire` and `BroadcastAircraftState` both send on
-  `NetChannels.ForSeat(seat)` as `UnreliableSequenced`, and a sequenced carrier discards anything
-  that arrives behind a newer payload on its channel. The seeded `net-soak` run at 50 ms, 10 ms
-  jitter and 5 per cent loss has the carriers discarding 10 payloads as overtaken beside 12 lost,
-  although 50 ms between state samples leaves 10 ms of jitter almost nothing of their own to
-  reorder; 11 fire events go missing against 54 rounds fired, where 5 per cent loss alone would
-  take about 3. A discarded fire event is a burst the far machine never draws. *Fix shape:* give
-  fire a channel of its own per seat (`NetChannels` gains a fire range above the state range,
-  `EnetTransport`'s channel count grows to match, and `SendFire` names the new channel), then
-  re-run `net-soak` and expect the discard count to fall to the few state samples jitter really
-  reorders. *⚠ Traps:* making fire `Reliable` instead would stall a seat's bursts behind a
-  retransmission, which is worse than losing one. *Cross-refs:* `BL-1041`,
-  `docs/architecture/Net.md` (`NetChannels`).
+  (`RemotePoseBuffer.BufferDelaySeconds`) separately. *Cross-refs:* `BL-1018` (the same sitting).
 
 - `BL-284` `[Bug]` `[Blocked: CAP-34]` `[M]` `[Next: look]` `[Impact: low]` `[Evidence: footage]` **Wing-light flare: soft round glow vs the original's sharp star burst; view-dependence
   unproven.** Follow-up from `BL-119` (landed 2026-08-05): with the authored one-sided quad restored

@@ -55,14 +55,18 @@ public sealed class LoopbackTransportTests
         mesh[1].Bind(guest);
 
         mesh[0].Send(1, Tag(1), NetReliability.Unreliable);
-        mesh[0].Send(1, Tag(2), NetReliability.UnreliableSequenced);
+        mesh[0].Send(1, Tag(2), NetReliability.UnreliableSequenced, 2);
         mesh[0].Send(1, Tag(3), NetReliability.Reliable);
         mesh[1].Step(1.0);
 
         Assert.Equal(new[] { 3 }, guest.Tags);
-        // The sender counts its losses, which is what a receiver's gap count is checked against.
+        // The sender counts its losses, which is what a receiver's gap count is checked against,
+        // and splits them by channel.
         Assert.Equal(2, mesh[0].Lost);
         Assert.Equal(0, mesh[1].Lost);
+        Assert.Equal(1, mesh[0].LostOn(0));
+        Assert.Equal(1, mesh[0].LostOn(2));
+        Assert.Equal(0, mesh[0].LostOn(1));
     }
 
     [Fact]

@@ -68,7 +68,8 @@ internal static class NetSoakSuites
         + "with 20 per cent loss, each cell a curve flown under fire and a kill each way: every cell "
         + "reports position error against the owner's own path, dropped and late messages and "
         + "events out of order, the reliable events never leave their causal order, the clean "
-        + "cell drops nothing, the drop count each machine infers from its sequence gaps equals "
+        + "cell drops nothing, the 50 ms cell discards nothing as overtaken because fire rides "
+        + "apart from state, the drop count each machine infers from its sequence gaps equals "
         + "what the carrier really lost or discarded, and an injected respawn nobody died for is "
         + "counted")]
     internal static void SoakTheLink(TestContext ctx)
@@ -268,6 +269,12 @@ internal static class NetSoakSuites
         ctx.Check(clean.Host.Dropped == 0 && clean.Guest.Dropped == 0 && clean.Flown.Starved == 0,
             $"the clean cell drops nothing and starves no read in flight (dropped {clean.Host.Dropped}/{clean.Guest.Dropped}, starved {clean.Flown.Starved})");
 
+        // State samples 50 ms apart cannot swap under 10 ms of jitter. A discard in this cell is
+        // a payload judged against another stream sharing its channel.
+        var broadband = results[1];
+        ctx.Check(broadband.Discarded == 0,
+            $"the {broadband.Cell.Name} cell's carriers discard nothing as overtaken, since each seat's fire rides apart from its state (discarded {broadband.Discarded}, {broadband.Host.ReorderedFire + broadband.Guest.ReorderedFire} fire event(s) drawn out of order)");
+
         // ABLE-TO-FAIL CONTROL. The instruments must move with the link: the worst cell drops
         // more than the clean one and its kills reach the shooter later.
         var worstCell = results[^1];
@@ -289,12 +296,16 @@ internal static class NetSoakSuites
         pair.Guest.SeatRigs[1].Controller!.AutoFire = false;
         pair.Step(SettleSteps);
 
+        // The events channel carries no sequence stream. Its unreliable losses, the clock's
+        // questions and answers, leave no gap to infer and are not part of the truth.
+        int toGuest = pair.Mesh[0].Lost - pair.Mesh[0].LostOn(NetChannels.Events);
+        int toHost = pair.Mesh[1].Lost - pair.Mesh[1].LostOn(NetChannels.Events);
         int guestInferred = pair.Guest.NetLink!.Instruments.Dropped;
-        int guestTruth = pair.Mesh[0].Lost + pair.Mesh[1].DiscardedStale;
+        int guestTruth = toGuest + pair.Mesh[1].DiscardedStale;
         int hostInferred = pair.Host.NetLink!.Instruments.Dropped;
-        int hostTruth = pair.Mesh[1].Lost + pair.Mesh[0].DiscardedStale;
+        int hostTruth = toHost + pair.Mesh[0].DiscardedStale;
         ctx.Check(guestTruth > 0 && guestInferred == guestTruth && hostInferred == hostTruth,
-            $"each machine's drop count read off its sequence gaps is what the carrier really lost or discarded (guest {guestInferred} of {pair.Mesh[0].Lost} lost + {pair.Mesh[1].DiscardedStale} discarded, host {hostInferred} of {pair.Mesh[1].Lost} lost + {pair.Mesh[0].DiscardedStale} discarded)");
+            $"each machine's drop count read off its sequence gaps is what the carrier really lost or discarded (guest {guestInferred} of {toGuest} lost + {pair.Mesh[1].DiscardedStale} discarded, host {hostInferred} of {toHost} lost + {pair.Mesh[0].DiscardedStale} discarded, events channel losses {pair.Mesh[0].LostOn(NetChannels.Events)}/{pair.Mesh[1].LostOn(NetChannels.Events)} left out)");
     }
 
     // ABLE-TO-FAIL CONTROL. The host grants a respawn to a seat that is flying. Every cell above
@@ -401,6 +412,6 @@ internal static class NetSoakSuites
         int Discarded)
     {
         public string Describe() => string.Create(CultureInfo.InvariantCulture,
-            $"{Cell.Name}: position error guest-shown {There.Mean:0.00}/{There.Max:0.00} m at {There.Lag * GameClock.FixedDt * 1000f:0} ms, host-shown {Back.Mean:0.00}/{Back.Max:0.00} m at {Back.Lag * GameClock.FixedDt * 1000f:0} ms; extrapolation error {Poses.MeanExtrapolationError:0.00}/{Poses.WorstExtrapolationError:0.00} m, {Poses.Jumps} jumps; flight reads {Flown.Interpolating} interp {Flown.Extrapolating} extrap {Flown.Starved} starved, whole cell {Poses.Starved} starved; dropped state {Host.StateGaps}/{Guest.StateGaps} fire {Host.FireGaps}/{Guest.FireGaps} of {RoundsFired} rounds, the carriers losing {Lost} and discarding {Discarded} as overtaken; late hits {Host.LateHits}/{Guest.LateHits} fire {Host.LateFire}/{Guest.LateFire} stale {Host.StaleArrivals}/{Guest.StaleArrivals}; order {Host.OrderViolations}/{Guest.OrderViolations}; deaths reached the shooter in {DeathSteps[0]} and {DeathSteps[1]} steps, both back after {Returned} (host/guest per pair)");
+            $"{Cell.Name}: position error guest-shown {There.Mean:0.00}/{There.Max:0.00} m at {There.Lag * GameClock.FixedDt * 1000f:0} ms, host-shown {Back.Mean:0.00}/{Back.Max:0.00} m at {Back.Lag * GameClock.FixedDt * 1000f:0} ms; extrapolation error {Poses.MeanExtrapolationError:0.00}/{Poses.WorstExtrapolationError:0.00} m, {Poses.Jumps} jumps; flight reads {Flown.Interpolating} interp {Flown.Extrapolating} extrap {Flown.Starved} starved, whole cell {Poses.Starved} starved; dropped state {Host.StateGaps}/{Guest.StateGaps} fire {Host.FireGaps}/{Guest.FireGaps} of {RoundsFired} rounds ({Host.ReorderedFire}/{Guest.ReorderedFire} drawn out of order), the carriers losing {Lost} and discarding {Discarded} as overtaken; late hits {Host.LateHits}/{Guest.LateHits} fire {Host.LateFire}/{Guest.LateFire} stale {Host.StaleArrivals}/{Guest.StaleArrivals}; order {Host.OrderViolations}/{Guest.OrderViolations}; deaths reached the shooter in {DeathSteps[0]} and {DeathSteps[1]} steps, both back after {Returned} (host/guest per pair)");
     }
 }

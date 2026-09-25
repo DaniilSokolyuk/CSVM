@@ -45,9 +45,9 @@ public sealed class EnetTransport : INetTransport, INetLink, IDisposable
 {
     /// <summary>How many channels a connection carries, 0 to one below this. ENet fixes the count
     /// during its handshake, so both ends ask for the same number. It is the reliable events
-    /// channel and one per seat, as <see cref="NetChannels"/> lays them out. A send past the count
-    /// is a programming error rather than a dropped payload.</summary>
-    public const int ChannelCount = NetChannels.FirstSeat + NetSeats.SeatCapacity;
+    /// channel and a state and a fire channel per seat, as <see cref="NetChannels"/> lays them
+    /// out. A send past the count is a programming error rather than a dropped payload.</summary>
+    public const int ChannelCount = NetChannels.Count;
 
     /// <summary>How many payloads are held for a listener that has not bound yet. Deep enough for
     /// a join answer and the openers behind it, shallow enough that a carrier nobody ever binds

@@ -40,7 +40,8 @@ internal static class NetDirectorSuites
         + "loopback: the guest's graph decides nothing alone and refuses the docking code, then "
         + "replays the host's transitions in order and in state, derives the ending cutscene's "
         + "codes from its own playback, ends Won when the host does, and records no attempt on "
-        + "its own profile while the host's does. Under the link's latency the guest's cutscene "
+        + "its own profile while the host's does. The guest's shared clock opens on a one-way reading "
+        + "and the clock ping's round trip corrects it. Under the link's latency the guest's cutscene "
         + "position and objective timers match the host's within one step of arrival, and a third "
         + "world following with the catch-up off trails by the latency")]
     internal static void DirectorFollow(TestContext ctx)
@@ -102,6 +103,7 @@ internal static class NetDirectorSuites
         try
         {
             NetDirectorLink.Publish(host.Net, host.Graph, () => host.Now);
+            NetClockPing.Answer(host.Net, () => host.Now);
             guest.CatchUp = Follow(guest);
             control.CatchUp = Follow(control);
             control.CatchUp.Enabled = false;
@@ -124,9 +126,13 @@ internal static class NetDirectorSuites
         return catchUp;
     }
 
-    // The offset between the two clocks when the link opens, as the handshake gives a live guest.
-    // It is exact here, since both clocks step together from now on.
-    private static void Link(Peer host, Peer guest) => guest.Slew = new NetClockSlew(host.Now - guest.Now);
+    // The offset a live guest opens on: a one-way reading, the true offset less the latency. The
+    // first round trip then sets the true one, as it does in a session.
+    private static void Link(Peer host, Peer guest)
+    {
+        guest.Slew = new NetClockSlew(host.Now - guest.Now - LatencyS);
+        guest.Ping = NetClockPing.Follow(guest.Net, guest.Slew, () => guest.Now);
+    }
 
     private static void Play(TestContext ctx, ObjectiveScript script, Peer host, Peer guest, Peer control, StringBuilder report)
     {
@@ -165,6 +171,10 @@ internal static class NetDirectorSuites
         host.Graph.Wake(owner.Number);
         Linked(host, guest, control, SettleS + PlayBudgetS);
 
+        report.AppendLine($"guest clock: {guest.Ping?.Answered} answer(s) of {guest.Ping?.Asked} asked, round trip "
+            + $"{guest.Slew?.RoundTrip * 1000.0:0.#} ms, host time {guest.ClockError * 1000.0:0.#} ms off at the sample");
+        ctx.Check(guest.Slew is { RoundTrips: > 0 } && Math.Abs(guest.ClockError) < LatencyS * 0.5,
+            $"the guest's shared clock opened a latency short, and the round trip corrected it to within half of one ({guest.Slew?.RoundTrips} round trip(s), {guest.ClockError * 1000.0:0.#} ms off)");
         CheckCatchUp(ctx, guest.Sample, control.Sample, report);
 
         report.AppendLine($"woke OBJECTIVE{owner.Number} '{owner.WakeAnim!.Value.Anim}' on the host");
@@ -326,6 +336,11 @@ internal static class NetDirectorSuites
 
         public NetClockSlew? Slew { get; set; }
 
+        public NetClockPing? Ping { get; set; }
+
+        // The slew's error against the host's clock, read at the frame the sample is taken in.
+        public double ClockError { get; private set; }
+
         public NetDirectorCatchUp? CatchUp { get; set; }
 
         public Sample? Sample { get; private set; }
@@ -382,6 +397,7 @@ internal static class NetDirectorSuites
                 timerGap = MathF.Max(timerGap, MathF.Abs(host.Graph.TimerRemaining - Graph.TimerRemaining));
             }
 
+            ClockError = (Slew?.HostTime(_now) ?? _now) - host._now;
             Sample = new Sample(CatchUp?.LastLateness ?? 0f, clockGap, ownerGap, timerGap, missing);
         }
 
@@ -404,8 +420,10 @@ internal static class NetDirectorSuites
         public void Frame()
         {
             Net.Step(StepDt);
+            Ping?.Step();
             _world.Runtime.Advance(StepDt);
             _now += StepDt;
+            Slew?.Advance(StepDt);
             Graph.Step(StepDt);
             _cutscene.Tick();
         }

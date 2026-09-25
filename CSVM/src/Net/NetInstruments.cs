@@ -3,11 +3,12 @@ using System.Globalization;
 
 namespace CSVM.Net;
 
-/// <summary>The six <see cref="NetInstruments"/> counters at one moment. Subtracting an earlier
+/// <summary>The <see cref="NetInstruments"/> counters at one moment. Subtracting an earlier
 /// reading gives what one stretch of a run added, which is how a soak reads one cell of its
 /// matrix.</summary>
 public readonly record struct NetInstrumentReading(
-    int StateGaps, int FireGaps, int StaleArrivals, int LateHits, int LateFire, int OrderViolations)
+    int StateGaps, int FireGaps, int StaleArrivals, int LateHits, int LateFire, int OrderViolations,
+    int ReorderedFire = 0)
 {
     /// <summary>Everything that should have arrived and did not.</summary>
     public int Dropped => StateGaps + FireGaps;
@@ -17,7 +18,8 @@ public readonly record struct NetInstrumentReading(
 
     public static NetInstrumentReading operator -(NetInstrumentReading a, NetInstrumentReading b) =>
         new(a.StateGaps - b.StateGaps, a.FireGaps - b.FireGaps, a.StaleArrivals - b.StaleArrivals,
-            a.LateHits - b.LateHits, a.LateFire - b.LateFire, a.OrderViolations - b.OrderViolations);
+            a.LateHits - b.LateHits, a.LateFire - b.LateFire, a.OrderViolations - b.OrderViolations,
+            a.ReorderedFire - b.ReorderedFire);
 }
 
 /// <summary>
@@ -33,7 +35,12 @@ public sealed class NetInstruments
     private const int StateStream = 0;
     private const int FireStream = 1;
 
+    // How far behind a seat's newest fire event a late one still fills its gap. Past it, a
+    // late arrival reads as stale, as a duplicate does.
+    private const int FireWindow = 64;
+
     private readonly ushort[,] _newest = new ushort[2, NetSeats.SeatCapacity];
+    private readonly ulong[] _fireSeen = new ulong[NetSeats.SeatCapacity];
     private readonly bool[,] _streaming = new bool[2, NetSeats.SeatCapacity];
     private readonly bool[] _down = new bool[NetSeats.SeatCapacity];
     private readonly bool[] _known = new bool[NetSeats.SeatCapacity];
@@ -50,10 +57,14 @@ public sealed class NetInstruments
     /// fire sequence.</summary>
     public int FireGaps { get; private set; }
 
-    /// <summary>Sequenced payloads that arrived at or below the newest already seen from their
-    /// seat. The carriers discard these, so anything above zero is a carrier breaking its class.
-    /// </summary>
+    /// <summary>Payloads at or below the newest already seen from their seat that fill no gap.
+    /// That is a state sample the carrier should have discarded, or a fire event delivered twice. Anything above zero is a carrier breaking its class.</summary>
     public int StaleArrivals { get; private set; }
+
+    /// <summary>Fire events that arrived behind a newer one from their seat and filled the gap it
+    /// left. Fire is not sequenced, so these are drawn, and the gap they fill is taken back off
+    /// <see cref="FireGaps"/>.</summary>
+    public int ReorderedFire { get; private set; }
 
     /// <summary>Hit claims that arrived for a seat already reported dead and not yet placed again.
     /// The shooter aimed at a copy the death had not reached.</summary>
@@ -76,7 +87,7 @@ public sealed class NetInstruments
 
     /// <summary>The counters as they stand, for a delta or a log line.</summary>
     public NetInstrumentReading Reading =>
-        new(StateGaps, FireGaps, StaleArrivals, LateHits, LateFire, OrderViolations);
+        new(StateGaps, FireGaps, StaleArrivals, LateHits, LateFire, OrderViolations, ReorderedFire);
 
     /// <summary>The one line the <c>--debug-net</c> readout shows and logs: the session's own
     /// counters, these, and the tally of every remote aeroplane's buffer on this machine.
@@ -86,7 +97,7 @@ public sealed class NetInstruments
         ArgumentNullException.ThrowIfNull(net);
         var r = net.Instruments.Reading;
         return string.Create(CultureInfo.InvariantCulture,
-            $"net {(net.IsHost ? "host" : "guest")} seat {net.LocalSeat} peers {net.Peers.Count}: sent {net.Sent} recv {net.Received} relayed {net.Relayed} unknown {net.DroppedUnknown} malformed {net.Malformed} | dropped state {r.StateGaps} fire {r.FireGaps} | late stale {r.StaleArrivals} hits {r.LateHits} fire {r.LateFire} | order {r.OrderViolations} | poses interp {poses.Interpolating} extrap {poses.Extrapolating} starved {poses.Starved} jumps {poses.Jumps} | extrap err {poses.MeanExtrapolationError:0.00} m mean {poses.WorstExtrapolationError:0.00} m worst");
+            $"net {(net.IsHost ? "host" : "guest")} seat {net.LocalSeat} peers {net.Peers.Count}: sent {net.Sent} recv {net.Received} relayed {net.Relayed} unknown {net.DroppedUnknown} malformed {net.Malformed} | dropped state {r.StateGaps} fire {r.FireGaps} | reordered fire {r.ReorderedFire} | late stale {r.StaleArrivals} hits {r.LateHits} fire {r.LateFire} | order {r.OrderViolations} | poses interp {poses.Interpolating} extrap {poses.Extrapolating} starved {poses.Starved} jumps {poses.Jumps} | extrap err {poses.MeanExtrapolationError:0.00} m mean {poses.WorstExtrapolationError:0.00} m worst");
     }
 
     /// <summary>One payload the transport delivered here, read before any handler runs so an
@@ -151,6 +162,7 @@ public sealed class NetInstruments
         {
             _streaming[stream, seat] = true;
             _newest[stream, seat] = sequence;
+            _fireSeen[seat] = 0;
             return;
         }
 
@@ -158,6 +170,13 @@ public sealed class NetInstruments
         ushort gap = (ushort)(sequence - _newest[stream, seat]);
         if (gap == 0 || gap >= 0x8000)
         {
+            if (stream == FireStream && FillsFireGap(seat, (ushort)-gap))
+            {
+                FireGaps--;
+                ReorderedFire++;
+                return;
+            }
+
             StaleArrivals++;
             return;
         }
@@ -169,9 +188,33 @@ public sealed class NetInstruments
         else
         {
             FireGaps += gap - 1;
+            // Bit i stands for the event i + 1 behind the newest. The old newest lands on bit gap - 1,
+            // and the gaps between stay clear.
+            // A shift of the whole width is masked to none, so a gap that wide clears by hand.
+            ulong kept = gap >= FireWindow ? 0 : _fireSeen[seat] << gap;
+            _fireSeen[seat] = gap > FireWindow ? 0 : kept | (1UL << (gap - 1));
         }
 
         _newest[stream, seat] = sequence;
+    }
+
+    // Whether a fire event this far behind its seat's newest is one the count has been missing.
+    // It is marked seen, so the same event delivered again reads as stale.
+    private bool FillsFireGap(byte seat, ushort behind)
+    {
+        if (behind == 0 || behind > FireWindow)
+        {
+            return false;
+        }
+
+        ulong bit = 1UL << (behind - 1);
+        if ((_fireSeen[seat] & bit) != 0)
+        {
+            return false;
+        }
+
+        _fireSeen[seat] |= bit;
+        return true;
     }
 
     private void Lifecycle(NetMessageType type, ReadOnlySpan<byte> payload)

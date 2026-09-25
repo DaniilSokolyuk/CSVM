@@ -140,6 +140,60 @@ public sealed class NetClockSlewTests
         Assert.Equal(4.0, slew.Offset);
     }
 
+    // The host answered at 110.05 on its clock, half a 100 ms round trip before the answer landed
+    // at 10.1 on the guest's. So the host reads 110.1 at that moment, 100 s ahead.
+    [Fact]
+    public void ARoundTripReadsTheHostsAnswerForwardByHalfOfIt()
+    {
+        var slew = new NetClockSlew(99.9);
+        slew.ObserveRoundTrip(askedAt: 10.0, hostClock: 110.05, guestClock: 10.1);
+
+        Assert.Equal(0.1, slew.RoundTrip, 9);
+        Assert.Equal(1, slew.RoundTrips);
+        Assert.Equal(100.0, slew.Target, 9);
+        Assert.Equal(0, slew.Snaps);
+    }
+
+    // The first round trip finishes the opening alignment, so it is in force at once and is not
+    // counted as a snap. The next one is an ordinary reading and is walked to.
+    [Fact]
+    public void OnlyTheFirstRoundTripIsAppliedAtOnce()
+    {
+        var slew = new NetClockSlew(99.9);
+        slew.ObserveRoundTrip(10.0, 110.05, 10.1);
+        Assert.Equal(100.0, slew.Offset, 9);
+        Assert.True(slew.Settled);
+        Assert.Equal(0, slew.Snaps);
+
+        slew.ObserveRoundTrip(20.0, 120.1, 20.1);
+        Assert.Equal(100.05, slew.Target, 9);
+        Assert.Equal(100.0, slew.Offset, 9);
+        Assert.False(slew.Settled);
+    }
+
+    // A one-way reading lands one latency after its stamp. Once a round trip is known, the reading
+    // is read forward by half of it and a periodic tick no longer pulls the offset back.
+    [Fact]
+    public void AOneWayReadingIsReadForwardByHalfTheNewestRoundTrip()
+    {
+        var slew = new NetClockSlew(0.0);
+        slew.Observe(hostClock: 110.0, guestClock: 10.0);
+        Assert.Equal(100.0, slew.Target, 9);
+
+        slew.ObserveRoundTrip(20.0, 120.0, 20.2);
+        slew.Observe(hostClock: 130.0, guestClock: 30.1);
+        Assert.Equal(100.0, slew.Target, 9);
+    }
+
+    [Fact]
+    public void ARoundTripThatEndsBeforeItStartsIsRefused()
+    {
+        var slew = new NetClockSlew(0.0);
+        Assert.Throws<ArgumentOutOfRangeException>(() => slew.ObserveRoundTrip(5.0, 10.0, 4.9));
+        Assert.Throws<ArgumentOutOfRangeException>(() => slew.ObserveRoundTrip(double.NaN, 10.0, 4.9));
+        Assert.Equal(0, slew.RoundTrips);
+    }
+
     // Counted steps rather than an accumulated clock. The total handed to the slew is then exactly
     // the window under test, and a rounding crumb cannot decide whether it arrived.
     private static void Advance(NetClockSlew slew, double seconds, int steps)

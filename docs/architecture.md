@@ -626,14 +626,15 @@ original's own message set, with ids and guarantees, is in [`org/multiplayer-mes
 - `src/Net/NetMessages.cs`, the message vocabulary: one struct per message, each declaring its type word and reliability class, over a shared four-byte header.
 - `src/Net/NetWorldMessages.cs`, the host-owned world's messages: an AI's pose, fire and hit claim, and the world event.
 - `src/Net/NetMessageWriter.cs`, the writer and reader cursors every message is packed and unpacked through: little-endian primitives, quantised unit fields, fixed-width text.
-- `src/Net/NetClockSlew.cs`, a guest's offset onto host time, walked to each fresh reading over a bounded window rather than written, and applied at once only when it is too far out to hide.
+- `src/Net/NetClockSlew.cs`, a guest's offset onto host time, walked to each fresh reading over a bounded window rather than written, with one-way readings read forward by half the measured round trip.
+- `src/Net/NetClockPing.cs`, the guest's question and the host's answer that measure the round trip, asked every ten seconds as the original's ping is.
 - `src/Net/NetHandshake.cs`, what a host hands a joining guest before either flies: the master seed every stream derives from, and the host's session clock at send.
 - `src/Net/NetSeat.cs`, one pilot's place in a match: peer, team, local flag, callsign, airframe, paint, seat index and signed score, with the seat index as the whole identity.
 - `src/Net/NetSeats.cs`, the roster's rules: eight pilots admitted behind sixteen-wide tables, the original's authored seat colours, and what makes a roster well formed.
 - `src/Net/RemotePoseBuffer.cs`, one remote aircraft's received samples and the pose to draw it at now: interpolated a fixed delay behind, extrapolated along the newest velocity up to a cap, then held, with a tally of its reads and misses.
 - `src/Net/AircraftStateCadence.cs`, when an owner puts its own aeroplane on the wire, in simulation steps, and the per-seat sequence each sample carries.
 - `src/Net/MatchStateCadence.cs`, when a host repeats the match clock, in simulation steps: a second between ticks, and every change sent where it happens instead.
-- `src/Net/NetChannels.cs`, which channel a message rides: one per seat for the unreliable streams, since sequenced discard is per sender and channel, and one for the join and every reliable event.
+- `src/Net/NetChannels.cs`, which channel a message rides: one per seat for state and another per seat for fire, since sequenced discard is per sender and channel, and one for the join and every reliable event.
 - `src/Net/NetSession.cs`, a session's own end of the wire: typed sends under each type's declared class, dispatch to per-type handlers, the join a host answers with, the host's relay between guests, and the counters a suite reads.
 - `src/Net/NetInstruments.cs`, one machine's desync counters over its own traffic: sequence gaps as drops, stale and late arrivals, and reliable events out of their causal order.
 

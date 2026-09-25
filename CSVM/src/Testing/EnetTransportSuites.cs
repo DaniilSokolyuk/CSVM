@@ -222,17 +222,26 @@ internal static class EnetTransportSuites
         ctx.Check(carried,
             $"an unreliable payload carries too, on the default channel (channel {landed?.Channel}, {landed?.Bytes.Length} of {loose.Length} bytes)");
 
-        // The last seat's channel is the highest one negotiated. A count one short would refuse
-        // it silently at the socket, which no loopback suite can see.
+        // The last seat's fire channel is the highest one negotiated. A count one short would
+        // refuse it silently at the socket, which no loopback suite can see.
         atGuest.Payloads.Clear();
-        int top = NetChannels.ForSeat(NetSeats.MaxPlayers - 1);
+        int top = NetChannels.ForFire(NetSeats.MaxPlayers - 1);
         byte[] far = Payload(0x22, 8);
-        host.Send(guestPeer, far, NetReliability.UnreliableSequenced, channel: top);
+        host.Send(guestPeer, far, NetReliability.Unreliable, channel: top);
         Pump(host, guest, () => atGuest.Payloads.Count > 0);
         var topLanded = atGuest.Payloads.FirstOrDefault();
         bool topCarried = topLanded != null && topLanded.Channel == top && topLanded.Bytes.SequenceEqual(far);
         ctx.Check(topCarried && top == EnetTransport.ChannelCount - 1,
-            $"and the last seat's channel, the highest negotiated, carries over the socket (channel {top} of {EnetTransport.ChannelCount}, landed on {topLanded?.Channel})");
+            $"and the last seat's fire channel, the highest negotiated, carries over the socket (channel {top} of {EnetTransport.ChannelCount}, landed on {topLanded?.Channel})");
+
+        // The last seat's state channel sits below the fire range and carries too.
+        atGuest.Payloads.Clear();
+        int state = NetChannels.ForSeat(NetSeats.MaxPlayers - 1);
+        host.Send(guestPeer, far, NetReliability.UnreliableSequenced, channel: state);
+        Pump(host, guest, () => atGuest.Payloads.Count > 0);
+        var stateLanded = atGuest.Payloads.FirstOrDefault();
+        ctx.Check(stateLanded != null && stateLanded.Channel == state && state < NetChannels.FirstFire,
+            $"and so does the last seat's state channel, below the fire range (channel {state}, landed on {stateLanded?.Channel})");
     }
 
     private static void HangUp(TestContext ctx, EnetTransport host, EnetTransport guest,

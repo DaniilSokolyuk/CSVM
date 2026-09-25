@@ -364,7 +364,7 @@ public class NetMessagesTests
     public void EveryTypeDeclaresTheReliabilityItsSenderNeeds()
     {
         Assert.Equal(NetReliability.UnreliableSequenced, NetMessage.ReliabilityOf(NetMessageType.AircraftState));
-        Assert.Equal(NetReliability.UnreliableSequenced, NetMessage.ReliabilityOf(NetMessageType.Fire));
+        Assert.Equal(NetReliability.Unreliable, NetMessage.ReliabilityOf(NetMessageType.Fire));
         Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.Hit));
         Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.Damage));
         Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.Death));
@@ -379,6 +379,7 @@ public class NetMessagesTests
         Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.AiHit));
         Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.WorldEvent));
         Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.SessionAdvert));
+        Assert.Equal(NetReliability.Unreliable, NetMessage.ReliabilityOf(NetMessageType.ClockPing));
         Assert.Throws<ArgumentOutOfRangeException>(() => NetMessage.ReliabilityOf((NetMessageType)0x7fff));
     }
 
@@ -460,6 +461,7 @@ public class NetMessagesTests
         Assert.False(NetMessage.IsOriginalId(NetMessageType.AiState));
         Assert.False(NetMessage.IsOriginalId(NetMessageType.WorldEvent));
         Assert.False(NetMessage.IsOriginalId(NetMessageType.SessionAdvert));
+        Assert.False(NetMessage.IsOriginalId(NetMessageType.ClockPing));
     }
 
     [Fact]
@@ -492,5 +494,19 @@ public class NetMessagesTests
         Span<byte> handshake = stackalloc byte[HandshakeMessage.Size];
         new HandshakeMessage(1, 2.0, 3).Write(handshake);
         Assert.False(SessionAdvertMessage.TryRead(handshake, out _));
+    }
+
+    // The original's ping width: the header and two stamps.
+    [Fact]
+    public void AClockPingRoundTripsBothStampsInTheOriginalsTwelveBytes()
+    {
+        Span<byte> buffer = stackalloc byte[32];
+        var sent = new ClockPingMessage(1234.5f, 98765.25f);
+        Assert.Equal(12, sent.Write(buffer));
+        Assert.Equal(ClockPingMessage.Size, sent.Write(buffer));
+        Assert.True(ClockPingMessage.TryRead(buffer[..ClockPingMessage.Size], out var got));
+        Assert.Equal(sent, got);
+        Assert.Equal(0x49, (int)NetMessageType.ClockPing);
+        Assert.False(ClockPingMessage.TryRead(buffer[..8], out _));
     }
 }

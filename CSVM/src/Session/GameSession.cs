@@ -189,6 +189,7 @@ public partial class GameSession : Node3D
     // How this guest reads the host's session clock, null on a host and outside a match. Built
     // from the handshake, whose seed is already in _masterSeed by then.
     private Net.NetClockSlew? _netClock;
+    private Net.NetClockPing? _netPing;
     // When the host repeats the match state, null on a guest and outside a match. A guest never
     // holds one, which is what makes the host the only writer of the clock.
     private Net.MatchStateCadence? _matchCadence;
@@ -490,6 +491,10 @@ public partial class GameSession : Node3D
     /// </summary>
     internal Net.NetClockSlew? NetClock => _netClock;
 
+    /// <summary>This end of the shared clock's round trip, null outside a network session. A
+    /// suite reads what it asked or answered.</summary>
+    internal Net.NetClockPing? NetPing => _netPing;
+
     /// <summary>What is holding this session's world, null before the build. A results board's
     /// wake raises <see cref="PauseState.Ended"/> here, so this is where a suite reads whether the
     /// wrap-up board is holding a machine.</summary>
@@ -542,6 +547,8 @@ public partial class GameSession : Node3D
         {
             return false;
         }
+
+        WireNetClock();
         // Published as the ambient Current so WorldSession, which the test harness also drives with
         // no session around it, can record its phases blind.
         _startup = new StartupProfile(_spec.ModeName, Time.GetTicksMsec())
@@ -990,6 +997,7 @@ public partial class GameSession : Node3D
         RenderPoses.Restore();
         // Before the step, so everything that arrived is already applied when the phases run.
         _net?.Step(delta);
+        _netPing?.Step();
         _simulation?.Step((float)delta);
     }
 
@@ -4029,7 +4037,8 @@ public partial class GameSession : Node3D
 
     // One round this machine fired, told to the field so every other copy of the aeroplane
     // shoots too. The direction is the one the shooter's own assist chose, never re-derived
-    // elsewhere, and the seat's channel keeps the stream ordered against itself alone.
+    // elsewhere. ⚠ Keep it off the seat's state channel: a sequenced carrier would discard a
+    // burst behind a newer pose sample there.
     private void SendFire(int seat, WeaponDef weapon, Vector3 origin, Vector3 direction)
     {
         if (_net is not { } net || !_weaponWire.TryGetValue(weapon.Id, out int index) || index > byte.MaxValue)
@@ -4040,7 +4049,7 @@ public partial class GameSession : Node3D
         net.Broadcast(
             new Net.FireMessage((byte)seat, (byte)index, _fireSequence[seat]++, origin, direction,
                 Net.NetMessage.NoSeat),
-            Net.NetChannels.ForSeat(seat));
+            Net.NetChannels.ForFire(seat));
     }
 
     // A round somebody else's aeroplane fired, spawned here from the event. ⚠ Only onto a seat
@@ -4245,6 +4254,27 @@ public partial class GameSession : Node3D
         if (_net is not { IsHost: true })
         {
             _versus?.ApplyScore(score.Seat, score.Score, score.Kills, score.Deaths);
+        }
+    }
+
+    // The shared clock's round trip, for every kind of session: a guest asks the host's clock
+    // from its first step on, and the host answers. The answers are also the periodic reading a
+    // campaign has, since only a match's state tick carries a host clock besides them.
+    // ⚠ Nothing is sent from here: the join stays the two payloads it is counted as.
+    private void WireNetClock()
+    {
+        if (_net is not { } net || _netSeats.Count == 0)
+        {
+            return;
+        }
+
+        if (net.IsHost)
+        {
+            _netPing = Net.NetClockPing.Answer(net, () => _clock?.Time ?? 0.0);
+        }
+        else if (_netClock is { } slew)
+        {
+            _netPing = Net.NetClockPing.Follow(net, slew, () => _clock?.Time ?? 0.0);
         }
     }
 
@@ -5164,6 +5194,7 @@ public partial class GameSession : Node3D
         {
             // Per substep and before it, the same order the realtime adapter takes.
             _net?.Step(clock.Dt);
+            _netPing?.Step();
             _simulation?.Step(clock.Dt);
         }
 

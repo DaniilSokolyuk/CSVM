@@ -193,7 +193,7 @@ public sealed class NetSessionTests
         int sent = host.Sent;
 
         first.Broadcast(new FireMessage(1, 7, 3, Vector3.Up, Vector3.Forward, NetMessage.NoSeat),
-            NetChannels.ForSeat(1));
+            NetChannels.ForFire(1));
         host.Step(0.016);
         second.Step(0.016);
         first.Step(0.016);
@@ -216,7 +216,7 @@ public sealed class NetSessionTests
         second.On<FireMessage>((_, _) => reached++);
 
         first.Broadcast(new FireMessage(1, 7, 3, Vector3.Up, Vector3.Forward, NetMessage.NoSeat),
-            NetChannels.ForSeat(1));
+            NetChannels.ForFire(1));
         host.Step(0.016);
         second.Step(0.016);
 

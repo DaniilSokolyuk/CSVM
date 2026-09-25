@@ -161,7 +161,7 @@ score, `0x17` match state, `0x22` hit and `0x27` seat roster. Damage, spawn, the
 director transition, the join handshake and a seat's ask to be spawned again have no
 counterpart, so they are minted at `0x40`, `0x41`, `0x42`, `0x43` and `0x44`, above the ceiling
 above. The host-owned world's four (AI state, AI fire, a guest's hit claim on an AI, and a world
-event) are minted at `0x45` to `0x48`, below. The handshake carries the master seed, the host's clock and the seat the joining peer was
+event) are minted at `0x45` to `0x48`, below, and the clock ping at `0x49`. The handshake carries the master seed, the host's clock and the seat the joining peer was
 given; the original needs none of the three, because it draws from no shared stream and hands
 out no seat. The ask carries a seat and nothing else: the original's client takes its own
 respawn, while here the host owns every placement and answers the ask with a spawn event.
@@ -173,6 +173,22 @@ no countdown of its own: it is told the clock, and that field is also the readin
 `NetClockSlew` takes an offset from, since the periodic tick is the only message a running match
 repeats. Both limits ride even though the original arms exactly one, which costs four bytes a
 second and leaves an exclusive lobby nothing to change on the wire.
+
+The clock ping is minted at `0x49` rather than taking `0x23`, though it has the original's shape:
+twelve bytes, two stamps, one peer, a ten-second timer (`Net/NetClockPing.cs`). The stamps
+differ in kind. The original's are `GetTickCount` milliseconds and it pings to learn a peer's
+latency, one side of each pair asking; the remake's are session-clock seconds, and only a guest
+asks, because the host's clock is the one being read. It is unreliable where the original's is
+guaranteed, since a retransmitted question would measure the retransmission as link. The guest
+reads the host's clock forward by half the round trip, and the first answer replaces the offset
+the handshake opened on. It is also the periodic clock reading a campaign session has, where no
+match state ticks.
+
+Fire (`0x10`) is unreliable and unsequenced where the original's is guaranteed, and rides a
+channel per seat apart from that seat's state (`Net/NetChannels.cs`). Sequenced beside state, a
+burst sent between two samples was discarded as overtaken whenever jitter swapped them, and
+rounds fired on one step would discard each other the same way. Unsequenced, a burst is spawned
+whichever order it lands in; a reliable burst would stall behind a retransmission.
 
 The remake does not take the batching: its hit and damage messages are reliable and separate, its
 score message is one seat rather than the whole table, and its roster carries the match seed,
@@ -240,9 +256,9 @@ is advanced by that much:
   line and offset the host's is at.
 Particle emitters, light animations and a music cue start at their own beginning on arrival. None
 of them has a position to seek, and none is timed against the rest.
-The shared clock is `Net/NetClockSlew.cs`'s, whose readings are one-way. Its offset absorbs the
-link's latency, so a lateness read against it is only the excess over the average until a
-round-trip term lands. The original's `0x23` ping carries what that term would need.
+The shared clock is `Net/NetClockSlew.cs`'s. Its one-way readings are read forward by half the
+round trip `0x49` measures (below), so a lateness read against it is the whole time the event
+spent on the link, not only the excess over the average.
 A guest's mission end holds the world and builds the result without writing a profile, a
 photograph or an award. A guest that joins late has missed every earlier event.
 

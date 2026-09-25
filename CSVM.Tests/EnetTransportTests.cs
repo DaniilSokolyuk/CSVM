@@ -23,6 +23,23 @@ public sealed class EnetTransportTests
         Assert.Equal(mode, EnetTransport.ModeFor(reliability).ToString());
     }
 
+    // Every seat's state and fire channel is one the connection negotiated, and no two of them,
+    // nor the events channel, are the same one.
+    [Fact]
+    public void Every_seats_state_and_fire_channel_is_distinct_and_inside_the_negotiated_count()
+    {
+        var used = new System.Collections.Generic.HashSet<int> { NetChannels.Events };
+        for (int seat = 0; seat < NetSeats.MaxPlayers; seat++)
+        {
+            Assert.True(used.Add(NetChannels.ForSeat(seat)), $"seat {seat}'s state channel is taken");
+            Assert.True(used.Add(NetChannels.ForFire(seat)), $"seat {seat}'s fire channel is taken");
+        }
+
+        Assert.All(used, channel => Assert.InRange(channel, 0, EnetTransport.ChannelCount - 1));
+        Assert.Equal(EnetTransport.ChannelCount - 1, NetChannels.ForFire(NetSeats.MaxPlayers - 1));
+        Assert.Equal(NetChannels.Events, NetChannels.ForFire(NetSeats.MaxPlayers));
+    }
+
     [Fact]
     public void A_class_outside_the_three_is_refused_rather_than_carried_as_something_else()
     {

@@ -671,7 +671,7 @@ go to `backlog.md`.
 state handler, and every part of it is inert in a session with no seats on a wire. A seat flown here
 announces each round it spawns through `FlightController.WeaponFired` (the gun and rocket spawns, and
 a carried turret's rounds through `TurretController`), and the session puts it on the wire as the
-unreliable sequenced `FireMessage`; every peer spawns that round locally from the event, so
+unreliable `FireMessage` on its seat's fire channel; every peer spawns that round locally from the event, so
 `StepProjectiles` and `StepIncomingFire` still see nothing but their own machine's projectiles. A
 strike is offered to the rig's new `HitRouter` before the local damage runs, which is where Decision
 8's fork sits: the machine flying the shooter's seat decides the hit, and the host stands in for
@@ -839,6 +839,9 @@ target of **6.000 s and `Snaps == 1`** on both, against the 6.000 s the host's c
 by. ⚠ Both readings are 6 s and not a walk because a suite drives `_PhysicsProcess` alone and
 `GameClock.Time` advances in `BeginFrame`, so the only clock that moves is the one the suite calls
 `_Process` on (`docs/verification.md` INSTR-92).
+`Observe` reads each tick forward by half the round trip `NetClockPing` measures (C21's
+**Landed (the round trip).**), so the tick no longer holds the offset one latency short. In the
+harness the frozen clocks give a round trip of zero and the 6.000 s reading stands.
 
 **The rematch** (owed by B13) is the host's alone: a guest's R returns without touching anything,
 which leaves a guest at a wrap-up board pressing a key that does nothing and is `BL-1026`. The
@@ -1114,16 +1117,32 @@ guest decides nothing alone, refuses the docking code, replays the host's transi
 derives the ending cutscene's codes from its own playback, ends Won with the host and records no
 attempt on its own profile. At the end of the frame the late ending wake arrived in, its cutscene
 and timer stand 0 ms from the host's, and the control guest with the catch-up off trails by 83.3 ms
-on both. The limit: the suite supplies an exact shared clock; a live link's clock reads only the
-excess over average latency until the round-trip term under **Owed.** lands.
+on both. That run supplied an exact shared clock; the round trip below replaces it with the live
+slew.
+
+**Landed (the round trip).** `CSVM/src/Net/NetClockPing.cs` is the original's `0x23` ping in the
+remake's terms, minted at `0x49` (`ClockPingMessage`, 12 bytes, two session-clock stamps,
+unreliable): a guest asks the host's clock on its first step, again 600 steps (the original's ten
+seconds) after an answer and 60 steps after an unanswered question (TUNE), and the host answers at
+once on the events channel. `NetClockSlew.ObserveRoundTrip` keeps the newest round trip, reads
+the answer forward by half of it, and applies the first one at once as the end of the opening
+alignment, since an event replayed while a latency's error was still being walked off keeps that
+error in its timer. Every later one-way reading (`Observe`, a match's `0x17` tick) is read forward
+by the same half, so a tick no longer pulls the offset back by the latency. `GameSession.WireNetClock`
+wires both ends for every session kind after the join, so a campaign session has a periodic clock
+reading; nothing is sent from the join itself. `NetClockPingTests` is the able-to-fail check: over
+a 105 ms loopback the guest's host time ends 9.1 ms off with the ping and 116.7 ms off without it
+(the latency rounded up to whole steps), and 17.4 ms off under jitter and 25 per cent loss.
+`net-director-follow` now opens each guest's slew a latency short, as a one-way handshake does,
+and feeds it from the ping over the lossy link: the round trip measures 200 ms, host time stands
+16.7 ms off at the sample, and the cutscene and timer gaps are 16.7 ms, inside the one-step bar.
+`net-relay-star` leaves the host's answered questions out of its forwarded-once count, and
+`net-soak`'s drop truth leaves out the events channel's losses (`LoopbackTransport.LostOn`),
+where no sequence stream rides.
+
+**Verified.** <pending orchestrator run>
 
 **Owed.**
-- The shared clock under it cannot yet read one link latency. `NetClockSlew` takes one-way
-  readings (host clock at send against guest clock at arrival), so its offset absorbs the latency
-  and a lateness measured against it reads only the excess over the average. A round-trip term
-  (half the RTT, from the transport's peer statistic or the original's `0x23` ping, which the
-  remake never took) would close it. A campaign session also feeds the slew no periodic reading,
-  since only a match's `0x17` carries a host clock, so its offset stays the handshake's.
 - A late joiner (C24) would read every missed event as seconds or minutes late; the catch-up is
   not capped for that case.
 - No launch path yet runs a campaign mission with a net seat, so `WireNetDirector` is exercised
@@ -1558,7 +1577,7 @@ needed. Units: `CSVM.Tests/NetInstrumentsTests.cs` (new), and additions to
 `RemotePoseBufferTests`, `LoopbackTransportTests` and `SessionSpecTests`. The suite's weight is
 in `analysis/engine-suite-weights.json`. Docs: `docs/architecture/Net.md` (a new entry, four
 entries changed), `docs/architecture/UI.md`, the index bullets in `docs/architecture.md`, and
-`docs/cli.md`. Backlog: `BL-1041`, `BL-1042`.
+`docs/cli.md`. Backlog: `BL-1041`.
 
 **Verified.** The complete battery on the merged tree (C21 and D31 over Wave B): build clean, 4903
 units passed with 2 skipped, 388 of 388 engine suites passed with engine errors clean in all six
@@ -1568,13 +1587,24 @@ lost or discarded, and both able-to-fail controls moving as expected. The limit:
 the loopback's model of a link, the position-error bars are TUNE (`BL-1041`), and the
 `--debug-net` corner readout has not been seen on screen, only its text line is unit-tested.
 
-**Owed.** Fire rides its seat's state channel, so jitter discards gunfire behind a newer state
-sample (`BL-1042`): at 50 ms and 5 per cent the carriers discard 10 payloads beside 12 lost, and
-11 fire events go missing against 54 rounds. The hook is in `GameSession.SendFire`, the one
-argument `Net.NetChannels.ForSeat(seat)` becoming a per-seat fire channel (a new
-`NetChannels.ForSeatFire(seat)` above the state range, with `EnetTransport`'s channel count grown
-to match); `net-soak`'s discard count is the measure. It was left out because `GameSession.cs`
-is another item's file in this run. The readout itself has not been seen on a real two-machine
+**Landed (fire on its own channel).** Fire rode its seat's state channel, so jitter discarded
+gunfire behind a newer state sample: at 50 ms and 5 per cent the carriers discarded 10 payloads
+beside 12 lost, and 11 fire events of 54 rounds went missing. `NetChannels.ForFire` now gives
+each seat a fire channel above the whole state range, `NetChannels.Count` is the layout's width
+and `EnetTransport.ChannelCount`, and `GameSession.SendFire` names the fire channel.
+`FireMessage` is plain unreliable rather than sequenced: rounds fired on one step race each other
+under jitter, a sequenced class would drop the one landing second, and a reliable one would stall
+a burst behind a retransmission. `NetInstruments` counts a burst that fills a fire gap inside the
+last 64 as `ReorderedFire` instead of stale. AI fire already rode the events channel unsequenced
+and is unchanged. After: the 50 ms cell discards nothing and misses 2 fire events of 54 (5 per
+cent loss would take about 2.7); the 100 ms cell discards nothing; the 200 ms cell's 11 to 13
+discards are state against state, since 40 ms of jitter exceeds the 50 ms sample spacing. No
+fire is drawn out of order in any cell. `net-soak` asserts the 50 ms cell's zero discards, and
+`enet-transport` sends on the top fire channel.
+
+**Verified.** <pending orchestrator run>
+
+**Owed.** The readout itself has not been seen on a real two-machine
 link: no suite drives `Launcher.TickNetReadout`, so the corner text and the log line are owed a
 look at the controls.
 

@@ -31,14 +31,14 @@ replays the same network exactly and a reliable stream costs no loss draw. Which
 touch is the transport's rule, not this value's.
 
 ## src/Net/LoopbackTransport.cs
-Two or more transports wired to each other in one process through delivery queues, one
-`LoopbackConditions` per direction, changeable mid-run through `SetConditions` so a suite makes a
-reorder instead of waiting for the jitter to draw one. `Mesh` builds the set and links it; nothing
-arrives until `Step` advances that end's own clock, which is what gives a test delivery time.
-The guarantees are enforced, not imitated: loss is drawn only for the unreliable classes, a
-reliable stream's deadlines are held monotonic per sender, and a sequenced payload at or below
-the newest delivered on its channel is discarded. `Lost` (sender) and `DiscardedStale` (receiver)
-count both, the truth `NetInstruments`' gap count is checked against. Read `LoopbackTransportTests.cs`.
+Transports wired to each other in one process through delivery queues, one `LoopbackConditions`
+per direction, changeable through `SetConditions` so a suite makes a reorder instead of waiting
+for the jitter. `Mesh` builds and links the set; nothing arrives until `Step` advances that end's
+own clock, which gives a test delivery time. The guarantees are enforced: loss is drawn only for
+the unreliable classes, a reliable stream's deadlines stay monotonic per sender, and a sequenced
+payload at or below the newest on its channel is discarded. `Lost` (per channel in `LostOn`) and
+`DiscardedStale` are the truth `NetInstruments`' gap count is checked against, less the events
+channel, which no sequence stream rides. Read `LoopbackTransportTests.cs`.
 
 ## src/Net/EnetTransport.cs
 The shipped carrier: the seam over Godot's ENet peer, UDP under ENet's own three delivery classes,
@@ -46,7 +46,7 @@ and the one type under `CSVM/` allowed to name a Godot networking type. `Host` o
 server, `Join` reports success as the host joining the roster, and both ends address each other by
 the id ENet assigns, the host being 1. Every roster change and payload comes out of `Step`, the
 single poll it makes, so "nothing arrives between steps" holds here as on the loopback.
-`ChannelCount` is the events channel plus one per seat, asked for by both ends, since ENet fixes
+`ChannelCount` is `NetChannels.Count`, asked for by both ends, since ENet fixes
 it at the handshake and refuses a send past it. `INetLink` is where a board and a launcher read
 the socket, and a socket with no listener holds what lands and replays it on `Bind`.
 
@@ -86,7 +86,7 @@ how a guest's board learns that the host's session has answered. Read `NetLobbyT
 ## src/Net/NetMessages.cs
 The vocabulary: `NetMessageType` (one word per message), the death, spawn and match-end enums
 taken from the original's own values, `NetDirectorEvent` (the director message's codes and id
-layouts), `NetWorldEvent` (the world event's codes), `NetSessionKind`, and the message structs, the host's spawn grant, a seat's ask and the lobby's `SessionAdvertMessage` among them. Each is a value type implementing `INetMessage<TSelf>`,
+layouts), `NetWorldEvent` (the world event's codes), `NetSessionKind`, and the message structs, the host's spawn grant, a seat's ask, the clock ping and the lobby's `SessionAdvertMessage` among them. Each is a value type implementing `INetMessage<TSelf>`,
 which carries its type word and its `INetTransport.cs` reliability class as static abstracts, so
 a sender reads the class off the type without constructing anything. `NetMessage` holds what they
 share: the four-byte header, the no-seat and no-spawn-entry markers, the aircraft-state width
@@ -114,9 +114,19 @@ How a guest holds its session clock against the host's, as one offset that is wa
 written: `HostTime(guest) = guest + Offset`, and a fresh `Observe` sets a target the offset
 converges on over `ConvergeSeconds`, bounded by `MaxRateOffset` of real time, never overshooting.
 A reading further out than `SnapSeconds` is applied at once and counted in `Snaps`, which is the
-signal that the window is wrong rather than the link. Engine-free and clock-free: it is handed
-every time it is told about, so `GameSession` needs no clock write and a unit suite drives it
-whole. The three constants are TUNE (`BL-1018`).
+signal that the window is wrong rather than the link. `ObserveRoundTrip` keeps the newest
+`RoundTrip`, and every one-way reading is read forward by half of it; the first round trip is
+applied at once, as the end of the opening alignment. Engine-free and clock-free, so a unit
+suite drives it whole. The three constants are TUNE (`BL-1018`).
+
+## src/Net/NetClockPing.cs
+The round trip a guest's `NetClockSlew` takes the link latency from, modelled on the original's
+`0x23` ping. `Follow` makes a guest ask the host's clock from its first `Step`, again every
+`IntervalSteps` (the original's ten seconds) after an answer and every `RetrySteps` (TUNE,
+`BL-1018`) without one;
+`Answer` makes the host reply at once with its clock. An answer overtaken by a newer one, or
+stamped later than the guest's clock reads, is dropped. `Asked` and `Answered` are the counters a
+suite reads, the host's `Answered` being the arrivals its relay leaves alone.
 
 ## src/Net/NetHandshake.cs
 What a host hands a joining guest before either flies: the master seed and the host's session
@@ -176,7 +186,9 @@ message carries is `GameSession`'s to fill. Read `docs/architecture/Session.md`'
 Which channel a message rides. Sequenced discard is per sender and channel, and a relayed sample
 carries the host's peer id rather than its sender's, so two guests sharing one channel would
 discard each other by sequence number: `ForSeat` gives every seat its own, and `Events` carries
-the join and everything reliable, where nothing is discarded. A seat past the roster's ceiling
+the join and everything reliable, where nothing is discarded. `ForFire` gives each seat's fire a
+channel above the whole state range, since a burst judged against the pose samples around it
+would be discarded as overtaken. `Count` is the layout's width. A seat past the roster's ceiling
 falls back to `Events`, which costs ordering rather than delivery.
 
 ## src/Net/NetSession.cs
@@ -192,7 +204,8 @@ every arrival before its handler and every send once, a broadcast included.
 ## src/Net/NetInstruments.cs
 One machine's desync counters over its own traffic, engine-free, read by `net-soak` and the
 `--debug-net` readout. Rules: a seat's first state or fire sample sets its ladder, and each later
-gap counts as dropped; an arrival at or below the newest is stale; a hit or a burst for a seat
+gap counts as dropped; an arrival at or below the newest is stale, except a burst filling a fire
+gap inside the last 64, which rides unsequenced and is counted reordered; a hit or a burst for a seat
 reported dead and not placed again is late; a score line adding deaths nobody reported, or a
 respawn for a known seat nobody reported dead, is out of order. A seat's first score line and a
 line whose deaths fall (a rematch) only set the baseline. Position error needs the owner's path

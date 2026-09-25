@@ -6,11 +6,11 @@ namespace CSVM.Net;
 /// How a guest holds its own session clock against the host's: as one offset, moved gradually.
 /// <c>HostTime(guestClock) = guestClock + Offset</c>, the conversion every replicated timestamp is
 /// read through. Writing a fresh reading straight in would move every interpolated pose and every
-/// timed event on one frame, which reads as a world-wide stutter.
-/// So a reading becomes a target the offset walks to over
-/// <see cref="ConvergeSeconds"/>, at no more than <see cref="MaxRateOffset"/> of real time.
-/// Engine-free and clock-free: it is handed every time it is told about. That is what lets a unit
-/// suite drive it, and a session own no clock rule of its own.
+/// timed event on one frame, which reads as a world-wide stutter. So a reading becomes a target
+/// the offset walks to over <see cref="ConvergeSeconds"/>, at no more than
+/// <see cref="MaxRateOffset"/> of real time. A one-way reading is read forward by half the newest
+/// round trip (<see cref="ObserveRoundTrip"/>); without one, the offset lags by the latency.
+/// Engine-free and clock-free, so a unit suite drives it whole.
 /// </summary>
 public sealed class NetClockSlew
 {
@@ -62,31 +62,43 @@ public sealed class NetClockSlew
     /// <summary>Whether the offset has arrived at the newest reading.</summary>
     public bool Settled => Math.Abs(Target - Offset) <= SettledSeconds;
 
-    /// <summary>Takes one reading of the two clocks. It replaces the target outright, because a
-    /// reading is the whole truth about the offset rather than a correction to it, and re-aims the
-    /// walk. A reading past <see cref="SnapSeconds"/> from the offset in use is applied at once and
-    /// counted.</summary>
-    public void Observe(double hostClock, double guestClock)
+    /// <summary>The newest measured round trip to the host, in seconds, zero until one is
+    /// measured. Half of it is how late every one-way reading is taken to be.</summary>
+    public double RoundTrip { get; private set; }
+
+    /// <summary>How many round trips have been measured.</summary>
+    public int RoundTrips { get; private set; }
+
+    /// <summary>Takes one one-way reading of the two clocks: the host's at send against this
+    /// guest's at arrival, read forward by half the newest <see cref="RoundTrip"/>. It replaces
+    /// the target outright, because a reading is the whole truth about the offset rather than a
+    /// correction to it, and re-aims the walk. A reading past <see cref="SnapSeconds"/> from the
+    /// offset in use is applied at once and counted.</summary>
+    public void Observe(double hostClock, double guestClock) =>
+        Aim(hostClock + (RoundTrip * 0.5) - guestClock, hostClock);
+
+    /// <summary>Takes one round trip: asked at <paramref name="askedAt"/> on this guest's clock,
+    /// answered with the host's <paramref name="hostClock"/>, back at <paramref name="guestClock"/>.
+    /// The host's clock now is its answer plus half the round trip, true when both legs are equal.
+    /// The first round trip ends the opening alignment, so it is applied at once. An event
+    /// replayed while the latency was still being walked off would keep that error for good.
+    /// </summary>
+    public void ObserveRoundTrip(double askedAt, double hostClock, double guestClock)
     {
-        double target = hostClock - guestClock;
-        if (double.IsNaN(target) || double.IsInfinity(target))
+        double roundTrip = guestClock - askedAt;
+        if (double.IsNaN(roundTrip) || double.IsInfinity(roundTrip) || roundTrip < 0.0)
         {
-            throw new ArgumentOutOfRangeException(nameof(hostClock), hostClock, "a clock reading is finite seconds");
+            throw new ArgumentOutOfRangeException(nameof(askedAt), askedAt, "a round trip is finite seconds and ends after it starts");
         }
 
-        Target = target;
-        double error = Target - Offset;
-        if (Math.Abs(error) > SnapSeconds)
+        RoundTrip = roundTrip;
+        RoundTrips++;
+        Observe(hostClock, guestClock);
+        if (RoundTrips == 1)
         {
             Offset = Target;
             Rate = 0.0;
-            Snaps++;
-            return;
         }
-
-        Rate = Math.Abs(error) <= SettledSeconds
-            ? 0.0
-            : Math.Clamp(error / ConvergeSeconds, -MaxRateOffset, MaxRateOffset);
     }
 
     /// <summary>Walks the offset for a frame of <paramref name="dt"/> seconds and returns how far
@@ -114,4 +126,27 @@ public sealed class NetClockSlew
     /// <summary>The host's session clock as this guest reads it, the conversion every replicated
     /// timestamp goes through.</summary>
     public double HostTime(double guestClock) => guestClock + Offset;
+
+    // One reading, as the offset it asks for.
+    private void Aim(double target, double hostClock)
+    {
+        if (double.IsNaN(target) || double.IsInfinity(target))
+        {
+            throw new ArgumentOutOfRangeException(nameof(hostClock), hostClock, "a clock reading is finite seconds");
+        }
+
+        Target = target;
+        double error = Target - Offset;
+        if (Math.Abs(error) > SnapSeconds)
+        {
+            Offset = Target;
+            Rate = 0.0;
+            Snaps++;
+            return;
+        }
+
+        Rate = Math.Abs(error) <= SettledSeconds
+            ? 0.0
+            : Math.Clamp(error / ConvergeSeconds, -MaxRateOffset, MaxRateOffset);
+    }
 }

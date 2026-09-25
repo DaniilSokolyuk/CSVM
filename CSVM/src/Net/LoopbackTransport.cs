@@ -24,6 +24,7 @@ public sealed class LoopbackTransport : INetTransport
     private readonly Dictionary<int, Queue<Pending>> _reliable = new();
     private readonly Dictionary<int, double> _reliableTail = new();
     private readonly List<Pending> _unreliable = new();
+    private readonly Dictionary<int, int> _lostOn = new();
     private INetTransportListener? _listener;
     private double _now;
 
@@ -80,6 +81,10 @@ public sealed class LoopbackTransport : INetTransport
         return mesh;
     }
 
+    /// <summary>The share of <see cref="Lost"/> sent on <paramref name="channel"/>. A channel no
+    /// sequence stream rides is lost without a gap, so a receiver cannot infer it.</summary>
+    public int LostOn(int channel) => _lostOn.TryGetValue(channel, out int lost) ? lost : 0;
+
     /// <inheritdoc/>
     public void Bind(INetTransportListener listener)
     {
@@ -130,6 +135,7 @@ public sealed class LoopbackTransport : INetTransport
         if (reliability != NetReliability.Reliable && conditions.Drops(_rng))
         {
             Lost++;
+            _lostOn[channel] = LostOn(channel) + 1;
             return;
         }
 

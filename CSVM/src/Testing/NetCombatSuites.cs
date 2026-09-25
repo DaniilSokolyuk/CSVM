@@ -729,6 +729,7 @@ internal static class NetCombatSuites
         var link = host.NetLink!;
         int receivedBefore = link.Received;
         int relayedBefore = link.Relayed;
+        int answeredBefore = host.NetPing?.Answered ?? 0;
         var gun = first.SeatRigs[1].Controller!;
         var pool = second.SeatRigs[1].Controller!.Projectiles!;
         pool.ScoredShooters.Add(gun.PlayerIndex);
@@ -759,10 +760,12 @@ internal static class NetCombatSuites
 
         // Every arrival is forwarded to exactly one machine, the other guest. An echo would
         // forward it twice, and a relay that rewrote the sender would land it on the wrong seat.
-        int received = link.Received - receivedBefore;
+        // A clock question is the host's own to answer and is the one arrival never forwarded.
+        int questions = (host.NetPing?.Answered ?? 0) - answeredBefore;
+        int received = link.Received - receivedBefore - questions;
         int relayed = link.Relayed - relayedBefore;
         ctx.Check(received > 0 && relayed == received,
-            $"and the host forwarded every one of its {received} arrivals exactly once, never back to the peer it came from ({relayed} forwarded)");
+            $"and the host forwarded every one of its {received} arrivals exactly once, never back to the peer it came from ({relayed} forwarded, {questions} clock question(s) answered instead)");
     }
 
     // Both or all three sessions through the same number of fixed steps, host first, the order a
