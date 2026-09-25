@@ -368,7 +368,10 @@ and the Tartarus's F13+ keys with SDL2 holding its joystick view still need the 
 run.
 
 **Verified.** `--dump-sticks` on the hidden desktop lists both VKB units and the Tartarus with the
-GUIDs the pygame-ce probe reported. The full `RunTests.ps1` passes on the merged branch.
+GUIDs the pygame-ce probe reported. The full `RunTests.ps1` passes on the merged branch. At the
+controls, in a foreground session: unplugging L mid-flight and plugging it back in both work, the
+Tartarus's F13+ keys still reach the game while SDL2 holds its joystick view, and no stick input
+arrives while the window is unfocused.
 
 **Original approach (kept for reference).**
 
@@ -864,8 +867,8 @@ changed models, hot-plug through `FakeStickNative`, an in-place merge on a flyin
 -SkipGoldens`: 4950 passed, 0 failed, 2 skipped (data-absent cinema tests). Engine suites
 `bindings-launch-load`, `bindings-prompt-device` and `menu-controls-seats` pass.
 `CheckCommentCaps.ps1` and `CheckDocEntries.ps1` clean. The full `RunTests.ps1` passes on the
-merged branch with the `PollInput` hot-plug call in place. A live hot-plug mid-flight is owed at
-the controls.
+merged branch with the `PollInput` hot-plug call in place. At the controls, L unplugged and
+re-plugged mid-flight switches the active profiles without a problem.
 
 **Original approach (kept for reference).**
 
@@ -1007,8 +1010,9 @@ way pads do.
 **Verified.** In `GenericStickDefaultTests`: a player-1 `MenuInput` over `FakeStickNative` moves
 down on hat Down, left on hat Left, accepts on button 0 and backs out on button 1 (`Back` and
 `PadBack`); players 0 and 2 read nothing; a menu seat picks up the default after a late settle. The
-engine suites listed under C8 and the full `RunTests.ps1` on the merged branch pass. Menu
-navigation by stick is owed at the controls.
+engine suites listed under C8 and the full `RunTests.ps1` on the merged branch pass. At the
+controls the main and campaign menus navigate by stick; the pause menus do not, which the pause
+menu fix covers.
 
 **Left open.** None beyond D10/D11's screen work.
 
