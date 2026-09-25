@@ -57,7 +57,7 @@ that finds itself replicating a mesh, a node or an animation has left this plan.
 | 7 | Where the seam goes | **Two interfaces above the transport**: a remote-airframe arm beside `IFlightInputSource` on the aircraft side and a transport interface on the session side; a remote human is a pose that arrives late, never a stick that arrives late |
 | 8 | Hit authority | **Shooter's client decides the hit, the victim applies the damage and reports its own death, the host scores**, the decoded original's order, no lag compensation. The hit itself is a **reliable** message, confirmed after A2 found the original batches hits inside its unreliable aircraft-state packet: a lost hit would be a lost kill |
 | 9 | Topology | **Star, the host relays.** A guest connects to the host only; the host forwards every guest's aircraft state and events to the other guests, so one port and one UPnP mapping serve a match and a guest-to-guest packet costs one extra hop. No mesh between guests |
-| 10 | The co-op door | **The campaign hosts, the Network screen joins.** The Remake campaign flow opens itself to the network (socket and router port), and remote guests appear in the campaign boards' P1 to P4 strip beside local joiners; a guest joins by IP from B15's Network join board, which names the session as campaign co-op and holds the guest on a waiting board until the host launches. The Network screen's host rows stay the original's modes |
+| 10 | The co-op door | **The cabin hosts, the Connection screen joins, the Connection screen's Host opens the lobby; all in the Original presentation**, which is the default (the Built-in menu is disabled by default and keeps C25's boards). A campaign host presses a Host Co-op button in the Original cabin's button column, drawn in the original's button style; while hosting it reads Close Network, the NETWORK OPEN band shows the address and guest count, and a player chip per guest shows its Ready mark. Close Network, or leaving the cabin for the main menu, returns every guest to the Connection screen with "Host closed the game". The game name is `<profile>'s campaign`; there is no password this milestone. A guest joins from the original's Multiplayer Connection screen, by LAN broadcast search into the LAN TCP/IP Games list or by Internet IP address. Co-op caps at four humans (`n/4`), the campaign's P1 to P4 human field; Dogfight keeps Decision 5's 16. The Connection screen's Host opens a rebuilt Multiplayer Lobby for the original's modes, of which Dogfight is the only live one; campaign co-op has no lobby and needs no Dogfight door. Items F51, F52 and C24 |
 
 ## ⚠ Read this before implementing anything
 
@@ -69,8 +69,8 @@ that finds itself replicating a mesh, a node or an animation has left this plan.
 | Confidence | Items | What that means for you |
 |---|---|---|
 | **Traced to an exact mechanism in code, with the data that proves it** | B12, B13, B14 (scoring, spawn placement and match end are decoded in `docs/org/`), A4 (ceiling, from this plan's own decode) | Confirm the trace, then implement. |
-| **Direction sound, magnitude a judgement call** | B11 (send rate, interpolation buffer, extrapolation window) | The *what* is settled; the *how much* is TUNE, add it to `backlog.md`'s TUNE list, don't invent it as fact. |
-| **Leads only, no mechanism yet** | A1, A2, A3, A5, B15, C21 to C24, D31, D32 | Budget for investigation; this may end in a disproof. |
+| **Direction sound, magnitude a judgement call** | B11 (send rate, interpolation buffer, extrapolation window), D33 (the lease length) | The *what* is settled; the *how much* is TUNE, add it to `backlog.md`'s TUNE list, don't invent it as fact. |
+| **Leads only, no mechanism yet** | A1, A2, A3, A5, B15, C21 to C24, D31, D32, F51, F52 | Budget for investigation; this may end in a disproof. |
 
 **⚠ Worktree hazard.** `git stash` is repo-global and shared across worktrees, never use it in a
 worktree session here; use a local commit or a file copy.
@@ -119,8 +119,8 @@ Auto Respawn, Allow Custom Planes and Outlaw Components; Select Plane and Select
 per gun calibre, a rocket per hardpoint, eight rows) are per pilot; the fourth tab is Game
 Scores. `Multiplayer Connection.png` and `Multiplayer Connection Screen.png` are the Connection
 page (MSN Gaming Zone, LAN IPX, LAN TCP/IP, Internet by IP address, Modem-to-Modem) and the LAN
-games list. B14 reads the two victory conditions and the Game Scores tab from here; C24 and
-`BL-1022` read the lobby flow.
+games list. B14 reads the two victory conditions and the Game Scores tab from here; F51 builds
+the Connection page and games list, and F52 (`BL-1022`) the lobby.
 
 **The message shape.** A death is message type `0x12`, built by `FUN_00498a90` and handled by
 `FUN_00498bf0`, carrying a killer id at `+4` and a cause at `+0xc`; the cause table and the three
@@ -185,7 +185,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 21. ☑ The host-owned mission director: objective graph transitions, cutscene codes and wingman spawns as events
 22. ☑ Host-owned AI and world: aircraft, zeppelins, turrets, generators, vehicles and destructibles as spawn, state and death events
 23. ☑ Guests as the human field: `CampaignHumanField` and the objective rules see remote humans, the scripted P1 stays the host
-24. ☐ The co-op session flow: cabin and briefing on the host, guests joining into the mission, mission end and debrief on every peer
+24. ☐ The co-op session flow: guests follow the host's cabin and briefing, pick from the host's hangar, Ready before launch, and share the debrief
 25. ☑ The co-op door: the campaign flow opens to the network, guests join from the Network board and wait for the host's launch
 26. ☑ Host-decided positional starts and the airframe swap: landing approaches, the ladder switch, `PlayerRange` and codes 965 to 967 for a guest
 
@@ -193,6 +193,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 31. ☑ Latency and loss soaks, desync instruments and a `--debug-net` readout
 32. ☑ The Steam transport flag: a build-time gate with a stub, so the seam is proven before any SDK arrives
+33. ☐ The router mapping on a finite lease with a stale mapping cleared, and a fuzz of every message reader
 
 ### Wave E, the rest of the host-owned world
 
@@ -200,6 +201,11 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 42. ☑ Zeppelin paths from the host: the path position as a periodic state message, in the original's `0x1e` shape
 43. ☑ Surface vehicles from the host: patrols and `WARP_VEHICLE` placed by the host, not replayed from a diverging draw
 44. ☑ Destructible chip damage: a pool's health between stages mirrored on every guest
+
+### Wave F, the Original presentation's multiplayer screens
+
+51. ☐ The network doors in the Original presentation: the cabin's Host Co-op button, and the Connection page with LAN discovery and the games list (`BL-1021`)
+52. ☐ The Multiplayer Lobby rebuilt in the original's layout, with Dogfight live (`BL-1022`)
 
 ## Dependency and parallelism notes
 
@@ -218,6 +224,40 @@ Wave E needs C22 and extends its `NetWorldLink`; E41 edits `GameSession.cs`'s AI
 runs alone against C23, C24 and any other `GameSession.cs` item. E42 and E43 own their own world
 runtimes and can run beside each other; E44 owns `AnimRuntime`'s spend and the `0x48` world event.
 AI voice on a guest is not a plan item; it is GitHub issue #22.
+
+The remaining order is D33 and F51 first, then C24 and F52 one after the other, in either order.
+- **D33** needs nothing open. It owns `Net/UpnpPortMap.cs`, a new engine-free lease policy beside
+  it and a new unit fuzz file, and touches `UI/Menu/NetPlayFeature.cs` only for the lease renewal.
+  It can run beside F51 if F51 lands its `NetPlayFeature.cs` edits after D33's, or the second to
+  land merges that one file by hand; it never touches `GameSession.cs`.
+- **F51** needs C25. It owns the Original shell's multiplayer entry (`OriginalShell.cs`, a new
+  Connection screen module under `UI/Menu/Original/`), the cabin's button column
+  (`OriginalCampaignScreen.cs`), a new LAN discovery carrier under `Net/`, and edits
+  `NetPlayFeature.cs`, `CoopDoorText.cs`, `NetMessages.cs` (the advert), `Session/Launcher.cs`
+  (registering the discovery carrier), `OriginalCoverageTests.cs`, `MenuOriginalSuites.cs`,
+  `NetNamespaceDependencyTests.cs`, `.github/SECURITY.md` and `docs/PLAN-public-release.md`. It does
+  not touch `GameSession.cs`.
+- **C24** needs F51 (a guest reaches the co-op flow through F51's doors), C25 and C26. It edits
+  `GameSession.cs`, `Session/Launcher.cs`, `CampaignDirector.cs`, `OriginalCampaignScreen.cs`,
+  `OriginalPresentation.cs`, `CampaignFeature.cs`, `NetPlayFeature.cs` and `NetMessages.cs`.
+- **F52** needs F51 (the Connection page's Host opens it, and a Dogfight guest lands in it). It
+  edits `GameSession.cs` (the lives rules), `Session/Launcher.cs` (the roster from the lobby's
+  picks), `NetSeats.cs`, `NetMessages.cs`, `NetPlayFeature.cs` and `OriginalShell.cs`.
+- C24 and F52 share `GameSession.cs`, `Launcher.cs`, `NetMessages.cs` and `NetPlayFeature.cs`, and
+  both need a Ready roster (Ready per guest, Launch greyed until all are Ready); never run them in
+  parallel worktrees. Whichever lands first builds the Ready roster presentation-neutral, and the
+  second reuses it. Every new message id is the next free one at the time it is minted (`0x4F` is
+  the next free now, `NetWorldEvent` code 6), so two items minting at once collide.
+
+## At the milestone's landing
+
+These leave the milestone's scope and are filed as `backlog.md` items in the closing commit, each
+id minted through `New-ItemId.ps1`:
+- Capture the Flag, with team play (Restrict Number of Teams, Create Team), which it needs.
+- Zeppelin vs.
+- Guests' own custom planes, together with the lobby's Allow Custom Planes and Outlaw Components.
+
+GitHub issue #24 already holds the lobby's Boot and an optional host password.
 
 ---
 
@@ -984,8 +1024,8 @@ proves the highest one carries. The evidence stops at one process: two real ENet
 
 **Owed.** A host and a guest agree on the map, the match rules and the aircraft by hand: nothing is
 exchanged before the session is built, so each end picks its own and a disagreement is silent, and
-a host's roster gives every remote seat the local pilot's airframe (`BL-1022`). The Original
-presentation has no board over the shared door (`BL-1021`). `BL-951`'s local join board is
+a host's roster gives every remote seat the local pilot's airframe (`BL-1022`, F52). The Original
+presentation has no board over the shared door (`BL-1021`, F51). `BL-951`'s local join board is
 untouched and stays open. LAN and WAN play, and the firewall and router behaviour that comes with
 them, need two machines and a friend.
 
@@ -1383,30 +1423,106 @@ and asserts the host's read arrives one buffer delay (within a sample and a step
   last buffered pose. The guest's replicated graph takes Lost from the host, never from its own
   wreck.
 
-## C24 ☐ The co-op session flow: cabin and briefing on the host, guests joining into the mission, mission end and debrief on every peer
+## C24 ☐ The co-op session flow: guests follow the host's cabin and briefing, pick from the host's hangar, Ready before launch, and share the debrief
 
-**Goal.** The host walks the cabin, briefing and flight check as today, guests join before launch
-and fly, and when the mission ends the host's profile records the attempt while every guest returns
-to the board.
+**Goal.** A guest who joined a co-op host through F51's doors follows the host from the cabin into
+the same briefing, picks a plane and ammo from the host's hangar, presses Ready, flies the mission
+as the human field, and sees the debrief for the host's outcome. The host's save records the
+campaign; a guest's save is never touched. Built in the Original presentation (Decision 10).
+
+**What exists to build on.**
+- C25: `SessionAdvertMessage` (`0x4A`) and `NetSessionKind`, `NetLobby` (the carrier's first
+  listener, which holds every non-advert payload until a session binds it), `NetSeats.Field` (the
+  host's roster with one seat per guest), `NetPlayFeature`'s co-op door (`OpenCoopHost`, `Offer`,
+  `IsCoopHost`, `IsCoopGuest`, `Advert`, `HostStarted`), `CoopDoorText`'s band and status lines, the
+  Built-in waiting board, and C25's **wiring contract** (below in its section): the host takes
+  `_net.BuildLaunch()` in the mission launch and carries it on `CampaignMissionExit`, and a guest's
+  launch trigger is `HostStarted`.
+- C21 to C23: the host-owned director, world and human field; C26: host-decided landing rows, the
+  ladder switch and the 965 to 967 swap for a guest, whose Owed list names this item as the first
+  whole `GameSession` co-op campaign path. E41 to E44: the rest of the host-owned world.
+- F51: the cabin's Host Co-op button, the guest chips and the Connection page a guest joins from
+  and returns to.
+- The Original campaign screens: `OriginalCampaignScreen.cs` (`ActivateCabin`, `ActivateBriefing`,
+  `EnterBriefing`), `CampaignPlaneSelectionPage.cs`, `CampaignAmmoPage.cs`, and the debrief return
+  (`OriginalPresentation`'s `DebriefReturn`, which opens the scrapbook through `ShowScrapbook`).
 
 **Evidence (confidence: lead-only).** Mission end records the attempt, folds the persist log into
 the profile and holds before the cabin behind `LeavingFade` (`CampaignDirector`'s entry); the local
 splitscreen campaign co-op already launches guests as the human field through `GameSession`'s
-grid selection (`docs/architecture/Session.md:78`). What a guest sees during the host's briefing is
-undecided.
+grid selection (`docs/architecture/Session.md:78`). The original's debrief is the scrapbook
+(`docs/org/debrief.md`): mission end opens the book, whose Replay Mission restarts in place and
+whose return goes to the cabin.
 
-**Approach.** The host's `SessionSpec` carries the campaign position as today; the launch message
-to guests carries chapter, mission and roster, and guests build the same session with no profile.
-Mission end: the host records, guests hold and return. A guest reaches the session through C25's
-door and holds on its waiting board while the host is in the cabin and briefing. <TODO: whether a
-guest also sees the briefing, or only the waiting board>
+**Approach.** The flow, as confirmed:
+- **Following.** A joined guest lands in the host's cabin with every button greyed, and follows
+  the host's navigation into the same briefing and flight check. Plane construction, the memento
+  and previous missions stay host-only. The host sends its screen and mission on each change (a
+  reliable message, the next free id at the time).
+- **Loadout.** A guest picks plane and ammo from the host's hangar (the host's unlocked planes and
+  custom designs) with the host's ammo choices; the host sends the pick list and a guest answers
+  with an index into it. No custom-plane definition crosses the network (see the ⚠ Open point).
+- **Ready and Launch.** A guest presses Ready and can take it back until launch. The host's Launch
+  is greyed until every connected guest is Ready; the host has no override. The host backing out of
+  the briefing, or changing mission, clears every Ready and the guests follow. A guest who
+  disconnects drops out of the count. The player chips show Ready, as the original lobby's list
+  does. The launch then follows C25's wiring contract.
+- **Late joiners.** A guest who joins while the host is in a mission (the advert's `In mission`)
+  waits in the cabin until the next briefing. No guest ever joins a mission in flight, which also
+  settles E41's owed late joiner.
+- **Mission end.** The host decides the outcome. Every peer sees the debrief for it with its own
+  kills and damage; the shared result (objectives, mission cash) is the host's. Continue, Retry and
+  Quit to cabin are the host's buttons; guests see them greyed and follow. A retry goes back through
+  plane and ammo selection and Ready. A guest may disconnect at the debrief, back to the Connection
+  screen.
+- **Disconnects.** A dropped guest's plane leaves the mission with a `<name> left` message and the
+  mission goes on; that guest's kills so far count, and the guest may rejoin as a late joiner. A
+  dropped host ends the session for every guest with "Host left the game", back to the Connection
+  screen. No host migration.
+- **Saves.** Campaign progress lives only in the host's save. A guest builds its session with no
+  profile, and every profile writer is a no-op on it.
 
-**Model recommendation.** <TODO: not settled in the scoping session>
+The Built-in presentation keeps C25's boards; the rules above live in presentation-neutral features
+(`CampaignFeature`, `NetPlayFeature`) so the Built-in boards can follow them later, but this item
+draws only the Original screens.
 
-**Verify.** <TODO: at the controls, two machines, one mission end to end>
+**⚠ Open: flying the host's custom designs.** A guest simulates its own aeroplane (Decision 1), so
+its machine must build the picked airframe, and every peer must build each guest's copy. A stock
+plane is an index both ends resolve alike; a custom design exists only in the host's save. "Custom
+designs from the host's hangar" and "no custom-plane definitions cross the network" cannot both
+hold. Settle with the user before coding: either the guest's list is the host's unlocked stock
+planes only, or the host sends the resolved build of the one picked design (which is a definition
+crossing).
 
-**⚠ Traps.** A guest has no profile; every path that writes one (`CampaignProfileStore`,
-`CampaignSnapshot`'s photographs, the memento) must be a no-op on a guest, not a crash.
+**Model recommendation.** Opus. It crosses the Original campaign screens, the launcher, the
+session's profile-free guest path and a new message family, and every screen is a look judgement.
+
+**Verify.**
+- A new menu engine suite (`menu-original-coop-flow`) over a loopback pair with a stub router: the
+  guest's cabin buttons are greyed and a press moves nothing; the host's Next Mission takes the
+  guest into the same briefing; the guest picks the host's second plane and a non-default ammo; the
+  host's Launch is refused while one guest is not Ready (the able-to-fail control) and allowed once
+  it is; the host backing out clears the Ready; the launch builds both ends' `CampaignMissionExit`,
+  the guest's with no profile.
+- A two-session engine suite (`net-coop-mission`) over a lossy loopback: a guest `GameSession`
+  flies a campaign mission with no profile; the host's outcome reaches the guest's debrief with the
+  host's objectives and cash and the guest's own kills; the host's Retry returns both to selection;
+  a guest dropped mid-mission leaves the host's field with `<name> left` while the mission steps
+  on; a dropped host sends the guest to the Connection screen with "Host left the game".
+- The guest's profile directory is byte-identical before and after the whole run (a write to it
+  fails the check).
+- Montages of the guest's cabin, the briefing with Ready chips and both debriefs for the user.
+- At the controls: two machines, one mission end to end, with a friend.
+
+**⚠ Traps.**
+- A guest has no profile; every path that writes one (`CampaignProfileStore`,
+  `CampaignSnapshot`'s photographs, the memento) must be a no-op on a guest, not a crash.
+- The scrapbook debrief reads the profile's record of the mission; a guest's debrief draws from
+  the host's result and its own counters instead.
+- Continue, Retry and Quit to cabin do not map one to one onto the original's scrapbook (its
+  forward path, Replay Mission, the return to the cabin); name the mapping in the landing commit.
+- A guest's own `CampaignFeature` must not advance the mission; the host's navigation is the only
+  source.
 
 ## C25 ☑ The co-op door: the campaign flow opens to the network, guests join from the Network board and wait for the host's launch
 
@@ -1449,6 +1565,10 @@ and the launch past the waiting board is C24's.
   two guests, the guest's join board, the waiting board) and `cabin-network-solo.png`.
 - C24's wiring, below. `FlyCampaignMission` closes the door today, since no mission carries a wire.
 - No `GameSession` hook was needed.
+- The Original presentation's version of these screens (Decision 10): F51 builds the cabin's Host
+  Co-op button with its band and guest chips and the Connection page a guest joins from, and C24
+  replaces the waiting board with the guest following the host's cabin. The co-op cap is four
+  humans, while this door admits up to `NetSeats.MaxPlayers` less the local seats; F51 lowers it.
 
 **The wiring contract (for C24).**
 - The host: in `FlyCampaignMission`, when `_net.IsCoopHost`, take `_net.BuildLaunch()` instead of
@@ -1786,6 +1906,63 @@ your own copy" model OpenTTD uses, Valve's review) and is not this plan's to tak
 a `const`, so a consumer inlines it: a stale `CSVM.Tests` build against a freshly reflavoured
 `CSVM.dll` would report the old flavour, which is why the flavoured unit run rebuilds both.
 
+## D33 ☐ The router mapping on a finite lease with a stale mapping cleared, and a fuzz of every message reader
+
+**Goal.** A host's router never keeps a CSVM port mapping longer than the host needs it, even when
+the game dies without closing, and no payload a peer can send makes a reader throw or allocate
+without bound. A separate item rather than a part of F51, because it touches neither the menus nor
+the session and can land beside anything but F51's `NetPlayFeature.cs` edits.
+
+**What exists to build on.** `CSVM/src/Net/UpnpPortMap.cs`: `Map(port, "CSVM")` calls
+`AddPortMapping(port, port, description, "UDP", 0)`, where lease 0 is permanent, and `Unmap(port)`
+runs only when hosting closes, so a crash or a killed process leaves the mapping in the router for
+good. `NetPlayFeature` runs the map on its own thread when hosting opens and the unmap when it
+closes (B15). The readers: every message's static `TryRead` (15 in `Net/NetMessages.cs`, 7 in
+`Net/NetWorldMessages.cs`, 1 in `Net/NetPositionalMessages.cs`), behind `NetMessageReader`, and the
+listeners that call them (`NetLobby.OnPayload`, `NetSession`'s dispatch and the session links).
+
+**Evidence (confidence: direction sound, lease length TUNE).** Godot's UPnP client takes a lease
+duration in `AddPortMapping` and offers no enumeration of a gateway's mappings, so a stale mapping
+can only be removed by port. Some IGD v1 gateways refuse any lease but 0 (UPnP error 725,
+OnlyPermanentLeasesSupported), unverified against a real router here.
+
+**Approach.**
+- **Lease.** `Map` asks a finite lease (a TUNE value, one hour as a starting point) and
+  `NetPlayFeature` renews it on its mapping thread before it expires while hosting stays open. A
+  gateway that refuses a finite lease falls back to lease 0 with the unmap on close, and says so in
+  the log. The lease and renewal rules sit in an engine-free policy class beside `UpnpPortMap`, so
+  units test them over a fake gateway.
+- **Stale mapping.** Before adding, delete any mapping on the same port (a `CSVM` mapping left by an
+  earlier run), and remember the last mapped port in the user's settings so a run that hosts on a
+  different port removes the old one first.
+- **Fuzz.** A unit fuzz over every message reader, enumerated by reflection over the
+  `INetMessage<T>` implementations so a message added later is covered without an edit: a seeded
+  random payload of every length up to twice the largest message, every truncated prefix of a valid
+  encoding, a valid body under a wrong length word or a wrong type word, and a valid header over
+  random bytes. Each must return false (or a value it re-encodes identically) without throwing, and
+  the allocation per call stays under a fixed bound (`GC.GetAllocatedBytesForCurrentThread`). The
+  same payloads go through `NetLobby.OnPayload` and a loopback `NetSession`'s dispatch, which must
+  neither throw nor index a seat out of range. F51's discovery reply and F52's lobby messages join
+  through the same enumeration.
+
+**Model recommendation.** Medium. Two contained changes with a clear contract; the only judgement
+is the lease fallback.
+
+**Verify.**
+- Units over a fake gateway: a finite lease is asked (the able-to-fail control: today's lease 0
+  fails it); the renewal falls before the lease runs out; a 725 refusal falls back to lease 0; the
+  stale delete precedes the add; a changed port removes the remembered one.
+- Unit `NetMessageFuzzTests`: the enumeration finds every `NetMessageType` that has a reader (a
+  count check, so a message the reflection misses fails the test), and every case above passes.
+- The existing `enet-transport`, `net-enet-join`, `menu-net-door` and `menu-coop-door` suites still
+  pass.
+
+**⚠ Traps.** Renewal must not run on a frame or in a step; the gateway search blocks (B15). A lease
+that expires mid-match closes the door on every guest outside the router, so the renewal margin
+must cover a slow gateway search. Godot's client cannot ask a gateway who holds a mapping, so a
+delete by port can remove another program's mapping on that port; delete only the port this run is
+about to map and the one the settings remember, never a range.
+
 # Wave E, the rest of the host-owned world
 
 C22 made AI aircraft and destructible stages host-owned and left four world phases replayed locally
@@ -2055,3 +2232,188 @@ that does not cross a stage.
 
 **⚠ Traps.** `ApplyReplicatedHealth` is a guest's only spend; a chip sample must not go through
 `DamageAt`, or a guest spends twice.
+
+# Wave F, the Original presentation's multiplayer screens
+
+Decision 10 puts every network door in the Original presentation, which is the default. The
+original's 22 multiplayer GUI scripts in `crimson.rof` have no `LAYOUT.CSV` section: they use the
+`CC` widget library and assign geometry inline (`docs/org/menu-inventory.md`), so decoding
+`LAYOUT.CSV` reaches none of them, and the layout of every screen below comes from the
+`OriginalScreenshots/Multiplayer *.png` shots. Reading the scripts' inline geometry out of
+`crimson.rof` is a lead that would replace screenshot measurement, not a prerequisite. The art
+these screens use is `MP_`-prefixed in the extraction (`MP_B_CheckBox8States.png` is cited in
+`docs/formats/menu-layout.md`); inventory what exists before drawing any piece as remake chrome.
+
+## F51 ☐ The network doors in the Original presentation: the cabin's Host Co-op button, and the Connection page with LAN discovery and the games list (`BL-1021`)
+
+**Goal.** A campaign host opens co-op from the Original cabin, and a guest finds it on the LAN (or
+types the host's address) from the original's Multiplayer Connection screen, joins, and is handed
+to C24's flow. The Connection page's Host opens F52's lobby. Closes `BL-1021`, the Original
+presentation's missing multiplayer door.
+
+**What exists to build on.**
+- C25's door: `NetPlayFeature` (`OpenCoopHost`, `Offer`, `Advert`, `Advertising`, `IsCoopHost`,
+  `IsCoopGuest`, `HostStarted`, `PortMap`, `Close`), `NetLobby`, `SessionAdvertMessage` (`0x4A`,
+  24 bytes: kind, mission sequence, player count and a 16-byte host name), and `CoopDoorText`
+  (`HostBand` is the NETWORK OPEN band; `SessionName` and `WaitingStatus` the guest's words).
+- B15's carrier and router calls: `EnetTransport`, `UpnpPortMap`, `NetPlayFeature.DefaultPort`
+  (47500), registered in `Session/Launcher.cs`.
+- The Original shell: `OriginalShell.cs` draws `MM_B_MULTIPLAYER` (layout row
+  `MM_B_MULTIPLAYER=B,PM_B_MultiPlayer.png,280,380,...,MultiPlayerMain`) disabled; the edge is
+  `Edge.Disabled` in `CSVM.Tests/OriginalCoverageTests.cs`, and `MenuOriginalSuites.cs` asserts it
+  takes no input. `docs/org/menu-inventory.md` records it as the one disabled top-level plaque.
+- The Original cabin: `OriginalCampaignScreen.cs`'s `ActivateCabin` switches on the `BoardButton`
+  rows (Next Mission, Previous Missions, Plane Construction, Return to Main Menu, Change Memento).
+  The remake-only Dogfight door under the Free Flight door (`OriginalSeats.cs`) is the precedent
+  for a remake-only row drawn in the original's button style.
+- The original's screens: `Multiplayer Connection.png` (MSN Gaming Zone, LAN IPX, LAN TCP/IP,
+  Internet with an IP Address field, Modem-to-Modem, a Build Custom Plane panel, Host, Connect,
+  Exit Multiplayer) and `Multiplayer Connection Screen.png` (the LAN TCP/IP Games list: Game Name,
+  # of Players, Mission Type, Mission Environment and Status columns each with a Sort by radio, an
+  auto-refresh toggle, Create Game, Join Game, Exit, and a "Searching ..." dialog with Cancel).
+- No LAN discovery exists: nothing under `CSVM/src` opens a UDP broadcast socket.
+
+**Evidence (confidence: lead-only).** The screens are seen, not decoded. Godot's `PacketPeerUdp`
+can broadcast (`SetBroadcastEnabled`), untested here.
+
+**Approach.**
+- **The cabin door.** A Host Co-op button in the Original cabin's button column, offered only on a
+  campaign cabin and never while the door is open for a Dogfight. It opens the co-op host through
+  `NetPlayFeature` as C25's Built-in toggle does; while hosting it reads Close Network, the
+  NETWORK OPEN band shows the address and guest count, and a player chip per guest shows its Ready
+  mark once C24 or F52 has built the Ready roster. Close Network, or leaving the cabin for the main
+  menu, sends every guest a reliable close notice (the next free message id at the time; `0x4F` is
+  free now) before the carrier closes, so the guest's Connection screen can say "Host closed the
+  game" where a dropped link says "Host left the game". The game name is `<profile>'s campaign`.
+  The co-op cap becomes four humans, local and remote together, in `NetPlayFeature` so the
+  Built-in door's call in `LaunchMenu.cs` inherits it.
+- **The Connection page.** `MM_B_MULTIPLAYER` goes live and opens it. LAN TCP/IP and Internet are
+  live; MSN Gaming Zone, LAN IPX and Modem-to-Modem are drawn greyed, and so is Build Custom Plane,
+  since guests fly stock planes this milestone. Host opens F52's lobby as the Dogfight host (greyed
+  until F52 lands). Connect with LAN TCP/IP opens the games list; with Internet it joins the typed
+  address directly.
+- **LAN discovery.** A guest's search broadcasts a small query on a fixed discovery port; an open
+  door (co-op or Dogfight) answers with its advert and its game port. The carrier is a new file
+  under `Net/` and the only other one naming a Godot networking type; the parsing is engine-free.
+- **The games list.** One row per answer: Game Name (`<host>'s campaign` for co-op); # of Players
+  as `n/4` for co-op and `n/16` for Dogfight; Mission Type (`Campaign co-op` or `Dogfight`); Mission
+  Environment (the mission's name, langui `3450 + seq`, falling back to the mission's shortcode,
+  such as `C2/M03`, when the name does not fit the column; the map for a Dogfight); Status
+  (`Waiting` in the cabin or briefing, `In mission`, which is still joinable and waits in the cabin,
+  or `Full`). Status and the cap are new advert fields. The five Sort by radios and the auto-refresh
+  toggle work; Join Game is greyed until a row is picked; Create Game is Host.
+- **Where a guest lands.** A co-op join goes to C24's guest cabin; until C24 lands, to a shell
+  dialog over `CoopDoorText.WaitingStatus` with a Leave button. A Dogfight join goes to F52's lobby.
+- **The release documents.** `.github/SECURITY.md`'s surface gains the discovery responder, which
+  listens only while a door is open, and the guest's broadcast; `docs/PLAN-public-release.md`'s grep
+  list names the third file holding a networking type.
+
+**Model recommendation.** Opus. A new socket under the namespace dependency scans, the Original
+shell's first live multiplayer edge, and screens the user judges against the original.
+
+**Verify.**
+- Units: `CoopDoorTextTests` extended (the game name, `n/4`, the shortcode fallback when the name
+  overflows the column, the three statuses); a discovery protocol test (query and reply round trip,
+  a truncated or foreign datagram rejected); `NetMessagesTests` for the extended advert and the close
+  notice; `OriginalCoverageTests`' `MM_B_MULTIPLAYER` edge now live (its old `Disabled` entry fails
+  the test); `NetNamespaceDependencyTests` exempting the discovery carrier by full name alone.
+- A new engine suite (`menu-original-connection`) over a loopback pair with a stub router: the
+  Multiplayer plaque opens the Connection page (the rewritten check in `MenuOriginalSuites.cs`
+  fails on today's disabled plaque); the cabin's Host Co-op opens the carrier and the mapping and
+  Close Network unmaps (the able-to-fail control); the games list shows the host's row with all five
+  columns; Join Game lands the guest; Close Network puts the guest on the Connection page with "Host
+  closed the game", and a carrier dropped without the notice gives "Host left the game"; a fifth
+  human is refused as `Full`.
+- An engine suite (`lan-discovery`) runs the real discovery socket on `127.0.0.1` by unicast, since
+  a broadcast on the loopback proves nothing on Windows; the broadcast itself is at the controls.
+- Montages of the cabin door (shut, open with two guests), the Connection page and the games list
+  beside the original's shots, for the user's look judgement.
+- At the controls: two machines on one LAN, the search finding the host.
+
+**⚠ Traps.**
+- A discovery reply must not be larger than the query that asked for it, or the responder is a
+  reflection amplifier; pad the query to the reply's size.
+- The advert's host name is 16 UTF-8 bytes, so a long profile name truncates; cut on a character
+  boundary.
+- The Connection page must keep stepping `NetPlayFeature` every menu frame, or a join never lands
+  (`BL-1021`'s own trap).
+- A wildcard bind is what makes Windows ask about the firewall; the suites bind the loopback.
+- `docs/org/menu-inventory.md` counts `MM_B_MULTIPLAYER` as the one disabled plaque in several
+  places; update every count in the landing commit.
+
+## F52 ☐ The Multiplayer Lobby rebuilt in the original's layout, with Dogfight live (`BL-1022`)
+
+**Goal.** The Connection page's Host opens the original's Multiplayer Lobby, where the host sets
+the match and every pilot picks a plane and ammo, presses Ready, chats, and launches a network
+Dogfight in which every end flies the same map, rules and airframes. Closes `BL-1022`: nothing is
+agreed before the session starts today, so each end picks its own map and aircraft, a disagreement
+is silent, and a host's roster gives every remote seat the local pilot's airframe.
+
+**What exists to build on.**
+- `BL-1022`'s fix shape: the host announces the chapter and the match rules and each guest answers
+  with its airframe index into `UI/PlanePickerRoster.StockAirframes`, which both ends read in one
+  order, applied before the session is built; the index is the wire contract.
+- B14's match state: `MatchStateMessage` (the time limit and score target) and the scoreboard, which the
+  Game Scores tab shows. `Launcher.cs`'s net roster (`NetSeats`, `NetAirframes` over
+  `StockAirframes`) and `LaunchExit.Net`.
+- The decoded lobby messages (`docs/org/multiplayer-messages.md`): `0x1a` a setting change with a
+  subtype word, `0x27` the lobby roster, `0x15` chat, `0x18` a lobby notice.
+- F51's Connection page, which opens this lobby for the host and lands a Dogfight guest here.
+- No lives rule exists: `AircraftLifecycle.AutoRespawnAfter` is the only respawn setting, and
+  nothing counts lives.
+- The four `OriginalScreenshots/Multiplayer Lobby *.png` shots and `Multiplayer Lobby Select Ammo
+  Rockets.png`.
+
+**Evidence (confidence: lead-only).** The layout is seen, not decoded (Wave F's preamble). The
+defaults read off the Mission Options shot (Time 10 minutes, Score 40, teams 2 to 2). What Limited
+Lives counts and how the original stops a pilot with none left are not decoded; read the `0x1a`
+subtypes and the lobby's setting variables before building the rule.
+
+**Approach.** All four tabs rebuilt in the original's layout, with a presentation-neutral lobby
+model under them.
+- **Mission Options, live:** Mission Environment (the maps Dogfight supports); Mission Type set to
+  Dogfight, with Capture the Flag and the zeppelin modes listed but greyed, and the type's
+  description text from the original's strings; Victory Conditions (Time in minutes or Score, B14's
+  limits); Lives (Limited Lives and Auto Respawn).
+- **Greyed:** Allow Custom Planes and Outlaw Components (everyone flies stock planes), Restrict
+  Number of Teams and Create Team (free-for-all Dogfight), and Boot (GitHub issue #24).
+- **Select Plane:** Default Planes live over the stock list with the stats and the gun and
+  hardpoint census the shot shows, read from the airframe; Custom Planes greyed.
+- **Select Ammo:** the Guns and Rockets tabs, a shell type per gun calibre and a rocket type per
+  hardpoint. The pick rides with the plane pick into every peer's roster.
+- **Game Scores:** B14's scoreboard of the last match.
+- **The roster and Launch:** `Players (n of 16)` with a Ready box per pilot; Launch waits for every
+  pilot's Ready (the Ready roster C24 also needs; see the dependency notes).
+- **Chat:** Send puts one line on the wire as one reliable message, bounded in length, relayed by
+  the host (Decision 9).
+- **Leave Game** returns to the Connection page.
+- **The wire:** host-to-all options, a guest's pick, Ready and chat, as new messages (the next free
+  ids at the time), modelled on the decoded lobby set. The launch carries the agreed map, rules and
+  every seat's airframe and ammo on `LaunchExit.Net`, and the launcher builds the net roster from
+  the picks, not the local pilot's airframe.
+
+**Model recommendation.** Opus. Four screens built from screenshots alone, a new message family,
+the launcher's roster, and a lives rule in the versus match that has to be decoded first.
+
+**Verify.**
+- Units for the lobby model: an option set by a guest is refused; a greyed option cannot be set;
+  Launch is refused until every pilot is Ready and a disconnect drops out of the count; round trips
+  in `NetMessagesTests`; D33's fuzz covers the new readers through its enumeration.
+- A new engine suite (`menu-original-lobby`) over a loopback pair: the host sets a map, Time 5 and
+  Limited Lives and the guest reads them; the guest picks the second stock plane and a non-default
+  shell; the launched host's roster builds the guest's seat on that airframe (the able-to-fail
+  control: with the pick withheld it takes the local pilot's airframe, today's `BL-1022`); one chat
+  line arrives once on each end; Leave Game lands on the Connection page.
+- A two-session engine suite for the lives rule: with Limited Lives, a pilot's respawns stop after
+  the last life on both ends, and with Auto Respawn off, a respawn waits for the pilot.
+- Montages of the four tabs beside the original's shots, for the user's look judgement.
+- At the controls: two machines, one Dogfight from the lobby to the match end.
+
+**⚠ Traps.**
+- The stock airframe index is the contract; a reordering of `StockAirframes` is a wire break.
+- Where every peer lands after the match (the lobby's Game Scores tab, as the original suggests, or
+  the Connection page) is not settled; ask the user before building it.
+- The name `NetLobby` is taken by C25's carrier listener; the lobby screen's model needs another
+  name.
+- A guest's option controls are greyed, not hidden, as in the original, and a guest's edit never
+  reaches the wire.
