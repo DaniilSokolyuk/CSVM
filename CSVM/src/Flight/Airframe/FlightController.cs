@@ -553,7 +553,7 @@ public partial class FlightController : Node3D
     // StickCurve, a flight stick passes linearly. A single OR-ed read cannot express that, so the
     // halves stay separable while the bindings stay shared.
     private readonly BindingProfile _bindings;
-    private readonly PlayerActions _actions;      // keyboard, mouse and pad together
+    private readonly PlayerActions _actions;     // keyboard, mouse and pad together
     private readonly PlayerActions _keyActions;   // the keyboard and mouse half alone
     private readonly PlayerActions _padActions;   // the pad half alone, flight sticks included
     // The pad half's flight axes, split by device. A pad bends through the pad curve and a flight
@@ -576,6 +576,7 @@ public partial class FlightController : Node3D
     private Messages? _strings;
 
     private ulong _inputFrame = ulong.MaxValue;  // the rendered frame the three readers above hold
+    private int _stickRevision = -1;             // the StickProfiles revision last merged into _bindings
     private bool _initialTargetDone;             // --target= has had its one chance
     private int _initialTargetWaits;             // …frames it has waited for a non-empty pool
     private FlightModel _model = null!;
@@ -3425,6 +3426,11 @@ public partial class FlightController : Node3D
         // re-read rather than captured. The pad-half reader is never given the keyboard.
         _bindings.ReadsKeyboard = UseKeyboard;
         _keyActions.ReadsKeyboard = UseKeyboard;
+        // A stick plugged or unplugged mid-flight moves seat 1's active profiles; the merge edits the
+        // maps every resolver here reads.
+        if (IsHumanPiloted && PlayerIndex == StickDeviceState.OwningSeat
+            && StickProfiles.MergeIfChanged(_bindings, ref _stickRevision))
+            ComposeControlPrompts();
         _seatState.Refresh();
         _padMutedState.Refresh();
         _actions.Poll(_seatState);

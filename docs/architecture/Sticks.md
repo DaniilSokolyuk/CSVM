@@ -49,3 +49,40 @@ holds one. Tests build it over a `StickRoster` on `CSVM.Tests/FakeStickNative.cs
 The engine side: `Start` loads SDL2 once per process from `Launcher` (never under `--no-pads`, so
 never in a test or golden), publishes the one live roster as `StickPump.Roster`, and pumps it every
 frame at priority -1001, ahead of the session node, focused or not. `Dump` is `--dump-sticks`.
+It starts `StickProfiles` with the roster and refreshes the live set whenever the roster changes.
+
+## src/Sticks/StickProfile.cs
+One stick model's bindings in one layout, the content of one profile file: the model, the
+companion models it needs connected (kept distinct, in model order, never its own model), the short
+display name, the ignore flag, and an `ActionMap` per context whose every binding is on
+`StickModel.Device`. Rows the file held that this build could not read ride in `Unread` and go
+back out verbatim. `StickProfileFile` pairs a profile with its source (shipped or user) and file
+name. The format is `docs/org/input.md`, "The CSVM stick profile files".
+
+## src/Sticks/StickProfileStore.cs
+The files on disk. Shipped profiles arrive as texts (a pck is not a directory), user profiles are
+read from and saved to one directory, and a save is atomic and always a user file: a shipped
+profile saved becomes a user copy under `FileNameFor` (`231D-0200+231D-0201.json`). Rows reuse
+`Bindings/BindingStore.cs`'s tokens, written bare and by number; a full keymap token naming the
+file's model in any case also reads. An unusable model or companion refuses the whole file, with
+one log line.
+
+## src/Sticks/StickProfileResolver.cs
+Pure selection: connected models plus files give the active file per model. A file applies when its
+model and every companion are connected; more companions win, then user over shipped, then the
+ordinal file name. Also the rows step: `Rows` (one context's stick-only map), `MergeInto` (a
+keymap's stick bindings replaced by the active rows, ignored profiles adding none) and
+`WithoutStickRows` (the copy the keymap file is saved from).
+
+## src/Sticks/StickProfileSet.cs
+The profiles in force: the loaded files, the connected models, the resolver's choice, and
+`Revision`/`Changed` when that choice moves. It is `Bindings/IStickRows.cs` for seat 1's keymap,
+`Map` for a stick-only action source, `Save` for one profile (copy-on-write), and `SaveFrom` for an
+accepted controls screen (each changed model's rows to its active profile, or a new user profile).
+Engine-free; tests build it over a `StickRoster` on `CSVM.Tests/FakeStickNative.cs`.
+
+## src/Sticks/StickProfiles.cs
+The engine side of the profiles: the shipped folder `res://data/stick_profiles/` (read through
+Godot's file API, exported by the preset's `data/*.json` filter), the user folder
+`user://stick_profiles/` (with a suite override), and the one live `StickProfileSet`, which
+`StickPump` starts and which registers itself as `LaunchBindings.StickRows`.

@@ -21,17 +21,32 @@ public static class LaunchBindings
     /// <summary>Whether a seat built now reads the player's saved file.</summary>
     public static bool ReadsSaved => _readsSaved;
 
+    /// <summary>The stick profiles player 1's keymap is completed from, or null while sticks are off.
+    /// Registered by the stick side when its roster starts, and null in every scripted run, since
+    /// those never start one.</summary>
+    public static IStickRows? StickRows { get; set; }
+
     /// <summary>Resolves the gate once at launch. <paramref name="deterministic"/> is true for a run
     /// whose result must depend only on the committed tree: <c>--det</c> and <c>--run-tests</c>.
     /// </summary>
     public static void Configure(bool deterministic) => _readsSaved = ReadSavedKeymaps && !deterministic;
 
     /// <summary>That player's whole profile, for a seat that reads several contexts. Players are
-    /// numbered from 1, so a zero-based seat index passes <c>index + 1</c>.</summary>
-    public static BindingProfile Profile(int player, DeviceId pad, bool readsKeyboard) =>
-        _readsSaved
+    /// numbered from 1, so a zero-based seat index passes <c>index + 1</c>. Player 1's stick rows
+    /// come from the active stick profiles, never from the keymap file (<see cref="StickRows"/>).
+    /// </summary>
+    public static BindingProfile Profile(int player, DeviceId pad, bool readsKeyboard)
+    {
+        var profile = _readsSaved
             ? BindingStore.UserBindings().Load(player, pad, readsKeyboard)
             : BindingProfile.Defaults(pad, readsKeyboard);
+        if (player == 1)
+        {
+            StickRows?.MergeInto(profile);
+        }
+
+        return profile;
+    }
 
     /// <summary>One context's map out of that player's profile, for the three polling sites, each of
     /// which reads a single context and stamps its pad rows with its own placeholder identity.

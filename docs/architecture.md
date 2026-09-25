@@ -665,7 +665,8 @@ both sit on top of these types.
 - `src/Bindings/BindingProfile.cs`, one seat's whole input: a map and a `PlayerActions` per context, plus the keyboard gate that applies to all of them.
 - `src/Bindings/ActiveDevice.cs`, which side of a seat's hardware produced its last real input, and which of an action's bindings a prompt on that side names.
 - `src/Bindings/BindingStore.cs`, the versioned JSON keymap file, one per player under `user://`, falling back per action to the shipped default.
-- `src/Bindings/LaunchBindings.cs`, where a seat's keymap comes from when the seat is built: the player's saved file, or the shipped defaults.
+- `src/Bindings/LaunchBindings.cs`, where a seat's keymap comes from when the seat is built: the player's saved file, or the shipped defaults, plus seat 1's stick rows.
+- `src/Bindings/IStickRows.cs`, the seam seat 1's keymap is completed through from the stick profiles, so this namespace never names the stick library.
 - `src/Bindings/PadRumble.cs`, one seat's controller rumble on the original's own effect table, routed to the pads that seat's bindings read.
 
 ### `src/Sticks/`, flight sticks through SDL2
@@ -680,6 +681,11 @@ filling only the models Godot's pad roster lacks.
 - `src/Sticks/StickRoster.cs`, the gap-filling roster: hot-plug, the input gate, normalised reads, identical units merged per model, the roster log.
 - `src/Sticks/StickDeviceState.cs`, the sticks as an `IDeviceState` keyed by model identity (`stick:231D/0201`), read by seat 1 alone.
 - `src/Sticks/StickPump.cs`, the node that loads SDL2 once per process, publishes the live roster and pumps it each frame; hosts `--dump-sticks`.
+- `src/Sticks/StickProfile.cs`, one model's bindings in one layout: companions, short name, the ignore flag, rows per context, and rows kept unread.
+- `src/Sticks/StickProfileStore.cs`, the profile files: shipped texts read-only, the user directory the only save target, atomic and versioned.
+- `src/Sticks/StickProfileResolver.cs`, which file is active per connected model (companions, then user over shipped, then name), and the rows it yields.
+- `src/Sticks/StickProfileSet.cs`, the profiles in force, re-selected on every roster change; merges seat 1's keymap and saves an accepted screen.
+- `src/Sticks/StickProfiles.cs`, the engine side: `res://data/stick_profiles/`, `user://stick_profiles/`, and the one live set.
 
 ### `src/Video/`, the MPEG-1 cinema decoder
 

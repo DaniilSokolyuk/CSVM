@@ -24,6 +24,7 @@ public sealed partial class StickPump : Node
     private static StickModel[] _godotModels = Array.Empty<StickModel>();
 
     private StickRoster? _roster;
+    private StickProfileSet? _profiles;
 
     /// <summary>The live roster, or null when sticks are off: <c>--no-pads</c> (so <c>--det</c>),
     /// or no loadable <c>SDL2.dll</c>. Every stick read in the game goes through this one.</summary>
@@ -54,6 +55,7 @@ public sealed partial class StickPump : Node
             ProcessPriority = PumpPriority,
             ProcessMode = ProcessModeEnum.Always,
             _roster = roster,
+            _profiles = StickProfiles.Start(roster),
         };
     }
 
@@ -90,7 +92,14 @@ public sealed partial class StickPump : Node
         return true;
     }
 
-    public override void _Process(double delta) => _roster?.Update();
+    // A roster change re-selects the profiles in the same frame, ahead of every reader.
+    public override void _Process(double delta)
+    {
+        if (_roster?.Update() == true)
+        {
+            _profiles?.Refresh();
+        }
+    }
 
     public override void _ExitTree()
     {
@@ -99,6 +108,8 @@ public sealed partial class StickPump : Node
             Roster = null;
         }
 
+        StickProfiles.Stop(_profiles);
+        _profiles = null;
         _roster?.Dispose();
         _roster = null;
     }

@@ -313,6 +313,80 @@ unknown context or action name, a token in a shape this build does not know, and
 the placeholder pad `*`, which is deliberately unreadable because Godot reports a pad's d-pad as four
 buttons and a hat row there would be a second encoding of a control the defaults author as a button.
 
+Stick rows are the exception to "every row lives here". A binding on a flight stick's identity
+(`pad:stick:<model>`) belongs to the stick profile files below, so player 1's keymap is completed
+from them when it is loaded, and a stick token found in `bindings_p1.json` is dropped at that
+merge. The keymap file is saved without stick rows.
+
+## The CSVM stick profile files
+
+One JSON file per stick model and layout. Every stick belongs to seat 1, so these files complete
+player 1's keymap: for each connected stick model one file is active, and its rows replace every
+stick binding the keymap carries. There are two folders. The shipped profiles are
+`CSVM/data/stick_profiles/` (`res://data/stick_profiles/`, exported through the preset's
+`data/*.json` include filter, whose `*` crosses folders) and are read-only. The player's own are
+`user://stick_profiles/`, and every save writes there.
+
+```json
+{
+  "version": 1,
+  "model": "231D/0200",
+  "name": "R",
+  "companions": ["231D/0201"],
+  "ignore": false,
+  "contexts": {
+    "flight": {
+      "PitchUp": ["fullaxis:1+@0.02"],
+      "FireGuns": ["button:#0"],
+      "SelectGunGroup": ["hat:0:Right"]
+    },
+    "menu": { },
+    "camera": { }
+  }
+}
+```
+
+- `model` is the stick's USB vendor and product id in hex, `VVVV/PPPP`, the form `--dump-sticks`
+  and the stick roster log print. Any case reads and upper case is written, since a binding's
+  device identity compares ordinally. A missing or malformed model refuses the whole file, with one
+  log line naming it.
+- `companions` lists the other models that must all be connected for the file to apply. The
+  model itself is dropped from the list and duplicates collapse. One malformed entry refuses the
+  whole file: reading it as fewer companions would make the file active on the wrong hardware.
+- `name` is the short label screens print ("R", "L"); empty when absent.
+- `ignore: true` makes the model yield no bindings while the file is active, for a device that
+  enumerates as a joystick but flies nothing (a gaming keypad). It still counts as a profiled
+  device, so the generic single-stick default does not claim it.
+- `contexts` holds the rows, per context and action, with the keymap file's context and action
+  names. A row is an array of tokens in the keymap grammar above, written bare, without the
+  device, since the file's model is the device: `button:#27`, `axis:#3+@0.1`, `fullaxis:1+@0.02`,
+  `hat:0:Up`. Buttons and half axes are written by number, because the engine's gamepad names mean
+  nothing on a stick. A full keymap token naming this file's model (`pad:stick:231d/0200/button:#27`)
+  also reads. Only button, axis, full-axis and hat controls are readable. A full axis follows the
+  keymap file's rules: written once under the pair's positive row, the lever row taking one too.
+- Only bound actions are written. A profile has no defaults, so an absent action is unbound.
+- A row is read whole or not at all. An unreadable row (an unknown context or action, a token for
+  another device, a deadzone outside 0 to 0.95) binds nothing, and a re-save writes it back
+  verbatim unless the action has been bound since. A deadzone is written back exactly as typed.
+- `version` is the schema of the header and the row shape, currently 1; the tokens follow the
+  keymap file's version. The reader checks no version, on the keymap file's rule. Comments and
+  trailing commas are accepted on read; a re-save keeps neither, nor any unknown top-level field.
+
+**Which file is active.** For each connected model, a file applies when its model and every one of
+its companions are connected. Among the files that apply, the one naming more companions wins, then
+a user file over a shipped one, then the ordinally first file name. So an R stick alone takes its
+solo file and R with L takes the file naming L, and a user copy of a layout overrides the shipped
+file of that layout. The choice is made again on every plug and unplug, and a seat already flying
+reads the new rows when it re-reads its keymap. Two identical units of one model are one device and
+share one file. A companion that Godot reads as a pad is not in the stick roster and does not count
+as connected.
+
+**File names.** A name carries no meaning on read, only in the last tie-break. A save of a user
+file rewrites that file; any other save writes the model as `231D-0200`, then each companion in
+model order after a `+`, then `.json`, into the user folder. That is how two
+layouts of one model sit side by side (`231D-0200.json` and `231D-0200+231D-0201.json`), and how a
+save of a shipped profile becomes the user copy that overrides it.
+
 ## Force feedback
 
 The original drives an Immersion TouchSense stick through `CImmProject`, and every effect it plays

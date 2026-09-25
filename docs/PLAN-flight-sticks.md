@@ -172,7 +172,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 ### Wave C, profiles and defaults
 
-7. ☐ Per-model stick profile files with companions, shipped vs user override, ignore flag
+7. ☑ Per-model stick profile files with companions, shipped vs user override, ignore flag
 8. ☐ Generic single-stick default for exactly one stick-shaped unprofiled device
 9. ☐ Menu navigation from sticks
 
@@ -783,7 +783,88 @@ uses the rate pair instead (Decision 5b).
 
 # Wave C, profiles and defaults
 
-## C7 ☐ Per-model stick profile files with companions, shipped vs user override, ignore flag
+## C7 ☑ Per-model stick profile files with companions, shipped vs user override, ignore flag
+
+**Landed.** Seat 1's stick rows come from per-model profile files, never from `bindings_p1.json`.
+The format and the selection rule are written up for players in `docs/org/input.md`, "The CSVM
+stick profile files"; the modules are in `docs/architecture/Sticks.md`.
+
+- **Schema** (version 1, `StickProfileStore.Version`). One JSON object: `"version"`, `"model"`
+  (`"231D/0200"`, VID/PID hex), optional `"name"` (the short label, "R"), optional `"companions"`
+  (a list of models), optional `"ignore"` (bool), and `"contexts"`: context name, then action name,
+  then a list of **bare control tokens** (`"fullaxis:1+@0.02"`, `"button:#4"`, `"hat:0:Up"`,
+  `"axis:#2+@0.2"`). The device part is implied by `"model"`; a full `pad:stick:231D/0200/...` token
+  is also read, and one naming another device makes its row unreadable. Tokens are
+  `BindingStore`'s control grammar, and a full axis is written once under its pair's positive row
+  (`BindingStore.StoredRow`). Only bound rows are written. A row is read whole or not at all: an
+  unreadable row, an unknown action and an unknown context are kept verbatim and written back on a
+  re-save unless the action has since been bound. Deadzones round-trip exactly (shortest round-trip
+  float), so a hand edit survives. The reader skips comments and allows trailing commas; the writer
+  drops comments and unknown top-level fields. A file whose model or a companion is missing or
+  malformed, or that is not an object, is skipped with a log line.
+- **File naming.** `<VID>-<PID>.json`, with companions appended in model order as
+  `+<VID>-<PID>`, for example `231D-0200+231D-0201.json`. Upper-case hex. The name is what a save
+  writes, never what the loader trusts: the model and companions are read from the content.
+- **Folders.** Shipped: `res://data/stick_profiles/` (`CSVM/data/stick_profiles/`, exported by the
+  preset's existing `data/*.json` filter, whose `*` crosses `/`). User:
+  `user://stick_profiles/`. Nothing is ever written under `res://`.
+- **Tie-break.** A file applies while its model and every companion are connected. Among the files
+  that apply to one model: more companions first, then a user file over a shipped one, then the
+  ordinally first file name. The order is total, so enumeration order never matters.
+- **Case normalisation.** Models, companions and tokens are read case-insensitively and held on
+  the canonical identity `StickModel.Device` (upper-case `stick:VVVV/PPPP`), since `DeviceId`
+  equality is ordinal. File names are written upper-case and compared ordinally.
+- **Copy-on-write.** Saving over a shipped file writes a user file of the same name; saving a user
+  file rewrites it in place (same layout). A profile's own model is dropped from its companions.
+- **Ignore.** An ignored profile is active (it counts as profiled for C8) but yields no rows, and
+  a screen save never writes one.
+
+**Modules.** `StickProfile` (model, companions, name, ignore, per-context maps, unread rows),
+`StickProfileStore` (engine-free read, write, `FileNameFor`, `LoadAll`, `Save`),
+`StickProfileResolver` (pure: `Resolve`, `Compare`, `Rows`, `MergeInto`, `WithoutStickRows`),
+`StickProfileSet` (the live selection, `Revision`/`Changed`, `SaveFrom`), `StickProfiles` (engine
+side: folders, `Live`, `Start`/`Stop`), and `CSVM/src/Bindings/IStickRows.cs`, the seam that keeps
+`Bindings` free of `Sticks`.
+
+**Wiring contract.**
+
+- Build time, no `FlightController` edit: `StickPump` starts the set and registers it as
+  `LaunchBindings.StickRows`; `LaunchBindings.Profile(1, ...)` merges it, so
+  `FlightControllerBuild.LoadSavedKeymap` gives seat 1 a flight map whose stick rows come from the
+  profiles, which B5's `_stickAxes` and `_padAxes` read. The merge strips every stick token the
+  keymap file carried first. Player 2 and later are never merged. The Controls screen and the menu
+  seats receive player 1's stick rows through the same call.
+- Hot-plug: `StickPump._Process` calls `StickProfileSet.Refresh()` when the roster changes. A seat
+  already flying calls `StickProfiles.MergeIfChanged(_bindings, ref _stickRevision)` in
+  `FlightController.PollInput` before `_seatState.Refresh()`, human seat 1 only, and recomposes its
+  prompts when it merged. It mutates the seat's maps in place, so every `PlayerActions` over them
+  sees the new rows; the first tick re-merges once, idempotently.
+- D11 save path: `StickProfiles.Live?.SaveFrom(keymap)` writes each connected model's changed rows
+  to its active profile (or a new solo user file), and the keymap file is saved from
+  `StickProfileResolver.WithoutStickRows(keymap)`. Until D11 does this, stick rows accepted on a
+  screen land in `bindings_p1.json` and are dropped again at the next merge.
+- C8: `StickProfileSet.Active` (ignored profiles included), `Files`, `ActiveFor(model)` and
+  `StickProfileSet.ModelsOf(roster)`.
+- Tests: `StickProfiles.DirectoryOverride` points the user folder elsewhere.
+
+**Left open.** The five new `.cs` files have no Godot `.uid` yet. `data/stick_profiles/` is empty
+until E13. Reading shipped files through `DirAccess` inside an exported pck is not exercised by any
+run. Comments and unknown top-level fields do not survive a re-save.
+
+**Verified.** Unit: `StickProfileTests` 26 cases (companion selection R alone vs R+L, L alone,
+user over shipped, more companions over a user solo file, ordinal tie-break, file naming,
+copy-on-write through a temp shipped folder, a user save rewriting its own file, ignore, deadzones
+0.0125 and 0.3 exact, unread rows kept verbatim and replaced on edit, lower-case canonicalisation,
+six refused files, foreign-device tokens, merge and `WithoutStickRows`, `SaveFrom` writing only
+changed models, hot-plug through `FakeStickNative`, an in-place merge on a flying seat's map) and
+`LaunchBindingsTests.StickRows_CompleteOnlyPlayerOnesKeymap`. `RunTests.ps1 -SkipEngine
+-SkipGoldens`: 4950 passed, 0 failed, 2 skipped (data-absent cinema tests). Engine suites
+`bindings-launch-load`, `bindings-prompt-device` and `menu-controls-seats` pass.
+`CheckCommentCaps.ps1` and `CheckDocEntries.ps1` clean. The full `RunTests.ps1` passes on the
+merged branch with the `PollInput` hot-plug call in place. A live hot-plug mid-flight is owed at
+the controls.
+
+**Original approach (kept for reference).**
 
 **Goal.** Stick bindings load from and save to one JSON file per model. A file may name companion
 models; for each connected model the most specific file whose companions are all connected is

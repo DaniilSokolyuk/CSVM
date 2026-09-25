@@ -219,8 +219,15 @@ Where a seat's keymap comes from when the seat is built: the player's saved file
 defaults. `FlightController`, `SpectatorCamera` and `MenuInput` each ask this instead of building
 `BindingProfile.Defaults` for themselves, so there is one place the read is gated and one place to
 look when a rebind is not felt. `Configure` resolves that gate once at launch and it is shut until
-called. A seat is put on the loaded map through `ActionMap.Fill`. Coverage:
+called. A seat is put on the loaded map through `ActionMap.Fill`. Player 1's profile is completed
+from the stick profiles through `StickRows` (`src/Bindings/IStickRows.cs`). Coverage:
 `CSVM.Tests/LaunchBindingsTests.cs` and the `bindings-launch-load` engine suite.
+
+## src/Bindings/IStickRows.cs
+The seam seat 1's keymap is completed through: stick rows live in per-model profile files, not in
+`bindings_p1.json`, so `LaunchBindings.Profile` hands player 1's loaded profile to the registered
+`IStickRows`, which replaces its stick bindings with the active profiles' rows. The stick side
+implements it (`src/Sticks/StickProfileSet.cs`), which keeps `Bindings` free of the stick library.
 
 ## src/Bindings/PadRumble.cs
 One seat's rumble, routed through `Pads.For` to the pads that seat's own bindings read, so a
