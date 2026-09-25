@@ -184,9 +184,10 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 21. ☑ The host-owned mission director: objective graph transitions, cutscene codes and wingman spawns as events
 22. ☑ Host-owned AI and world: aircraft, zeppelins, turrets, generators, vehicles and destructibles as spawn, state and death events
-23. ☐ Guests as the human field: `CampaignHumanField` and the objective rules see remote humans, the scripted P1 stays the host
+23. ☑ Guests as the human field: `CampaignHumanField` and the objective rules see remote humans, the scripted P1 stays the host
 24. ☐ The co-op session flow: cabin and briefing on the host, guests joining into the mission, mission end and debrief on every peer
 25. ☐ The co-op door: the campaign flow opens to the network, guests join from the Network board and wait for the host's launch
+26. ☐ Host-decided positional starts and the airframe swap: landing approaches, the ladder switch, `PlayerRange` and codes 965 to 967 for a guest
 
 ### Wave D, hardening
 
@@ -211,7 +212,8 @@ chain, C21 → C22 → C23 → C24. D31 needs Wave B; D32 needs only A1. File co
 C21 and C22 all edit `GameSession.cs` and `SessionSimulation.cs`, never run two of them in parallel
 worktrees; give each concurrent agent one namespace and name the files it may not touch.
 C25 needs only B15 and owns the UI side (`LaunchMenu`, `CampaignFlow`, the Network screen), so it
-can run beside C23; C24 needs C25, since C25's door is how a guest reaches C24's launch.
+can run beside C23; C24 needs C25, since C25's door is how a guest reaches C24's launch. C26 needs
+C23 and edits `GameSession.cs`, so it never runs beside C24 or E41.
 Wave E needs C22 and extends its `NetWorldLink`; E41 edits `GameSession.cs`'s AI capture phase and
 runs alone against C23, C24 and any other `GameSession.cs` item. E42 and E43 own their own world
 runtimes and can run beside each other; E44 owns `AnimRuntime`'s spend and the `0x48` world event.
@@ -1267,7 +1269,63 @@ after a scripted mission segment>
 stream; a guest that runs the AI locally from the same seed still diverges on the first
 world-dependent branch, so "same seed" is not "same AI". Replicate the AI's state, do not re-run it.
 
-## C23 ☐ Guests as the human field: `CampaignHumanField` and the objective rules see remote humans, the scripted P1 stays the host
+## C23 ☑ Guests as the human field: `CampaignHumanField` and the objective rules see remote humans, the scripted P1 stays the host
+
+**Landed.** The host's human field is every seat, and a guest's death reaches it; the rules are
+unchanged. The positional triggers and the airframe swap are sharpened markers below.
+- `CSVM/src/Session/GameSession.cs`: `HumanAircraft()` (the director's `Humans` input) reads
+  `_seatRigs` instead of the panes, so a guest flown elsewhere is a human at its interpolated pose
+  and its wreck is the one its own `0x12` plays; `HumanField` exposes that list to the suites.
+  `WireNetCombat` sends a seat's death report from `Downed` in every non-versus mission (a match
+  keeps its own handler, which also keeps the last killer), since the campaign had none.
+  `BeginCampaignSpectate` and `LockCandidateAircraft` read the seats, so a downed pane can follow a
+  guest and a lock can hold one.
+- `CSVM/src/Testing/NetHumanFieldSuites.cs` (new): suite `net-human-field`; weight in
+  `analysis/engine-suite-weights.json`.
+- `CSVM.Tests/CampaignHumanFieldTests.cs`: a remote human fed through a `RemotePoseBuffer`.
+- Docs: the `GameSession.cs` and `CampaignHumanField.cs` entries in `docs/architecture/Session.md`.
+- No new message, and `CampaignDirector.cs`, `ObjectiveGraph.cs` and `NetDirectorLink.cs` are
+  untouched: `SnapshotHumans` already read whatever list the session hands it.
+
+**The wiring contract.** The host decides every objective off its own field, which is its panes plus
+one pane-less rig per guest. A guest's pose is the host's `RemotePoseBuffer` sample (one buffer
+delay, 0.1 s, plus the link behind the owner); its `Crashed` flag turns true only when the guest's
+own death report arrives and `TakeRemoteDeath` plays the wreck on the host; the co-op loss
+(`StepPlayerLost`) then waits for that wreck to land like any other. The scripted player
+(`PlayerAircraft`, P1, authored `player` tokens, roster leaders) is the host's seat 0.
+
+**Markers (not landed), C21's sharpened.**
+- Positional starts are local to each machine: landing approach rows and the ladder switch are
+  bound to `_rigs`, and `PlayerPositionsSnapshot` (the anim runtime's `If PlayerRange` gate) reads
+  the panes. A guest who flies a landing row or a capture volume starts that definition, and with it
+  the 965 to 967 airframe swap (`CutsceneController.EpisodeOwner`, `GameSession.SwapPlayerAirframe`,
+  `FlightRoster.RunSwap`), only on its own machine: the host's copy keeps the old airframe and no
+  captured group, so a `DEDG` or `LiveInGroup` read on the host never counts that guest. The fix is a
+  host-decided start: the host evaluates every seat against the approach volumes and sends the start
+  and the owning seat (the next free id, `0x49`), and the swap replicates as the owner's new airframe
+  and group. Binding the approaches to `_seatRigs` alone is wrong, because a swap would rebuild the
+  host's copy of a guest and drop its `RemotePoses` feed.
+- A 967 swap builds a new controller that `WireNetCombat` never wired, so the swapped pilot's fire,
+  damage and death reports stop crossing.
+- On a guest, `PlayerAircraft` and an unclaimed episode's `ScriptedPlayer` are the guest's own pane,
+  not the host's P1, so a locally run definition poses the wrong aeroplane there.
+- `If PlayerRange` washes are cosmetic and a per-machine read of the viewer's own pane is right for
+  them; a gate that raises a callback code would need the host's field instead.
+
+**Verified.** The complete battery on the merged tree (C23 over the catch-up, C22, C21, D31 and
+Wave B): build clean, 4911 units passed with 2 skipped, 390 of 390 engine suites passed with engine
+errors clean in all six shards, 19 of 19 golden shots hash-identical. `net-human-field` puts the
+host's copy of a guest 0.00 m from an arrival point with P1 4020 m out: OBJECTIVE5 completes on the
+whole-field director and not on the panes-only control, and the guest's death report crosses in
+50 ms and reads Lost 0.38 s later. The suite fails with the non-match death report removed or the
+field read over the panes. The limit: the loopback only, and the positional starts and the airframe
+swap stay local to each machine (C26).
+
+**Owed.**
+- The markers above are C26.
+- `NetSeats.Validate` does not require the host at seat 0; every seat-0-is-P1 read assumes it.
+
+**Original approach (kept for reference).**
 
 **Goal.** An objective that waits for a human's arrival, counts live humans in a captured group, or
 tracks a wreck, sees a guest as it sees a splitscreen partner.
@@ -1282,12 +1340,31 @@ non-wrecked humans; rules are pinned by `CSVM.Tests/CampaignHumanFieldTests.cs`
 replicated wreck and capture state; the rules need no change. Capture and wreck state on a guest's
 aircraft are the guest's to report (its own death is its own `0x12`).
 
-**Model recommendation.** <TODO: not settled in the scoping session>
+**Model recommendation.** Opus. The rules needed no change; the work is finding which lists are
+panes and which are seats, and which report never fired outside a match.
 
-**Verify.** <TODO: a `CampaignHumanFieldTests` extension with a remote human, plus a harness run of a
-mission whose objective waits on arrival>
+**Verify.** `net-human-field` in `CSVM/src/Testing/NetHumanFieldSuites.cs`: a host and a guest
+session in free flight on C3/MP1 over a loopback of 30 ms latency, 10 ms jitter and 25 per cent
+loss, with two directors on the host running C3/M01's shipped script, one over the host's field and
+one over its panes alone as the control. The field holds both seats in order with the guest's
+remote-owned. OBJECTIVE5's dormant `player` TRAVELERS (1100 m, re-read off the data) completes
+when the guest pins itself at the point on its own machine while P1 waits 4 km out, and the control
+completes nothing. The host's forced crash loses the control's mission while the field's flies on;
+the guest's forced crash crosses as `0x12`, the host's copy becomes a wreck in the field, and the
+field's mission ends Lost. Able to fail: with the non-match death report removed the copy never
+crashes in 30 s, and with the field read over the panes five checks fail. Off-engine:
+`CampaignHumanFieldTests` feeds an owner flying into a 100 m radius through a `RemotePoseBuffer`
+and asserts the host's read arrives one buffer delay (within a sample and a step) after the owner.
 
-**⚠ Traps.** <TODO: none known yet>
+**⚠ Traps.**
+- The host must hold seat 0: `PlayerAircraft` is `_rigs[0]`, and on a guest that is the guest.
+- A remote human arrives in the field one buffer delay plus the link after its owner arrived, so a
+  harness check on arrival must step past that, not read the step the owner crossed.
+- A match reports a seat's death from its own `Downed` handler; wiring the non-match report there
+  too would send every versus death twice.
+- The co-op loss waits for the guest's wreck to land on the host, which the host falls from its
+  last buffered pose. The guest's replicated graph takes Lost from the host, never from its own
+  wreck.
 
 ## C24 ☐ The co-op session flow: cabin and briefing on the host, guests joining into the mission, mission end and debrief on every peer
 
@@ -1346,6 +1423,34 @@ board for the user>
 must not take a local controller's pane. The toggle opens a port, so closing the campaign flow or
 leaving the menu must close the carrier and remove the router mapping. Screens are look judgements:
 montage them for the user, never park them on a measurement.
+
+## C26 ☐ Host-decided positional starts and the airframe swap: landing approaches, the ladder switch, `PlayerRange` and codes 965 to 967 for a guest
+
+**Goal.** A guest who flies into a landing approach or a capture volume is captured on every
+machine: the host starts the definition, the swap runs for that guest everywhere, and the host's
+`DEDG` and `LiveInGroup` reads count the guest.
+
+**Evidence (confidence: traced).** C23's markers: approach rows and the ladder switch are bound to
+`_rigs` (the panes) and `PlayerPositionsSnapshot` reads the panes, so the start and the 965 to 967
+swap (`CutsceneController.EpisodeOwner`, `GameSession.SwapPlayerAirframe`, `FlightRoster.RunSwap`)
+run only on the guest's own machine. A 967 swap builds a controller `WireNetCombat` never wired, so
+the swapped pilot's fire, damage and death stop crossing.
+
+**Approach.** The host evaluates every seat against the approach volumes and sends the start with
+the owning seat (the next free message id); the swap replicates as the owner's new airframe and
+group, and every rebuilt controller is re-wired for combat. `If PlayerRange` washes stay per machine
+(cosmetic); a gate that raises a callback code reads the host's field.
+
+**Model recommendation.** Opus. The swap rebuilds controllers under live net feeds, and a wrong order
+drops a seat's `RemotePoses` feed or its combat wiring without an error.
+
+**Verify.** <TODO: a two-session harness run of a capture mission where the guest flies the approach:
+the host's copy swaps and joins the captured group, and the swapped guest's fire and death still
+cross, with a control that fails without the host-decided start>
+
+**⚠ Traps.** Binding the approaches to `_seatRigs` alone is wrong: a swap would rebuild the host's
+copy of a guest and drop its `RemotePoses` feed. On a guest, `PlayerAircraft` and an unclaimed
+episode's `ScriptedPlayer` are the guest's own pane, not the host's P1.
 
 # Wave D, hardening
 

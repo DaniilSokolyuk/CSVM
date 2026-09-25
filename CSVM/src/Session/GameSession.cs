@@ -461,6 +461,10 @@ public partial class GameSession : Node3D
     /// order. Identical to <see cref="Rigs"/> outside a network match.</summary>
     internal IReadOnlyList<PlayerRig> SeatRigs => _seatRigs;
 
+    /// <summary>The human field a campaign director reads, in seat order: the same list its
+    /// <c>Humans</c> input returns. Refilled per read, so a caller must not hold it.</summary>
+    internal IReadOnlyList<FlightController> HumanField => HumanAircraft();
+
     /// <summary>This session's end of the wire, null outside a network match. A suite reads its
     /// counters and its roster; a replication feature registers its handlers on it.</summary>
     internal Net.NetSession? NetLink => _net;
@@ -1245,11 +1249,13 @@ public partial class GameSession : Node3D
 
     // Every joined player's aircraft and no AI, in the same reused-list shape as AllAircraft.
     // Read fresh because an airframe swap rebuilds a rig's controller; do not hold across a step.
-    // Outside splitscreen the sole entry is the scripted player.
+    // Outside splitscreen the sole entry is the scripted player. ⚠ Over the SEATS, not the panes.
+    // A guest flown elsewhere is a human of this mission, read at its interpolated pose. Its
+    // wreck is the one its own death report plays here.
     private IReadOnlyList<FlightController> HumanAircraft()
     {
         _humanScan.Clear();
-        foreach (var rig in _rigs)
+        foreach (var rig in _seatRigs)
         {
             if (rig.Controller is { } c)
             {
@@ -4009,6 +4015,13 @@ public partial class GameSession : Node3D
 
             rig.WeaponFired += (weapon, origin, direction) => SendFire(seat, weapon, origin, direction);
             rig.DamageApplied += (hurt, _) => SendDamage(seat, hurt);
+            // A match reports from its own Downed handler, which also keeps the last killer. Any
+            // other mission reports here. A campaign's human field on the host counts a guest
+            // down only when this report plays the wreck there.
+            if (_versus == null)
+            {
+                rig.Downed += (_, killer) => ReportDeath(seat, killer);
+            }
         }
 
         Log.Info("core", $"net combat: {_seatRigs.Count} seats, {(net.IsHost ? "host (relaying fire, damage, death and every hit to its owner)" : "guest (talking to the host alone)")}");
@@ -4918,7 +4931,8 @@ public partial class GameSession : Node3D
                 continue;
             }
 
-            SpectateHandoff.Begin(rig, _rigs, _worldRoot!, LockCandidateAircraft,
+            // The seats, so a pane whose pilot is down can follow a guest flown elsewhere.
+            SpectateHandoff.Begin(rig, _seatRigs, _worldRoot!, LockCandidateAircraft,
                 _spectatorCameras, out var follow);
             Log.Info("core", $"campaign: P{rig.Index + 1}'s pane is spectating{(follow != null ? $", following P{follow.PlayerIndex + 1}" : " from the crash camera")}");
             return;
@@ -4936,7 +4950,7 @@ public partial class GameSession : Node3D
         foreach (var ai in AiPlanes)
             if (ai is { InPlay: true })
                 _lockCandidates.Add(ai);
-        foreach (var rig in _rigs)
+        foreach (var rig in _seatRigs)
             if (rig.Controller is { InPlay: true } pilot)
                 _lockCandidates.Add(pilot);
         return _lockCandidates;
