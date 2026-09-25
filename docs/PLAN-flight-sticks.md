@@ -1207,7 +1207,7 @@ own sticks-only capture builds its `ControlCapture` itself, as D10 describes.
 **Left open.**
 
 - No engine suite presses the folder row, since it would open a real file browser; the unit suite
-  covers the feature side, and the opener is owed at the controls.
+  covers the feature side and the opener is checked at the controls.
 - `StickScreens.cs` has no Godot `.uid` yet.
 
 **Verified.** `CSVM.Tests/ControlsStickTests.cs`, 9 facts over `FakeStickNative` and seat 1's
@@ -1222,8 +1222,9 @@ tests). Engine suites `bindings-launch-load`, `bindings-prompt-device`, `menu-co
 `menu-original-controls` and `flight-mouse-scheme-live` pass, engine errors clean. No golden shows
 the remake Controls page. `CheckCommentCaps.ps1` and `CheckDocEntries.ps1` clean. The full
 `RunTests.ps1` on the merged branch passes apart from `ai-wave-launch-hitch`, a timing suite that
-failed while another worktree ran engine suites and passes rerun alone. No stick has been bound on
-the screen at the controls yet, and the folder row has not been pressed.
+failed while another worktree ran engine suites and passes rerun alone. At the controls, sticks
+bind on the screens (camera look on the mini-stick axis among them) and the folder row opens the
+profiles folder.
 
 **Original approach (kept for reference).**
 
