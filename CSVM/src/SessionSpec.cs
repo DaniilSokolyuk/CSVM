@@ -234,7 +234,7 @@ public sealed record SessionSpec
     public string ModeName =>
         Mode == SessionMode.AnimLab ? "anim-lab"
         : DamageTest || EffectsTest || WeaponTest || RunTests ? "test"
-        : DumpMarkers || DumpWeapons || DumpLoadout || DumpConfig || DumpMips || DumpAi || DumpTileGrid ? "dump"
+        : DumpMarkers || DumpWeapons || DumpLoadout || DumpConfig || DumpMips || DumpAi || DumpTileGrid || DumpSticks ? "dump"
         : MovieName != null ? "movie"
         : Mode == SessionMode.Freecam ? "freecam"
         : Mode == SessionMode.Viewer ? "viewer"
@@ -250,7 +250,7 @@ public sealed record SessionSpec
     public bool IsScripted =>
         NoFocus || ScreenshotPath != null || ExportGltfPath != null || RunTests
         || DumpMarkers || DumpWeapons || DumpLoadout || DumpConfig || DumpMips || DumpAi || DumpTileGrid
-        || DamageTest || EffectsTest || WeaponTest;
+        || DumpSticks || DamageTest || EffectsTest || WeaponTest;
 
     /// <summary><b>Resolved.</b> The chapter world is built instead of a single parked plane.</summary>
     public bool WorldMode { get; private set; }
@@ -688,6 +688,12 @@ public sealed record SessionSpec
     /// <summary>Where <c>--dump-tilegrid=</c> writes; empty means <c>./.scratch/</c> under a
     /// per-chapter name.</summary>
     public string DumpTileGridPath { get; private set; } = "";
+
+    /// <summary><c>--dump-sticks</c>: log the SDL2 stick roster with each stick's control counts
+    /// and resting reads, then quit. ⚠ Not in <see cref="ScriptedBy"/>: the bundle's
+    /// <c>--no-pads</c> would empty the Godot roster the gap-filler subtracts, and a hardware
+    /// report has nothing to pin.</summary>
+    public bool DumpSticks { get; private set; }
 
     public bool DamageTest { get; private set; }
     public string DamageTestFilter { get; private set; } = "";
@@ -1377,6 +1383,7 @@ public sealed record SessionSpec
             else if (arg.StartsWith("--dump-mips=")) { s.DumpMips = true; s.DumpMipsFilter = arg["--dump-mips=".Length..]; }
             else if (arg == "--dump-ai") { s.DumpAi = true; }
             else if (arg.StartsWith("--dump-ai=")) { s.DumpAi = true; s.DumpAiChapter = arg["--dump-ai=".Length..]; }
+            else if (arg == "--dump-sticks") { s.DumpSticks = true; }
             else if (arg == "--dump-tilegrid") { s.DumpTileGrid = true; s.HasContentArg = true; }
             else if (arg.StartsWith("--dump-tilegrid=")) { s.DumpTileGrid = true; s.DumpTileGridPath = arg["--dump-tilegrid=".Length..]; s.HasContentArg = true; }
             else if (arg.StartsWith("--tex-override=")) { texOverrides.Add(arg["--tex-override=".Length..]); }

@@ -160,7 +160,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 ### Wave A, SDL2 bridge and stick roster
 
 1. ☑ Pinned SDL2 download into `tools/sdl2/`, on the DLL path for every launch script and the release zip
-2. ☐ SDL2 P/Invoke bridge: gap-filling stick roster, hot-plug, gates, logging
+2. ☑ SDL2 P/Invoke bridge: gap-filling stick roster, hot-plug, gates, logging
 3. ☐ Stick device state: 128 buttons, 8 axes, hats, per-model identity, owned by seat 1
 
 ### Wave B, binding model
@@ -281,7 +281,89 @@ the shader bake.
 use the `CSVM_DATA_ROOT` fallback. Keep any script that writes repo files pure ASCII with explicit
 `-Encoding utf8`.
 
-## A2 ☐ SDL2 P/Invoke bridge: gap-filling stick roster, hot-plug, gates, logging
+## A2 ☑ SDL2 P/Invoke bridge: gap-filling stick roster, hot-plug, gates, logging
+
+**Landed.** A new namespace, `CSVM/src/Sticks/` (`CSVM.Sticks`, entries in
+`docs/architecture/Sticks.md`):
+
+| File | What it is |
+|---|---|
+| `StickModel.cs` | `readonly record struct StickModel(ushort Vendor, ushort Product)`, the identity; prints and parses `231D/0201`, and `TryFromDecimal` reads Godot's `vendor_id`/`product_id` strings. |
+| `Stick.cs` | `StickListing(Instance, Name, Model, Guid)` (listed, unopened) and `Stick(Instance, Name, Model, Guid, Axes, Buttons, Hats)` (opened). |
+| `IStickNative.cs` | The native seam: `Version`, `LastError`, `Pump()`, `List()`, `Open(listing)`, `Close(instance)`, raw `Axis`/`Button`/`Hat` by instance id. |
+| `Sdl2Sticks.cs` | The live `IStickNative`: `Candidates(exeDir, repoRoot, dataRoot)` (pure, A1's order, duplicates dropped) and `Load(candidates, out outcome)`. |
+| `StickRoster.cs` | Engine-free roster over an `IStickNative`, a Godot-models delegate and a gate delegate. |
+| `StickPump.cs` | The Godot node: `Start`, `Dump`, the static `StickPump.Roster`. |
+
+**The wiring contract A3 builds on.** `CSVM.Sticks.StickPump.Roster` is the one live
+`StickRoster`, null when sticks are off (`--no-pads`, hence `--det`, every test and golden; or no
+loadable DLL). On it:
+
+- `IReadOnlyList<Stick> Sticks`, the opened gap-filling sticks; `bool Update()` (the pump calls it);
+  `bool InputBlocked`; `string Version`.
+- Per unit: `float Axis(Stick, int)` (-1..1, `Normalise(short)` clamps -32768), `bool
+  Button(Stick, int)` (below `min(Buttons, MaxButtons = 128)`), `HatDirection Hat(Stick, int)`
+  (`CSVM.Bindings.HatDirection`, SDL's bits unchanged). Neutral while blocked, past a count, or for
+  a `Stick` that has since been unplugged.
+- Per model, which is the identity A3 should bind on: `ModelAxis(StickModel, int)` (deepest
+  deflection across units), `ModelButton` (ORed), `ModelHat` (first unit pushing it).
+- Pure: `StickRoster.GapFill(IReadOnlyList<StickListing>, IReadOnlyCollection<StickModel>)`.
+- Tests: `new StickRoster(fakeNative, () => godotModels, () => blocked)`; the fake in
+  `CSVM.Tests/StickRosterTests.cs` is the template.
+
+**The TODOs, answered.**
+
+- **Where the pump runs:** a `StickPump` node, child of `Launcher`, built once per process right
+  after the pad roster is logged in `_Ready`, at `ProcessPriority` -1001 (one ahead of the session
+  node's -1000) with `ProcessMode.Always`. Every `_Process` reader therefore sees this frame's
+  state; a `_PhysicsProcess` reader sees the latest pump, as it does for Godot's own pads. The
+  node's `_ExitTree` disposes the roster (closes devices, `SDL_QuitSubSystem`, `SDL_Quit`).
+- **The pump itself:** `SDL_JoystickUpdate` plus a drain of SDL's event queue through
+  `SDL_PeepEvents`, counting `SDL_JOYDEVICEADDED`/`REMOVED`. No `SDL_PumpEvents` (no video
+  subsystem to pump), and the per-control event types are set to `SDL_IGNORE` so the undrained
+  queue cannot grow. The gap-filler re-runs only on an add/remove or when `Pads.Connected()` hands
+  back a new roster instance, so a quiet frame never re-lists or calls `GetJoyInfo`.
+- **`SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS`:** not needed with the video subsystem off (SDL2 has
+  no window and never drops joystick events for focus), set to `1` anyway so a later SDL cannot
+  start dropping hot-plug while the game is unfocused. The pump keeps running unfocused, so the
+  roster stays current; the reads go neutral through `Pads.InputBlocked`, the same gate as pads.
+- **Identical units:** each unit is its own `Stick` in the roster (its own SDL instance), and the
+  `Model*` reads merge them (deepest axis, ORed buttons, first pushed hat, the same rule
+  `BindingSet` uses). The roster log adds `stick model <m>: N identical units read as one device`.
+- **Other hints, set before `SDL_InitSubSystem(SDL_INIT_JOYSTICK)`:** `SDL_JOYSTICK_HIDAPI=0`,
+  `SDL_JOYSTICK_RAWINPUT=0`, `SDL_JOYSTICK_WGI=0`, `SDL_XINPUT_ENABLED=0`, `SDL_NO_SIGNAL_HANDLERS=1`.
+  SDL2 is reduced to DirectInput, which is where the sticks enumerate, so it cannot handshake with a
+  pad SDL3 reads (HIDAPI), take SDL3's process-wide raw-input registration, or list an XInput pad
+  under a second model id that would slip past the gap-filler. Set through `SDL_SetHint` on SDL2
+  only, never as environment variables, which SDL3 would read too. The gap-filler also decides on
+  the unopened listing, so a model Godot reads is never opened by SDL2.
+- **Missing DLL:** `sticks: off, no SDL2.dll (tried …)` or `…failed to load from <path> (tried …)`
+  at Warn, and the launch continues. Exports are bound by name from the handle
+  (`NativeLibrary.TryLoad` + `TryGetExport`, no `DllImport`, no resolver), so a wrong DLL is one
+  line too.
+- **Logging:** `sticks: SDL 2.32.10 from <path>`, then `stick connected:`/`disconnected:`/`skipped:`
+  per change and one `stick roster (SDL 2.32.10): [i] "<name>" <model> guid=… axes= buttons=
+  hats=` line after each change, all `core` through `Log`.
+
+**The diagnostic:** `--dump-sticks` (`docs/cli.md`). It does not imply `--det`, since the bundle's
+`--no-pads` would empty the Godot roster the gap-filler subtracts; it is scripted (hidden window,
+`dump-*.log`) and exits 1 only when no DLL loads.
+
+**Probe evidence, hidden desktop only.** `RunProbe.ps1 --dump-sticks` from this worktree loaded
+`Z:\CSVM\tools\sdl2\SDL2.dll` (2.32.10) through the `CSVM_DATA_ROOT` candidate, read Godot's pad
+roster as empty, and opened all three devices with the names, GUIDs and counts of "What the data
+actually ships": L `231D/0201` 8/128/1, R `231D/0200` 8/128/1, Tartarus `1532/022B` 6/24/1. At
+rest, axis 2 read 1.00 on L and -0.57 on R, every other axis within 0.01 of centre; that bears on
+C8's "resting near centre" shape rule. `--no-pads` printed `reads blocked` for all three. A garbage
+`SDL2.dll` in the worktree's `tools/sdl2/` produced the one Warn line naming all three distinct
+candidates and exit 1. A `--no-det --screenshot` flight started the pump, logged the same roster
+and quit cleanly. ⚠ Per ⚠ row 2 none of this is foreground evidence, and hot-plug, the focus gate
+and the Tartarus's F13+ keys with SDL2 holding its joystick view still need the user's foreground
+run.
+
+**Verified.** <pending orchestrator run>
+
+**Original approach (kept for reference).**
 
 **Goal.** CSVM initialises SDL2's joystick subsystem, lists every device whose VID/PID Godot's
 roster lacks, follows plugs and unplugs live, reads nothing while `Pads.InputBlocked` holds

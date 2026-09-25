@@ -664,6 +664,18 @@ both sit on top of these types.
 - `src/Bindings/LaunchBindings.cs`, where a seat's keymap comes from when the seat is built: the player's saved file, or the shipped defaults.
 - `src/Bindings/PadRumble.cs`, one seat's controller rumble on the original's own effect table, routed to the pads that seat's bindings read.
 
+### `src/Sticks/`, flight sticks through SDL2
+
+The DirectInput-only sticks Godot's SDL3 does not see, read through the pinned `SDL2.dll` and
+filling only the models Godot's pad roster lacks.
+
+- `src/Sticks/StickModel.cs`, a stick's identity as a value: the USB vendor and product id every unit of one model reports, printed `231D/0201`.
+- `src/Sticks/Stick.cs`, a device listed but unopened (`StickListing`), and an opened one with its axis, button and hat counts (`Stick`).
+- `src/Sticks/IStickNative.cs`, the stick library as the roster sees it: pump, list, open, close and raw reads, the seam a test fakes.
+- `src/Sticks/Sdl2Sticks.cs`, `SDL2.dll` loaded by absolute path and reduced to its DirectInput joystick backend, behind `IStickNative`.
+- `src/Sticks/StickRoster.cs`, the gap-filling roster: hot-plug, the input gate, normalised reads, identical units merged per model, the roster log.
+- `src/Sticks/StickPump.cs`, the node that loads SDL2 once per process, publishes the live roster and pumps it each frame; hosts `--dump-sticks`.
+
 ### `src/Video/`, the MPEG-1 cinema decoder
 
 The managed decoder for the install's ten `.mpg` files, from the container down to pixels and PCM.
