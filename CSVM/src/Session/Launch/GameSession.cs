@@ -281,6 +281,9 @@ public partial class GameSession : Node3D
     // definition starts itself out of startanims and needs its CALLBACK codes hosted from the
     // bootstrap on. Null everywhere else, which leaves the world build's node census untouched.
     private CutsceneController? _cutscene;
+    // Seat 1's stick skip beside the cutscene host, since a stick raises no input event for
+    // _UnhandledInput to hear. Polled every frame so a press is an edge, not a held trigger.
+    private Sticks.StickSkip? _stickSkip;
     // The landings.zrd approach trigger, built and bound alongside the cutscene host it feeds.
     private LandingApproachRuntime? _landings;
     // The rope-ladder switch, bound with the landings trigger off the same pickup sensors.
@@ -578,6 +581,10 @@ public partial class GameSession : Node3D
             // re-raises this for that episode).
             _cutscene.FillsWindow = fills => _split?.Fill(fills);
             AddChild(_cutscene);
+            // Primed now, so a trigger still held from the menu press that launched the mission
+            // cannot skip its intro.
+            _stickSkip = Sticks.StickSkip.Live();
+            _stickSkip.Prime();
             // The mid-mission cutscene trigger, hosted by the same controller. ⚠ Story missions
             // only: C3/IA1 carries hooked_to_klondike with its approach armed, so an Instant
             // Action sortie would take a docking cutscene (WorldSession.Options.LandingTriggers).
@@ -727,9 +734,9 @@ public partial class GameSession : Node3D
 
     public override void _UnhandledInput(InputEvent @event)
     {
-        // A cutscene skips on any input, as the original's state core does. ⚠ Escape is exempt: it
-        // is the way out of the session. ⚠ Pads count only where this session reads pads at all,
-        // since a connected pad reports button 0 pressed as it arrives.
+        // A cutscene skips on any input, as the original's state core does; a stick's is polled in
+        // PollStickSkip. ⚠ Escape is exempt: it is the way out of the session. ⚠ Pads count only
+        // where this session reads pads at all, since a pad reports button 0 pressed on arrival.
         if (_cutscene is { Playing: true }
             && (@event is InputEventKey { Pressed: true, Echo: false, Keycode: not Key.Escape }
                 || (!_spec.PadsDisabled && @event is InputEventJoypadButton { Pressed: true })))
@@ -807,6 +814,7 @@ public partial class GameSession : Node3D
                 Log.Info("flight", $"--debug-wash: wash {_debugWashesFired} addressed to viewer {washViewer} of {_screenFlash.PaneCount}");
             }
         }
+        PollStickSkip();
         // The startup line goes out on the frame that proves the first one was drawn.
         _startup?.Frame();
         // One step of one deferred crash rig. A mid-flight AI introduction leaves its rig unbuilt
@@ -3642,6 +3650,23 @@ public partial class GameSession : Node3D
                 ? fc.GlobalPosition
                 : _rigs[i].Camera.GlobalPosition;
         return positions;
+    }
+
+    // The stick's half of _UnhandledInput's cutscene skip, for seat 1, who owns every stick. Ahead
+    // of the controller's own tick, which is where a declined press's held state is re-read.
+    private void PollStickSkip()
+    {
+        if (_stickSkip is not { } stick || _cutscene == null)
+        {
+            return;
+        }
+
+        stick.Poll();
+        if (stick.Pressed && _cutscene.Playing
+            && _cutscene.TakeStickPress(Sticks.StickDeviceState.OwningSeat, () => stick.Held))
+        {
+            _split?.NoteSkip(Sticks.StickDeviceState.OwningSeat);
+        }
     }
 
     // Which human that key or button belongs to. A pad is bound to exactly one seat by

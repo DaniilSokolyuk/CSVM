@@ -349,7 +349,7 @@ public sealed class ControlsFeature : IMenuFeature
         var losers = new List<InputAction>();
         foreach (var owner in Map.OwnersOf(binding))
         {
-            if (owner != Focused && owner != partner)
+            if (owner != Focused && owner != partner && !ActionMap.Shares(Focused, owner))
                 losers.Add(owner);
         }
 

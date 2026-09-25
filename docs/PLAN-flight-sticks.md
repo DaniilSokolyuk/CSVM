@@ -181,6 +181,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 10. ☑ Stick capture: full range, hats, full-axis inference, deadzone stamping, labels
 11. ☑ Remake Controls screen: stick rows saved to the active profile, "Open profiles folder"
 12. ☑ Original-style KEYS AND BUTTONS page: Stick column, replace per device
+14. ☑ Stick skips cutscenes and cinemas: a bindable Skip Cutscene, on the trigger by default
 
 ### Wave E, shipped profiles
 
@@ -1338,6 +1339,55 @@ device.>
 
 **⚠ Traps.** The column goes beyond the authored two-column art; how it looks is the user's call,
 shown as a screenshot and asked, never settled by an instrument.
+
+## D14 ☑ Stick skips cutscenes and cinemas: a bindable Skip Cutscene, on the trigger by default
+
+**Verified.** The unit and engine checks listed under Verify pass, and the full `RunTests.ps1` on
+the merged branch passes (units 5072 passed, 2 skipped for missing data; 382 engine suites, errors
+clean; 19 goldens identical). No engine suite drives a live `CinemaScreen` or `BootCard` with a
+fake stick, so that polling glue rests on the unit tests. The stick skip is owed at the controls.
+
+**Goal.** A player flying on sticks alone can skip or fast-forward everything a pad button skips
+or fast-forwards: an in-world cutscene (skip when armed, fast-forward while held when not), the
+chapter and closing cinemas, the cinema screen, and the boot films and stills. Every one of those
+reads Godot input events, and an SDL2 stick raises none.
+
+**Evidence (confidence: confirmed in code).** `CinemaSkips.Skips` holds the sets (chapter and
+closing include `CinemaPress.PadButton`, boot takes any press). `GameSession._UnhandledInput`
+offers key and pad presses to `CutsceneController.Skip` and then `NoteHeld`, and
+`PollFastForward` re-reads the held devices every tick. `StickDeviceState` reads for seat 1 alone,
+and `StickPump.Roster` is null under `--no-pads`.
+
+**Approach.** A new Menu-context action `InputAction.SkipCutscene` (appended, the enum is
+positional), shipped unbound on keyboard and pad and bound to button 0 by the generic default
+(`GenericStickDefault.SkipButton`). `Sticks/StickSkip.cs` reads it for seat 1 off the active
+profiles' Menu rows alone, as a press edge and a held state, with `Prime` swallowing a trigger still
+down from the press that opened the screen. `CinemaScreen` and `BootCard` poll it each frame and
+treat a press as `CinemaSkips.StickPress` (`PadButton`), so Escape-only sets stay exempt and the
+chapter and closing sets are untouched. `GameSession.PollStickSkip` hands a press to
+`CutsceneController.TakeStickPress`, which skips when a skip is armed and otherwise holds the
+fast-forward while the reader's `Held` stays true. The trigger is also menu accept, so
+`ActionMap.Shares` exempts `SkipCutscene` from the steal rule in `Assign`, in the controls screen's
+`Offer` prompt and in the keymap file load; every other pair still steals. The remake screen lists
+the row on its Menu tab and the KEYS AND BUTTONS page on its Other tab, and a screen save writes it
+into the stick profile. Rules in `docs/org/input.md`, "Skip Cutscene, the stick's skip".
+
+**Model recommendation.** Opus.
+
+**Verify.** `CSVM.Tests/StickSkipTests.cs` (generic default row, seat 1 edge and held state, the
+primed trigger, seats 2 and 4 and sticks off read nothing, a profile's own row, the share rule,
+the controls screen asking nothing). Engine suites: `cinema-skip-pad` (a stick's press ends the
+chapter, closing and boot sets and not an Escape-only one; the live reader reads nothing with
+sticks off), `campaign-cutscene-skip` (a stick press is declined before a skip is armed and taken
+after), `campaign-cutscene-fast-forward` (a third leg: the declined stick press held fast-forwards
+the scene at the full rate with the same codes). At the controls: the trigger skips the boot
+stills, a chapter cinema, the closing cinema and a mission intro, and held on a mid-mission
+cutscene it fast-forwards until released.
+
+**⚠ Traps.** Read the stick rows alone, never the keymap: any key or pad button already skips
+through its event, and a keymap row would be a second path around the `--no-pads` gate. A user
+profile saved before this item carries no `SkipCutscene` row, so that stick has no skip until the
+row is bound on either screen; E13's shipped profiles should carry it.
 
 # Wave E, shipped profiles
 

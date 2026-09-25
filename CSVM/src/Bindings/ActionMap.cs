@@ -48,6 +48,13 @@ public sealed class ActionMap
         };
     }
 
+    /// <summary>Whether two actions hold one control without either taking it from the other, which
+    /// the steal rule and a screen's steal prompt both skip. True when either is
+    /// <see cref="InputAction.SkipCutscene"/>, which is read only while a cutscene or cinema plays.
+    /// Its stick default shares the trigger with menu accept, and a rebind must not undo that.</summary>
+    public static bool Shares(InputAction left, InputAction right) =>
+        left != right && (left == InputAction.SkipCutscene || right == InputAction.SkipCutscene);
+
     /// <summary>Which modifiers this map holds that key under, which is what a bare binding on it
     /// must stand down under. Empty for a key no action names with a modifier.</summary>
     public KeyModifiers ContestedFor(int keyCode)
@@ -75,7 +82,8 @@ public sealed class ActionMap
         var stolenFrom = new List<InputAction>();
         foreach (var pair in _sets)
         {
-            if (pair.Key != action && pair.Key != partner && RemoveMatching(pair.Value, binding))
+            if (pair.Key != action && pair.Key != partner && !Shares(action, pair.Key)
+                && RemoveMatching(pair.Value, binding))
                 stolenFrom.Add(pair.Key);
         }
 

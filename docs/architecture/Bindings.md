@@ -103,11 +103,11 @@ each member is `DefaultBindings.ContextOf`.
 One player's keymap, an action to a `BindingSet`. `Assign` is the winning half of the steal rule and
 returns every action that lost the control, in enum order, so a screen can name each loss; `OwnersOf`
 asks without committing. `Add` binds without stealing, for the shipped defaults and a loaded file
-where a control is deliberately on two actions. `SameControl` is "the same control", modifiers
-included, a full axis matching either half of its axis. A full axis sits on both rows of its pair or
-neither, and `Unassign` or `Clear` on either row clears both; the lever row holds its full axis alone.
-`ResolveInto` reads every action once per tick, each full axis on its action's side or as the lever's
-position, through this map's `ContestedFor` modifier gate.
+where a control is deliberately on two actions; `Shares` exempts `SkipCutscene` from stealing either
+way. `SameControl` is "the same control", modifiers included, a full axis matching either half of
+its axis. A full axis sits on both rows of its pair or neither, and `Unassign` or `Clear` on either
+row clears both; the lever row holds its full axis alone. `ResolveInto` reads every action once per
+tick, each full axis on its action's side or as the lever's position, via `ContestedFor`.
 
 ## src/Bindings/ControlCapture.cs
 What a rebinding screen may capture, and the scan that turns a press into a `Binding`: the bindable

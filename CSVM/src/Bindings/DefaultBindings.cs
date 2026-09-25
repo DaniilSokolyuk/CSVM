@@ -38,6 +38,7 @@ public static class DefaultBindings
         InputAction.SelectChaseView,
         InputAction.MenuJoin,
         InputAction.ThrottleLever,
+        InputAction.SkipCutscene,
     };
 
     /// <summary>Which context owns that action. Every member of <see cref="InputAction"/> has
@@ -216,6 +217,10 @@ public static class DefaultBindings
         // Joining is any control on a pad no seat owns yet, which is a gesture rather than a
         // binding: every control it watches already belongs to another menu action here.
         b.Leave(InputAction.MenuJoin);
+
+        // The skip ships unbound on the keyboard and the pad, because any key and any pad button
+        // already skips a cutscene. A stick has no such reading, so its default is a stick row.
+        b.Leave(InputAction.SkipCutscene);
         return b;
     }
 

@@ -335,7 +335,8 @@ public sealed class BindingStore
                 var partner = binding.Control.Kind == ControlKind.FullAxis ? AxisPairs.PartnerOf(action) : null;
                 foreach (var owner in map.OwnersOf(binding))
                 {
-                    if (owner != action && owner != partner && !named.Contains(owner))
+                    if (owner != action && owner != partner && !named.Contains(owner)
+                        && !ActionMap.Shares(action, owner))
                     {
                         map.Unassign(owner, binding);
                     }

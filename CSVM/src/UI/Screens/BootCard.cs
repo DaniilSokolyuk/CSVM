@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using CSVM.Sticks;
 using CSVM.UI.Boards;
 using CSVM.Utils;
 using Godot;
@@ -19,6 +20,8 @@ public sealed partial class BootCard : Node
 {
     private readonly ComposedBoard _card;
     private readonly string _dataRoot;
+    private readonly StickSkip _stick = StickSkip.Live();
+    private ulong _heldOnFrame;
 
     private CanvasLayer? _layer;
     private ComposedBoardView? _view;
@@ -55,6 +58,7 @@ public sealed partial class BootCard : Node
     {
         _then = then;
         _left = seconds;
+        _heldOnFrame = Engine.GetProcessFrames();
         if (hold == BootHold.Card)
         {
             // Neither of the card's two inks reads the palette, so which one it is handed cannot
@@ -98,6 +102,7 @@ public sealed partial class BootCard : Node
         _layer.AddChild(black);
         _layer.AddChild(_view);
         AddChild(_layer);
+        _stick.Prime();
     }
 
     /// <inheritdoc/>
@@ -115,8 +120,18 @@ public sealed partial class BootCard : Node
     /// <inheritdoc/>
     public override void _Process(double delta)
     {
+        // Polled under the films too, so the trigger that skipped a film is not a fresh press when
+        // the still after it comes up. A hold raised this frame by a film ending ignores the stick.
+        _stick.Poll();
         if (_then == null)
         {
+            return;
+        }
+
+        if (_stick.Pressed && _heldOnFrame != Engine.GetProcessFrames()
+            && CinemaScreen.BootKeys.Skips(CinemaSkips.StickPress))
+        {
+            Advance();
             return;
         }
 

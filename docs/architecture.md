@@ -688,6 +688,7 @@ filling only the models Godot's pad roster lacks.
 - `src/Sticks/StickProfileStore.cs`, the profile files: shipped texts read-only, the user directory the only save target, atomic and versioned.
 - `src/Sticks/StickProfileResolver.cs`, which file is active per connected model (companions, then user over shipped, then name), and the rows it yields.
 - `src/Sticks/StickProfileSet.cs`, the profiles in force, re-selected on every roster change; merges seat 1's keymap and saves an accepted screen.
+- `src/Sticks/StickSkip.cs`, seat 1's stick skip press and held state for cinemas, boot cards and in-world cutscenes, read off the stick rows alone.
 - `src/Sticks/StickProfiles.cs`, the engine side: `res://data/stick_profiles/`, `user://stick_profiles/`, and the one live set.
 - `src/Sticks/StickScreens.cs`, the rebinding screens' save split (player 1's stick rows to the profile files, never the keymap file) and the profiles folder opener.
 - `src/Sticks/StickLabels.cs`, a stick's caption prefix for the rebinding screens: its profile's short name, else `Stick` and its model (the Stick column drops the latter).

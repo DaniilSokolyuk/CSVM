@@ -430,7 +430,7 @@ two candidates leave no way to tell which one should fly.
   inverted so raw -1 is full throttle, deadzone 0.02; on the VKB R the lever reads -1 pushed
   forward. The lever's takeover rule keeps a parked lever from moving the throttle until it is moved. Button
   0 fires the guns and button 1 the rockets. In menus the hat moves the cursor, button 0 confirms
-  and button 1 backs out.
+  and button 1 backs out. Button 0 is also Skip Cutscene (below).
 - **It lives in memory.** The profile log names it `generic (generic default)`. A controls screen
   save that changes any of its rows writes the whole layout as a user file under the model's name,
   which from then on is the model's profile; an unchanged save writes nothing.
@@ -439,6 +439,29 @@ two candidates leave no way to tell which one should fly.
   device. A profile file with `"ignore": true` for that model keeps it off. The Razer Tartarus
   (`1532/022B`, six centred axes under SDL2) ships with one, so it neither takes the default nor
   counts against a stick beside it.
+
+### Skip Cutscene, the stick's skip
+
+A stick raises no Godot input event, so none of the event-driven skips (the in-world cutscene's
+press, the cinema screen's authored sets, a boot film or still) sees it. `SkipCutscene` is the
+Menu-context action that stands in for them, read by `Sticks/StickSkip.cs` from seat 1's active
+stick profile alone.
+
+- **Where it counts.** Its press is `CinemaSkips.StickPress`, which is `CinemaPress.PadButton`, so it
+  ends exactly the cinemas and boot cards a pad button ends, and an Escape-only set stays exempt. In
+  flight it is the same skip a key press gets; declined (no skip armed), the held trigger
+  fast-forwards the scene until it is released.
+- **Who reads it.** Seat 1 only, as for every stick read, and nothing under `--no-pads` or `--det`
+  (no roster, no profile set). The roster's input gate reads it neutral like any stick control.
+- **Defaults.** The generic default binds it to button 0 (`Button 1`, the trigger). Keyboard, mouse
+  and pad ship it unbound and a row there adds nothing, since any key or pad button already skips.
+  A shipped or user profile carries it as `"SkipCutscene": ["button:#0"]` in its `menu` context; a
+  profile without the row gives the stick no skip until one is bound.
+- **It shares its control.** Binding the skip never steals from another action in its context, and
+  no other action steals from it (`ActionMap.Shares`), so the trigger stays menu accept and the
+  controls screen asks nothing when the skip takes it. The steal rule holds for every other pair.
+- The remake Controls screen lists it on the Menu tab and the original KEYS AND BUTTONS page on its
+  Other tab, both as `Skip Cutscene`; an accepted screen saves it into the stick profile.
 
 ## Force feedback
 

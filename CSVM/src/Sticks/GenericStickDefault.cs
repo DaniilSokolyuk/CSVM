@@ -8,7 +8,8 @@ namespace CSVM.Sticks;
 /// The bindings a stick gets before anyone binds it: a synthetic profile for the one connected,
 /// stick-shaped model no profile file covers. It flies X roll, Y pitch, Rz yaw from six axes up, and
 /// Z as the absolute Throttle (lever). Buttons 0 and 1 fire; in menus the hat moves, button 0
-/// confirms and button 1 backs out. It lives in memory until a screen save changes it.
+/// confirms and skips a cutscene, and button 1 backs out. It lives in memory until a screen save
+/// changes it.
 /// ⚠ Do not relax the exactly-one rule. Axis numbers on an unknown stick are a convention, and two
 /// candidates leave no way to say which flies (<c>docs/org/input.md</c>, generic stick default).
 /// </summary>
@@ -31,6 +32,10 @@ public static class GenericStickDefault
     /// <summary>Rz, the twist. On the VKB Gladiator EVO R it reads -1..1 here under SDL2, negative
     /// twisted right, so the default binds it inverted.</summary>
     public const int TwistAxis = 5;
+
+    /// <summary>The skip's button, the trigger, which also confirms in menus and fires the guns. The
+    /// skip shares it rather than taking it (<see cref="ActionMap.Shares"/>).</summary>
+    public const int SkipButton = 0;
 
     /// <summary>The fewest axes a device has before axis 5 is read as its twist.</summary>
     public const int TwistMinAxes = 6;
@@ -94,6 +99,7 @@ public static class GenericStickDefault
         menu.Add(InputAction.MenuRight, new Binding(device, BindingControl.Hat(0, HatDirection.Right)));
         menu.Add(InputAction.MenuAccept, new Binding(device, BindingControl.Button(0)));
         menu.Add(InputAction.MenuBack, new Binding(device, BindingControl.Button(1)));
+        menu.Add(InputAction.SkipCutscene, new Binding(device, BindingControl.Button(SkipButton)));
         return profile;
     }
 }
