@@ -623,6 +623,10 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
     // belongs at the tail of the walk rather than inside the dispatch that asked for it.
     private bool _walkingInstances;
 
+    // The instances started since CollectLateStarts, which CatchUp advances on their own. Null
+    // outside a guest's catch-up, so an ordinary start costs one null test.
+    private HashSet<AnimInstance>? _lateStarts;
+
     // Nonzero while a death's own Start burst (RunDeathSequence) is on the call stack, a counter
     // because a chained CALL_ANIMATION can call again. It lets a death-triggered call relocate its
     // callee's effect-template root onto the struck node, the way TemplateStage.Places does.
@@ -1498,6 +1502,53 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
         }
     }
 
+    /// <summary>Records every instance started from here until <see cref="CatchUp"/>. A guest
+    /// calls it before it applies a director event that arrived late.</summary>
+    public void CollectLateStarts() => _lateStarts ??= new HashSet<AnimInstance>();
+
+    /// <summary>Advances only the instances started since <see cref="CollectLateStarts"/>, with
+    /// their motions, by <paramref name="seconds"/>, then stops recording. It steps at the authored
+    /// frame so their timed events fire in order. A one-shot fired on the way starts as far into
+    /// its clip as it is late.</summary>
+    public void CatchUp(float seconds)
+    {
+        if (_lateStarts is not { } late)
+            return;
+        float wasLate = Sounds?.LateBy ?? 0f;
+        try
+        {
+            float left = float.IsFinite(seconds) ? seconds : 0f;
+            while (left > 0f && late.Any(_instances.Contains))
+            {
+                float step = MathF.Min(left, SequenceRunner.AnimFrame);
+                left -= step;
+                if (Sounds != null)
+                    Sounds.LateBy = left;
+                TickMotions(step, owner => late.Any(i => i.Def == owner.Def && i.Anchor == owner.Anchor));
+                WalkLateStarts(late, step);
+            }
+        }
+        finally
+        {
+            _lateStarts = null;
+            if (Sounds != null)
+                Sounds.LateBy = wasLate;
+        }
+    }
+
+    /// <summary>The playback position of a live instance of <paramref name="animName"/>, the
+    /// newest one's, or null when none is live.</summary>
+    public float? ClockOf(string animName)
+    {
+        for (int i = _instances.Count - 1; i >= 0; i--)
+        {
+            if (string.Equals(_instances[i].Def.AnimName, animName, StringComparison.OrdinalIgnoreCase))
+                return _instances[i].Clock;
+        }
+
+        return null;
+    }
+
     /// <summary>Stops every live instance of an animation name (optionally only on one anchor) and
     /// tears down the resources it created. Removing the instance alone would leave its motions
     /// driving nodes, its puffers emitting, its lights lit and its sounds playing;
@@ -1964,6 +2015,7 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
         if (inst.Finished)
             return;
         _instances.Add(inst);
+        _lateStarts?.Add(inst);
         OnInstanceStarted?.Invoke(def, anchor);
         // A call made by the tick's own walk hands its callee to the drain that closes the walk;
         // everything else fires whatever is due at t=0 immediately, so instantaneous sequences
@@ -4319,13 +4371,7 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
                 }
 
                 inst.Advance(this, step);
-                if (Retirable(inst) && _instances.Remove(inst))
-                {
-                    FinishInputGoverned(inst.Def, inst.Anchor);
-                    FinishEffectInstance(inst.Def, inst.Anchor);
-                    _templateStage.RetireWhenIdle(inst.Def, inst.Anchor);
-                    OnInstanceFinished?.Invoke(inst.Def, inst.Anchor);
-                }
+                RetireFromWalk(inst);
             }
 
             DrainQueuedStarts();
@@ -4337,13 +4383,53 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
         }
     }
 
+    private void RetireFromWalk(AnimInstance inst)
+    {
+        if (Retirable(inst) && _instances.Remove(inst))
+        {
+            FinishInputGoverned(inst.Def, inst.Anchor);
+            FinishEffectInstance(inst.Def, inst.Anchor);
+            _templateStage.RetireWhenIdle(inst.Def, inst.Anchor);
+            OnInstanceFinished?.Invoke(inst.Def, inst.Anchor);
+        }
+    }
+
+    // One catch-up step of the late starts alone. It walks them in the ordinary walk's order and
+    // closes with the same drain. A call they make joins the late set.
+    private void WalkLateStarts(HashSet<AnimInstance> late, float step)
+    {
+        var walk = _instances.Where(late.Contains).ToList();
+        bool wasWalking = _walkingInstances;
+        _walkingInstances = true;
+        try
+        {
+            for (int i = walk.Count - 1; i >= 0; i--)
+            {
+                var inst = walk[i];
+                if (!_instances.Contains(inst) || _queuedStarts.Any(q => q.Inst == inst))
+                {
+                    continue;
+                }
+
+                inst.Advance(this, step);
+                RetireFromWalk(inst);
+            }
+
+            DrainQueuedStarts();
+        }
+        finally
+        {
+            _walkingInstances = wasWalking;
+        }
+    }
+
     // Advances every live motion, then dispatches whatever landed. ⚠ The two halves stay in one
-    // method, called from one statement in Advance, because the instance walk must not run between
+    // method, called from one statement in Advance and CatchUp, because no instance walk may run between
     // them: an instance whose only hold is a landed piece would be Finished with nothing owed, so
     // it retires and FinishEffectInstance SustainEnds the piece's trail emitter mid-flight.
-    private void TickMotions(float dt)
+    private void TickMotions(float dt, Func<(AnimDefinition Def, Node3D? Anchor), bool>? only = null)
     {
-        foreach (var landing in Motions.Tick(dt, FastForward))
+        foreach (var landing in Motions.Tick(dt, FastForward, only))
         {
             // ⚠ Count the miss here. A landing can outlive its own instance, and CallSequence then
             // has nothing to dispatch into and returns silently.

@@ -651,12 +651,13 @@ public readonly record struct MatchStateMessage(
 /// <summary>
 /// One mission-director event, as a code and an id. Reliable, and opaque to the envelope: the code
 /// is a <see cref="NetDirectorEvent"/>, whose members say how the id is laid out. The host is the
-/// only sender.</summary>
-public readonly record struct DirectorTransitionMessage(ushort Code, int Id)
+/// only sender. <c>HostClock</c> is the host's session time when its graph raised the event. A
+/// guest subtracts it from its shared clock to learn how late the event arrived.</summary>
+public readonly record struct DirectorTransitionMessage(ushort Code, int Id, float HostClock = 0f)
     : INetMessage<DirectorTransitionMessage>
 {
     /// <summary>The fixed width of the message, header included.</summary>
-    public const int Size = 12;
+    public const int Size = 16;
 
     /// <inheritdoc/>
     public static NetMessageType Type => NetMessageType.DirectorTransition;
@@ -674,7 +675,8 @@ public readonly record struct DirectorTransitionMessage(ushort Code, int Id)
 
         ushort code = reader.ReadUInt16();
         _ = reader.ReadUInt16();
-        message = new DirectorTransitionMessage(code, reader.ReadInt32());
+        int id = reader.ReadInt32();
+        message = new DirectorTransitionMessage(code, id, reader.ReadSingle());
         return true;
     }
 
@@ -685,6 +687,7 @@ public readonly record struct DirectorTransitionMessage(ushort Code, int Id)
         writer.WriteUInt16(Code);
         writer.WriteUInt16(0);
         writer.WriteInt32(Id);
+        writer.WriteSingle(HostClock);
         return writer.Close();
     }
 }

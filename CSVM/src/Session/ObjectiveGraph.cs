@@ -202,6 +202,7 @@ public sealed class ObjectiveGraph
     private readonly Dictionary<string, string> _helpLabels = new(StringComparer.OrdinalIgnoreCase);
     private int _scan;
     private int _source;
+    private float _late;
     private MissionOutcome _pending;
     private float _wrapUp;
     private bool _playerLost;
@@ -338,6 +339,12 @@ public sealed class ObjectiveGraph
     public bool CompletedOf(int number) =>
         number >= 1 && number <= _live.Count && _live[number - 1].Complete;
 
+    /// <summary>An objective's private timer, the seconds since it last woke or napped.</summary>
+    public float TimerOf(int number) => Target(number)?.Timer ?? 0f;
+
+    /// <summary>The seconds left of an objective's nap.</summary>
+    public float NapRemainingOf(int number) => Target(number)?.NapRemaining ?? 0f;
+
     /// <summary>The player's own aircraft is lost: the fourth ending, which stops this runtime dead
     /// rather than setting a flag (docs/formats/objectives.md, "Win and loss"). Nothing advances
     /// afterwards, so no sound, no completion and no countdown belongs to it. Answers whether this
@@ -471,9 +478,10 @@ public sealed class ObjectiveGraph
 
     /// <summary>Replays one transition the owning graph made. The objective's state and its world
     /// actions are the owner's; <see cref="ObjectiveTransition.Elapsed"/> and the nap length are
-    /// this graph's own reading. A completion's display row and class sound wait for
-    /// <see cref="ApplySettled"/>, which is where the owner plays them.</summary>
-    public void ApplyTransition(ObjectiveTransitionKind kind, int number, int source)
+    /// this graph's own reading. A completion's row and class sound wait for
+    /// <see cref="ApplySettled"/>, where the owner plays them. <paramref name="late"/> is how long
+    /// ago the owner made it. The timer, nap and countdown it sets start that far along.</summary>
+    public void ApplyTransition(ObjectiveTransitionKind kind, int number, int source, float late = 0f)
     {
         if (!Replicated || Target(number) is not { } live)
         {
@@ -481,10 +489,12 @@ public sealed class ObjectiveGraph
         }
 
         _source = source;
+        _late = float.IsFinite(late) ? MathF.Max(0f, late) : 0f;
         switch (kind)
         {
             case ObjectiveTransitionKind.Woke:
                 WakeLive(live);
+                live.Timer = _late;
                 break;
             case ObjectiveTransitionKind.Completed:
                 live.Complete = true;
@@ -496,9 +506,10 @@ public sealed class ObjectiveGraph
             case ObjectiveTransitionKind.Napped:
                 live.State = ObjectiveState.Napping;
                 live.NapRemaining = NapLengthOf(live, source);
-                live.Timer = 0f;
                 live.Complete = false;
                 Note(live, kind, live.NapRemaining);
+                live.NapRemaining = MathF.Max(0f, live.NapRemaining - _late);
+                live.Timer = _late;
                 break;
             case ObjectiveTransitionKind.Killed:
                 live.Alive = false;
@@ -528,6 +539,7 @@ public sealed class ObjectiveGraph
         }
 
         _source = 0;
+        _late = 0f;
     }
 
     /// <summary>Replays the close of a completion the owning graph made: the display row, the
@@ -586,9 +598,9 @@ public sealed class ObjectiveGraph
     private static bool CountMet(int matched, int? authored, int entries) =>
         matched >= (authored ?? entries) && entries > 0;
 
-    // A replicated graph's own step: the mission time and the countdown's display, which are
-    // readings of the clock. The countdown pins at zero, since running out is the owner's to
-    // decide and arrives as ApplyTimerExpired.
+    // A replicated graph's own step: the mission time, the countdown, the private timers and the
+    // naps, which are readings of the clock. Each pins at zero, since what running out does is the
+    // owner's to decide and arrives as its own event.
     private void StepReplicated(float dt)
     {
         if (dt <= 0f || Ended)
@@ -600,6 +612,15 @@ public sealed class ObjectiveGraph
         if (TimerRunning)
         {
             TimerRemaining = MathF.Max(0f, TimerRemaining - dt);
+        }
+
+        foreach (var live in _live)
+        {
+            if (!live.Alive || !Ticks(live))
+                continue;
+            live.Timer += dt;
+            if (live.State == ObjectiveState.Napping)
+                live.NapRemaining = MathF.Max(0f, live.NapRemaining - dt);
         }
     }
 
@@ -933,8 +954,10 @@ public sealed class ObjectiveGraph
     {
         if (def.AdjustTimer is { } adjust)
         {
+            // A replayed SET started late is that far down; a relative adjust moves a countdown
+            // that was already running here.
             TimerRemaining = string.Equals(adjust.Op, "SET", StringComparison.OrdinalIgnoreCase)
-                ? adjust.Seconds
+                ? MathF.Max(0f, adjust.Seconds - _late)
                 : TimerRemaining + adjust.Seconds;
         }
 
@@ -1046,7 +1069,7 @@ public sealed class ObjectiveGraph
 
         if (fromDormant && def.ResetTimer is { } seconds)
         {
-            TimerRemaining = seconds;
+            TimerRemaining = MathF.Max(0f, seconds - _late);
             TimerRunning = true;
         }
 

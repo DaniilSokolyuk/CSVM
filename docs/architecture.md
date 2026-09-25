@@ -101,6 +101,7 @@ GameZ→Godot builders, and the animation runtime that drives the world.
 - `src/Mech3/SoundFalloff.cs`, the original's positional gain law: a distance, a `RANGE` pair and a `VOLUME` to decibels, pure and engine-free.
 - `src/Mech3/MusicPlayer.cs`, the state-driven score: one 2D streaming channel for menu, cabin and mission, with the decoded battle hold.
 - `src/Mech3/MissionRadio.cs`, the mission radio queue: the non-positional voice channel the campaign's objective callouts, VO dialogue chains and combat voice lines speak on.
+- `src/Mech3/LateStart.cs`, engine-free: the clip and offset a run of back-to-back clips stands at when started late.
 - `src/Mech3/SoundDefs.cs`, sounds.json parser: SETS `snd_*` → `SoundDef`; `LoadGroups` → the weighted-random `SOUND_GROUPS` + their dialogue chains.
 - `src/Mech3/CombatVoice.cs`, the combat-voice chain: roster `accentID` → `voice.zrd` pool → pilot VO id → clip defs, plus the mission's voice prewarm set.
 - `src/Mech3/Anim/TemplateStage.cs`, the effect-template stage as one module: pool-slot arithmetic, placement and following, copy identity, reveal and retire.
@@ -542,7 +543,8 @@ clusters they delegate to.
 - `src/Session/CampaignHumanField.cs`, the human field's rules, engine-free: what a condition naming one aeroplane asks once two to four humans fly.
 - `src/Session/ObjectiveSites.cs`, the flown campaign mission's flagged target sites as targeting candidates, rebuilt from their live source every frame.
 - `src/Session/CampaignDirector.cs`, the engine side of a campaign mission: the graph armed against the built world, the roster spawned and launched off its hooks, the attempt recorded.
-- `src/Session/NetDirectorLink.cs`, the objectives graph over the wire: the host publishes every event its graph raises and a guest's replicated graph replays them in order.
+- `src/Session/NetDirectorLink.cs`, the objectives graph over the wire: the host publishes every event its graph raises, stamped with its clock, and a guest's replicated graph replays them in order.
+- `src/Session/NetDirectorCatchUp.cs`, a guest's catch-up on a late director event: applies it, then advances the timers, cutscenes and sounds it started by how late it arrived.
 - `src/Session/NetWorldLink.cs`, the host-owned world over the wire: AI aircraft as pose, fire, hit and death messages, and destructible stage changes and deaths as events.
 - `src/Session/CampaignDangerZones.cs`, a campaign mission's own danger zones: the `dzpathN` gates its script arms, tracked per human by the stunt gate rule, each carrying its mission's objective number.
 - `src/Session/CampaignSnapshot.cs`, the Danger Zone photograph a campaign mission writes into the flying profile's directory under the scrapbook row's own `Snap_<mission>_<objective>` name.

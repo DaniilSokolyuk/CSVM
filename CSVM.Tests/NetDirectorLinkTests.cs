@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using CSVM.Mech3;
 using CSVM.Net;
 using CSVM.Session;
 using Xunit;
@@ -109,6 +110,48 @@ public sealed class NetDirectorLinkTests
         Assert.Equal(MissionOutcome.Lost, pair.Guest.Outcome);
     }
 
+    [Fact]
+    public void A_late_wake_starts_the_guests_timers_as_far_along_as_the_hosts()
+    {
+        const string body = "\"MISSION_TIMER\",[10.0],\"OBJECTIVE1\",[\"BEGIN_DORMANT\",[0.5],"
+            + "\"RESET_TIMER\",[5.0],\"INACTIVE1\",[\"never\"]]";
+        var slow = new LoopbackConditions(0.35, 0.0, 0.0);
+        var pair = new Linked(Script(body), slow, catchUp: true);
+        pair.Run(1.5f);
+        Assert.InRange(pair.CatchUp!.LastLateness, 0.15f, 0.45f);
+        Assert.Equal(pair.Host.TimerOf(1), pair.Guest.TimerOf(1), 3);
+        Assert.Equal(pair.Host.TimerRemaining, pair.Guest.TimerRemaining, 3);
+
+        // ABLE-TO-FAIL CONTROL. With the catch-up off the guest's timers trail by the link. The
+        // match above is therefore the catch-up, not a prompt link.
+        var control = new Linked(Script(body), slow, catchUp: false);
+        control.Run(1.5f);
+        Assert.InRange(control.CatchUp!.LastLateness, 0.15f, 0.45f);
+        Assert.True(control.Host.TimerOf(1) - control.Guest.TimerOf(1) > 0.15f);
+        Assert.True(control.Guest.TimerRemaining - control.Host.TimerRemaining > 0.15f);
+    }
+
+    [Fact]
+    public void Lateness_is_the_shared_clock_past_the_stamp_and_never_negative()
+    {
+        Assert.Equal(0.25f, NetDirectorCatchUp.Lateness(100.25, 100f), 5);
+        Assert.Equal(0f, NetDirectorCatchUp.Lateness(99.5, 100f));
+        Assert.Equal(0f, NetDirectorCatchUp.Lateness(double.NaN, 100f));
+        Assert.Equal(0f, NetDirectorCatchUp.Lateness(100.0, float.PositiveInfinity));
+    }
+
+    [Fact]
+    public void A_late_start_lands_in_the_clip_the_overdue_falls_in()
+    {
+        var lengths = new[] { 1.0, 0.0, 2.0 };
+        Assert.Equal((0, 0.0), LateStart.Into(lengths, 0.0));
+        Assert.Equal((0, 0.0), LateStart.Into(lengths, -3.0));
+        Assert.Equal((0, 0.5), LateStart.Into(lengths, 0.5));
+        Assert.Equal((2, 0.5), LateStart.Into(lengths, 1.5));
+        Assert.Equal((3, 0.0), LateStart.Into(lengths, 3.0));
+        Assert.Equal((0, 0.0), LateStart.Into(lengths, double.NaN));
+    }
+
     [ExtractedDataFact]
     public void A_replicated_graph_replays_C1_M04s_chain_in_state_and_in_world_actions()
     {
@@ -160,9 +203,12 @@ public sealed class NetDirectorLinkTests
         private readonly NetSession _hostNet;
         private readonly NetSession _guestNet;
 
-        public Linked(ObjectiveScript script)
+        private float _hostNow;
+        private float _guestNow;
+
+        public Linked(ObjectiveScript script, LoopbackConditions? link = null, bool? catchUp = null)
         {
-            var mesh = LoopbackTransport.Mesh(2, Link, new Random(2111));
+            var mesh = LoopbackTransport.Mesh(2, link ?? Link, new Random(2111));
             var roster = new NetSeat[]
             {
                 new() { PeerId = 0, SeatIndex = 0, IsLocal = true, Callsign = "host", PlaneNode = Airframes[0] },
@@ -174,9 +220,16 @@ public sealed class NetDirectorLinkTests
             Guest = new ObjectiveGraph(script, GuestWorld);
             Host.Transitioned += HostLog.Add;
             Guest.Transitioned += GuestLog.Add;
-            NetDirectorLink.Publish(_hostNet, Host);
-            NetDirectorLink.Follow(_guestNet, Guest);
+            NetDirectorLink.Publish(_hostNet, Host, () => _hostNow);
+            if (catchUp is { } enabled)
+            {
+                CatchUp = new NetDirectorCatchUp(() => _guestNow, null, null) { Enabled = enabled };
+            }
+
+            NetDirectorLink.Follow(_guestNet, Guest, CatchUp);
         }
+
+        public NetDirectorCatchUp? CatchUp { get; }
 
         public TraceWorld HostWorld { get; } = new();
 
@@ -191,14 +244,17 @@ public sealed class NetDirectorLinkTests
         public List<ObjectiveTransition> GuestLog { get; } = new();
 
         // Host first, the order a listen server runs in, with the net stepped ahead of each graph.
-        // A tail of steps past the requested time lets the last reliable payloads land.
+        // Each clock moves before its graph steps. The host stamps an event at its frame's end, and
+        // the guest reads its clock at its frame's start. A tail lets the last payloads land.
         public void Run(float seconds)
         {
             for (float t = 0f; t < seconds; t += Step)
             {
                 _hostNet.Step(Step);
+                _hostNow += Step;
                 Host.Step(Step);
                 _guestNet.Step(Step);
+                _guestNow += Step;
                 Guest.Step(Step);
             }
 

@@ -1047,13 +1047,43 @@ and `MissionEnded` and broadcasts each on `NetChannels.Events`; `Follow(net, gra
 graph and registers the one handler that replays arrivals.
 `CSVM/src/Session/CampaignDirector.cs`: a replicated graph's end builds the `Result` and the
 leaving hold but writes no profile, persist log, photograph or award.
-`CSVM/src/Session/GameSession.cs`: `WireNetDirector` runs after the callback host is bound and,
+`CSVM/src/Session/GameSession.cs`: `WireNetDirector` stamps the host's events with its session
+clock and hands a guest's arrivals to a `NetDirectorCatchUp` over the world runtime and the shared
+clock (`NetClockSlew.HostTime`). It runs after the callback host is bound and,
 only when a net session, net seats and a campaign graph all exist, publishes on the host and
 follows on a guest. It sends nothing at join, so a `--vs` guest still leaves `0x42` unclaimed.
 Tests: `CSVM.Tests/NetDirectorLinkTests.cs` (5 cases, Quick) and the engine suite
 `net-director-follow` in `CSVM/src/Testing/NetDirectorSuites.cs` (weight 12.0).
 Docs: `docs/org/multiplayer-messages.md` "The mission director" holds the code and id table and
 the replay and derive mapping; the Session and Net architecture entries and one index bullet.
+
+**Landed (the shared-clock catch-up).** Every director event carries the host's clock, and a
+guest that learns of one late starts what it started as far along as the host's copy is.
+`DirectorTransitionMessage` grows a `float HostClock` after the id and is 16 bytes (a 12-byte
+payload is refused). `NetDirectorLink.Publish(net, graph, hostClock)` stamps every event it sends;
+`Follow(net, graph, catchUp)` hands arrivals to the new `CSVM/src/Session/NetDirectorCatchUp.cs`,
+which reads the lateness as the guest's shared clock minus the stamp (never negative), applies the
+event with it, and advances what it started:
+- `ObjectiveGraph.ApplyTransition(..., late)`: a replayed wake starts the private timer at the
+  lateness and a `RESET_TIMER` or `ADJUST_TIMER SET` countdown that far down; a replayed nap starts
+  that far into its length. A replicated `Step` now also runs the private timers and naps (each
+  pinned at zero), and `TimerOf`/`NapRemainingOf` read them.
+- `AnimRuntime.CollectLateStarts`/`CatchUp(seconds)`: the instances the event started, and their
+  motions, are stepped on their own at the authored frame, so their timed events and callback codes
+  fire in order; `ClockOf(name)` reads a playback position.
+- `WorldSounds.LateBy`: a one-shot fired during the catch-up starts that far into its clip, and one
+  already over is skipped (`SkippedLate`). `MissionRadio.LateBy`: a late call's start delay is
+  shortened by the lateness, and past it the call joins at the line and offset the host is at
+  (`CSVM/src/Mech3/LateStart.cs`, engine-free), skipping lines already said.
+Not advanced, and no fixed lead for them: particle emitters and light animations started by a
+late cutscene begin at their own start (they have no position to seek, and a lead would delay the
+host's own playback for every event), and a music cue starts on arrival (the stream is chosen,
+not timed, and a 100 ms late start of a looping bed is not audible as desync). So no TUNE lead
+constant and no backlog entry.
+Tests: `NetMessagesTests` (the 16-byte round trip and the old width refused) and
+`NetDirectorLinkTests` (lateness arithmetic, `LateStart.Into`, and a late wake with its control).
+`net-director-follow` now runs three built worlds over a 100 ms link: the host, a guest with the
+catch-up, and a control guest with it off (weight 16.0).
 
 **The mapping.** Replayed by the guest, presentation: `WAKE_ANIM`/`SLEEP_ANIM`, every sound group
 (wake, completed, class complete, objectives and mission won or lost), `STOP_QUEUED_SOUNDS`, target
@@ -1073,22 +1103,32 @@ belong to the episode's owner, and definitions started by a player's position (l
 rows, `PlayerRange` conditions, the ladder switch) are not graph events. **C24 marker**: the
 guest's own profile record, and a late joiner, who has missed every earlier event.
 
-**Verified.** The complete battery on the merged tree (C21 and D31 over Wave B): build clean, 4903
-units passed with 2 skipped, 388 of 388 engine suites passed with engine errors clean in all six
-shards, 19 of 19 golden shots hash-identical. `net-director-follow` drives a host and a guest
-director over two built C5/M02 worlds on a lossy loopback: the guest decides nothing alone, refuses
-the docking code, replays the host's transitions in order, derives the ending cutscene's codes from
-its own playback, ends Won with the host and records no attempt on its own profile. The limit: both
-directors are driven by the suite, since no launch path runs a campaign with a net seat until C24,
-and the guest applies each event one link latency after the host.
+**Verified.** The complete battery on the merged tree (the catch-up and its session hook over C22,
+C21, D31 and Wave B): build clean, 4910 units passed with 2 skipped, 389 of 389 engine suites
+passed with engine errors clean in all six shards, 19 of 19 golden shots hash-identical, so the
+catch-up's `AnimRuntime`, `MotionSet`, `WorldSounds` and `MissionRadio` changes moved no pinned
+picture. `net-director-follow` runs three built C5/M02 worlds over a 100 ms lossy loopback: the
+guest decides nothing alone, refuses the docking code, replays the host's transitions in order,
+derives the ending cutscene's codes from its own playback, ends Won with the host and records no
+attempt on its own profile. At the end of the frame the late ending wake arrived in, its cutscene
+and timer stand 0 ms from the host's, and the control guest with the catch-up off trails by 83.3 ms
+on both. The limit: the suite supplies an exact shared clock; a live link's clock reads only the
+excess over average latency until the round-trip term under **Owed.** lands.
 
 **Owed.**
-- The goal's "at the same moment on the shared clock" is not what landed: a guest applies each
-  event on arrival, one link latency after the host, and its cutscenes start that much later. A
-  stamped, clock-scheduled apply is possible on top of this and is the user's call.
+- The shared clock under it cannot yet read one link latency. `NetClockSlew` takes one-way
+  readings (host clock at send against guest clock at arrival), so its offset absorbs the latency
+  and a lateness measured against it reads only the excess over the average. A round-trip term
+  (half the RTT, from the transport's peer statistic or the original's `0x23` ping, which the
+  remake never took) would close it. A campaign session also feeds the slew no periodic reading,
+  since only a match's `0x17` carries a host clock, so its offset stays the handshake's.
+- A late joiner (C24) would read every missed event as seconds or minutes late; the catch-up is
+  not capped for that case.
 - No launch path yet runs a campaign mission with a net seat, so `WireNetDirector` is exercised
-  only by the suites, which drive two directors directly. The co-op campaign flow is C24's.
-- Whether the interim local replay of the world directives (above) is acceptable until C22 lands.
+  only by the suites, which drive two directors directly. The co-op campaign flow is C24's, and
+  the door into it C25's.
+- The world directives above still replay locally on a guest where C22 left markers; those are
+  Wave E.
 
 **Model recommendation.** Opus. The work is the graph's bookkeeping order (a completion's chain,
 nap lengths from a source, the silent `HIDE_OBJ`, where the ending sounds play), where a missed

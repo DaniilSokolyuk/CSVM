@@ -4247,11 +4247,12 @@ public partial class GameSession : Node3D
 
         if (net.IsHost)
         {
-            NetDirectorLink.Publish(net, graph);
+            NetDirectorLink.Publish(net, graph, () => _clock?.Time ?? 0.0);
         }
         else
         {
-            NetDirectorLink.Follow(net, graph);
+            NetDirectorLink.Follow(net, graph, new NetDirectorCatchUp(
+                () => _netClock?.HostTime(_clock?.Time ?? 0.0) ?? 0.0, _diagRuntime, _diagRuntime?.Sounds));
         }
 
         Log.Info("core", $"net director: {(net.IsHost ? $"host (every transition of {graph.Count} objective(s), and the ending, as they happen)" : $"guest (replaying the host's transitions over {graph.Count} objective(s), evaluating none of its own)")}");

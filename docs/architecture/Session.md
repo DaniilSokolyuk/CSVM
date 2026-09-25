@@ -189,7 +189,7 @@ Implemented as decoded, shipped quirks included: the four states per objective, 
 completion per tick from a rotating scan, dependency gating on an AWAKE target, the wake
 executor's truncating early return, the nap that clears a completed flag, and the condition
 families' OR, whose `DEDG` arm also widens the watched group's engagement volume on every tick it is tested. Four endings reach it, three from the script and `NotifyDockingComplete` from the
-animation. `Replicate` hands the graph to another machine's: it then evaluates no condition and lets no timer expire, and changes only through the `Apply*` calls that replay the host's events, each running the same bookkeeping the host's own transition ran. World seam: `IObjectiveWorld`. Decode: [../formats/objectives.md](../formats/objectives.md).
+animation. `Replicate` hands the graph to another machine's: it then evaluates no condition and lets no timer expire, and changes only through the `Apply*` calls that replay the host's events, each running the same bookkeeping the host's own transition ran; a transition replayed late starts its private timer, nap and countdown that far along, and the replicated step runs those clocks pinned at zero. World seam: `IObjectiveWorld`. Decode: [../formats/objectives.md](../formats/objectives.md).
 
 ## src/Session/CampaignDirector.cs
 The engine side of one campaign mission and the sibling of `InstantActionDirector`: a plain sealed
@@ -205,10 +205,19 @@ nested `World` is the `IObjectiveWorld`, a directive with no seam here a named n
 The objectives graph over the wire, a static pair of calls with no state of its own. `Publish`
 subscribes to the host's graph and sends every event it raises (a transition, a settled completion,
 the countdown's expiry, the decided ending and the mission's end) as one reliable
-`DirectorTransitionMessage`, in the order it was raised; `Follow` replicates a guest's graph and
-replays each arrival through the graph's `Apply*` calls. Cutscene codes are never sent: a guest's
-own animation runtime raises them from the definitions its replayed `WAKE_ANIM` starts. The replay
-and derive mapping, and the code and id layout: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
+`DirectorTransitionMessage` stamped with the host's clock, in the order it was raised; `Follow`
+replicates a guest's graph and replays each arrival through the graph's `Apply*` calls, through
+`NetDirectorCatchUp` when one is given. Cutscene codes are never sent: a guest's own animation
+runtime raises them from the definitions its replayed `WAKE_ANIM` starts. The replay and derive
+mapping, and the code and id layout: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
+
+## src/Session/NetDirectorCatchUp.cs
+A guest's catch-up on a director event that arrived late. The lateness is the guest's shared clock
+minus the event's host stamp, never negative. It applies the event with that lateness, so the
+graph's timers start as far along as the host's, and sets it on `WorldSounds` and `MissionRadio`
+for the event's sounds. It then has `AnimRuntime.CatchUp` step the instances the event started.
+`Enabled` off is the suite's control. What is advanced and what is not:
+[../org/multiplayer-messages.md](../org/multiplayer-messages.md).
 
 ## src/Session/NetWorldLink.cs
 The host-owned world over the wire, one per network session. `Admit` names each AI by its ordinal

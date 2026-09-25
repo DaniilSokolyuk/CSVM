@@ -182,9 +182,11 @@ and motion dwords are not taken either; the remake spends 8 bytes on a quantised
 
 ## The mission director
 
-`0x42` carries one event of the host's objectives graph as a code and an id, reliable, in the
-order the graph raised it. The host is the only sender; a guest's graph is replicated and changes
-only by replaying these (`Session/NetDirectorLink.cs`). The codes are `NetDirectorEvent`:
+`0x42` carries one event of the host's objectives graph as a code, an id and the host's clock,
+reliable, in the order the graph raised it. The host is the only sender; a guest's graph is
+replicated and changes only by replaying these (`Session/NetDirectorLink.cs`). The message is 16
+bytes: the header, a `u16` code, two bytes of padding, an `i32` id, and an `f32` `HostClock`, the
+host's session time when its graph raised the event. The codes are `NetDirectorEvent`:
 
 | Code | Event | Id |
 |---|---|---|
@@ -226,9 +228,23 @@ What a guest replays, and what it derives from what it replayed:
   landing approach rows, the `PlayerRange` conditions, the ladder switch) are not graph events.
   The escorting wingman is a roster block spawned at build, not a director event.
 
-A guest applies each event on arrival, one link latency after the host, and its mission end holds
-the world and builds the result without writing a profile, a photograph or an award. A guest that
-joins late has missed every earlier event.
+A guest applies each event on arrival and then catches up on it (`Session/NetDirectorCatchUp.cs`).
+The lateness is the guest's shared clock minus the stamp, never negative. What the event started
+is advanced by that much:
+- the objective's private timer, its nap and a countdown it set;
+- the cutscene instances it started and their motions, stepped at the authored frame so their
+  timed events and codes fire in order (a code the host raised during that time is raised on
+  arrival);
+- a one-shot, started that far into its clip, or skipped when the clip is already over;
+- a radio call, whose start delay is shortened by the lateness and which, past it, joins at the
+  line and offset the host's is at.
+Particle emitters, light animations and a music cue start at their own beginning on arrival. None
+of them has a position to seek, and none is timed against the rest.
+The shared clock is `Net/NetClockSlew.cs`'s, whose readings are one-way. Its offset absorbs the
+link's latency, so a lateness read against it is only the excess over the average until a
+round-trip term lands. The original's `0x23` ping carries what that term would need.
+A guest's mission end holds the world and builds the result without writing a profile, a
+photograph or an award. A guest that joins late has missed every earlier event.
 
 ## The host-owned world
 

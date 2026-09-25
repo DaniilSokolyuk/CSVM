@@ -207,16 +207,26 @@ public class NetMessagesTests
     }
 
     [Fact]
-    public void DirectorTransitionRoundTripsItsCodeAndId()
+    public void DirectorTransitionRoundTripsItsCodeIdAndStamp()
     {
-        var sent = new DirectorTransitionMessage(Code: 2, Id: -1);
+        var sent = new DirectorTransitionMessage(Code: 2, Id: -1, HostClock: 412.25f);
 
         Span<byte> buffer = stackalloc byte[DirectorTransitionMessage.Size];
         int written = sent.Write(buffer);
 
-        Assert.Equal(DirectorTransitionMessage.Size, written);
+        Assert.Equal(16, written);
         Assert.True(DirectorTransitionMessage.TryRead(buffer, out var got));
         Assert.Equal(sent, got);
+        Assert.Equal(412.25f, got.HostClock);
+    }
+
+    [Fact]
+    public void DirectorTransitionOfTheOldWidthIsRejected()
+    {
+        Span<byte> buffer = stackalloc byte[DirectorTransitionMessage.Size];
+        new DirectorTransitionMessage(Code: 2, Id: 7, HostClock: 1f).Write(buffer);
+
+        Assert.False(DirectorTransitionMessage.TryRead(buffer[..12], out _));
     }
 
     [Fact]

@@ -424,7 +424,7 @@ unchanged. Two entries exist install-wide (`fire1.flt` 12@10, `fire2.flt` 6@5).
 following its host's pose each frame. `PlayOneShot(name, worldPos, rng)` is the one-shot
 `SOUND` half, fire-and-forget destruction and impact audio on Effects, resolving a `SOUND_GROUPS`
 name to a member first. Radio lines, combat voice included, never come here: they are flat and
-belong to `MissionRadio.cs`. `HasStream` answers availability after the prewarm, `OneShotsStarted` that a cue fired. Who hears
+belong to `MissionRadio.cs`. `HasStream` answers availability after the prewarm, `OneShotsStarted` that a cue fired. `LateBy`, set only during a guest's catch-up, starts a one-shot that far in and skips one already over. Who hears
 an emitter is `UI/SplitScreen.cs`'s per-pane model, fed by `SetListeners`: `Tick` measures to the
 nearest and levels every player from `SoundFalloff.cs`, never Godot's. Next: `SoundFalloff.cs`.
 
@@ -479,7 +479,7 @@ with a frame budget, which never splits one def), the range-deferred start sweep
 and the vehicle/library-root index, and hands every construction site a sealed `TemplateStage`. Its
 range gates read the players through `RangePositions`: the last pose they flew, while
 `PlayerRangeHeld` says a cutscene is posing their aeroplanes. `FastForward` is the per-definition
-rate a held key raises a cutscene to (`Anim/CutsceneFastForward.cs`), which `Advance` spends as repeated passes of the instance walk. `SuppressedMotionAnims` names the definitions whose `OBJECT_MOTION` events this runtime drops, for a pose another writer owns, which also ends a definition that motion was sustaining (docs/verification.md, INSTR-74). What binds a member is on that member:
+rate a held key raises a cutscene to (`Anim/CutsceneFastForward.cs`), which `Advance` spends as repeated passes of the instance walk. `CollectLateStarts` and `CatchUp` step only the instances started in between, with their motions, for a guest's late director event. `SuppressedMotionAnims` names the definitions whose `OBJECT_MOTION` events this runtime drops, for a pose another writer owns, which also ends a definition that motion was sustaining (docs/verification.md, INSTR-74). What binds a member is on that member:
 the pool-slot checkout reset, the prewarm's scope, the mission-trigger closure, the undercover
 probe's decode, the death call's site follow. Each dispatch axis is a sibling module; the router keeps the case labels and the public fields callers configure: `SequenceRunner.cs`, `Anim/MotionSet.cs`, `Anim/NameResolver.cs`, `Anim/EmitterDirector.cs`, `Anim/SoundChannel.cs`, `Anim/LightChannel.cs`, `Anim/PoseChannel.cs`, `Anim/TemplateStage.cs`. Decode: docs/org/sequences.md.
 
@@ -632,8 +632,13 @@ line count, 0 for a name this channel does not own. `Speak(name, rng, speakerId)
 voice line on the same queue without the cue delay; `IsSpeaking(speakerId)` answers the voice gate
 whether that pilot's own line still holds the channel. One call speaks at a time: a chain runs back
 to back, a later call queues behind rather than cutting in, `Cancel` is `STOP_QUEUED_SOUNDS`, and a
-call waiting past its `QUEUE` tolerance is dropped. Streams come from `WorldSounds.StreamFor`. Cue
+call waiting past its `QUEUE` tolerance is dropped. `LateBy` (a guest's catch-up) joins a call where the host's is, through `LateStart.cs`. Streams come from `WorldSounds.StreamFor`. Cue
 delay: docs/formats/objectives.md; the queue, classes and tolerance: docs/formats/sounds.md.
+
+## src/Mech3/LateStart.cs
+Engine-free: where a run of back-to-back clips stands once started a given time late, as the clip
+index and the offset into it, or past the end. `MissionRadio` joins a late radio call there, and
+`CSVM.Tests/NetDirectorLinkTests.cs` pins it.
 
 ## src/Mech3/SoundDefs.cs
 sounds.json SETS parser: `snd_*` name to `SoundDef` (wav name, flags, range, volume); the entry
