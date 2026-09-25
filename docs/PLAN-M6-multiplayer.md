@@ -191,6 +191,13 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 31. ☑ Latency and loss soaks, desync instruments and a `--debug-net` readout
 32. ☑ The Steam transport flag: a build-time gate with a stub, so the seam is proven before any SDK arrives
 
+### Wave E, the rest of the host-owned world
+
+41. ☐ Host-owned AI spawns: generator launches, Black Hat launches and `WAKEUP_*` as spawn events carrying the host's admission ordinal
+42. ☐ Zeppelin paths from the host: the path position as a periodic state message, in the original's `0x1e` shape
+43. ☐ Surface vehicles from the host: patrols and `WARP_VEHICLE` placed by the host, not replayed from a diverging draw
+44. ☐ Destructible chip damage: a pool's health between stages mirrored on every guest
+
 ## Dependency and parallelism notes
 
 A1 and A2 block everything else and can run in parallel with each other; A3, A4 and A5 need both
@@ -201,6 +208,10 @@ beside B11 to B14 as long as it stays out of `GameSession.cs`. Wave C needs B12 
 chain, C21 → C22 → C23 → C24. D31 needs Wave B; D32 needs only A1. File contention: B11, B12, B14,
 C21 and C22 all edit `GameSession.cs` and `SessionSimulation.cs`, never run two of them in parallel
 worktrees; give each concurrent agent one namespace and name the files it may not touch.
+Wave E needs C22 and extends its `NetWorldLink`; E41 edits `GameSession.cs`'s AI capture phase and
+runs alone against C23, C24 and any other `GameSession.cs` item. E42 and E43 own their own world
+runtimes and can run beside each other; E44 owns `AnimRuntime`'s spend and the `0x48` world event.
+AI voice on a guest is not a plan item; it is GitHub issue #22.
 
 ---
 
@@ -1171,8 +1182,7 @@ phases left as markers, AI voice silent on a guest, and `AiState` bandwidth unme
 
 **Owed.**
 - Whether a silent AI voice on a guest is acceptable until the voice is sent or derived from state.
-- The markers above, each a follow-up item if the user wants the whole world host-owned before co-op
-  ships.
+- The markers above are Wave E (E41 to E44); the AI voice marker is GitHub issue #22.
 - A late joiner has missed every earlier world event (C24's).
 - AI state costs 48 bytes at 20 Hz per AI; a busy campaign mission may want a lower rate for distant
   AI, which D31's soaks can measure.
@@ -1418,3 +1428,90 @@ carries the other arm. The three network suites (`enet-transport`, `net-enet-joi
 your own copy" model OpenTTD uses, Valve's review) and is not this plan's to take. `SteamBuild` is
 a `const`, so a consumer inlines it: a stale `CSVM.Tests` build against a freshly reflavoured
 `CSVM.dll` would report the old flavour, which is why the flavoured unit run rebuilds both.
+
+# Wave E, the rest of the host-owned world
+
+C22 made AI aircraft and destructible stages host-owned and left four world phases replayed locally
+on a guest. Each item below takes one of them to the host. The phase table is in
+`docs/org/multiplayer-messages.md`, "The host-owned world"; C22's **Markers** list states each gap.
+
+## E41 ☐ Host-owned AI spawns: generator launches, Black Hat launches and `WAKEUP_*` as spawn events carrying the host's admission ordinal
+
+**Goal.** Every AI a generator launches, a Black Hat launch spawns (callback codes 801 to 803) or a
+`WAKEUP_*` directive wakes exists on every guest under the same admission ordinal as on the host.
+
+**Evidence (confidence: traced).** `NetWorldLink` names an AI by its admission ordinal in the
+roster's append-only list, and both ends must grow that list in the same order. A guest's generator
+and Black Hat launches and its `WAKEUP_*` directives run on its own timers (C21 replays the
+directives locally as an interim), so the ordinals can shift against the host's; an AI with no host
+counterpart then holds at its spawn, and a shifted one tracks the wrong host AI.
+
+**Approach.** The host sends a reliable spawn event carrying the ordinal, the roster block and the
+spawn pose; a guest's own launch and wake paths are refused while replicated, and it admits AI only
+from the event, in the shape of B13's `GrantSpawn`.
+
+**Model recommendation.** Opus. The ordinal contract is shared by every world message, and a wrong
+order shows only as an AI tracking another's path.
+
+**Verify.** <TODO: a harness run of a mission with a generator or a Black Hat launch, asserting the
+guest's AI set and ordinals equal the host's after the launch>
+
+**⚠ Traps.** The spawn event must arrive before the first `0x45` sample for that ordinal; a sample
+for an unknown ordinal is held or dropped, never admitted.
+
+## E42 ☐ Zeppelin paths from the host: the path position as a periodic state message, in the original's `0x1e` shape
+
+**Goal.** A zeppelin is where the host has it on every guest, whatever the guest's frame rate or
+join time.
+
+**Evidence (confidence: decoded for the original, traced for the remake).** The original sends a
+zeppelin's path position as `0x1e` every 0.5 s (`docs/org/multiplayer-messages.md`). The remake
+replays the path locally from the shared seed and clock.
+
+**Approach.** The host sends each zeppelin's path parameter at the decoded period; a guest steers its
+path runtime to it instead of advancing it alone.
+
+**Model recommendation.** <TODO>
+
+**Verify.** <TODO: a harness run with a zeppelin mission, the guest's zeppelin position against the
+host's over a scripted segment under D31's latency cells>
+
+**⚠ Traps.** Zeppelin parts and cannons are already destructible pools under C22; a path message must
+not re-spawn or re-arm them.
+
+## E43 ☐ Surface vehicles from the host: patrols and `WARP_VEHICLE` placed by the host, not replayed from a diverging draw
+
+**Goal.** Every surface vehicle patrols and warps where the host's does.
+
+**Evidence (confidence: traced).** Surface-vehicle patrols are replayed locally on a guest, and
+`WARP_VEHICLE` takes a random draw that diverges between machines (C22's markers).
+
+**Approach.** <TODO: map whether a patrol is deterministic from the seed and clock once `WARP_VEHICLE`
+is taken from the host, or needs state samples like an AI aircraft>
+
+**Model recommendation.** <TODO>
+
+**Verify.** <TODO: a harness run of a mission with a patrol and a `WARP_VEHICLE`, the guest's vehicle
+set and positions against the host's>
+
+**⚠ Traps.** "Same seed" is not "same world" once any draw depends on world state; decide per vehicle
+path, as C22 did per phase.
+
+## E44 ☐ Destructible chip damage: a pool's health between stages mirrored on every guest
+
+**Goal.** A destructible's health between its damage stages is the same on every peer, so a guest's
+targeting and hit feedback read the host's value.
+
+**Evidence (confidence: traced).** C22 sends only stage changes and deaths (`0x48` world event,
+`NetWorldEvent` 3), so a pool's health between stages is not mirrored.
+
+**Approach.** <TODO: a health sample per damaged pool, coalesced per tick, against the bandwidth D31
+measures; or proof that no guest-visible rule reads chip health, which closes the item>
+
+**Model recommendation.** <TODO>
+
+**Verify.** <TODO: a harness assertion that a pool's health on the guest equals the host's after a
+burst that does not cross a stage>
+
+**⚠ Traps.** `ApplyReplicatedHealth` is a guest's only spend; a chip sample must not go through
+`DamageAt`, or a guest spends twice.
