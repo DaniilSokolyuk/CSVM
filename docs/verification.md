@@ -354,6 +354,22 @@ member, and it does not go here.
   measurement also inflates the instrument reading it: with `hitchMonitor.floorMs` low enough to
   trip most frames, every `[perf] hitch` line is itself a console write on the frame that follows.
   PERF-23 is the per-frame form of this.
+- **PERF-36**, **An in-engine suite that bars a per-frame cost reads it on the stepping thread's own
+  CPU time (`QueryThreadCycleTime`), never on the wall clock: in the sharded engine stage the wall
+  clock measures the neighbouring shards, and even alone half of a launch frame's wall time is a
+  wait.** On the wall clock, `ai-wave-launch-hitch` placed beside heavy suites by the shard
+  partition reads median launch frames up to 108.5 ms, a warm worst of 187.9 ms and worst idle
+  frames of 122.6 and 146 ms, against about 20, 20 and 41 ms alone. Alone, a warm C4/M03 launch frame reads
+  about 20 ms wall against 9 to 11 ms on-thread, and its `SpawnAi` reads 11 ms wall against 4 ms
+  on-thread while the whole process's cycles over the same call read the same 4 ms, so the gap is
+  no other thread's work. It matches the call's four `[flight]`/`[sound]`/`[weapons]` console
+  lines at PERF-35's 1.9 ms each, and a console write blocks until its reader drains the pipe at
+  whatever pace the machine's load allows. On the thread clock the worst readings are 13.8 ms
+  median, 14.1 ms warm worst and 44.6 ms worst idle frame, alone, in the six-shard stage and beside
+  sixteen CPU-burning processes, which the suite's 25/60/80 ms bars clear by about 1.8x. A 20 ms
+  busy-wait injected into each launch reads a 30 ms median and fails. The cost of the choice: a
+  regression that blocks instead of computing reads as nothing, so the window's wall worst stays in
+  the report.
 
 ## LOG, logs, error censuses, and exit codes
 
