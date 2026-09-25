@@ -1003,6 +1003,12 @@ way pads do.
   `StickProfileSet.MergeIfChanged(map, InputContext.Menu, ref revision)` (new, the one-context
   form of C7's follow) and re-applies the rebinds when it merged, so a stick plugged or settling
   while a menu is open is picked up.
+- **Pause menus.** A flight's board readers (pause sheet, Preferences leaf, wrap-up, stunt boards)
+  come from `MenuInput.ForSessionSeat(playerIndex, pads)`, which loads that player's saved menu
+  keymap and so seats the reader. Player 1's pause menus therefore read the sticks and follow the
+  profiles like the main menu. An unseated reader (`new MenuInput { ... }`) reads no stick, and the
+  pause Controls page registering its menu map would save those empty rows over the profile's
+  menu context.
 - **Join flow.** The join board and player setup scan Godot's pad roster only, so a stick can never
   join a splitscreen seat; no change was needed.
 - **Screens.** Capturing stick rows into the menu context and showing them is D10/D11's.
@@ -1011,8 +1017,10 @@ way pads do.
 down on hat Down, left on hat Left, accepts on button 0 and backs out on button 1 (`Back` and
 `PadBack`); players 0 and 2 read nothing; a menu seat picks up the default after a late settle. The
 engine suites listed under C8 and the full `RunTests.ps1` on the merged branch pass. At the
-controls the main and campaign menus navigate by stick; the pause menus do not, which the pause
-menu fix covers.
+controls the main and campaign menus navigate by stick. The pause menus read no stick until
+`MenuInput.ForSessionSeat` loaded seat 1's keymap for every in-session board; `StickMenuSeatTests`
+pins the pause seat, and the full `RunTests.ps1` passes with it (5061 units, 382 engine suites,
+19 goldens identical). Pause-menu navigation by stick is owed at the controls again.
 
 **Left open.** None beyond D10/D11's screen work.
 
@@ -1190,6 +1198,19 @@ captures, shows, clears and saves stick bindings. No edit to `OriginalOptionsScr
   `StickProfiles.Live`. The live profile `Accept` fills keeps its stick rows, so the `Accepted`
   route to seats already flying carries them (the trap below), and `SaveFrom`'s re-select bumps
   `Revision`, which those seats re-merge idempotently.
+- **What `SaveFrom` relies on.** `CopyRows` clears every context of a profile and refills it from
+  the keymap, so the keymap must hold all of that stick's rows, the menu and camera contexts
+  included. Three rules keep it so. `SaveFrom` decides each model's profile from the choice the
+  keymap was staged against, not the live one, because each `Save` re-selects and can hand the
+  generic default to a later model whose rows the keymap never held. `MenuControlsSeats.Sync`
+  follows the profile set's `Revision` and calls `ControlsFeature.Follow(1, set.MergeInto)`, which
+  merges the new stick rows into seat 1's registered maps and restages the working copy when
+  nothing is staged; a registration outlives one Accept, and a stale working copy would put the old
+  rows back on the next one. Both presentations call `MenuControlsSeats.Forget()` first thing on
+  activation, since the pause leaf registers the same player numbers over the flight's readers.
+- **Clearing.** The clear is `MenuInput.Unbind`: Delete or Backspace, or `MenuLoadout` from a pad or
+  a stick (pad Y). The keyboard's L, `MenuLoadout`'s key, does not clear; it keeps its loadout uses
+  elsewhere. The action-row footer reads "Del / Backspace / Y  Unbind".
 - **Folder entry (the TODO, answered).** A fourth row below the action list, first of the footer
   rows so Accept stays the last row: "Open profiles folder", valued `user://stick_profiles`.
   `ControlsFeature.OpenProfilesFolder()` calls an opener injected as the constructor's second
@@ -1268,6 +1289,16 @@ calls the additive `ControlsFeature.BeginStickCapture` (a `ControlCapture` with
 when that model holds none, then runs the ordinary `Offer` steal rule. The Throttle tab gains the
 Throttle (lever) row after the original's eleven, so the tab now scrolls. Saving is unchanged
 (`ControlsFeature.Accept`). The column always shows, empty when no stick is bound.
+
+**Clearing a cell.** `MenuCommands.Unbind` (D11's `MenuInput.Unbind`: Delete, Backspace, or
+`MenuLoadout` from a pad or stick, never the L key) on a highlighted Control A, Stick or Control B
+cell calls `OriginalOptionsScreen.ClearCell`. Control A and B drop the binding they print. The
+Stick cell drops its first stick binding, the one its caption names, so a cell reading "R Button 6
++1" steps down to the other stick's binding on the next press. A full axis clears both rows of
+its pair (`ControlsFeature.UnbindSlot`). Nothing clears off a cell, while a capture is armed or
+while a steal awaits its answer. The page's description line ends with
+`OriginalOptionsScreen.KeysClearHint`, "Delete or Backspace clears the highlighted control.", while
+no status line replaces it.
 
 **Verified.** `CSVM.Tests/OriginalKeysStickColumnTests.cs` drives a whole `OriginalShell` over a
 fake L and R: the Stick cell ignores a held key and pad button then binds an R button; an R capture

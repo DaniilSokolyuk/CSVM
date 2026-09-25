@@ -86,7 +86,14 @@ public sealed class StickProfileStore
             w.WriteStartObject();
             w.WriteNumber("version", Version);
             w.WriteString("model", profile.Model.ToString());
-            w.WriteString("name", profile.Name);
+
+            // A profile with no name, such as a saved generic default, leaves the key out. An empty
+            // string would read as a name.
+            if (profile.Name.Length > 0)
+            {
+                w.WriteString("name", profile.Name);
+            }
+
             w.WriteStartArray("companions");
             foreach (var companion in profile.Companions)
             {

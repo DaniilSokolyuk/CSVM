@@ -1307,14 +1307,14 @@ and `ScanJoins` are Built-in's join gesture, Start on an unclaimed pad while a s
 hand the feature's `Choices`. Read `src/UI/Menu/PlayerSetupFeature.cs` for the seats themselves.
 
 ## src/UI/Screens/MenuControlsSeats.cs
-The rebinding screen's seat bookkeeping, for any presentation. `Sync` takes this frame's pollers,
-one per joined seat in player order, and puts the shared `ControlsFeature`'s player rows in step
-with them: a registration is kept while the seat behind its number is the same poller, a number
-that changed hands is registered again, and a seat with nothing to press gets no row. `PadOf` is
-the identity a context's rows sit on, the one function the capture reader and the captured control
-both take, so neither can name a pad the other does not. The profile a seat is staged from is the
-menu poller's own live map plus the saved flight and camera maps, mouse scheme and sensitivity, so
-an accepted rebind is felt at once. Read `src/UI/Menu/ControlsFeature.cs` for the editing itself.
+The rebinding screen's seat bookkeeping, for any presentation. `Sync` keeps the shared
+`ControlsFeature`'s player rows in step with this frame's pollers: a registration stays while the
+same poller holds its number, and a seat with nothing to press gets no row. It also follows the
+stick profile set into seat 1's registration (`ControlsFeature.Follow`). `Forget` drops every row
+on a presentation's activation, since the pause leaf registers the same numbers. `PadOf` is the
+identity a context's rows sit on, for the capture reader and the captured control alike. A seat is
+staged from the menu poller's live map plus the saved flight and camera maps. Read
+`src/UI/Menu/ControlsFeature.cs` for the editing itself.
 
 ## src/UI/Menu/InstantActionFeature.cs
 Instant Action as a shared `IMenuFeature`, owned by the host's feature set and configured by both

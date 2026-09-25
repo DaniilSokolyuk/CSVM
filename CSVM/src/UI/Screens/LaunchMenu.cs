@@ -649,6 +649,9 @@ public sealed partial class LaunchMenu : CanvasLayer
     /// <see cref="OpenHangarAid"/> and the campaign's by <see cref="OpenCampaignAid"/>.</summary>
     public void ShowMenu(string startScreen = "")
     {
+        // The pause leaf may have registered these player numbers during a flight. First, since the
+        // Controls aid below registers the seats again.
+        _controlsSeats?.Forget();
         _screen = startScreen switch
         {
             "chapter" or "dogfight" => Screen.Chapter,
@@ -1168,6 +1171,7 @@ public sealed partial class LaunchMenu : CanvasLayer
         p1.Back = frame.Back;
         p1.Loadout = frame.Loadout;
         p1.Presets = frame.Contents;
+        p1.Unbind = frame.Unbind;
         _slots[0].Frame = frame;
     }
 
@@ -2753,11 +2757,12 @@ public sealed partial class LaunchMenu : CanvasLayer
     }
 
     // The two gestures with no row of their own: unbind the highlighted control, and put this
-    // seat's whole context back to the shipped keymap.
+    // seat's whole context back to the shipped keymap. The unbind is MenuInput.Unbind, which the
+    // loadout's L key does not reach.
     private bool HandleControlsShortcuts(MenuInput p1)
     {
         bool dirty = false;
-        if (p1.Loadout && IsControlsActionRow(_controlsIndex))
+        if (p1.Unbind && IsControlsActionRow(_controlsIndex))
         {
             _controls.UnbindSlot();
             dirty = true;
@@ -2979,7 +2984,7 @@ public sealed partial class LaunchMenu : CanvasLayer
         if (!IsControlsActionRow(_controlsIndex))
             return "↑↓  Choose       ←→  Change       Enter / A  Do it       Esc / B  Back without saving";
         return "↑↓  Choose       ←→  Which control       Enter / A  Rebind"
-            + "       L / Y  Unbind       P / X  Defaults       Esc / B  Back without saving";
+            + "       Del / Backspace / Y  Unbind       P / X  Defaults       Esc / B  Back without saving";
     }
 
     // A three-way stepper with wrap, Normal / Hard / Hardest in the campaign selector's order.

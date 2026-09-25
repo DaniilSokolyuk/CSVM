@@ -50,6 +50,21 @@ internal static class KeysStickColumn
         return bindings.Count;
     }
 
+    /// <summary>The slot of the first stick binding, the one the Stick cell names, or the count when
+    /// the row holds none.</summary>
+    public static int SlotOfStick(IReadOnlyList<Binding> bindings)
+    {
+        for (int i = 0; i < bindings.Count; i++)
+        {
+            if (IsStick(bindings[i]))
+            {
+                return i;
+            }
+        }
+
+        return bindings.Count;
+    }
+
     /// <summary>The Stick cell's text: the first stick binding's caption and, when more sticks hold
     /// the row, how many more. The column is half a panel wide, so a second caption would not fit,
     /// and an unnamed stick prints its control alone (<see cref="StickLabels.Column(Binding)"/>).

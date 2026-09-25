@@ -353,7 +353,8 @@ stick binding the keymap carries. There are two folders. The shipped profiles ar
 - `companions` lists the other models that must all be connected for the file to apply. The
   model itself is dropped from the list and duplicates collapse. One malformed entry refuses the
   whole file: reading it as fewer companions would make the file active on the wrong hardware.
-- `name` is the short label screens print ("R", "L"); empty when absent. An unnamed stick prints
+- `name` is the short label screens print ("R", "L"); empty when absent, and left out of a saved
+  file when empty (a saved generic default has none). An unnamed stick prints
   as `Stick 231D/0200` on the remake Controls screen and in status lines, so two unnamed sticks
   read apart, and as its control alone in the KEYS AND BUTTONS page's narrow Stick column.
 - `ignore: true` makes the model yield no bindings while the file is active, for a device that
@@ -389,7 +390,9 @@ reads the new rows when it re-reads its keymap. Two identical units of one model
 share one file. A companion that Godot reads as a pad is not in the stick roster and does not count
 as connected.
 
-**File names.** A name carries no meaning on read, only in the last tie-break. A save of a user
+**File names.** A name carries no meaning on read, only in the last tie-break. A copy made beside a
+user file (Explorer's `231D-0200 - Kopie.json`) ties with it and sorts first, so it becomes the
+active file; the log warns with both names whenever one file wins on its name alone. A save of a user
 file rewrites that file; any other save writes the model as `231D-0200`, then each companion in
 model order after a `+`, then `.json`, into the user folder. That is how two
 layouts of one model sit side by side (`231D-0200.json` and `231D-0200+231D-0201.json`), and how a
@@ -397,8 +400,12 @@ save of a shipped profile becomes the user copy that overrides it.
 
 **Saving from a Controls screen.** Accepting player 1's changes writes each connected model's stick
 rows to its active file (a shipped one becoming the user copy), or to a new solo user file when no
-file applies, and writes only models whose rows changed. The keymap file is written without stick
-rows. The remake Controls screen's "Open profiles folder" row creates `user://stick_profiles/` when
+file applies, and writes only models whose rows changed. A save replaces every context of the
+file, the menu and camera rows included, from what the screen holds. The screen therefore stages
+seat 1's stick rows from the profiles in force: the pause menus read through a seated reader, a
+registration follows the profiles when a save or a plug changes them, and the generic default that
+a save hands to another stick writes no file for that stick. The keymap file is written without
+stick rows. The remake Controls screen's "Open profiles folder" row creates `user://stick_profiles/` when
 missing and opens it in the system file browser. A binding's deadzone has no screen control; it is
 edited in these files.
 
@@ -418,7 +425,8 @@ two candidates leave no way to tell which one should fly.
 - **The layout.** Axis 0 (X) is roll and axis 1 (Y) pitch, each a full axis with deadzone 0.02 and
   pitch not inverted (pulled back is positive, as on a pad). Axis 5 (Rz, the twist) is yaw when the
   device has six axes or more, DirectInput's usual X, Y, Z, Rx, Ry, Rz order; on the VKB Gladiator
-  EVO R the twist reads -1..1 on axis 5 through SDL2. Axis 2 (Z) is the absolute Throttle (lever),
+  EVO R the twist reads -1..1 on axis 5 through SDL2, negative twisted right, so yaw is bound
+  inverted. Axis 2 (Z) is the absolute Throttle (lever),
   inverted so raw -1 is full throttle, deadzone 0.02; on the VKB R the lever reads -1 pushed
   forward. The lever's takeover rule keeps a parked lever from moving the throttle until it is moved. Button
   0 fires the guns and button 1 the rockets. In menus the hat moves the cursor, button 0 confirms

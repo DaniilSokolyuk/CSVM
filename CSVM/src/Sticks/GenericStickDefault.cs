@@ -28,8 +28,8 @@ public static class GenericStickDefault
     /// sticks carry a throttle here.</summary>
     public const int LeverAxis = 2;
 
-    /// <summary>Rz, the twist. Not measured under SDL2 on any stick yet; <c>--dump-sticks=</c>
-    /// with a twist is how to confirm it.</summary>
+    /// <summary>Rz, the twist. On the VKB Gladiator EVO R it reads -1..1 here under SDL2, negative
+    /// twisted right, so the default binds it inverted.</summary>
     public const int TwistAxis = 5;
 
     /// <summary>The fewest axes a device has before axis 5 is read as its twist.</summary>
@@ -78,11 +78,11 @@ public static class GenericStickDefault
         flight.Add(InputAction.PitchUp, new Binding(device, BindingControl.FullAxis(PitchAxis, false, AxisDeadzone)));
         if (axes >= TwistMinAxes)
         {
-            flight.Add(InputAction.YawRight, new Binding(device, BindingControl.FullAxis(TwistAxis, false, AxisDeadzone)));
+            flight.Add(InputAction.YawRight, new Binding(device, BindingControl.FullAxis(TwistAxis, true, AxisDeadzone)));
         }
 
-        // Inverted: a DirectInput throttle reads its low end pushed forward, which is full here.
-        // Unmeasured on any device; the takeover rule keeps a wrong guess from moving a parked lever.
+        // Inverted: a DirectInput throttle reads its low end pushed forward (the VKB R does), which
+        // is full here. The takeover rule keeps a stick that differs from moving a parked lever.
         flight.Add(InputAction.ThrottleLever, new Binding(device, BindingControl.FullAxis(LeverAxis, true, LeverDeadzone)));
         flight.Add(InputAction.FireGuns, new Binding(device, BindingControl.Button(0)));
         flight.Add(InputAction.FireRockets, new Binding(device, BindingControl.Button(1)));

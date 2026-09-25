@@ -100,7 +100,7 @@ public sealed class GenericStickDefaultTests
         Assert.Equal(FullAxis(0, false), flight.Bindings(InputAction.RollLeft).Single());
         Assert.Equal(FullAxis(1, false), flight.Bindings(InputAction.PitchUp).Single());
         Assert.Equal(FullAxis(1, false), flight.Bindings(InputAction.PitchDown).Single());
-        Assert.Equal(FullAxis(5, false), flight.Bindings(InputAction.YawRight).Single());
+        Assert.Equal(FullAxis(5, true), flight.Bindings(InputAction.YawRight).Single());
         Assert.Equal(FullAxis(2, true), flight.Bindings(InputAction.ThrottleLever).Single());
         Assert.Empty(flight.Bindings(InputAction.ThrottleUp));
         Assert.Equal(Button(0), flight.Bindings(InputAction.FireGuns).Single());

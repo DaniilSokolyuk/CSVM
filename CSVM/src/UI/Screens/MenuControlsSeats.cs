@@ -16,11 +16,22 @@ namespace CSVM.UI.Screens;
 public sealed class MenuControlsSeats
 {
     private readonly ControlsFeature _controls;
+    private readonly Func<int, bool, BindingProfile> _saved;
     private readonly List<MenuInput?> _seats = new();
+    private readonly Func<StickProfileSet?> _sticks;
+    private int _stickRevision = -1;
 
-    /// <summary>Over the shared feature every registration lands in.</summary>
-    public MenuControlsSeats(ControlsFeature controls) =>
+    /// <summary>Over the shared feature every registration lands in. The saved keymap on the
+    /// portable pad placeholder comes from <paramref name="saved"/>, by default
+    /// <see cref="LaunchBindings.Profile"/>. Seat 1's stick rows follow <paramref name="sticks"/>,
+    /// by default <see cref="StickProfiles.Live"/>.</summary>
+    public MenuControlsSeats(
+        ControlsFeature controls, Func<int, bool, BindingProfile>? saved = null, Func<StickProfileSet?>? sticks = null)
+    {
         _controls = controls ?? throw new ArgumentNullException(nameof(controls));
+        _saved = saved ?? ((player, keyboard) => LaunchBindings.Profile(player, PadOf(InputContext.Flight), keyboard));
+        _sticks = sticks ?? (() => StickProfiles.Live);
+    }
 
     /// <summary>Which pad identity a context's rows sit on, and therefore which one a captured
     /// control is stamped with and which one the seat's capture reader answers for. The menu
@@ -75,20 +86,54 @@ public sealed class MenuControlsSeats
             _controls.RemoveSeat(i + 1);
             _seats.RemoveAt(i);
         }
+
+        FollowStickRows();
+    }
+
+    /// <summary>Takes every player row off the feature, so the next <see cref="Sync"/> registers
+    /// each seat again. A presentation calls it on each activation.
+    /// ⚠ The pause leaf registers the same player numbers over the flight's readers. A menu that kept
+    /// its entries past a flight would leave the feature on a dead reader's menu map. An Accept there
+    /// would save that reader's rows over the stick profile's.</summary>
+    public void Forget()
+    {
+        foreach (int player in new List<int>(_controls.Players))
+        {
+            _controls.RemoveSeat(player);
+        }
+
+        _seats.Clear();
+    }
+
+    // Seat 1's stick rows once the profile set moves under a registration, which a save does when it
+    // hands the generic default to another stick. A registration keeps its maps across screens, and
+    // without this an Accept would write the rows staged before the move into every profile.
+    private void FollowStickRows()
+    {
+        if (_sticks() is not { } set || set.Revision == _stickRevision)
+        {
+            return;
+        }
+
+        _stickRevision = set.Revision;
+        if (_seats.Count > 0 && _seats[0] != null)
+        {
+            _controls.Follow(1, set.MergeInto);
+        }
     }
 
     // One seat's three keymaps. Menu is the poller's own live map, so an accepted rebind there is
     // felt on the next frame. Flight and Camera come from the same saved file their polling sites
     // read at launch, on the portable pad placeholder: opening the screen on the shipped defaults
     // instead would show the player rows they never chose and Accept would write those back.
-    private static BindingProfile Profile(int player, MenuInput input)
+    private BindingProfile Profile(int player, MenuInput input)
     {
-        var saved = LaunchBindings.Profile(player, PadOf(InputContext.Flight), input.Keyboard);
+        var saved = _saved(player, input.Keyboard);
         var maps = new Dictionary<InputContext, ActionMap>
         {
             [InputContext.Flight] = saved.Map(InputContext.Flight),
             [InputContext.Menu] = input.Map,
-            [InputContext.Camera] = LaunchBindings.Map(player, InputContext.Camera, PadOf(InputContext.Camera), input.Keyboard),
+            [InputContext.Camera] = saved.Map(InputContext.Camera),
         };
         // The flying scheme and its sensitivity ride with the flight rows they compete with, off the
         // same read.

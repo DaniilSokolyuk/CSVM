@@ -380,6 +380,9 @@ public sealed class OriginalPresentation : IMenuPresentation
 
         _shell.ReturnToTopLevel();
         StopNarration();
+        // The pause leaf may have registered these player numbers during a flight. Before the aids,
+        // since the Controls and Keys aids register the seats again.
+        _controlsSeats?.Forget();
         // Seated before the aid opens its screen, so a pose that walks the seats finds them.
         DebugJoin(setup);
         string aid = _aid;

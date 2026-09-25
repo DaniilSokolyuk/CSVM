@@ -2753,6 +2753,16 @@ public partial class FlightController : Node3D
     // tick's two device sides and the production reads above answer them. Kept beside those reads
     // rather than hoisted for SA1202's sake, the same trade made elsewhere here.
     internal FireInputs SelectorInputsForTest() => ReadSelectorInputs();
+
+    // The other discrete buttons' readings, for the suite that holds a stick button on each row. They
+    // are the targeting row's own read, the tap/hold splitter's, the flyby view's and the throttle's.
+    internal bool TargetControlDownForTest(InputAction action) => TargetControlDown(action);
+
+    internal bool TargetSplitterDownForTest() => TargetSplitterDown();
+
+    internal bool FlybyDownForTest() => FlybyDown();
+
+    internal float? RequestedThrottleForTest() => RequestedThrottle();
 #pragma warning restore SA1202
 
     // This frame's pilot-HUD feed. The pipper's inputs are resolved HERE and only where there is a
@@ -3611,7 +3621,7 @@ public partial class FlightController : Node3D
         // D-pad Up, the pad's one targeting button (decision 6/7): tap steps the enemy cycle, hold
         // selects the target nearest the crosshair. TapHoldButton owns the timing and the
         // resolve-on-release rule; this reads the pad and acts on the verdict.
-        switch (_targetHold.Step(_padActions.Held(InputAction.TargetNextEnemy), dt))
+        switch (_targetHold.Step(TargetSplitterDown(), dt))
         {
             case TapHold.Hold:
                 sel.NearestCrosshairs(_model.Position, _model.Attitude);
@@ -3727,8 +3737,12 @@ public partial class FlightController : Node3D
         DispatchViewModeKey(1, _keyActions.Held(InputAction.SelectChaseView), () => _cam!.SelectChase());
         DispatchViewModeKey(2, _padActions.Held(InputAction.CycleCockpitViews), () => _cam!.CycleCockpitViews());
         DispatchViewModeKey(3, _padActions.Held(InputAction.SelectChaseView), () => _cam!.SelectChase());
-        DispatchViewModeKey(4, _keyActions.Held(InputAction.FlybyView), () => _cam!.EnterFlyby());
+        DispatchViewModeKey(4, FlybyDown(), () => _cam!.EnterFlyby());
     }
+
+    // The whole seat, since nothing ships on the pad for it: a pad or stick control here is one the
+    // player bound themselves.
+    private bool FlybyDown() => _actions.Held(InputAction.FlybyView);
 
     // Same one-action-per-press rule as DispatchTargetKey, against its own slots.
     private void DispatchViewModeKey(int slot, bool down, System.Action act)
@@ -3739,16 +3753,23 @@ public partial class FlightController : Node3D
     }
 
     /// <summary>Edge-detects one targeting key against its own slot and runs its action once per
-    /// press. Read off the keyboard half alone: the pad's one targeting control is the tap/hold
-    /// splitter above, which holds the same action and would otherwise dispatch twice. Splitscreen-safe
-    /// by construction, since that half is gated on <see cref="UseKeyboard"/>.</summary>
+    /// press.</summary>
     private void DispatchTargetKey(int slot, InputAction action, System.Action act)
     {
-        bool down = _keyActions.Held(action);
+        bool down = TargetControlDown(action);
         if (down && !_targetKeyPrev[slot])
             act();
         _targetKeyPrev[slot] = down;
     }
+
+    // ⚠ The next-enemy row reads the keyboard half alone, since its pad and stick controls reach the
+    // tap/hold splitter, which would otherwise dispatch it twice. Every other row reads the whole
+    // seat, or a stick button bound to it would do nothing.
+    private bool TargetControlDown(InputAction action) =>
+        action == InputAction.TargetNextEnemy ? _keyActions.Held(action) : _actions.Held(action);
+
+    // The next-enemy row's pad and stick half, which the tap/hold splitter reads.
+    private bool TargetSplitterDown() => _padActions.Held(InputAction.TargetNextEnemy);
 
     // Internal rather than private: IFlightInputSource.cs's PilotInputSource calls this to keep
     // the body where it always lived, rather than hoisting it for SA1202's sake. The scripted hold
@@ -4442,13 +4463,14 @@ public partial class FlightController : Node3D
     private bool FreeLookHeld() => _actions.Held(InputAction.FreeLook);
 
     // Which eighth the digit row is asking for, or null while none of the nine is held. The highest
-    // held wins, so two digits at once open the lever rather than fighting over it.
+    // held wins, so two digits at once open the lever rather than fighting over it. The whole seat
+    // is read, so a stick button bound to an eighth sets it too.
     private float? RequestedThrottle()
     {
         float? requested = null;
         for (int eighths = 0; eighths <= 8; eighths++)
         {
-            if (_keyActions.Held(InputAction.ThrottleSet0 + eighths))
+            if (_actions.Held(InputAction.ThrottleSet0 + eighths))
                 requested = eighths / 8f;
         }
 

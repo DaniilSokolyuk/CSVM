@@ -3784,13 +3784,15 @@ public partial class GameSession : Node3D
         }
     }
 
-    // One menu reader per player, bound the way that player's plane is bound: player 1 also has the
+    // One menu reader per player, bound the way that player's plane is bound. Player 1 also has the
     // keyboard, and a session with no per-player split reads every connected pad (null).
+    // ⚠ Through ForSessionSeat, never a bare MenuInput. An unseated reader reads no stick, so the
+    // pause Controls page would save its empty menu rows over the stick profile's.
     private UI.Screens.MenuInput[] BuildMenuInputs(int[][]? padAssignment)
     {
         var inputs = new UI.Screens.MenuInput[Math.Max(1, _rigs.Count)];
         for (int i = 0; i < inputs.Length; i++)
-            inputs[i] = new UI.Screens.MenuInput { Keyboard = i == 0, Pads = padAssignment?[i] };
+            inputs[i] = UI.Screens.MenuInput.ForSessionSeat(i, padAssignment?[i]);
         return inputs;
     }
 
@@ -4174,7 +4176,7 @@ public partial class GameSession : Node3D
         pilot.SetPilotHudVisible(false);
         var eye = rig.Camera.Position;
         _photoCamera = new SpectatorCamera(rig.Camera, eye, eye - rig.Camera.Basis.Z,
-            pilot.PadDevices, pilot.UseKeyboard)
+            pilot.PadDevices, pilot.UseKeyboard, pilot.PlayerIndex)
         {
             Name = "photo_mode_camera",
             ShowReadout = false,   // the hint line is this mode's only furniture

@@ -157,9 +157,13 @@ public sealed class StickProfileSet : IStickRows
     {
         ArgumentNullException.ThrowIfNull(keymap);
         var written = new List<StickProfileFile>();
+        // ⚠ The choice the keymap was staged against, not the live one. Each Save re-selects and can
+        // hand the generic default to a later model. That model's rows were never in the keymap, so
+        // copying them from it would write its file empty.
+        var staged = _active;
         foreach (var model in new List<StickModel>(_present))
         {
-            var current = ActiveFor(model);
+            var current = staged.TryGetValue(model, out var file) ? file.Profile : null;
             if (current is { Ignore: true })
             {
                 continue;
@@ -276,12 +280,20 @@ public sealed class StickProfileSet : IStickRows
 
         _active = next;
         Revision++;
+        var connected = new HashSet<StickModel>(present);
         foreach (var model in present)
         {
             string choice = next.TryGetValue(model, out var file)
                 ? file.Source.ToString().ToLowerInvariant() + " " + file.FileName + (file.Profile.Ignore ? " (ignored)" : string.Empty)
                 : "none";
             Log.Info("core", $"stick profile for {model}: {choice}");
+            if (file is not null)
+            {
+                foreach (var tied in StickProfileResolver.TiedWith(file, _files, connected))
+                {
+                    Log.Warn("core", $"stick profile for {model}: {file.FileName} and {tied.FileName} both apply, {file.FileName} wins on its name alone");
+                }
+            }
         }
 
         Changed?.Invoke();

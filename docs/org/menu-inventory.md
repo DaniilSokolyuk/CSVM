@@ -110,7 +110,8 @@ Briefing, FlightCheck, Ammo, PlaneSelection, Scrapbook, ScrapbookZoom.
 ### Launchscreen transitions
 
 47 edges. Trigger names use the footer's own vocabulary: Accept is Enter / A, Back is Esc / B,
-Loadout is L / Y, Presets is P / X.
+Loadout is L / Y, Presets is P / X. On the Controls screen's action rows the unbind is
+Del / Backspace / Y; the L key does not unbind.
 
 | From | Trigger | To |
 |---|---|---|

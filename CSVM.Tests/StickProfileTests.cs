@@ -89,6 +89,24 @@ public sealed class StickProfileTests
         Assert.Equal("a.json", StickProfileResolver.Resolve(new[] { VkbR }, new[] { a, b })[VkbR].FileName);
     }
 
+    /// <summary>The user's Explorer copy: "231D-0200 - Kopie.json" sorts ahead of the file it copies,
+    /// and the tie is what the set warns about. A shipped file and a fuller layout are no tie.</summary>
+    [Fact]
+    public void ACopyBesideAUserFileTiesWithItAndNothingElseDoes()
+    {
+        var copy = User("231D-0200 - Kopie.json", RSolo);
+        var own = User("231D-0200.json", RSolo);
+        var shipped = Shipped("231D-0200.json", RSolo);
+        var hosas = User("231D-0200+231D-0201.json", RHosas);
+        var files = new[] { own, shipped, hosas, copy };
+        var connected = new HashSet<StickModel> { VkbR };
+
+        var winner = StickProfileResolver.Resolve(connected, files)[VkbR];
+
+        Assert.Same(copy, winner);
+        Assert.Equal(new[] { own }, StickProfileResolver.TiedWith(winner, files, connected));
+    }
+
     [Fact]
     public void FileNamesListTheModelThenItsCompanionsInModelOrder()
     {

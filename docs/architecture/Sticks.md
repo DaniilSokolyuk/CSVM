@@ -83,10 +83,10 @@ keymap's stick bindings replaced by the active rows, ignored profiles adding non
 The profiles in force: the loaded files, the connected models, the resolver's choice, and
 `Revision`/`Changed` when that choice moves. It is `Bindings/IStickRows.cs` for seat 1's keymap,
 `Map` for a stick-only action source, `Save` for one profile (copy-on-write), and `SaveFrom` for an
-accepted controls screen (each changed model's rows to its active profile, or a new user profile).
-The generic default joins the choice for the one model it claims (`GenericStickDefault.cs`).
-`MergeIfChanged` follows the choice into a flying seat's keymap or a menu seat's map.
-Engine-free; tests build it over a `StickRoster` on `CSVM.Tests/FakeStickNative.cs`.
+accepted controls screen (each changed model's rows to the profile the keymap was staged under, or
+a new user profile). The generic default joins the choice for the one model it claims, and a file
+that wins on its name alone logs a warning naming both. `MergeIfChanged` follows the choice into a
+flying seat's keymap or a menu seat's map. Engine-free; tests run it over `FakeStickNative`.
 
 ## src/Sticks/StickShape.cs
 Whether a device looks like a flight stick: at least three axes, with axes 0 and 1 resting near

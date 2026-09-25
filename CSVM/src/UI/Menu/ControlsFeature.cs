@@ -191,6 +191,27 @@ public sealed class ControlsFeature : IMenuFeature
             Player = _players[0];
     }
 
+    /// <summary>Brings <paramref name="player"/>'s live keymap up to rows that changed under the screen,
+    /// through <paramref name="merge"/>, and restages the working copy from it when nothing is staged.
+    /// Staged edits are kept, since a restage would throw them away. Unknown players are ignored.
+    /// ⚠ Accept writes the working copy over the live maps. A copy staged before the change would put
+    /// the old rows back, and the save would carry them.</summary>
+    public void Follow(int player, Action<BindingProfile> merge)
+    {
+        ArgumentNullException.ThrowIfNull(merge);
+        if (!_seats.TryGetValue(player, out var seat))
+            return;
+
+        merge(seat.Profile);
+        if (!_dirty.Contains(player))
+            seat.Restage();
+    }
+
+    /// <summary>The live keymap registered for <paramref name="player"/>, or null for none. The menu and
+    /// the pause leaf register the same player numbers over different readers, and this says whose
+    /// maps an Accept would save.</summary>
+    public BindingProfile? ProfileOf(int player) => _seats.TryGetValue(player, out var seat) ? seat.Profile : null;
+
     /// <summary>That action's bindings on the seat being edited.</summary>
     public IReadOnlyList<Binding> Bindings(InputAction action) => Map.Bindings(action);
 

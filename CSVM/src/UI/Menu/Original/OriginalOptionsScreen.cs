@@ -143,6 +143,10 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
     /// <summary>How many category tabs the page authors.</summary>
     public const int KeysTabCount = 7;
 
+    /// <summary>The port's sentence after the page's authored description, naming the clear gesture
+    /// the original page has no word for (<see cref="ClearCell"/>).</summary>
+    public const string KeysClearHint = "Delete or Backspace clears the highlighted control.";
+
     // The Options hub's own section, whose logo every page here keeps standing behind it since none
     // of the five authors one. The hub is the shell's (OriginalShell.PreferencesSection), its name
     // restated here so this module holds no reference to OriginalShell.
@@ -2544,6 +2548,37 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
         return null;
     }
 
+#pragma warning disable SA1202 // Kept beside ActivateKeys, the press it is the other gesture of.
+    /// <summary>Clears the control a KEYS page cell shows, answering whether the page changed.
+    /// Control A and Control B drop the binding they print. The Stick cell drops the first stick
+    /// binding, the one its caption names. So each press takes what the cell shows, and a "+n" steps
+    /// down to the next. A full axis leaves its pair's other row as well
+    /// (<see cref="ControlsFeature.UnbindSlot"/>). Nothing happens off a cell or while a steal
+    /// awaits its answer.</summary>
+    public bool ClearCell(OriginalRow row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        if (_controls is not { Capturing: false, Pending: null } controls || KeysCellOf(row.Key) is not { } cell)
+        {
+            return false;
+        }
+
+        FocusCell(cell.Row, cell.Column);
+        if (cell.Column == KeysColumn.Stick)
+        {
+            controls.MoveSlot(KeysStickColumn.SlotOfStick(controls.FocusedBindings));
+        }
+
+        if (controls.Slot >= controls.FocusedBindings.Count)
+        {
+            return false;
+        }
+
+        controls.UnbindSlot();
+        return true;
+    }
+#pragma warning restore SA1202
+
     // Points the feature at the control the cell stands for: the tab's context and action, then the
     // slot the column is. Control A is the first control no stick holds and Control B the second.
     // On an action holding one, B is the empty slot past the list, so a press there adds. A Stick
@@ -2839,7 +2874,7 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
         {
             string status = _controls?.Status ?? string.Empty;
             lines.Add(new BoardLine(
-                status.Length > 0 ? status : KeysDescription(instruction.Text ?? string.Empty),
+                status.Length > 0 ? status : KeysDescription(instruction.Text ?? string.Empty) + " " + KeysClearHint,
                 instruction.Int("X"), instruction.Int("Y"), instruction.Int("Width"), KeysDescFont, BoardInk.Detail));
         }
     }

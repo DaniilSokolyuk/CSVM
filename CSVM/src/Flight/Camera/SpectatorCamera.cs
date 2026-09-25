@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using CSVM.Bindings;
+using CSVM.Sticks;
 using Godot;
 
 namespace CSVM.Flight.Camera;
@@ -74,8 +75,11 @@ public sealed partial class SpectatorCamera : Node
     // Spherical offset of the eye from the target: distance, azimuth, elevation.
     private float _orbitYaw, _orbitPitch, _orbitDist;
 
+    /// <summary>A free camera over <paramref name="camera"/>. The pad half reads the flight sticks
+    /// of <paramref name="playerIndex"/>'s seat (<see cref="StickDeviceState.Live"/>), or the
+    /// suite's <paramref name="sticks"/>. So a stick control bound on a camera row moves it.</summary>
     public SpectatorCamera(Camera3D camera, Vector3 position, Vector3 lookAt,
-        int[]? padDevices = null, bool useKeyboard = true)
+        int[]? padDevices = null, bool useKeyboard = true, int playerIndex = 0, IDeviceState? sticks = null)
     {
         _camera = camera;
         _padDevices = padDevices;
@@ -89,7 +93,8 @@ public sealed partial class SpectatorCamera : Node
         _keyActions = new PlayerActions(map, useKeyboard);
         _padActions = new PlayerActions(map, false);
         _keyState = new SeatDeviceState(SeatPad, () => _padDevices, readsPads: false);
-        _padState = new SeatDeviceState(SeatPad, () => _padDevices);
+        _padState = new SeatDeviceState(SeatPad, () => _padDevices,
+            sticks: sticks ?? StickDeviceState.Live(() => playerIndex));
         _camera.Position = position;
         var to = lookAt - position;
         // Only the direction survives, not the distance, a --lookat point or a --direction
@@ -412,4 +417,16 @@ public sealed partial class SpectatorCamera : Node
         _camera.Basis = new Basis(Vector3.Up, _yaw) * new Basis(Vector3.Right, _pitch);
     }
 
+#pragma warning disable SA1202
+    // One control on a camera row and one poll of the pad half, for the suite that holds a stick
+    // button there. Kept at the end rather than hoisted for SA1202's sake.
+    internal void BindForTest(InputAction action, Binding binding) => _padActions.Map.Add(action, binding);
+
+    internal bool PadHeldForTest(InputAction action)
+    {
+        _padState.Refresh();
+        _padActions.Poll(_padState);
+        return _padActions.Held(action);
+    }
+#pragma warning restore SA1202
 }

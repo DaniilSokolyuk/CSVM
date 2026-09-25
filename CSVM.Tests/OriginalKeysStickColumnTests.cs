@@ -149,6 +149,104 @@ public class OriginalKeysStickColumnTests
     }
 
     [Fact]
+    public void TheClearGestureDropsTheControlACellsBindingAndLeavesTheStick()
+    {
+        using var rig = new Rig();
+        var action = rig.OpenRow(0);
+        var r1 = new Binding(VkbR.Device, BindingControl.Button(1));
+        rig.Add(action, r1);
+        var before = rig.Controls.Bindings(InputContext.Flight, action).ToList();
+        var first = before.First(b => !KeysStickColumn.IsStick(b));
+
+        rig.Shell.Step(new MenuCommands { MoveX = 1 });
+        Assert.Equal(OriginalOptionsScreen.KeysCellKey(0, second: false), rig.Shell.FocusedKey);
+        rig.Shell.Step(new MenuCommands { Unbind = true });
+
+        Assert.Equal(before.Where(b => b != first), rig.Controls.Bindings(InputContext.Flight, action));
+        Assert.False(rig.Controls.Capturing);
+    }
+
+    /// <summary>The Stick cell clears the binding its caption names, so a "+1" steps down to the
+    /// other stick's binding, and the keys stay.</summary>
+    [Fact]
+    public void TheClearGestureOnTheStickCellDropsTheFirstStickBinding()
+    {
+        using var rig = new Rig();
+        var action = rig.OpenRow(0);
+        var r1 = new Binding(VkbR.Device, BindingControl.Button(1));
+        var l1 = new Binding(VkbL.Device, BindingControl.Button(1));
+        rig.Add(action, r1);
+        rig.Add(action, l1);
+        var others = rig.Controls.Bindings(InputContext.Flight, action).Where(b => !KeysStickColumn.IsStick(b)).ToList();
+        Assert.EndsWith(" +1", rig.Shell.Options.KeysCellText(0).Stick);
+
+        rig.Shell.Step(new MenuCommands { MoveX = 1 });
+        rig.Shell.Step(new MenuCommands { MoveX = 1 });
+        Assert.Equal(OriginalOptionsScreen.KeysStickCellKey(0), rig.Shell.FocusedKey);
+        rig.Shell.Step(new MenuCommands { Unbind = true });
+
+        var after = rig.Controls.Bindings(InputContext.Flight, action);
+        Assert.DoesNotContain(r1, after);
+        Assert.Contains(l1, after);
+        Assert.Equal(others, after.Where(b => !KeysStickColumn.IsStick(b)));
+        Assert.Equal("Button 2", rig.Shell.Options.KeysCellText(0).Stick);
+
+        rig.Shell.Step(new MenuCommands { Unbind = true });
+        Assert.DoesNotContain(l1, rig.Controls.Bindings(InputContext.Flight, action));
+        Assert.Equal(string.Empty, rig.Shell.Options.KeysCellText(0).Stick);
+    }
+
+    [Fact]
+    public void ClearingAStickFullAxisClearsBothPairRows()
+    {
+        using var rig = new Rig();
+        var movement = OriginalOptionsScreen.ControlTabs[0].Rows;
+        int row = Enumerable.Range(0, movement.Count).Single(i => movement[i].Action == InputAction.PitchUp);
+        rig.OpenRow(row);
+        var axis = new Binding(VkbR.Device, BindingControl.FullAxis(1, false, StickCapture.FlightDeadzone));
+        foreach (var action in new[] { InputAction.PitchUp, InputAction.PitchDown })
+        {
+            if (!rig.Controls.Bindings(InputContext.Flight, action).Contains(axis))
+            {
+                rig.Add(action, axis);
+            }
+        }
+
+        rig.Click(OriginalOptionsScreen.KeysStickCellKey(row));
+        rig.Controls.CancelCapture();
+        rig.Frame();
+        Assert.Equal(OriginalOptionsScreen.KeysStickCellKey(row), rig.Shell.FocusedKey);
+        rig.Shell.Step(new MenuCommands { Unbind = true });
+
+        Assert.DoesNotContain(axis, rig.Controls.Bindings(InputContext.Flight, InputAction.PitchUp));
+        Assert.DoesNotContain(axis, rig.Controls.Bindings(InputContext.Flight, InputAction.PitchDown));
+    }
+
+    [Fact]
+    public void TheClearGestureDoesNothingWhileACaptureIsArmed()
+    {
+        using var rig = new Rig();
+        var action = rig.OpenRow(0);
+        var before = rig.Controls.Bindings(InputContext.Flight, action).ToList();
+
+        rig.Click(OriginalOptionsScreen.KeysCellKey(0, second: false));
+        Assert.True(rig.Controls.Capturing);
+        rig.Shell.Step(new MenuCommands { Unbind = true });
+
+        Assert.True(rig.Controls.Capturing);
+        Assert.Equal(before, rig.Controls.Bindings(InputContext.Flight, action));
+    }
+
+    [Fact]
+    public void ThePageNamesTheClearKeys()
+    {
+        using var rig = new Rig();
+        rig.OpenRow(0);
+        Assert.Contains(rig.Shell.Compose().Lines, l => l.Text.Contains(OriginalOptionsScreen.KeysClearHint, StringComparison.Ordinal));
+        Assert.Contains("Delete or Backspace", OriginalOptionsScreen.KeysClearHint, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ThePageDrawsTheStickHeadBetweenTheTwoAuthoredControlHeads()
     {
         using var rig = new Rig();

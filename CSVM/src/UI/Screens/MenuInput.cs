@@ -87,6 +87,11 @@ public sealed class MenuInput
     /// one thing everywhere the menu offers a fit to edit.</summary>
     public bool Loadout;
 
+    /// <summary>Clear the highlighted control on a rebinding page (edge): Delete or Backspace, or the
+    /// loadout gesture from a pad or a stick. The loadout's own key is left out, since a letter is no
+    /// key a player reaches for to clear something.</summary>
+    public bool Unbind;
+
     /// <summary>Open the Instant Action Table of Contents (edge). INVENTED: the original picks a
     /// preset with a mouse on a list that shares its page with the dropdowns, so there is no
     /// decoded button here. X is the last free face button in menu context.</summary>
@@ -157,7 +162,7 @@ public sealed class MenuInput
     private bool _typingStale;
 
     private bool _acceptPrev, _backPrev, _padBackPrev, _startPrev, _loadoutPrev, _presetsPrev;
-    private bool _erasePrev;
+    private bool _erasePrev, _unbindPrev;
     private int _dirPrev, _dirXPrev, _dirPadPrev, _dirPadXPrev;
 
     // The stick profile revision this seat's menu rows were last merged from.
@@ -226,6 +231,23 @@ public sealed class MenuInput
                 return pads.Length == 0 ? "keyboard" : $"keyboard + {pads}";
             return pads.Length == 0 ? "no device" : pads;
         }
+    }
+
+    /// <summary>The board reader a flight session gives the player at zero-based
+    /// <paramref name="playerIndex"/>. It reads the keyboard for the first player only, the pads
+    /// <paramref name="pads"/> names, and that player's saved menu keymap. Loading the keymap is what
+    /// seats it, so the first player's pause menus read the sticks and follow the stick profiles.
+    /// </summary>
+    public static MenuInput ForSessionSeat(int playerIndex, int[]? pads) =>
+        ForSessionSeat(playerIndex, pads, () => StickPump.Roster, () => StickProfiles.Live);
+
+    /// <summary>The same seat over the stick roster and profile set given, for a suite.</summary>
+    public static MenuInput ForSessionSeat(
+        int playerIndex, int[]? pads, Func<StickRoster?> sticks, Func<StickProfileSet?> stickProfiles)
+    {
+        var input = new MenuInput(sticks, stickProfiles) { Keyboard = playerIndex == 0, Pads = pads };
+        input.LoadSavedKeymap(playerIndex + 1);
+        return input;
     }
 
     /// <summary>Whether an unbound pad is pressing Start, the join gesture. Static because the
@@ -388,6 +410,10 @@ public sealed class MenuInput
         Presets = presets && !_presetsPrev;
         _presetsPrev = presets;
 
+        bool unbind = RawUnbind();
+        Unbind = unbind && !_unbindPrev;
+        _unbindPrev = unbind;
+
         int active = ScanActivePad();
         if (active >= 0)
             LastActivePad = active;
@@ -404,6 +430,7 @@ public sealed class MenuInput
         _startPrev = RawStart();
         _loadoutPrev = RawLoadout();
         _presetsPrev = RawPresets();
+        _unbindPrev = RawUnbind();
         _dirPrev = RawDir();
         if (_dirPrev != 0)
             _repeat.Press();
@@ -421,7 +448,7 @@ public sealed class MenuInput
         // Seeds the handover's own counts too, so a button still held from whatever raised this
         // screen is not read as the press that hands the hints to the other device.
         _device.Observe(_keysOnly.Current, _padOnly.Current, Keyboard);
-        Accept = Back = PadBack = Start = Loadout = Presets = DeviceMoved = false;
+        Accept = Back = PadBack = Start = Loadout = Presets = Unbind = DeviceMoved = false;
     }
 
     // The Key enum's letter, digit and punctuation values ARE their ASCII codes, so the unshifted
@@ -594,5 +621,8 @@ public sealed class MenuInput
     private bool RawLoadout() => _live.Held(InputAction.MenuLoadout);
 
     private bool RawPresets() => _live.Held(InputAction.MenuPresets);
+
+    private bool RawUnbind() =>
+        KeyDown(Key.Delete) || KeyDown(Key.Backspace) || _padOnly.Held(InputAction.MenuLoadout);
 
 }

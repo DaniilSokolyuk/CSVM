@@ -62,6 +62,30 @@ public static class StickProfileResolver
         return true;
     }
 
+    /// <summary>The other applying files for <paramref name="winner"/>'s model that only its file name
+    /// beats: the same companions and the same source. A copy made beside a file in Explorer is
+    /// one, and it silently takes over whenever its name sorts first.</summary>
+    public static List<StickProfileFile> TiedWith(
+        StickProfileFile winner, IEnumerable<StickProfileFile> files, IReadOnlySet<StickModel> connected)
+    {
+        ArgumentNullException.ThrowIfNull(winner);
+        ArgumentNullException.ThrowIfNull(files);
+        var tied = new List<StickProfileFile>();
+        foreach (var file in files)
+        {
+            if (!ReferenceEquals(file, winner)
+                && file.Profile.Model == winner.Profile.Model
+                && file.Source == winner.Source
+                && file.Profile.Companions.Count == winner.Profile.Companions.Count
+                && Applies(file.Profile, connected))
+            {
+                tied.Add(file);
+            }
+        }
+
+        return tied;
+    }
+
     /// <summary>Negative when <paramref name="left"/> ranks ahead of <paramref name="right"/> for the
     /// same model: more companions, then user over shipped, then ordinal file name. Total, so the
     /// choice never depends on the order files were listed in.</summary>
