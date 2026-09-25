@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using CSVM.Net;
 
@@ -348,12 +349,13 @@ public sealed class NetPlayFeature : IMenuFeature
     }
 
     // Asked for once, where hosting opens, and away from the frame. ⚠ The call blocks for the
-    // gateway search, so it runs on its own thread. The board shows the answer on the step that
+    // gateway search, so it runs on a dedicated thread, never the pool, which starves. The board shows the answer on the step that
     // finds it, rather than holding the menu still for two seconds.
     private void MapPort()
     {
         int port = Port;
-        _mapping = _map == null ? null : Task.Run(() => _map(port));
+        _mapping = _map == null ? null : Task.Factory.StartNew(() => _map(port), CancellationToken.None,
+            TaskCreationOptions.LongRunning, TaskScheduler.Default);
     }
 
     private void TakeMapping()
