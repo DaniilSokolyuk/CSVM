@@ -293,3 +293,13 @@ Each simulation phase, as a guest runs it:
 | Campaign | The director replay above. |
 | AI voice | Derived locally; a replicated AI runs no mode machine, so its mode-driven call-outs are silent. |
 | Versus | The match state above. |
+
+## The lobby
+
+Before any session binds the carrier, a `Net/NetLobby.cs` stands on it. A host sends one message
+there, to each peer as it connects and again whenever the offer changes. A guest's lobby keeps the
+latest and never passes it to the session, so the session's own vocabulary never sees it.
+
+| Id | Message | Class | Carries |
+|---|---|---|---|
+| `0x4A` | Session advert | reliable, host to each guest | session kind (Dogfight or campaign co-op), campaign mission sequence or none, player count, host name in 16 bytes (24 bytes) |

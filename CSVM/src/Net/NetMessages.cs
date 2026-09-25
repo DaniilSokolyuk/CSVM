@@ -58,6 +58,23 @@ public enum NetMessageType : ushort
     /// <summary>One host decision about the world: an AI death, an AI hull, a destructible's
     /// health.</summary>
     WorldEvent = 0x0048,
+
+    /// <summary>What a host tells a peer about the session it is holding open before any flight:
+    /// its kind, its mission and its player count.</summary>
+    SessionAdvert = 0x004A,
+}
+
+/// <summary>What kind of session a host holds open, the word a join board names it by.</summary>
+public enum NetSessionKind : byte
+{
+    /// <summary>No advert has arrived, or it named a kind this build does not know.</summary>
+    Unknown = 0,
+
+    /// <summary>A Dogfight match, the original's own network mode.</summary>
+    Dogfight = 1,
+
+    /// <summary>A campaign mission flown together, hosted from the campaign's own boards.</summary>
+    CampaignCoop = 2,
 }
 
 /// <summary>What a <see cref="WorldEventMessage"/>'s code means. Each member says what the subject
@@ -743,6 +760,75 @@ public readonly record struct HandshakeMessage(ulong Seed, double HostClock, byt
 }
 
 /// <summary>
+/// A host's word about the session it holds open, sent to every peer on connect and again on any
+/// change. A guest's join board reads it before a flight exists. So it names only the session:
+/// its kind, its campaign mission, its player count and its host. Nothing about the world rides
+/// here. A guest reads it off the lobby, never off a session.</summary>
+public readonly record struct SessionAdvertMessage(
+    NetSessionKind Kind, byte MissionSeq, byte Players, string Host)
+    : INetMessage<SessionAdvertMessage>
+{
+    /// <summary>The fixed width of the message, header included.</summary>
+    public const int Size = 24;
+
+    /// <summary>How many bytes the host's name takes, UTF-8 and zero padded.</summary>
+    public const int HostBytes = 16;
+
+    /// <summary>The mission value meaning "no campaign mission": a Dogfight advert.</summary>
+    public const byte NoMission = 0xFF;
+
+    /// <summary>How many missions one campaign chapter holds, the divisor the chapter reads by.
+    /// </summary>
+    public const int MissionsPerChapter = 5;
+
+    /// <inheritdoc/>
+    public static NetMessageType Type => NetMessageType.SessionAdvert;
+
+    /// <inheritdoc/>
+    public static NetReliability Reliability => NetReliability.Reliable;
+
+    /// <summary>Whether the advert names a campaign mission.</summary>
+    public bool HasMission => Kind == NetSessionKind.CampaignCoop && MissionSeq != NoMission;
+
+    /// <summary>The story chapter the mission sits in, from 1, or 0 with no mission.</summary>
+    public int Chapter => HasMission ? (MissionSeq / MissionsPerChapter) + 1 : 0;
+
+    /// <summary>The mission's place inside its chapter, from 1, or 0 with no mission.</summary>
+    public int MissionInChapter => HasMission ? (MissionSeq % MissionsPerChapter) + 1 : 0;
+
+    /// <inheritdoc/>
+    public static bool TryRead(ReadOnlySpan<byte> from, out SessionAdvertMessage message)
+    {
+        message = default;
+        var reader = new NetMessageReader(from);
+        if (!reader.Is(Size) || reader.Type != Type)
+            return false;
+
+        byte kind = reader.ReadByte();
+        byte seq = reader.ReadByte();
+        byte players = reader.ReadByte();
+        _ = reader.ReadByte();
+        var known = kind is (byte)NetSessionKind.Dogfight or (byte)NetSessionKind.CampaignCoop
+            ? (NetSessionKind)kind
+            : NetSessionKind.Unknown;
+        message = new SessionAdvertMessage(known, seq, players, reader.ReadText(HostBytes));
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public int Write(Span<byte> into)
+    {
+        var writer = new NetMessageWriter(into, Type);
+        writer.WriteByte((byte)Kind);
+        writer.WriteByte(MissionSeq);
+        writer.WriteByte(Players);
+        writer.WriteByte(0);
+        writer.WriteText(Host ?? "", HostBytes);
+        return writer.Close();
+    }
+}
+
+/// <summary>
 /// The whole seat roster and the match seed, the one variable-length message in the vocabulary.
 /// The seed is here because every peer draws from seeded streams, and one seed handed out at
 /// join makes every draw agree. A seat arriving or leaving resends the whole roster rather than
@@ -886,6 +972,7 @@ public static class NetMessage
         NetMessageType.AiFire => AiFireMessage.Reliability,
         NetMessageType.AiHit => AiHitMessage.Reliability,
         NetMessageType.WorldEvent => WorldEventMessage.Reliability,
+        NetMessageType.SessionAdvert => SessionAdvertMessage.Reliability,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "no such message type"),
     };
 

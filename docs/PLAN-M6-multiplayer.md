@@ -186,7 +186,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 22. ☑ Host-owned AI and world: aircraft, zeppelins, turrets, generators, vehicles and destructibles as spawn, state and death events
 23. ☑ Guests as the human field: `CampaignHumanField` and the objective rules see remote humans, the scripted P1 stays the host
 24. ☐ The co-op session flow: cabin and briefing on the host, guests joining into the mission, mission end and debrief on every peer
-25. ☐ The co-op door: the campaign flow opens to the network, guests join from the Network board and wait for the host's launch
+25. ☑ The co-op door: the campaign flow opens to the network, guests join from the Network board and wait for the host's launch
 26. ☐ Host-decided positional starts and the airframe swap: landing approaches, the ladder switch, `PlayerRange` and codes 965 to 967 for a guest
 
 ### Wave D, hardening
@@ -1391,7 +1391,71 @@ guest also sees the briefing, or only the waiting board>
 **⚠ Traps.** A guest has no profile; every path that writes one (`CampaignProfileStore`,
 `CampaignSnapshot`'s photographs, the memento) must be a no-op on a guest, not a crash.
 
-## C25 ☐ The co-op door: the campaign flow opens to the network, guests join from the Network board and wait for the host's launch
+## C25 ☑ The co-op door: the campaign flow opens to the network, guests join from the Network board and wait for the host's launch
+
+**Landed.**
+- `CSVM/src/Net/NetMessages.cs`: `SessionAdvertMessage` at `0x4A` (24 bytes, reliable) and
+  `NetSessionKind` (Dogfight, campaign co-op). It carries the kind, the campaign mission sequence
+  (chapter and mission within it are derived), the player count and the host's name.
+- `CSVM/src/Net/NetLobby.cs` (new): the carrier's first listener. The session reply named in the
+  approach cannot carry the kind, because no session exists until the launch and a carrier binds
+  once. The lobby binds at open, sends the host's advert on connect and on change, keeps a guest's
+  latest advert, and holds every other payload until the launched session binds it.
+- `CSVM/src/Net/NetSeats.cs`: `Field`, a host's roster from its local planes plus one `guest N`
+  seat per peer on the wire.
+- `CSVM/src/UI/Menu/NetPlayFeature.cs`: every open wraps its carrier in a lobby; `OpenCoopHost`,
+  `Offer`, `IsCoopHost`, `IsCoopGuest`, `Advert`, `Advertising`; `Step` re-advertises;
+  `HostStarted` is now the lobby's held count.
+- `CSVM/src/UI/Menu/CoopDoorText.cs` (new): the band, session name and status lines.
+  `CSVM/src/UI/Menu/NetDoorAid.cs` (new): loopback doors for the screenshot aids.
+- `CSVM/src/UI/LaunchMenu.cs`: player 1's L / Y on a campaign board opens and closes the door
+  (refused while the Multiplayer board holds it open); the cabin footer names the press; the band
+  sits under the chip strip, and remote guests count there as `Pn net` chips and against the local
+  join ceiling without a pane. Cancelling the campaign and flying a mission close the door. A
+  co-op guest's Continue leads to the Network screen's waiting mode, whose one row leaves. Aids
+  `campaign-coop[:guests]`, `network-coopjoin`, `network-coopwait`.
+- `CSVM/src/Testing/MenuCoopDoorSuites.cs` (new): suite `menu-coop-door`, weighted in
+  `analysis/engine-suite-weights.json`. `MenuSuiteHost` takes a suite's door. Units: `NetLobbyTests`, `CoopDoorTextTests`, and extensions to `NetMessagesTests`
+  and `NetPlayFeatureTests`.
+- Docs: `Net.md`, `UI.md`, `Testing.md`, the index, `org/multiplayer-messages.md` (the lobby
+  table), `org/menu-inventory.md` (the three aids).
+
+**Verified.** The complete battery on the merged tree (C25 over C23, the catch-up, C22, C21, D31
+and Wave B): build clean, 4924 units passed with 2 skipped, 391 of 391 engine suites passed with
+engine errors clean in all six shards, 19 of 19 golden shots hash-identical. `menu-coop-door` and
+`menu-net-door` pass; the door's able-to-fail control was checked by a reverted mutation on the
+agent's fork. The limit: the loopback only, the router mapping unexercised against a real router,
+and the launch past the waiting board is C24's.
+
+**Owed.**
+- The user's look judgement of `.scratch/m6/C25/montage-coop-door.png` (cabin shut, cabin open with
+  two guests, the guest's join board, the waiting board) and `cabin-network-solo.png`.
+- C24's wiring, below. `FlyCampaignMission` closes the door today, since no mission carries a wire.
+- No `GameSession` hook was needed.
+
+**The wiring contract (for C24).**
+- The host: in `FlyCampaignMission`, when `_net.IsCoopHost`, take `_net.BuildLaunch()` instead of
+  `CloseCoopDoor()` and carry it on `CampaignMissionExit` (a new `MenuNetLaunch? Net`). The roster
+  is `NetSeats.Field(transport.LocalPeer, planes, transport.Peers, planes[0])`; the session binds
+  the `NetLobby` the launch carries, and `NetSession.Host` answers every guest at once.
+- The guest: the waiting board polls `NetPlayFeature.HostStarted`, which turns true when the host's
+  join answer lands in the lobby. That is the launch trigger; build the guest's session from
+  `BuildLaunch()` there. The held answer and roster replay into it when it binds.
+- Adverts never reach a session. The launcher closes the door (`Close`, which unmaps) at the
+  flight's end, as the Dogfight's net launch does.
+- The advert's mission is `CampaignFlow.MissionSeq` when a mission is picked, else the profile's
+  next mission; the guest's mission name is langui `3450 + seq`.
+
+**Verify.** Units: `NetLobbyTests` (5), `CoopDoorTextTests` (3), `NetMessagesTests` and
+`NetPlayFeatureTests` extended. Engine suite `menu-coop-door` stands a host seated in the cabin and
+a guest on the Multiplayer board over the loopback with a stub router. It asserts that L / Y opens
+the carrier and the mapping and a second press unmaps (the able-to-fail control), that the guest's
+board names the campaign session, and that Continue lands on the waiting board. It asserts the
+host's chips read `P1`, `P2 net` with one local seat, and that `NetSeats.Field` gives the guest seat
+1 in a session built over the released lobbies. Leaving both ends unmaps the port. Montages cover
+the toggle, the join board and the waiting board.
+
+**Original approach (kept for reference).**
 
 **Goal.** From the Remake menus, a host opens their campaign to the network and a friend on another
 machine joins it, without a command line; the joined guest shows in the host's campaign boards as a
@@ -1414,10 +1478,10 @@ players. The launch itself, the briefing a guest sees and the mission end are C2
 **Model recommendation.** Opus. It crosses the UI, the seat roster and the join handshake, and the
 screens are judged by the user.
 
-**Verify.** <TODO: a two-session harness run that opens a campaign to the network, joins a guest over
-the loopback, and asserts the guest holds a net seat, the host's chip strip counts it, and the
-guest's screen is the waiting board; plus montages of the toggle, the join board and the waiting
-board for the user>
+**Verify (as scoped).** A two-session harness run that opens a campaign to the network, joins a
+guest over the loopback, and asserts the guest holds a net seat, the host's chip strip counts it,
+and the guest's screen is the waiting board; plus montages of the toggle, the join board and the
+waiting board for the user.
 
 **⚠ Traps.** Local and remote joiners share the chip strip and the seat ceiling of 16; a remote guest
 must not take a local controller's pane. The toggle opens a port, so closing the campaign flow or

@@ -378,6 +378,7 @@ public class NetMessagesTests
         Assert.Equal(NetReliability.Unreliable, NetMessage.ReliabilityOf(NetMessageType.AiFire));
         Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.AiHit));
         Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.WorldEvent));
+        Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.SessionAdvert));
         Assert.Throws<ArgumentOutOfRangeException>(() => NetMessage.ReliabilityOf((NetMessageType)0x7fff));
     }
 
@@ -458,5 +459,38 @@ public class NetMessagesTests
         Assert.False(NetMessage.IsOriginalId(NetMessageType.Handshake));
         Assert.False(NetMessage.IsOriginalId(NetMessageType.AiState));
         Assert.False(NetMessage.IsOriginalId(NetMessageType.WorldEvent));
+        Assert.False(NetMessage.IsOriginalId(NetMessageType.SessionAdvert));
+    }
+
+    [Fact]
+    public void SessionAdvertRoundTripsAndReadsItsChapterAndMission()
+    {
+        Span<byte> buffer = stackalloc byte[SessionAdvertMessage.Size];
+        var sent = new SessionAdvertMessage(NetSessionKind.CampaignCoop, 23, 5, "Zachary");
+        Assert.Equal(SessionAdvertMessage.Size, sent.Write(buffer));
+        Assert.True(SessionAdvertMessage.TryRead(buffer, out var got));
+        Assert.Equal(sent, got);
+        Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.SessionAdvert));
+
+        // The last mission of the campaign is the fourth of chapter five.
+        Assert.Equal(5, got.Chapter);
+        Assert.Equal(4, got.MissionInChapter);
+
+        var dogfight = new SessionAdvertMessage(NetSessionKind.Dogfight, SessionAdvertMessage.NoMission, 2, "");
+        Assert.False(dogfight.HasMission);
+        Assert.Equal(0, dogfight.Chapter);
+    }
+
+    [Fact]
+    public void ASessionAdvertOfAnUnknownKindReadsAsUnknownAndOthersAreNotOne()
+    {
+        Span<byte> buffer = stackalloc byte[SessionAdvertMessage.Size];
+        new SessionAdvertMessage((NetSessionKind)9, 0, 1, "h").Write(buffer);
+        Assert.True(SessionAdvertMessage.TryRead(buffer, out var got));
+        Assert.Equal(NetSessionKind.Unknown, got.Kind);
+
+        Span<byte> handshake = stackalloc byte[HandshakeMessage.Size];
+        new HandshakeMessage(1, 2.0, 3).Write(handshake);
+        Assert.False(SessionAdvertMessage.TryRead(handshake, out _));
     }
 }

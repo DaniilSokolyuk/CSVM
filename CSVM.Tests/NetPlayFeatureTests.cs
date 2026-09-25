@@ -144,8 +144,76 @@ public class NetPlayFeatureTests
 
         var launch = door.BuildLaunch();
         Assert.NotNull(launch);
-        Assert.Same(mesh[1], launch!.Transport);
+        var lobby = Assert.IsType<NetLobby>(launch!.Transport);
+        Assert.Same(mesh[1], lobby.Inner);
+        Assert.False(lobby.Bound);
         Assert.False(launch.IsHost);
+    }
+
+    [Fact]
+    public void ACoopHostAdvertisesItsMissionAndCountsItsGuestsOnTheWire()
+    {
+        var mesh = LoopbackTransport.Mesh(3, Clean, new Random(23));
+        var host = new NetPlayFeature((_, _, _) => mesh[0], (_, _) => mesh[0]);
+        var guest = new NetPlayFeature((_, _, _) => mesh[1], (_, _) => mesh[1]);
+
+        host.OpenCoopHost(NetSeats.MaxPlayers - 2);
+        host.Offer(7, "Zachary", 2);
+        host.Step(0.016);
+        Assert.True(host.IsCoopHost);
+        Assert.Equal(NetSessionKind.CampaignCoop, host.HostKind);
+
+        guest.OpenJoin();
+        guest.Step(0.016);
+        Assert.True(guest.IsCoopGuest);
+        var advert = guest.Advert!.Value;
+        Assert.Equal(NetSessionKind.CampaignCoop, advert.Kind);
+        Assert.Equal(7, advert.MissionSeq);
+        Assert.Equal(2, advert.Chapter);
+        Assert.Equal(3, advert.MissionInChapter);
+        Assert.Equal("Zachary", advert.Host);
+
+        // Two local seats and the mesh's two other peers.
+        Assert.Equal(4, advert.Players);
+
+        // A new mission reaches the guest on the host's next step, and nothing else is resent.
+        host.Offer(8, "Zachary", 2);
+        host.Step(0.016);
+        guest.Step(0.016);
+        Assert.Equal(8, guest.Advert!.Value.MissionSeq);
+    }
+
+    [Fact]
+    public void ADogfightHostAdvertisesADogfightAndClosingForgetsTheCoopKind()
+    {
+        // A loopback end binds once, so every open takes a fresh one.
+        var host = new NetPlayFeature(
+            (_, _, _) => LoopbackTransport.Mesh(2, Clean, new Random(29))[0],
+            (_, _) => throw new InvalidOperationException("a host does not join"));
+        host.OpenCoopHost(7);
+        Assert.True(host.IsCoopHost);
+        host.Close();
+
+        host.OpenHost(7);
+        Assert.False(host.IsCoopHost);
+        Assert.Equal(NetSessionKind.Dogfight, host.Advertising!.Value.Kind);
+        Assert.False(host.Advertising!.Value.HasMission);
+    }
+
+    [Fact]
+    public void AGuestLearnsTheHostStartedFromTheAnswerTheLobbyHolds()
+    {
+        var mesh = LoopbackTransport.Mesh(2, Clean, new Random(31));
+        var guest = new NetPlayFeature((_, _, _) => mesh[1], (_, _) => mesh[1]);
+        guest.OpenJoin();
+        guest.Step(0.016);
+        Assert.False(guest.HostStarted);
+
+        // The host's session answers every peer on the wire the moment it is built.
+        var roster = NetSeats.Field(mesh[0].LocalPeer, new[] { "plane" }, mesh[0].Peers, "plane");
+        _ = NetSession.Host(mesh[0], roster, seed: 5);
+        guest.Step(0.016);
+        Assert.True(guest.HostStarted);
     }
 
     [Fact]

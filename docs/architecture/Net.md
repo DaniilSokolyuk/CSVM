@@ -75,10 +75,18 @@ throws: a refused mapping costs a host nothing but a line on the board, and a gu
 network still joins. Both calls block for the length of the gateway search, so they belong at the
 moment hosting opens and closes, never on a frame and never in a transport step.
 
+## src/Net/NetLobby.cs
+A carrier's first listener, standing between the socket a menu opens and the session that later
+binds it, since a carrier binds only once. It is itself the `INetTransport` the session binds. A
+host's `Advertise` sends a `SessionAdvertMessage` to every peer on connect and on each change; a
+guest keeps the latest arrival in `Advert` and never passes one on. Any other payload is held (up
+to `HeldPayloads`) until a session binds, then replayed behind the peer announcement, so `Held` is
+how a guest's board learns that the host's session has answered. Read `NetLobbyTests.cs`.
+
 ## src/Net/NetMessages.cs
 The vocabulary: `NetMessageType` (one word per message), the death, spawn and match-end enums
 taken from the original's own values, `NetDirectorEvent` (the director message's codes and id
-layouts), `NetWorldEvent` (the world event's codes), and the twelve message structs, the host's spawn grant and a seat's ask among them. Each is a value type implementing `INetMessage<TSelf>`,
+layouts), `NetWorldEvent` (the world event's codes), `NetSessionKind`, and the message structs, the host's spawn grant, a seat's ask and the lobby's `SessionAdvertMessage` among them. Each is a value type implementing `INetMessage<TSelf>`,
 which carries its type word and its `INetTransport.cs` reliability class as static abstracts, so
 a sender reads the class off the type without constructing anything. `NetMessage` holds what they
 share: the four-byte header, the no-seat and no-spawn-entry markers, the aircraft-state width
@@ -130,7 +138,7 @@ without a pane.
 ## src/Net/NetSeats.cs
 The roster's rules: `MaxPlayers = 16` pilots admitted, the count the original's lobby shows and
 its data holds, every seat-indexed table built `SeatCapacity = 16` wide, each seat's identity
-colour, and `Validate`, which requires seats numbered from zero with no gap and at least one flown here.
+colour, and `Validate`, which requires seats numbered from zero with no gap and at least one flown here. `Field` builds a host's roster from its local planes and the peers on its wire.
 Seats 0 to 7 take the original's authored dwords at `00628eb4` in order (the remake's index is
 0-based where the original's was 1-based and its eighth pilot read past the table); seats 8 to 15
 take the channel-wise complement of seat minus 8. The channel order and the derived eight are TUNE

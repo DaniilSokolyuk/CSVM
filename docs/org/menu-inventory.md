@@ -296,6 +296,9 @@ named in it; `WaveEdit` is the twelfth and has no aid, which is the warning unde
 | `campaign-planeselection[:export]` | plane selection, or its export messagebox | `Campaign` |
 | `campaign-hangar` | the hangar over the profile's wallet | `Campaign` → `Hangar` |
 | `campaign-fly` | walks a real profile to Fly Mission and launches | `Campaign` |
+| `campaign-coop[:guests]` | the cabin with the co-op network door open over a loopback wire holding that many guests (0 by default), its band and remote chips drawn; Built-in only | `Campaign` |
+| `network-coopjoin` | the Network board of a guest joined over the loopback to a campaign host, the session named in its status | `Network` |
+| `network-coopwait` | that guest's waiting board | `Network` |
 | `loadboard[:mission_type]` | the load screen's blackboard, over the menu, writing that mission type's own dialog | out of scope |
 | `loadboard-campaign[:CM]` | the load screen's chart sheet for that campaign mission, `CM01` by default, over the menu; it reads the memento off a `--campaign=` profile the same way | out of scope |
 | `pauseboard[:CM[:done]]` | the Original presentation's pause sheet for that campaign mission, `CM01` by default, with that many of its objectives marked. A `--campaign=<profile>:<seq>` beside it hangs that profile's own memento, the way a real pause does; without one the sheet hangs the seeded pin-up | out of scope |

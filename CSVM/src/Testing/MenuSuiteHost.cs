@@ -17,22 +17,22 @@ namespace CSVM.Testing;
 /// the presentation itself.</summary>
 internal static class MenuSuiteHost
 {
-    /// <summary>A bare host with no presentation registered, exits landing in <paramref name="exits"/>,
-    /// the Instant Action feature reading environment defs under <paramref name="dataRoot"/>.
-    /// <paramref name="saveBindings"/> is where an accepted rebind goes, and must stay null unless
-    /// the suite has pointed <see cref="CSVM.Bindings.BindingStore.DirectoryOverride"/> at scratch.
-    /// <paramref name="chapterCinema"/> and <paramref name="closingCinema"/> are the campaign's two
-    /// films; null, every other suite's, means a cabin door plays none.</summary>
+    /// <summary>A bare host with no presentation, exits in <paramref name="exits"/>, defs under
+    /// <paramref name="dataRoot"/>. <paramref name="saveBindings"/> stays null unless the suite
+    /// pointed <see cref="CSVM.Bindings.BindingStore.DirectoryOverride"/> at scratch. Null
+    /// <paramref name="chapterCinema"/> and <paramref name="closingCinema"/> play no film.
+    /// <paramref name="netDoor"/> replaces the default socket door with a suite's own.</summary>
     internal static MenuHost Bare(
         List<MenuExit> exits,
         string dataRoot,
         out BuiltInSeat seat,
         Action<int, BindingProfile>? saveBindings = null,
         ChapterCinema? chapterCinema = null,
-        ClosingCinema? closingCinema = null)
+        ClosingCinema? closingCinema = null,
+        NetPlayFeature? netDoor = null)
     {
         var host = new MenuHost(new PresentationRegistry(), new SilentMenuAudio(), exits.Add);
-        AddFeatures(host, dataRoot, saveBindings, chapterCinema, closingCinema);
+        AddFeatures(host, dataRoot, saveBindings, chapterCinema, closingCinema, netDoor);
         seat = new BuiltInSeat(new MenuInput { Keyboard = true });
         host.AddSeat(seat);
         return host;
@@ -43,7 +43,8 @@ internal static class MenuSuiteHost
     /// has to be joined through it.</summary>
     internal static void AddFeatures(
         MenuHost host, string dataRoot, Action<int, BindingProfile>? saveBindings = null,
-        ChapterCinema? chapterCinema = null, ClosingCinema? closingCinema = null)
+        ChapterCinema? chapterCinema = null, ClosingCinema? closingCinema = null,
+        NetPlayFeature? netDoor = null)
     {
         host.Features.Add(new FreeFlightFeature());
         host.Features.Add(InstantActionFeature.ForDataRoot(dataRoot));
@@ -58,7 +59,7 @@ internal static class MenuSuiteHost
         // No save by default: a suite must never write over the keymap saved at this machine's
         // controls, and only a suite holding the store's directory override may pass one.
         host.Features.Add(new ControlsFeature(saveBindings));
-        host.Features.Add(NetDoor());
+        host.Features.Add(netDoor ?? NetDoor());
     }
 
     /// <summary>The multiplayer door as a suite gets it: the real ENet carrier, bound to the

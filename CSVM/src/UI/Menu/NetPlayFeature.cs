@@ -55,8 +55,12 @@ public sealed class NetPlayFeature : IMenuFeature
     private readonly Func<int, UpnpPortMapResult>? _map;
     private readonly Action<int>? _unmap;
 
-    private INetTransport? _transport;
+    private NetLobby? _transport;
     private INetLink? _link;
+    private NetSessionKind _kind = NetSessionKind.Dogfight;
+    private byte _missionSeq = SessionAdvertMessage.NoMission;
+    private string _hostName = "";
+    private int _localPlayers = 1;
     private Task<UpnpPortMapResult>? _mapping;
     private bool _released;
     private double _joining;
@@ -109,11 +113,30 @@ public sealed class NetPlayFeature : IMenuFeature
     public EnetLinkState? Link => _link?.LinkState;
 
     /// <summary>Whether the host has answered this guest already. A guest's own launch waits on
-    /// this, rather than timing out against a host that has not flown yet.</summary>
-    public bool HostStarted => _link is { PendingPayloads: > 0 };
+    /// this, rather than timing out against a host that has not flown yet. The answer is held
+    /// by the lobby until a session binds it, so the held count is the sign.</summary>
+    public bool HostStarted => _transport is { Held: > 0 };
 
     /// <summary>Whether this end owns the match, meaningful once the door is open.</summary>
     public bool IsHost => Stage == NetDoorStage.Hosting;
+
+    /// <summary>What a host's door holds open: a Dogfight from the Network board, or a campaign
+    /// mission from the campaign's own boards.</summary>
+    public NetSessionKind HostKind => _kind;
+
+    /// <summary>Whether this door is hosting a campaign mission.</summary>
+    public bool IsCoopHost => IsHost && _kind == NetSessionKind.CampaignCoop;
+
+    /// <summary>Whether this door is a guest linked to a host holding a campaign mission open.
+    /// </summary>
+    public bool IsCoopGuest => Stage == NetDoorStage.Joined && Advert is { Kind: NetSessionKind.CampaignCoop };
+
+    /// <summary>The host's word about its session as this guest last heard it, or null while
+    /// none has arrived. A join board names the session from this.</summary>
+    public SessionAdvertMessage? Advert => _transport?.Advert;
+
+    /// <summary>The word this host hands out, or null while the door is not hosting.</summary>
+    public SessionAdvertMessage? Advertising => _transport?.Advertising;
 
     /// <summary>Whether a launch may leave through this door. A host may fly alone and wait for
     /// nobody; a guest may not fly before its link stands.</summary>
@@ -163,27 +186,23 @@ public sealed class NetPlayFeature : IMenuFeature
     /// <summary>Opens a listen server for <paramref name="maxGuests"/> guests on
     /// <see cref="BindAddress"/> and asks the router for the port. A socket that will not open
     /// leaves the door shut with the reason on <see cref="Fault"/>.</summary>
-    public void OpenHost(int maxGuests)
+    public void OpenHost(int maxGuests) => OpenHost(maxGuests, NetSessionKind.Dogfight);
+
+    /// <summary>Opens a listen server for a campaign mission flown together, the campaign
+    /// boards' own door. It is <see cref="OpenHost(int)"/> with the advert naming the campaign;
+    /// <see cref="Offer"/> fills in which mission and whose profile.</summary>
+    public void OpenCoopHost(int maxGuests) => OpenHost(maxGuests, NetSessionKind.CampaignCoop);
+
+    /// <summary>What a coop host's advert names: its next mission, its host name, and its local
+    /// player count. Guests are counted on top of
+    /// <paramref name="localPlayers"/>. Reaches the peers on the next <see cref="Step"/>.</summary>
+    public void Offer(int missionSeq, string hostName, int localPlayers)
     {
-        if (_transport != null)
-        {
-            return;
-        }
-
-        try
-        {
-            _transport = _openHost(Port, maxGuests, BindAddress);
-        }
-        catch (Exception e) when (e is InvalidOperationException or ArgumentException)
-        {
-            Fail(e.Message);
-            return;
-        }
-
-        _link = _transport as INetLink;
-        Fault = "";
-        Stage = NetDoorStage.Hosting;
-        MapPort();
+        _missionSeq = missionSeq is >= 0 and < SessionAdvertMessage.NoMission
+            ? (byte)missionSeq
+            : SessionAdvertMessage.NoMission;
+        _hostName = hostName ?? "";
+        _localPlayers = Math.Max(1, localPlayers);
     }
 
     /// <summary>Starts a join to the typed address. The join lands on a later
@@ -198,7 +217,7 @@ public sealed class NetPlayFeature : IMenuFeature
 
         try
         {
-            _transport = _openJoin(Address, Port);
+            _transport = new NetLobby(_openJoin(Address, Port));
         }
         catch (Exception e) when (e is InvalidOperationException or ArgumentException)
         {
@@ -206,11 +225,12 @@ public sealed class NetPlayFeature : IMenuFeature
             return;
         }
 
-        _link = _transport as INetLink;
+        _link = _transport.Inner as INetLink;
         Fault = "";
         Stage = NetDoorStage.Joining;
         _joining = 0.0;
     }
+
 
     /// <summary>Drives the socket while the board is up. This is the only place a join lands, and
     /// the only place a guest arrives on a host's board. ⚠ The step is what carries the link, so
@@ -224,6 +244,11 @@ public sealed class NetPlayFeature : IMenuFeature
 
         _transport.Step(dt);
         TakeMapping();
+        if (Stage == NetDoorStage.Hosting)
+        {
+            _transport.Advertise(CurrentAdvert());
+        }
+
         if (Stage != NetDoorStage.Joining)
         {
             return;
@@ -272,6 +297,8 @@ public sealed class NetPlayFeature : IMenuFeature
         _transport = null;
         _link = null;
         _released = false;
+        _kind = NetSessionKind.Dogfight;
+        Offer(SessionAdvertMessage.NoMission, "", 1);
         Stage = NetDoorStage.Shut;
         PortMap = null;
         UnmapPort();
@@ -283,6 +310,41 @@ public sealed class NetPlayFeature : IMenuFeature
     {
         Close();
         Fault = "";
+    }
+
+    // Both host doors open the same socket; only the advert's kind tells them apart.
+    private void OpenHost(int maxGuests, NetSessionKind kind)
+    {
+        if (_transport != null)
+        {
+            return;
+        }
+
+        try
+        {
+            _transport = new NetLobby(_openHost(Port, maxGuests, BindAddress));
+        }
+        catch (Exception e) when (e is InvalidOperationException or ArgumentException)
+        {
+            Fail(e.Message);
+            return;
+        }
+
+        _link = _transport.Inner as INetLink;
+        _kind = kind;
+        Fault = "";
+        Stage = NetDoorStage.Hosting;
+        _transport.Advertise(CurrentAdvert());
+        MapPort();
+    }
+
+    // The player count is this machine's seats plus every guest on the wire. It moves as guests
+    // arrive, and the step re-sends it.
+    private SessionAdvertMessage CurrentAdvert()
+    {
+        int players = Math.Min(_localPlayers + Peers, byte.MaxValue);
+        byte seq = _kind == NetSessionKind.CampaignCoop ? _missionSeq : SessionAdvertMessage.NoMission;
+        return new SessionAdvertMessage(_kind, seq, (byte)players, _hostName);
     }
 
     // Asked for once, where hosting opens, and away from the frame. ⚠ The call blocks for the

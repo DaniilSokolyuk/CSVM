@@ -91,6 +91,48 @@ public static class NetSeats
         }
     }
 
+    /// <summary>A host's field: one seat per plane in <paramref name="localPlanes"/> flown here,
+    /// then one per peer in <paramref name="peers"/> flying <paramref name="remotePlane"/>, cut at
+    /// <see cref="MaxPlayers"/>. Local seats are called P1 upward and a remote one after its peer.
+    /// A remote guest holds a seat and nothing else here: no pane, no pad, no input.</summary>
+    public static NetSeat[] Field(
+        int localPeer, IReadOnlyList<string> localPlanes, IReadOnlyList<int> peers, string remotePlane)
+    {
+        ArgumentNullException.ThrowIfNull(localPlanes);
+        ArgumentNullException.ThrowIfNull(peers);
+        var seats = new List<NetSeat>(localPlanes.Count + peers.Count);
+        for (int i = 0; i < localPlanes.Count && seats.Count < MaxPlayers; i++)
+        {
+            seats.Add(new NetSeat
+            {
+                PeerId = localPeer,
+                SeatIndex = seats.Count,
+                IsLocal = true,
+                Callsign = $"P{(i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+                PlaneNode = localPlanes[i],
+            });
+        }
+
+        foreach (int peer in peers)
+        {
+            if (seats.Count >= MaxPlayers)
+            {
+                break;
+            }
+
+            seats.Add(new NetSeat
+            {
+                PeerId = peer,
+                SeatIndex = seats.Count,
+                Callsign = $"guest {peer.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+                PlaneNode = remotePlane,
+            });
+        }
+
+        Validate(seats);
+        return seats.ToArray();
+    }
+
     private static uint[] BuildTable()
     {
         var table = new uint[SeatCapacity];

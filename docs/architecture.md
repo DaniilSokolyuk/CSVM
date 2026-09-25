@@ -301,7 +301,9 @@ The launchscreen and splitscreen rig, plus the interactive debug labs. Every lab
 - `src/UI/MenuControlsSeats.cs`, the rebinding screen's seat bookkeeping for any presentation: which seats it offers, their pad identities and staged keymaps.
 - `src/UI/Menu/FreeFlightFeature.cs`, Free Flight as a shared feature: the chapter roster, the pick, the launch gate and the typed exit.
 - `src/UI/Menu/InstantActionFeature.cs`, Instant Action as a shared feature: the decoded option sets, the typed setup state, the built def.
-- `src/UI/Menu/NetPlayFeature.cs`, the multiplayer door as a shared feature: the port and address, the socket, the link readouts, the wire a launch takes.
+- `src/UI/Menu/NetPlayFeature.cs`, the multiplayer door as a shared feature: the port and address, the socket, the link readouts, the session advert, the wire a launch takes.
+- `src/UI/Menu/CoopDoorText.cs`, the words the campaign's network door is drawn in: the host's band, the advertised session's name, the join and waiting boards' status lines.
+- `src/UI/Menu/NetDoorAid.cs`, the loopback multiplayer doors the screenshot aids stand on: no socket, no router, a campaign host already advertising.
 - `src/UI/Menu/Original/OriginalShell.cs`, the Original presentation's screen graph over the decoded layout, and its five partials below.
 - `src/UI/Menu/Original/OriginalShellDialog.cs`, the shell's own standing messagebox (a `partial`): `RaiseDialog`, the `DIALOG:*` answer keys, the box's rows and how it composes over the screen.
 - `src/UI/Menu/Original/OriginalCheats.cs`, the shell's three typed cheats (a `partial`): each screen's authored region, its latch, the arming click and what a word fires.
@@ -620,6 +622,7 @@ original's own message set, with ids and guarantees, is in [`org/multiplayer-mes
 - `src/Net/SteamTransport.cs`, the Steam carrier's place in the seam with no SDK behind it: every way in throws "not built with the Steamworks SDK", and `SteamBuild` is the `CSVM_STEAM` define.
 - `src/Net/NetCarrier.cs`, which carrier a match runs over, chosen once: the door's registration and the command line both open through it, and a build define is the whole of the choice.
 - `src/Net/UpnpPortMap.cs`, a best-effort port mapping through Godot's UPnP client: four outcomes a host can show, never a throw, and never required for a match to be joinable.
+- `src/Net/NetLobby.cs`, a carrier's first listener before any session binds it: the host's session advert out, the latest advert in, every other payload held for the session.
 - `src/Net/NetMessages.cs`, the message vocabulary: one struct per message, each declaring its type word and reliability class, over a shared four-byte header.
 - `src/Net/NetWorldMessages.cs`, the host-owned world's messages: an AI's pose, fire and hit claim, and the world event.
 - `src/Net/NetMessageWriter.cs`, the writer and reader cursors every message is packed and unpacked through: little-endian primitives, quantised unit fields, fixed-width text.

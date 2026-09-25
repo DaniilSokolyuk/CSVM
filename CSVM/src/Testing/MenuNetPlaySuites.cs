@@ -66,7 +66,7 @@ internal static class MenuNetPlaySuites
         menu.Drive(Up);
         ctx.Check(menu.ShownRowText == LaunchMenu.NetworkRow,
             $"the Mode screen's last row is the multiplayer door ({menu.ShownRowText})");
-        ctx.Check(menu.ShownDetail == "Host a Dogfight over the network, or join one by address.",
+        ctx.Check(menu.ShownDetail == "Host a Dogfight over the network, or join a Dogfight or a campaign by address.",
             $"and its description says what it is for ({menu.ShownDetail})");
 
         menu.Drive(Accept);

@@ -118,7 +118,8 @@ empty `PresentationRegistry`, a silent `IMenuAudio` and a caller-owned exit list
 registers the same Free Flight, Instant Action, player-setup, hangar, campaign and controls
 features the launcher wires; `Menu` returns a built launchscreen for a suite that reads nothing
 back from the host. Seat 0 joins through the setup feature, which is why the seat is added after
-the features, and the controls feature is registered in the form that saves nothing. Read
+the features, and the controls feature is registered in the form that saves nothing. A suite that
+drives the multiplayer door passes its own `netDoor`. Read
 `UI/Menu/MenuHost.cs` for the host itself.
 
 ## src/Testing/GoldenShot.cs

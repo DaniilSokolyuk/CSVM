@@ -14,7 +14,7 @@ graph. It owns the drawing, the per-seat `MenuInput` polling, the join scan, the
 the mouse (player 1's rows take Godot's hit test through `gui_input`, folded into the next frame's
 step, Accept and Back), and nothing else: rosters, seats, picks, gates and the typed exit are
 the host's features (`Menu/MenuHost.cs`), the layout is `MenuZones`, and the hangar and campaign
-screens are `HangarFlow` and `CampaignFlow` drawn through `ComposedBoardView`, whose `Film` owns a frame before any screen reads it. Its Ammo Selection rows stand on the flown build's own fit, and `AmmoPylons` leaves out a pylon that build never bought, since the original draws no field for one. Contract: [../menu-presentations.md](../menu-presentations.md).
+screens are `HangarFlow` and `CampaignFlow` drawn through `ComposedBoardView`, whose `Film` owns a frame before any screen reads it. On the campaign boards player 1's L / Y opens and closes the co-op network door, whose band and remote guests' chips ride the chip strip; a co-op guest's Continue leads to the Network screen's waiting mode. Its Ammo Selection rows stand on the flown build's own fit, and `AmmoPylons` leaves out a pylon that build never bought, since the original draws no field for one. Contract: [../menu-presentations.md](../menu-presentations.md).
 
 ## src/UI/MenuZones.cs
 How the launchscreen's three bands divide a window: a header and a footer held at the heights their
@@ -1190,12 +1190,24 @@ and `BuildExit` are the typed result. Nothing here reads a pad: `src/UI/MenuSeat
 ## src/UI/Menu/NetPlayFeature.cs
 The multiplayer door as a shared `IMenuFeature`, engine-free and carrier-free: the port and the
 address a board edits, the socket it opens, and the readouts a board draws (`Stage`, `Peers`,
-`Link`, `PortMap`, `Fault`, `HostStarted`). Both carrier factories and both port-mapping calls
-arrive as delegates, so the launcher passes `Net/NetCarrier.cs`'s selection and a suite passes a
-loopback mesh and no router. `OpenHost`/`OpenJoin` open, `Step` carries the link (a join lands
-there, not in the press), `BuildLaunch` hands the wire to the launch as a `MenuNetLaunch` and
-keeps nothing, `Close` gives the router's port back. The map runs on its own thread because the
-gateway search blocks; the unmap does not. Board: `src/UI/LaunchMenu.cs`'s Network screen.
+`Link`, `PortMap`, `Fault`, `HostStarted`, `Advert`). Both carrier factories and both
+port-mapping calls arrive as delegates, so the launcher passes `Net/NetCarrier.cs`'s selection and
+a suite passes a loopback mesh and no router. Every open wraps its carrier in a `Net/NetLobby.cs`.
+`OpenHost`, `OpenCoopHost` (the campaign's, whose `Offer` names the mission) and `OpenJoin` open;
+`Step` carries the link and re-advertises; `BuildLaunch` hands the lobby on; `Close` unmaps. The
+map runs on its own thread because the gateway search blocks. Boards: `LaunchMenu.cs`.
+
+## src/UI/Menu/CoopDoorText.cs
+The words the campaign's network door is drawn in, engine-free and built off the door alone: the
+host's band (`HostBand`, the open port, the router's address and the guest count), the session an
+advert names (`SessionName`), the join board's status (`JoinedStatus`) and the waiting board's
+(`WaitingStatus`), and the rows and presses those boards show. The mission's long name comes in as
+a delegate, since only the caller holds the langui table.
+
+## src/UI/Menu/NetDoorAid.cs
+The multiplayer doors the `--menu=` screenshot aids stand on: a host door over a loopback wire with
+guests already on it and a router stub mapping at a documentation address, and a guest door already
+joined to a loopback host advertising a campaign mission. No aid opens a socket or asks a router.
 
 ## src/UI/MenuSeatDevices.cs
 The pad side of the shared player setup, for any presentation, over seat 0's `MenuInput` and the
