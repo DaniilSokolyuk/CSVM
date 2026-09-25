@@ -1270,13 +1270,13 @@ roster, a lock or a store. Owned by the host's feature set and read out of it by
 
 ## src/UI/Menu/ControlsFeature.cs
 The rebinding screen as a shared `IMenuFeature`, engine-free: which seat's keymap is being edited
-(one registered `BindingProfile` per seat), which of the three contexts, the row and slot cursors,
-the capture in progress over the seat's own `IDeviceState`, and the steal it is about to perform.
-A capture that lands on a free control binds it; one that lands on a held control raises `Pending`
-naming every action that would lose it and moves nothing until `ConfirmSteal`, which keeps the
-original's conflict rule from happening behind the player's back. `UnbindSlot`, `ResetContext`,
-`Save` and `Accepted` (each committed seat, for a host whose seats hold their own keymaps) are the
-rest. The seat's `MouseFlying` and `MouseSensitivity` are staged with the maps and written on accept. Editing is scoped to one seat's profile. Model: [../org/input.md](../org/input.md).
+(one `BindingProfile` per seat), which context, the row and slot cursors, the capture over the
+seat's own `IDeviceState` (passed the focused row, so a stick axis binds a whole pair), and the
+steal it is about to perform. A capture on a held control raises `Pending` naming every loser but a
+full axis's own pair partner, and moves nothing until `ConfirmSteal`. `UnbindSlot`, `ResetContext`,
+`OpenProfilesFolder`, the injected save (player 1's through `Sticks/StickScreens.cs`) and `Accepted`
+(each committed seat) are the rest. `MouseFlying` and `MouseSensitivity` are staged with the maps.
+Editing is scoped to one seat's profile. Model: [../org/input.md](../org/input.md).
 
 ## src/UI/Menu/PlayerSetupFeature.cs
 Player setup as a shared `IMenuFeature`, device-neutral and engine-free. `Seats` are `PlayerSeat`s

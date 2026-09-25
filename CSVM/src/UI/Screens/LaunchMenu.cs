@@ -107,10 +107,10 @@ public sealed partial class LaunchMenu : CanvasLayer
     private const int ControlsPlayerRow = 0;
     private const int ControlsSensitivityRow = 1;
     private const int ControlsContextRow = 2;
-    // The three rows below the action list, in the original's own order: reset the whole keymap,
-    // abandon every staged edit, commit them. The original draws these as persistent buttons on
-    // every category page; here they are the tail of the one list this presentation has. TUNE.
-    private const int ControlsFooterRows = 3;
+    // The rows below the action list. First the stick profiles folder, then the original's three
+    // in its order: reset the keymap, abandon the staged edits, commit them. Accept stays last. TUNE.
+    private const int ControlsFooterRows = 4;
+    private const int ControlsFolderButton = 0;
     // The Options screen's stepper rows, above the Controls door and the apply row. The screen
     // is a form the cursor walks top to bottom. First the five gameplay settings: the three the
     // Original presentation's GAME OPTIONS page draws, in its order, then the targeting switch
@@ -2789,9 +2789,10 @@ public sealed partial class LaunchMenu : CanvasLayer
 
         switch (ControlsButton(_controlsIndex))
         {
-            case 0: _controls.ResetSeat(); break;
-            case 1: _controls.Cancel(); break;
-            case 2: CommitControls(p1); break;
+            case ControlsFolderButton: _controls.OpenProfilesFolder(); break;
+            case 1: _controls.ResetSeat(); break;
+            case 2: _controls.Cancel(); break;
+            case 3: CommitControls(p1); break;
             default: _controls.BeginCapture(); break;
         }
     }
@@ -2908,9 +2909,10 @@ public sealed partial class LaunchMenu : CanvasLayer
             return "Control set";
         return ControlsButton(index) switch
         {
-            0 => "Reset to default",
-            1 => "Cancel changes",
-            2 => "Accept changes",
+            ControlsFolderButton => "Open profiles folder",
+            1 => "Reset to default",
+            2 => "Cancel changes",
+            3 => "Accept changes",
             _ => BindingLabels.Name(_controls.Actions[index - ControlsHeaderRows]),
         };
     }
@@ -2925,6 +2927,8 @@ public sealed partial class LaunchMenu : CanvasLayer
             return SensitivityScale.Label(_controls.MouseSensitivity);
         if (index == ControlsContextRow)
             return ControlsContextLabel(_controls.Context);
+        if (ControlsButton(index) == ControlsFolderButton)
+            return CSVM.Sticks.StickProfiles.UserDirectory;
         if (ControlsButton(index) >= 0)
             return _controls.Dirty ? "changed" : string.Empty;
 
@@ -2957,9 +2961,11 @@ public sealed partial class LaunchMenu : CanvasLayer
             return "Which keymap: one control means different things flying, on a board and in the free camera.";
         return ControlsButton(focus) switch
         {
-            0 => "Puts every control set back to the shipped keymap. Cancel still undoes it.",
-            1 => "Throws away everything changed here, a reset included.",
-            2 => "Writes the changes to this seat's keymap and saves them.",
+            ControlsFolderButton => "Opens the folder holding player 1's stick layouts, one file per stick model. "
+                + "Deadzones are edited per binding there.",
+            1 => "Puts every control set back to the shipped keymap. Cancel still undoes it.",
+            2 => "Throws away everything changed here, a reset included.",
+            3 => "Writes the changes to this seat's keymap and saves them. Player 1's stick rows go to the stick profile files.",
             _ => "Enter / A rebinds the marked control; ←→ picks which one.",
         };
     }

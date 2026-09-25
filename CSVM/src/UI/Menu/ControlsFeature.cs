@@ -32,6 +32,7 @@ public sealed class ControlsFeature : IMenuFeature
     private readonly List<int> _players = new();
     private readonly HashSet<int> _dirty = new();
     private readonly Action<int, BindingProfile>? _save;
+    private readonly Func<string?>? _openProfilesFolder;
 
     private InputContext _context = InputContext.Flight;
     private ControlCapture? _capture;
@@ -40,9 +41,14 @@ public sealed class ControlsFeature : IMenuFeature
     private int _slot;
 
     /// <summary>A feature whose saves go through <paramref name="save"/>, or nowhere when that is
-    /// null. The write is injected rather than reached for, so the feature stays engine-free and a
-    /// test never touches the player's real keymap file.</summary>
-    public ControlsFeature(Action<int, BindingProfile>? save = null) => _save = save;
+    /// null. The write is injected rather than reached for. So the feature stays engine-free and a
+    /// test never touches the player's real keymap file. The folder opener returns the stick profile
+    /// folder's path, or null when it could not open it (<paramref name="openProfilesFolder"/>).</summary>
+    public ControlsFeature(Action<int, BindingProfile>? save = null, Func<string?>? openProfilesFolder = null)
+    {
+        _save = save;
+        _openProfilesFolder = openProfilesFolder;
+    }
 
     /// <summary>Raised by <see cref="Accept"/> once per seat it committed, after the save, with the
     /// player and the profile as accepted. A host whose seats copied that player's keymap before the
@@ -229,9 +235,19 @@ public sealed class ControlsFeature : IMenuFeature
         var seat = _seats[_player];
         Pending = null;
         Capturing = true;
-        _capture = new ControlCapture(seat.PadOf(_context), seat.ReadsKeyboard);
+        _capture = new ControlCapture(seat.PadOf(_context), seat.ReadsKeyboard, row: Focused);
         _capture.Arm(seat.Devices.For(_context));
-        Status = $"Press a control for {BindingLabels.Name(Focused)}.";
+        Status = CapturePrompt(Focused);
+    }
+
+    /// <summary>Opens the folder the stick profile files live in, through whatever opener the host
+    /// supplied, and says where it is. The files are where a binding's deadzone is edited.</summary>
+    public void OpenProfilesFolder()
+    {
+        string? path = _openProfilesFolder?.Invoke();
+        Status = path is null
+            ? "The stick profiles folder could not be opened."
+            : $"Opened {path}. Deadzones are edited per binding in these files.";
     }
 
     /// <summary>Stops listening without binding anything.</summary>
@@ -273,10 +289,12 @@ public sealed class ControlsFeature : IMenuFeature
     /// the whole rule and a test drives it without a device.</summary>
     public bool Offer(Binding binding)
     {
+        // A full axis sits on both rows of its pair, so the partner holding it loses nothing.
+        var partner = binding.Control.Kind == ControlKind.FullAxis ? AxisPairs.PartnerOf(Focused) : null;
         var losers = new List<InputAction>();
         foreach (var owner in Map.OwnersOf(binding))
         {
-            if (owner != Focused)
+            if (owner != Focused && owner != partner)
                 losers.Add(owner);
         }
 
@@ -324,7 +342,10 @@ public sealed class ControlsFeature : IMenuFeature
         Map.Unassign(Focused, dropped);
         _slot = Math.Min(_slot, FocusedBindings.Count);
         MarkDirty();
-        Status = $"{BindingLabels.Name(Focused)} lost {BindingLabels.Describe(dropped)}.";
+        var losers = new List<InputAction> { Focused };
+        if (dropped.Control.Kind == ControlKind.FullAxis && AxisPairs.PartnerOf(Focused) is { } partner)
+            losers.Add(partner);
+        Status = $"{BindingLabels.Clause(losers)} lost {BindingLabels.Describe(dropped)}.";
     }
 
     /// <summary>Puts one of this seat's contexts back to the shipped defaults, in the working copy.
@@ -418,6 +439,18 @@ public sealed class ControlsFeature : IMenuFeature
             foreach (var binding in source.Bindings(action))
                 target.Add(action, binding);
         }
+    }
+
+    // The capture prompt. A row that takes a whole stick axis says which way to move it, since the
+    // direction moved decides the invert (AxisPairs.FullAxisFor).
+    private static string CapturePrompt(InputAction row)
+    {
+        string name = BindingLabels.Name(row);
+        if (AxisPairs.IsAbsolute(row))
+            return $"Press a control for {name}, or push a stick lever to full throttle.";
+        if (AxisPairs.TakesFullAxis(row))
+            return $"Press a control for {name}, or move a stick axis toward {name}.";
+        return $"Press a control for {name}.";
     }
 
     private static string ContextName(InputContext context) => context switch

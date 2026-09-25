@@ -107,6 +107,13 @@ Godot's file API, exported by the preset's `data/*.json` filter), the user folde
 `user://stick_profiles/` (with a suite override), and the one live `StickProfileSet`, which
 `StickPump` starts and which registers itself as `LaunchBindings.StickRows`.
 
+## src/Sticks/StickScreens.cs
+What the rebinding screens take from the stick side, injected by `Launcher` into the one
+`UI/Menu/ControlsFeature.cs`: `Save`, the accepted keymap split so player 1's stick rows go to
+`StickProfileSet.SaveFrom` and the keymap file is written from `WithoutStickRows` (other players
+unchanged), and `OpenUserFolder`, which creates the user profile folder and opens it through
+`OS.ShellOpen`. Covered by `CSVM.Tests/ControlsStickTests.cs`.
+
 ## src/Sticks/StickLabels.cs
 How a rebinding screen names a stick: its active profile's short name ("R"), else `Stick` and its
 model, so two unnamed sticks never read as one. `StickPump.Start` registers it as

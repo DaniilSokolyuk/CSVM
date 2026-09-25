@@ -387,6 +387,13 @@ model order after a `+`, then `.json`, into the user folder. That is how two
 layouts of one model sit side by side (`231D-0200.json` and `231D-0200+231D-0201.json`), and how a
 save of a shipped profile becomes the user copy that overrides it.
 
+**Saving from a Controls screen.** Accepting player 1's changes writes each connected model's stick
+rows to its active file (a shipped one becoming the user copy), or to a new solo user file when no
+file applies, and writes only models whose rows changed. The keymap file is written without stick
+rows. The remake Controls screen's "Open profiles folder" row creates `user://stick_profiles/` when
+missing and opens it in the system file browser. A binding's deadzone has no screen control; it is
+edited in these files.
+
 ### The generic stick default
 
 A stick no profile file covers still flies, under one condition: it is the **only** connected

@@ -179,7 +179,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 ### Wave D, capture and screens
 
 10. ☑ Stick capture: full range, hats, full-axis inference, deadzone stamping, labels
-11. ☐ Remake Controls screen: stick rows saved to the active profile, "Open profiles folder"
+11. ☑ Remake Controls screen: stick rows saved to the active profile, "Open profiles folder"
 12. ☐ Original-style KEYS AND BUTTONS page: Stick column, replace per device
 
 ### Wave E, shipped profiles
@@ -197,8 +197,11 @@ Can run in parallel: B5 and B6 once B4 lands, but both edit
 worktrees**. C8 and C9 both touch the generic default's layout, so run them in one worktree or in
 sequence. D11 (`ControlsFeature.cs`, `LaunchMenu.cs`) and D12 (`OriginalOptionsScreen.cs`) have
 separate file ownership and can run in parallel after D10, as long as the shared save path from
-D11 lands first or is agreed up front. <TODO: confirm D11/D12 file ownership once C7's save seam
-exists.>
+D11 lands first or is agreed up front. Ownership as landed: the save path is D11's and is shared.
+`Launcher` injects `Sticks/StickScreens.Save` into the one `ControlsFeature`, and
+`OriginalOptionsScreen` accepts through `ControlsFeature.Accept`, so D12 inherits the split with no
+save code of its own. D12 owns `OriginalOptionsScreen.cs` alone and calls `ControlsFeature`'s
+additive API (`OpenProfilesFolder`, the row-passing capture) if it wants them.
 
 ---
 
@@ -1149,7 +1152,68 @@ inference both directions, throttle-lever row.>
 **⚠ Traps.** A resting stick drifts; keep the rest-then-move mask. A stick at rest in a HOSAS can
 sit slightly off-centre; the capture's rest band must not latch it.
 
-## D11 ☐ Remake Controls screen: stick rows saved to the active profile, "Open profiles folder"
+## D11 ☑ Remake Controls screen: stick rows saved to the active profile, "Open profiles folder"
+
+**Landed.** The remake Controls screen (`ControlsFeature` plus `LaunchMenu`'s Controls page)
+captures, shows, clears and saves stick bindings. No edit to `OriginalOptionsScreen`, `MenuInput`,
+`FlightController` or the `StickProfile*` files.
+
+- **Capture.** `ControlsFeature.BeginCapture` passes `row: Focused` (D10's contract), so a stick
+  axis moved on a pair row or the Throttle (lever) row binds a full axis with invert inferred, and
+  `ActionMap.Assign` puts a pair's full axis on both rows. The prompt says which way to move: "or
+  move a stick axis toward Pitch up" on a pair row, "or push a stick lever to full throttle" on the
+  lever row.
+- **Steal prompt.** `Offer` drops `AxisPairs.PartnerOf(Focused)` from the losers when the offered
+  binding is a full axis, since the partner holding that axis (or a half of it) is replaced, not
+  robbed. Another row holding a half of the axis is still named and asked about. `UnbindSlot` on a
+  full axis clears both rows (B4's `Unassign`) and its status line names both.
+- **Throttle (lever) row.** Nothing to add: `DefaultBindings.ActionsIn(Flight)` already lists it
+  (B6), so the remake page shows it after the digit rows.
+- **Labels.** Unchanged screen code: `BindingLabels.Row` prints D10's "R Axis 1 inverted" forms.
+- **Save split** (the answer to the TODO, shared by both screens). A new
+  `CSVM/src/Sticks/StickScreens.cs` holds `Save(player, keymap, sticks, writeKeymap)`: for player 1
+  it calls `sticks?.SaveFrom(keymap)` and writes the keymap file from
+  `StickProfileResolver.WithoutStickRows(keymap)`, stripping stick rows even while sticks are off;
+  any other player's keymap is written unchanged. `Launcher`'s injected save passes
+  `StickProfiles.Live`. The live profile `Accept` fills keeps its stick rows, so the `Accepted`
+  route to seats already flying carries them (the trap below), and `SaveFrom`'s re-select bumps
+  `Revision`, which those seats re-merge idempotently.
+- **Folder entry (the TODO, answered).** A fourth row below the action list, first of the footer
+  rows so Accept stays the last row: "Open profiles folder", valued `user://stick_profiles`.
+  `ControlsFeature.OpenProfilesFolder()` calls an opener injected as the constructor's second
+  argument and reports the path, or that it could not open. `StickScreens.OpenUserFolder` creates
+  the folder (`DirAccess.MakeDirRecursiveAbsolute` on `StickProfiles.UserPath()`, full-path
+  normalised) and opens it with `OS.ShellOpen`.
+- **Deadzones.** Not editable on the screen (Decision 12b). The folder row's help line and its
+  status say deadzones are edited per binding in the files. `docs/org/input.md` gained "Saving from
+  a Controls screen".
+
+**API for D12** (all additive): `ControlsFeature(save, openProfilesFolder)`,
+`ControlsFeature.OpenProfilesFolder()`, and the row-passing capture inside `BeginCapture`. D12's
+own sticks-only capture builds its `ControlCapture` itself, as D10 describes.
+
+**Left open.**
+
+- No engine suite presses the folder row, since it would open a real file browser; the unit suite
+  covers the feature side, and the opener is owed at the controls.
+- `StickScreens.cs` has no Godot `.uid` yet.
+
+**Verified.** `CSVM.Tests/ControlsStickTests.cs`, 9 facts over `FakeStickNative` and seat 1's
+`SeatDeviceState`: a full axis captured through `ControlsFeature` on PitchDown lands on both rows,
+the lever row is listed and captures a lever, recapturing from the partner row asks nothing, a steal
+names another row holding a half of the axis but not the partner, unbinding a full axis from either
+row clears both and names both, an accepted player 1 writes the profile file and a keymap without
+`stick:` tokens, player 2's keymap is written as-is with no profile file, player 1's keymap is
+stripped with sticks off, and the folder row's status with and without an opener.
+`RunTests.ps1 -SkipEngine -SkipGoldens`: units 5012 passed, 0 failed, 2 skipped (data-absent cinema
+tests). Engine suites `bindings-launch-load`, `bindings-prompt-device`, `menu-controls-seats`,
+`menu-original-controls` and `flight-mouse-scheme-live` pass, engine errors clean. No golden shows
+the remake Controls page. `CheckCommentCaps.ps1` and `CheckDocEntries.ps1` clean. The full
+`RunTests.ps1` on the merged branch passes apart from `ai-wave-launch-hitch`, a timing suite that
+failed while another worktree ran engine suites and passes rerun alone. No stick has been bound on
+the screen at the controls yet, and the folder row has not been pressed.
+
+**Original approach (kept for reference).**
 
 **Goal.** Stick bindings appear in the existing rows of the remake Controls screen, save to the
 active profile file on Accept (staged like every other edit), clearing a full-axis binding from
