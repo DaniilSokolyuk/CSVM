@@ -63,8 +63,10 @@ public sealed partial class StickPump : Node
     /// <summary><c>--dump-sticks</c>: loads the library, logs Godot's pad models, the stick roster
     /// and each stick's resting axes, held buttons and hats, and closes it again. False when no
     /// library loads. Ignores <see cref="Pads.Disabled"/> for the roster, which is a hardware fact,
-    /// but not for the reads.</summary>
-    public static bool Dump(string? repoRoot, string? dataRoot)
+    /// but not for the reads. A positive <paramref name="watchSeconds"/> then logs every control
+    /// that moves for that long, which is how an axis number is matched to a physical movement.
+    /// </summary>
+    public static bool Dump(string? repoRoot, string? dataRoot, int watchSeconds = 0)
     {
         using var roster = Open(repoRoot, dataRoot);
         if (roster is null)
@@ -90,6 +92,11 @@ public sealed partial class StickPump : Node
         }
 
         Log.Info("core", $"sticks dump: {roster.Sticks.Count} stick(s), SDL {roster.Version}");
+        if (watchSeconds > 0 && !roster.InputBlocked)
+        {
+            Watch(roster, watchSeconds);
+        }
+
         return true;
     }
 
@@ -181,5 +188,75 @@ public sealed partial class StickPump : Node
         }
 
         return $"axes_at_rest=[{string.Join(" ", axes)}] held=[{string.Join(" ", held)}] hats=[{string.Join(" ", hats)}]";
+    }
+
+    // The movement half of --dump-sticks=<seconds>. An axis is logged each time it travels a quarter
+    // of its half-range from its last logged value. Buttons log on press and release, hats on any
+    // change, polled every 20 ms like the dump's settle loop.
+    private static void Watch(StickRoster roster, int seconds)
+    {
+        const float Step = 0.25f;
+        var sticks = new List<Stick>(roster.Sticks);
+        var axes = new Dictionary<(int, int), float>();
+        var buttons = new HashSet<(int, int)>();
+        var hats = new Dictionary<(int, int), Bindings.HatDirection>();
+        foreach (var stick in sticks)
+        {
+            for (int a = 0; a < stick.Axes; a++)
+            {
+                axes[(stick.Instance, a)] = roster.Axis(stick, a);
+            }
+        }
+
+        Log.Info("core", $"sticks watch: {seconds} s, move one control at a time");
+        var until = DateTime.UtcNow.AddSeconds(seconds);
+        while (DateTime.UtcNow < until)
+        {
+            Thread.Sleep(20);
+            roster.Update();
+            for (int i = 0; i < sticks.Count; i++)
+            {
+                WatchOne(roster, i, sticks[i], Step, axes, buttons, hats);
+            }
+        }
+
+        Log.Info("core", $"sticks watch: done");
+    }
+
+    private static void WatchOne(
+        StickRoster roster, int index, Stick stick, float step,
+        Dictionary<(int, int), float> axes, HashSet<(int, int)> buttons, Dictionary<(int, int), Bindings.HatDirection> hats)
+    {
+        string who = Log.Format($"[{index}] \"{stick.Name}\" {stick.Model}");
+        for (int a = 0; a < stick.Axes; a++)
+        {
+            float value = roster.Axis(stick, a);
+            float last = axes[(stick.Instance, a)];
+            if (Math.Abs(value - last) >= step)
+            {
+                axes[(stick.Instance, a)] = value;
+                Log.Info("core", $"sticks watch: {who} axis {a} {last:0.00} -> {value:0.00}");
+            }
+        }
+
+        for (int b = 0; b < Math.Min(stick.Buttons, StickRoster.MaxButtons); b++)
+        {
+            bool held = roster.Button(stick, b);
+            if (held != buttons.Contains((stick.Instance, b)))
+            {
+                _ = held ? buttons.Add((stick.Instance, b)) : buttons.Remove((stick.Instance, b));
+                Log.Info("core", $"sticks watch: {who} button {b} {(held ? "pressed" : "released")}");
+            }
+        }
+
+        for (int h = 0; h < stick.Hats; h++)
+        {
+            var direction = roster.Hat(stick, h);
+            if (direction != hats.GetValueOrDefault((stick.Instance, h)))
+            {
+                hats[(stick.Instance, h)] = direction;
+                Log.Info("core", $"sticks watch: {who} hat {h} {direction}");
+            }
+        }
     }
 }

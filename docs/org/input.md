@@ -387,6 +387,34 @@ model order after a `+`, then `.json`, into the user folder. That is how two
 layouts of one model sit side by side (`231D-0200.json` and `231D-0200+231D-0201.json`), and how a
 save of a shipped profile becomes the user copy that overrides it.
 
+### The generic stick default
+
+A stick no profile file covers still flies, under one condition: it is the **only** connected
+model that is both unprofiled and stick-shaped. An ignored profile counts as a profile. With two
+or more candidates nothing is claimed, since axis numbers on an unknown stick are a convention and
+two candidates leave no way to tell which one should fly.
+
+- **Stick-shaped** means at least three axes, with axes 0 and 1 resting within 0.1 of centre. The
+  rest is sampled once per connection, ten roster updates after the device opens, because
+  DirectInput reads zeros until a device has been polled a few times. Other axes may rest anywhere:
+  a throttle lever parks where it was left (the VKB L reads 1.00 on axis 2 at rest, the R -0.57).
+  A stick held deflected while it is sampled is judged not stick-shaped until it is plugged in
+  again. While any candidate is still unsampled nothing is claimed.
+- **The layout.** Axis 0 (X) is roll and axis 1 (Y) pitch, each a full axis with deadzone 0.02 and
+  pitch not inverted (pulled back is positive, as on a pad). Axis 5 (Rz, the twist) is yaw when the
+  device has six axes or more; this follows DirectInput's usual X, Y, Z, Rx, Ry, Rz order and has
+  not been measured on a stick through SDL2. Axis 2 (Z) is the absolute Throttle (lever), inverted
+  so the lever's low end is full throttle, deadzone 0.02; that direction is also unmeasured, and
+  the lever's takeover rule keeps a parked lever from moving the throttle until it is moved. Button
+  0 fires the guns and button 1 the rockets. In menus the hat moves the cursor, button 0 confirms
+  and button 1 backs out.
+- **It lives in memory.** The profile log names it `generic (generic default)`. A controls screen
+  save that changes any of its rows writes the whole layout as a user file under the model's name,
+  which from then on is the model's profile; an unchanged save writes nothing.
+- A device that enumerates as a joystick but is no flight stick (a gaming keypad whose axes rest
+  centred) passes the shape test, so the default can claim it once it is the only unprofiled
+  device. A profile file with `"ignore": true` for that model keeps it off.
+
 ## Force feedback
 
 The original drives an Immersion TouchSense stick through `CImmProject`, and every effect it plays

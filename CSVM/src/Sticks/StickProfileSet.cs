@@ -11,24 +11,33 @@ namespace CSVM.Sticks;
 /// through <see cref="MergeInto"/>, registered as <see cref="LaunchBindings.StickRows"/>. A stick
 /// action source reads <see cref="Map"/>, and the controls screens save through
 /// <see cref="SaveFrom"/>. The pair <see cref="Revision"/> and <see cref="Changed"/> says when the
-/// active set moved, which is when a seat already flying must re-read. Engine-free; <c>StickProfiles</c> builds
-/// the live one.
+/// active set moved, which is when a seat already flying must re-read. When exactly one
+/// stick-shaped model has no file, <see cref="GenericStickDefault"/> is its active profile.
+/// Engine-free; <c>StickProfiles</c> builds the live one.
 /// </summary>
 public sealed class StickProfileSet : IStickRows
 {
     private readonly StickProfileStore _store;
     private readonly Func<IReadOnlyCollection<StickModel>> _connected;
+    private readonly Func<StickModel, StickShape>? _shapeOf;
     private IReadOnlyList<StickProfileFile> _files = Array.Empty<StickProfileFile>();
     private IReadOnlyDictionary<StickModel, StickProfileFile> _active = new Dictionary<StickModel, StickProfileFile>();
     private List<StickModel> _present = new();
 
+    // The generic default last handed out, kept so re-selecting the same claim yields the same file
+    // and a quiet refresh reports no change.
+    private StickProfileFile? _generic;
+
     /// <summary>A set over <paramref name="store"/> selecting for whatever
-    /// <paramref name="connected"/> answers; call <see cref="Reload"/> once to read the files.
-    /// </summary>
-    public StickProfileSet(StickProfileStore store, Func<IReadOnlyCollection<StickModel>> connected)
+    /// <paramref name="connected"/> answers. Call <see cref="Reload"/> once to read the files. The
+    /// <paramref name="shapeOf"/> judge decides the generic single-stick default; without it no
+    /// model gets one.</summary>
+    public StickProfileSet(
+        StickProfileStore store, Func<IReadOnlyCollection<StickModel>> connected, Func<StickModel, StickShape>? shapeOf = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _connected = connected ?? throw new ArgumentNullException(nameof(connected));
+        _shapeOf = shapeOf;
     }
 
     /// <summary>Raised after the active set changed: a plug, an unplug, a reload or a save.</summary>
@@ -72,8 +81,9 @@ public sealed class StickProfileSet : IStickRows
         return Select(force: true);
     }
 
-    /// <summary>Re-selects against the models connected now, doing nothing when they are the ones
-    /// last seen. True when the active set changed. The roster's change signal calls it.</summary>
+    /// <summary>Re-selects against the models connected now and their shapes. True when the active
+    /// set changed. The roster's change signal calls it, which also fires when a stick settles.
+    /// </summary>
     public bool Refresh() => Select(force: false);
 
     /// <summary>The stick rows of one context from the active profiles, as a fresh map.</summary>
@@ -94,6 +104,20 @@ public sealed class StickProfileSet : IStickRows
 
         seen = Revision;
         MergeInto(keymap);
+        return true;
+    }
+
+    /// <summary>The same follow for a reader holding one context's map, such as a menu seat.</summary>
+    public bool MergeIfChanged(ActionMap map, InputContext context, ref int seen)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        if (seen == Revision)
+        {
+            return false;
+        }
+
+        seen = Revision;
+        StickProfileResolver.MergeInto(map, ActiveProfiles(), context);
         return true;
     }
 
@@ -180,24 +204,6 @@ public sealed class StickProfileSet : IStickRows
         return any;
     }
 
-    private static bool SameModels(List<StickModel> left, List<StickModel> right)
-    {
-        if (left.Count != right.Count)
-        {
-            return false;
-        }
-
-        for (int i = 0; i < left.Count; i++)
-        {
-            if (left[i] != right[i])
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
     private static bool SameChoice(
         IReadOnlyDictionary<StickModel, StickProfileFile> left, IReadOnlyDictionary<StickModel, StickProfileFile> right)
     {
@@ -228,6 +234,26 @@ public sealed class StickProfileSet : IStickRows
         return profiles;
     }
 
+    // The generic single-stick default joins the resolver's choice for the one model it claims, if
+    // any. The claimed model keeps the same file object while its claim holds.
+    private void AddGeneric(Dictionary<StickModel, StickProfileFile> next, List<StickModel> present)
+    {
+        var unprofiled = present.FindAll(model => !next.ContainsKey(model));
+        if (_shapeOf is null || GenericStickDefault.Pick(unprofiled, _shapeOf) is not { } model)
+        {
+            _generic = null;
+            return;
+        }
+
+        int axes = _shapeOf(model).Axes;
+        if (_generic is null || _generic.Profile.Model != model)
+        {
+            _generic = new StickProfileFile(StickProfileSource.Generic, GenericStickDefault.FileName, GenericStickDefault.For(model, axes));
+        }
+
+        next[model] = _generic;
+    }
+
     private bool Select(bool force)
     {
         var present = new List<StickModel>();
@@ -240,13 +266,9 @@ public sealed class StickProfileSet : IStickRows
         }
 
         present.Sort(StickProfile.CompareModels);
-        if (!force && SameModels(present, _present))
-        {
-            return false;
-        }
-
         _present = present;
-        var next = StickProfileResolver.Resolve(present, _files);
+        var next = new Dictionary<StickModel, StickProfileFile>(StickProfileResolver.Resolve(present, _files));
+        AddGeneric(next, present);
         if (!force && SameChoice(next, _active))
         {
             return false;

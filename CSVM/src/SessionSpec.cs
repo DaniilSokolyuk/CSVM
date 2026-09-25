@@ -695,6 +695,10 @@ public sealed record SessionSpec
     /// report has nothing to pin.</summary>
     public bool DumpSticks { get; private set; }
 
+    /// <summary><c>--dump-sticks=&lt;seconds&gt;</c>: after the report, log every stick control that
+    /// moves for that many seconds (1 to 120); 0 for the plain report.</summary>
+    public int DumpSticksWatch { get; private set; }
+
     public bool DamageTest { get; private set; }
     public string DamageTestFilter { get; private set; } = "";
     public float DamageHd { get; private set; }
@@ -1384,6 +1388,19 @@ public sealed record SessionSpec
             else if (arg == "--dump-ai") { s.DumpAi = true; }
             else if (arg.StartsWith("--dump-ai=")) { s.DumpAi = true; s.DumpAiChapter = arg["--dump-ai=".Length..]; }
             else if (arg == "--dump-sticks") { s.DumpSticks = true; }
+            else if (arg.StartsWith("--dump-sticks="))
+            {
+                string want = arg["--dump-sticks=".Length..];
+                s.DumpSticks = true;
+                if (int.TryParse(want, NumberStyles.Integer, CultureInfo.InvariantCulture, out int seconds) && seconds >= 1)
+                {
+                    s.DumpSticksWatch = Math.Min(seconds, 120);
+                }
+                else
+                {
+                    notes.Add(new Note("core", $"--dump-sticks={want} is not a number of seconds, dumping without the watch"));
+                }
+            }
             else if (arg == "--dump-tilegrid") { s.DumpTileGrid = true; s.HasContentArg = true; }
             else if (arg.StartsWith("--dump-tilegrid=")) { s.DumpTileGrid = true; s.DumpTileGridPath = arg["--dump-tilegrid=".Length..]; s.HasContentArg = true; }
             else if (arg.StartsWith("--tex-override=")) { texOverrides.Add(arg["--tex-override=".Length..]); }

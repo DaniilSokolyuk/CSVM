@@ -38,7 +38,8 @@ public static class StickProfiles
     public static StickProfileSet Start(StickRoster roster)
     {
         ArgumentNullException.ThrowIfNull(roster);
-        var set = new StickProfileSet(new StickProfileStore(Shipped, UserPath()), () => StickProfileSet.ModelsOf(roster));
+        var set = new StickProfileSet(
+            new StickProfileStore(Shipped, UserPath()), () => StickProfileSet.ModelsOf(roster), model => StickShape.Of(roster, model));
         set.Reload();
         Live = set;
         LaunchBindings.StickRows = set;

@@ -101,10 +101,17 @@ public static class StickProfileResolver
         var profiles = new List<StickProfile>(active);
         foreach (var context in Enum.GetValues<InputContext>())
         {
-            var map = keymap.Map(context);
-            RemoveStickRows(map);
-            AddRows(map, profiles, context);
+            MergeInto(keymap.Map(context), profiles, context);
         }
+    }
+
+    /// <summary>The same replacement on one context's map, for a reader holding only that map.
+    /// </summary>
+    public static void MergeInto(ActionMap map, IEnumerable<StickProfile> active, InputContext context)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        RemoveStickRows(map);
+        AddRows(map, active, context);
     }
 
     /// <summary>A copy of <paramref name="keymap"/> without its stick bindings: what the keymap

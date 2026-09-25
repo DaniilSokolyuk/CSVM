@@ -35,7 +35,9 @@ The gap-filling roster: every listed device whose model Godot's pad roster lacks
 current across plugs and across changes in Godot's roster, and logged on every change. Reads
 (axes -1..1, buttons up to 128, hats as `Bindings.HatDirection`) answer neutral while the gate
 holds, the same `Pads.InputBlocked` pads obey. `ModelAxis`/`ModelButton`/`ModelHat` merge the
-units of one model. Engine-free; read `Pads.cs` for the roster-versus-gate split it follows.
+units of one model. `RestingAxes` is each stick's axes sampled ungated `SettleUpdates` updates
+after it opened, which the shape test reads. Engine-free; read `Pads.cs` for the roster-versus-gate
+split it follows.
 
 ## src/Sticks/StickDeviceState.cs
 The sticks behind the binding seam: an `IDeviceState` answering for `StickModel.Device` identities
@@ -49,8 +51,10 @@ holds one. Tests build it over a `StickRoster` on `CSVM.Tests/FakeStickNative.cs
 ## src/Sticks/StickPump.cs
 The engine side: `Start` loads SDL2 once per process from `Launcher` (never under `--no-pads`, so
 never in a test or golden), publishes the one live roster as `StickPump.Roster`, and pumps it every
-frame at priority -1001, ahead of the session node, focused or not. `Dump` is `--dump-sticks`.
-It starts `StickProfiles` with the roster and refreshes the live set whenever the roster changes.
+frame at priority -1001, ahead of the session node, focused or not. `Dump` is `--dump-sticks`,
+and `--dump-sticks=<seconds>` adds a watch that logs every control that moves. It starts
+`StickProfiles` with the roster and refreshes the live set whenever the roster changes or a stick
+settles.
 
 ## src/Sticks/StickProfile.cs
 One stick model's bindings in one layout, the content of one profile file: the model, the
@@ -80,7 +84,22 @@ The profiles in force: the loaded files, the connected models, the resolver's ch
 `Revision`/`Changed` when that choice moves. It is `Bindings/IStickRows.cs` for seat 1's keymap,
 `Map` for a stick-only action source, `Save` for one profile (copy-on-write), and `SaveFrom` for an
 accepted controls screen (each changed model's rows to its active profile, or a new user profile).
+The generic default joins the choice for the one model it claims (`GenericStickDefault.cs`).
+`MergeIfChanged` follows the choice into a flying seat's keymap or a menu seat's map.
 Engine-free; tests build it over a `StickRoster` on `CSVM.Tests/FakeStickNative.cs`.
+
+## src/Sticks/StickShape.cs
+Whether a device looks like a flight stick: at least three axes, with axes 0 and 1 resting near
+centre in the roster's rest sample (`StickRoster.RestingAxes`). Other axes may rest anywhere, since
+a throttle lever parks where it was left. Unsettled until the sample exists. `Of` judges a model by
+its units in the roster. Read `GenericStickDefault.cs` for the one question it answers.
+
+## src/Sticks/GenericStickDefault.cs
+The in-memory profile the one connected, stick-shaped, unprofiled model gets: X roll, Y pitch, Rz
+yaw from six axes up, Z as the absolute Throttle (lever), buttons 0 and 1 for guns and rockets, and
+in menus the hat, button 0 to confirm and button 1 to back out. `Pick` is the exactly-one rule, `For`
+the rows. A changed screen save turns it into a user file. The layout and rule are in
+`docs/org/input.md`, "The generic stick default".
 
 ## src/Sticks/StickProfiles.cs
 The engine side of the profiles: the shipped folder `res://data/stick_profiles/` (read through

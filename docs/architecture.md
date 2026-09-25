@@ -689,6 +689,8 @@ filling only the models Godot's pad roster lacks.
 - `src/Sticks/StickProfileSet.cs`, the profiles in force, re-selected on every roster change; merges seat 1's keymap and saves an accepted screen.
 - `src/Sticks/StickProfiles.cs`, the engine side: `res://data/stick_profiles/`, `user://stick_profiles/`, and the one live set.
 - `src/Sticks/StickLabels.cs`, a stick's caption prefix for the rebinding screens: its profile's short name, else `Stick` and its model.
+- `src/Sticks/StickShape.cs`, the flight-stick shape test: three axes or more, axes 0 and 1 resting near centre in the roster's rest sample.
+- `src/Sticks/GenericStickDefault.cs`, the in-memory default for the one stick-shaped unprofiled model: X, Y, Rz, Z lever, two fire buttons, hat menus.
 
 ### `src/Video/`, the MPEG-1 cinema decoder
 

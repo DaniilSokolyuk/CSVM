@@ -173,8 +173,8 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 ### Wave C, profiles and defaults
 
 7. ☑ Per-model stick profile files with companions, shipped vs user override, ignore flag
-8. ☐ Generic single-stick default for exactly one stick-shaped unprofiled device
-9. ☐ Menu navigation from sticks
+8. ☑ Generic single-stick default for exactly one stick-shaped unprofiled device
+9. ☑ Menu navigation from sticks
 
 ### Wave D, capture and screens
 
@@ -889,7 +889,61 @@ copy-on-write, ignore, deadzone preservation; a hot-plug test through the fake s
 **⚠ Traps.** Two identical units of one model share a profile and cannot be told apart (accepted,
 Decision 3/7b). A user edit must never write into the shipped `res://` file.
 
-## C8 ☐ Generic single-stick default for exactly one stick-shaped unprofiled device
+## C8 ☑ Generic single-stick default for exactly one stick-shaped unprofiled device
+
+**Landed.** Two new engine-free files, `CSVM/src/Sticks/StickShape.cs` and
+`GenericStickDefault.cs` (entries in `docs/architecture/Sticks.md`); the player-facing rule is
+`docs/org/input.md`, "The generic stick default".
+
+- **Rest sample.** `StickRoster` samples every stick's axes ungated `SettleUpdates` (10) updates
+  after it opened, logs `stick at rest: ...`, and exposes it as `RestingAxes`. DirectInput reads
+  zeros until a device has been polled a few times, so a sample at open says nothing. `Update`
+  returns true on the sampling update, so `StickPump` refreshes the profile set then.
+- **Shape test.** `StickShape.Judge`: unsettled until the sample exists; a stick when the device
+  has at least 3 axes and axes 0 and 1 rest within 0.1 of centre. Other axes may rest anywhere,
+  since a throttle lever parks where it was left. The judgement is made once per connection, from
+  that one sample; a replug re-judges. A model with several units is judged by its first.
+- **Exactly-one rule.** `GenericStickDefault.Pick` takes the connected models the resolver gave no
+  file (an ignored profile counts as profiled). While any of them is unsettled nothing is claimed,
+  so the answer never flips as sticks settle one by one. Otherwise the default goes to the one
+  stick-shaped model, and to none when there are zero or two or more. A device that fails the
+  shape test (pedals, a throttle quadrant) does not count against the rule.
+- **Rows** (`GenericStickDefault.For`). Flight: `RollRight` full axis 0, `PitchUp` full axis 1
+  (not inverted: pulled back reads positive, the pad convention), `YawRight` full axis 5 when the
+  device has 6 or more axes, `ThrottleLever` full axis 2 inverted (raw -1 is full throttle), all at
+  deadzone 0.02; `FireGuns` button 0, `FireRockets` button 1. Menu: C9's rows.
+- **In memory until edited.** `StickProfileSet.Select` adds the default to the resolver's choice as
+  a `StickProfileSource.Generic` file named `(generic default)`, keeping the same file object while
+  the claim holds so a quiet refresh reports no change. Nothing is written on connect. A controls
+  screen save through `SaveFrom` that changes the rows writes a user file under `FileNameFor`
+  (`044F-B10A.json`); an unchanged save writes nothing.
+- **Probe.** `--dump-sticks=<seconds>` adds a watch to the dump: every axis that moves 0.25 or more,
+  every button press and release and every hat change is logged, per stick (`docs/cli.md`).
+
+**Verified.** Unit: `GenericStickDefaultTests` 19 cases (the shape judge, the roster sampling at
+`SettleUpdates` ungated, `Pick` with an unsettled candidate, the flight rows, no yaw below 6 axes,
+the menu rows, no default when every stick is profiled, one stick getting it only after it settles,
+two sticks getting nothing, profiled plus unprofiled, ignored plus unprofiled, pedals beside a
+stick, an unplug handing the default to the remaining stick, the default saved only on a changed
+`SaveFrom`, the Tartarus's all-zero rest passing the shape test) and `SessionSpecTests` for
+`--dump-sticks=<n>` (15, clamped 500 to 120, 0 and a non-number giving no watch). `RunTests.ps1
+-SkipEngine -SkipGoldens`: 4992 passed, 0 failed, 2 skipped. Engine suites `bindings-launch-load`,
+`bindings-prompt-device`, `menu-controls-seats`, `menu-original-controls`, `menu-join-board`,
+`menu-player-setup-seats` and `menu-player-setup-journey` pass, engine errors clean. A live
+`RunProbe.ps1 --no-det --stage=empty --plane=player_bhawk --screenshot=...` on the user's rig logs
+the three rest samples (L `[0.00 0.01 1.00 0 ...]`, R `[0.00 0.00 -0.57 0 ...]`, Tartarus all
+zeros) and, with three unprofiled stick-shaped devices, claims nothing. `CheckCommentCaps.ps1` and
+`CheckDocEntries.ps1` clean. The full `RunTests.ps1` passes on the merged branch with the 19
+goldens hash-identical and no quit hang.
+
+**Left open.** The Tartarus rests centred on all six axes and passes the shape test, so with both
+VKBs profiled it would get the generic default; the fix is a shipped ignore profile for
+`1532/022B` (E13) or a tighter test, and that choice is the user's. Rz as axis 5 and the lever
+direction are unmeasured: `--dump-sticks=20` with the R grip twisted and the lever swept answers
+both. A stick held deflected during its sample is judged not a stick until it is replugged. The
+two new `.cs` files have no Godot `.uid` yet. The controls screen's "needs binding" text is D11's.
+
+**Original approach (kept for reference).**
 
 **Goal.** When exactly one connected, non-ignored device has no matching profile and looks like a
 flight stick (at least 3 axes, axes 0 and 1 resting near centre at connect), it gets: axis 0 roll,
@@ -918,7 +972,36 @@ two axes or an off-centre axis at connect.>
 **⚠ Traps.** Axis indices on an unmapped stick are a convention, not a standard; that is why the
 default is limited to the single-device case. The shape thresholds are TUNE.
 
-## C9 ☐ Menu navigation from sticks
+## C9 ☑ Menu navigation from sticks
+
+**Landed.** Stick bindings enter menu polling through `MenuInput`'s own `PlayerActions`, the same
+way pads do.
+
+- **Rows.** The generic default's menu context binds `MenuUp`/`MenuDown`/`MenuLeft`/`MenuRight` to
+  hat 0, `MenuAccept` to button 0 (the trigger) and `MenuBack` to button 1. E13's shipped profiles
+  should carry the same menu rows.
+- **Reader.** `MenuInput` builds its `SeatDeviceState` with `sticks: new StickDeviceState(() =>
+  _player - 1, ...)` over `StickPump.Roster`, so only a menu seat loaded for player 1 reads a
+  stick; a seat loaded as player 0 or player 2 reads none. A second constructor takes the roster
+  and profile set as delegates, which is how the tests drive it over `FakeStickNative`.
+- **Following the profiles.** Player 1's menu map is already completed by
+  `LaunchBindings.Profile(1, ...)` at load. `ReadDevices` also calls
+  `StickProfileSet.MergeIfChanged(map, InputContext.Menu, ref revision)` (new, the one-context
+  form of C7's follow) and re-applies the rebinds when it merged, so a stick plugged or settling
+  while a menu is open is picked up.
+- **Join flow.** The join board and player setup scan Godot's pad roster only, so a stick can never
+  join a splitscreen seat; no change was needed.
+- **Screens.** Capturing stick rows into the menu context and showing them is D10/D11's.
+
+**Verified.** In `GenericStickDefaultTests`: a player-1 `MenuInput` over `FakeStickNative` moves
+down on hat Down, left on hat Left, accepts on button 0 and backs out on button 1 (`Back` and
+`PadBack`); players 0 and 2 read nothing; a menu seat picks up the default after a late settle. The
+engine suites listed under C8 and the full `RunTests.ps1` on the merged branch pass. Menu
+navigation by stick is owed at the controls.
+
+**Left open.** None beyond D10/D11's screen work.
+
+**Original approach (kept for reference).**
 
 **Goal.** A stick's hat navigates menus, its trigger confirms and a second button backs out, in the
 generic default and in the shipped profiles, and menu contexts accept stick bindings in the

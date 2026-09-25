@@ -21,11 +21,18 @@ public sealed class StickRoster : IDisposable
     /// reports. A button at or past it reads released.</summary>
     public const int MaxButtons = 128;
 
+    /// <summary>How many updates after opening a stick's axes are sampled as its rest. DirectInput
+    /// answers zeros until a device has been polled a few times, so a sample at open says nothing.
+    /// TUNE; <c>--dump-sticks</c> waits as many polls.</summary>
+    public const int SettleUpdates = 10;
+
     private readonly IStickNative _native;
     private readonly Func<IReadOnlyCollection<StickModel>> _godotModels;
     private readonly Func<bool> _inputBlocked;
     private readonly List<Stick> _sticks = new();
     private readonly HashSet<int> _skipped = new();
+    private readonly Dictionary<int, int> _age = new();
+    private readonly Dictionary<int, float[]> _rest = new();
     private IReadOnlyCollection<StickModel>? _godotSeen;
     private bool _listed;
 
@@ -81,20 +88,31 @@ public sealed class StickRoster : IDisposable
     }
 
     /// <summary>Once per frame: pumps the library, and re-applies the gap-filler when a device came
-    /// or went or Godot's roster changed. True when the opened set changed. The first call always
-    /// lists, so a roster is complete as soon as it is built.</summary>
+    /// or went or Godot's roster changed. True when the opened set changed or a stick's rest was
+    /// just sampled (<see cref="RestingAxes"/>). The first call always lists, so a roster is
+    /// complete as soon as it is built.</summary>
     public bool Update()
     {
         bool plugged = _native.Pump();
         var godot = _godotModels();
-        if (_listed && !plugged && ReferenceEquals(godot, _godotSeen))
+        bool changed = false;
+        if (!_listed || plugged || !ReferenceEquals(godot, _godotSeen))
         {
-            return false;
+            _listed = true;
+            _godotSeen = godot;
+            changed = Reconcile(_native.List(), godot);
         }
 
-        _listed = true;
-        _godotSeen = godot;
-        return Reconcile(_native.List(), godot);
+        return Settle() || changed;
+    }
+
+    /// <summary>A stick's axes as they read <see cref="SettleUpdates"/> updates after it opened,
+    /// or null before then or once it is gone. Sampled ungated, since where an axis rests is a
+    /// hardware fact like the roster itself.</summary>
+    public IReadOnlyList<float>? RestingAxes(Stick stick)
+    {
+        ArgumentNullException.ThrowIfNull(stick);
+        return _rest.TryGetValue(stick.Instance, out var rest) ? rest : null;
     }
 
     /// <summary>A stick's axis, -1..1; 0 while blocked, for an axis it lacks, or once it is gone.</summary>
@@ -195,6 +213,41 @@ public sealed class StickRoster : IDisposable
         return false;
     }
 
+    // Ages every opened stick by one update and samples the rest of each that just came of age.
+    // The update that opened a stick starts it at zero.
+    private bool Settle()
+    {
+        bool sampled = false;
+        foreach (var stick in _sticks)
+        {
+            if (_rest.ContainsKey(stick.Instance))
+            {
+                continue;
+            }
+
+            int age = _age.TryGetValue(stick.Instance, out int seen) ? seen + 1 : 0;
+            _age[stick.Instance] = age;
+            if (age < SettleUpdates)
+            {
+                continue;
+            }
+
+            var rest = new float[stick.Axes];
+            var printed = new List<string>(stick.Axes);
+            for (int a = 0; a < stick.Axes; a++)
+            {
+                rest[a] = Normalise(_native.Axis(stick.Instance, a));
+                printed.Add(Log.Format($"{rest[a]:0.00}"));
+            }
+
+            _rest[stick.Instance] = rest;
+            sampled = true;
+            Log.Info("core", $"stick at rest: \"{stick.Name}\" {stick.Model} axes=[{string.Join(" ", printed)}]");
+        }
+
+        return sampled;
+    }
+
     private bool Reconcile(IReadOnlyList<StickListing> listed, IReadOnlyCollection<StickModel> godot)
     {
         var wanted = GapFill(listed, godot);
@@ -212,6 +265,8 @@ public sealed class StickRoster : IDisposable
             {
                 _native.Close(stick.Instance);
                 _sticks.RemoveAt(i);
+                _age.Remove(stick.Instance);
+                _rest.Remove(stick.Instance);
                 changed = true;
                 Log.Info("core", $"stick disconnected: \"{stick.Name}\" {stick.Model}");
             }

@@ -5,11 +5,13 @@ using CSVM.Bindings;
 namespace CSVM.Sticks;
 
 /// <summary>Where a profile file was read from. Shipped files are read-only; a user file overrides
-/// a shipped one for the same model and companions.</summary>
+/// a shipped one for the same model and companions. A generic file is the in-memory single-stick
+/// default (<see cref="GenericStickDefault"/>), which no file on disk holds.</summary>
 public enum StickProfileSource
 {
     Shipped,
     User,
+    Generic,
 }
 
 /// <summary>One profile file as the resolver ranks it: its source, its file name and what it holds.

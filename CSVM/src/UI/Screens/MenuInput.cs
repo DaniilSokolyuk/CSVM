@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using CSVM.Bindings;
+using CSVM.Sticks;
 using CSVM.UI.Boards;
 using CSVM.Utils;
 using Godot;
@@ -142,6 +143,10 @@ public sealed class MenuInput
     private readonly PlayerActions _keysOnly;
     private readonly ActiveDevice _device = new();
 
+    // The stick profiles this seat's menu rows follow, asked per tick so a set started after this
+    // seat is still followed.
+    private readonly Func<StickProfileSet?> _stickProfiles;
+
     private PlayerActions _typingKeys;
 
     // Whichever of the two keyboard seats TextEntry selected this tick.
@@ -155,9 +160,30 @@ public sealed class MenuInput
     private bool _erasePrev;
     private int _dirPrev, _dirXPrev, _dirPadPrev, _dirPadXPrev;
 
+    // The stick profile revision this seat's menu rows were last merged from.
+    private int _stickRevision = -1;
+
+    // The player this seat loaded the keymap of, 0 until LoadSavedKeymap. Sticks read only for
+    // player 1, so a seat that never learns its player, or a joined one, reads none.
+    private int _player;
+
+    /// <summary>A seat over the live stick roster and profiles. Only player 1 reads the sticks, once
+    /// <see cref="LoadSavedKeymap"/> has named the player.</summary>
     public MenuInput()
+        : this(() => StickPump.Roster, () => StickProfiles.Live)
     {
-        _devices = new SeatDeviceState(SeatPads, () => Pads);
+    }
+
+    /// <summary>A seat over the stick roster and profile set given, for a suite with a fake stick.
+    /// The <paramref name="player"/> argument seats it without <see cref="LoadSavedKeymap"/>, which
+    /// would read the user's keymap folder.</summary>
+    public MenuInput(Func<StickRoster?> sticks, Func<StickProfileSet?> stickProfiles, int player = 0)
+    {
+        ArgumentNullException.ThrowIfNull(sticks);
+        _stickProfiles = stickProfiles ?? throw new ArgumentNullException(nameof(stickProfiles));
+        _player = player;
+        var stickState = new StickDeviceState(() => _player - 1, sticks);
+        _devices = new SeatDeviceState(SeatPads, () => Pads, sticks: stickState);
         _padMuted = new SeatDeviceState(SeatPads, () => Pads, readsPads: false);
         var map = DefaultBindings.MapFor(InputContext.Menu, SeatPads);
 
@@ -318,9 +344,11 @@ public sealed class MenuInput
     /// <summary>Puts this seat on the menu keymap <paramref name="player"/> saved, in place, so the
     /// map this poller's readers hold is the one that changed. Anything the file does not carry
     /// stays at its shipped default, and under the launch gate no file is read at all
-    /// (<see cref="LaunchBindings"/>). Called once the seat knows which player it is.</summary>
+    /// (<see cref="LaunchBindings"/>). Called once the seat knows which player it is. Player 1 also
+    /// reads the sticks, and its stick rows follow the active stick profiles from then on.</summary>
     public void LoadSavedKeymap(int player)
     {
+        _player = player;
         Map.Fill(LaunchBindings.Map(player, InputContext.Menu, SeatPads, readsKeyboard: true));
         RebindsApplied();
     }
@@ -516,6 +544,7 @@ public sealed class MenuInput
     // taken from the live field because a caller sets it after construction.
     private void ReadDevices()
     {
+        FollowStickProfiles();
         if (_typingStale)
         {
             _typingKeys = new PlayerActions(TypingMap(_keys.Map), Keyboard);
@@ -531,6 +560,17 @@ public sealed class MenuInput
         _live.Poll(_devices);
         _padOnly.Poll(_devices);
         _keysOnly.Poll(_padMuted);
+    }
+
+    // A plug, or a stick settling into the generic default, changes the active profiles. The menu
+    // rows are replaced in place, so every reader of Map sees them. Seat 1 only.
+    private void FollowStickProfiles()
+    {
+        if (_player == StickDeviceState.OwningSeat + 1 && _stickProfiles() is { } set
+            && set.MergeIfChanged(Map, InputContext.Menu, ref _stickRevision))
+        {
+            RebindsApplied();
+        }
     }
 
     private int RawPadDir() => Dir(_padOnly, InputAction.MenuUp, InputAction.MenuDown);

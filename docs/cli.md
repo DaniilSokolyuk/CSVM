@@ -233,6 +233,11 @@ lines**.
   GUID, axis/button/hat counts) and each stick's resting axes, held buttons and hats, then quit.
   Exits nonzero only when no `SDL2.dll` loads. Under `--no-pads` it prints `reads blocked` instead
   of the readings. Run it through `RunProbe.ps1`)
+- `--dump-sticks=<seconds>` (the `--dump-sticks` report, then a watch of 1 to 120 seconds that
+  logs `sticks watch:` lines: an axis each time it travels 0.25 from its last logged value, a
+  button on press and release, a hat on every change. Move one control at a time to learn its
+  number, for example twist the grip to find the yaw axis. SDL2 reads the sticks with the window
+  hidden, so `RunProbe.ps1` works for it too)
 - `--fire` (**hold the gun trigger down** for the flown plane(s), the scripted-run equivalent of holding Space, as `--hold` is for flight input. Combine with `--hold`/`--screenshot` for deterministic firing captures; every player fires. In interactive flight the trigger is **Space** or **gamepad B**)
 - `--fire-rockets` (**hold the rocket trigger down** for the flown plane(s), auto-repeats a launch at the rocket's `FIRE_RATE` cooldown (1 s), unlike a human pull which is one rocket per press. In interactive flight the rocket trigger is **F** or **gamepad A**; one rocket per pull, drawn from the next armed pylon round-robin)
 - `--gun-select=N` (**initial gun group**, 0-based; `0` = the first group, the default. **Only one gun group fires at a time**, a headless testing hook so a scripted run fires one group in isolation. Interactively the gun selector cycles with **F3**/**F4** or **gamepad D-pad Right** (tapped forward, held back), the hardpoint/ordnance selector with **F5**/**F6** or **gamepad D-pad Left**)

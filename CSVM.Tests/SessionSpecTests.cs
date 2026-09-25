@@ -472,6 +472,20 @@ public class SessionSpecTests
         Assert.Equal("", s.ScriptedBy);
         Assert.False(s.Det);
         Assert.False(s.PadsDisabled);
+        Assert.Equal(0, s.DumpSticksWatch);
+    }
+
+    [Theory]
+    [InlineData("--dump-sticks=15", 15)]
+    [InlineData("--dump-sticks=500", 120)]
+    [InlineData("--dump-sticks=0", 0)]
+    [InlineData("--dump-sticks=twist", 0)]
+    public void DumpSticksTakesAWatchOfOneToAHundredAndTwentySeconds(string arg, int seconds)
+    {
+        var s = S(arg);
+        Assert.True(s.DumpSticks);
+        Assert.False(s.Det);
+        Assert.Equal(seconds, s.DumpSticksWatch);
     }
 
     // ---- The --det bundle ----------------------------------------------------------------------

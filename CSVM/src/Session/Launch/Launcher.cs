@@ -760,7 +760,7 @@ public partial class Launcher : Node3D
         string? sdlDataRoot = string.IsNullOrEmpty(dataRootEnv) ? null : dataRootEnv;
         if (_spec.DumpSticks)
         {
-            GetTree().Quit(Sticks.StickPump.Dump(sdlRepoRoot, sdlDataRoot) ? 0 : 1);
+            GetTree().Quit(Sticks.StickPump.Dump(sdlRepoRoot, sdlDataRoot, _spec.DumpSticksWatch) ? 0 : 1);
             return;
         }
 
