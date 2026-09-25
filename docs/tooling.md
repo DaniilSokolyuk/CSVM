@@ -451,8 +451,47 @@ observed without data says nothing about the floor.
 ## `tools/` (git-ignored)
 
 Downloaded binaries: mech3ax v0.6.1 (pinned pre-fork extractor, for rollback), the fork checkout
-(below), and the Godot 4.7 .NET editor at `tools/godot/Godot_v4.7-stable_mono_win64/`; use
-`*_console.exe` for CLI runs.
+(below), the Godot 4.7 .NET editor at `tools/godot/Godot_v4.7-stable_mono_win64/` (use
+`*_console.exe` for CLI runs), and the SDL2 runtime at `tools/sdl2/` (below).
+
+### SDL2 for flight sticks (`tools/sdl2/`)
+
+The SDL3 inside Godot 4.7 enumerates no DirectInput-only device on the author's machine, so CSVM
+reads flight sticks through the official SDL2 runtime instead (`docs/PLAN-flight-sticks.md`).
+**`InstallSdl2.ps1` (repo root)** downloads SDL 2.32.10's `SDL2-2.32.10-win32-x64.zip` from the
+libsdl-org GitHub release, checks it against a pinned SHA-256, and writes three files into
+`tools/sdl2/`: `SDL2.dll`, the zip's `README-SDL.txt`, and SDL's zlib `LICENSE.txt`, which the
+runtime zip does not carry and which is read from the release's own commit. Every file is hashed
+against its pin in a staging folder before any installed file is replaced, and a run over an
+install that already matches downloads nothing. `-Root <checkout>` installs into another tree,
+`-Force` re-downloads, and `-Verify` installs nothing: it throws unless the three files match their
+pins and otherwise returns the version, commit and DLL hash. The pins live in that script alone.
+⚠ Moving the version means repeating the stick-detection check on real hardware, because 2.32.10
+is the build that check passed on; a new hash alone says nothing about whether the sticks still
+enumerate.
+
+One install serves every worktree. Run it once in the primary checkout; a worktree finds the DLL
+through `CSVM_DATA_ROOT` like it finds Godot, and needs no copy of its own.
+
+**Nothing puts the DLL on `PATH`.** No launch script changes the environment or the DLL search
+path for it; the game loads it by absolute path, taking the first of these that exists:
+
+1. `SDL2.dll` in the running executable's own folder. This is the exported build, where
+   `ExportRelease.ps1` puts it beside `CSVM.exe`.
+2. `<repo root>/tools/sdl2/SDL2.dll`, the repo root being `res://`'s parent on disk (the
+   `Launcher` repo root of an editor-hosted run).
+3. `$CSVM_DATA_ROOT/tools/sdl2/SDL2.dll`, the fallback a worktree uses.
+4. `tools/sdl2/SDL2.dll` of the checkout that supplied the running Godot, found two folders above
+   the executable (`tools/godot/<build>/`), so a worktree launched without `CSVM_DATA_ROOT` still
+   finds it.
+
+The system's own DLL search is never consulted, since any `SDL2.dll` on `PATH` is an unpinned
+build of unknown version. When no candidate exists, or the load fails, the game runs without
+sticks and logs one line naming the paths it tried; a missing DLL never stops a launch, and
+`InstallSdl2.ps1` is not called by any launch script. `ExportRelease.ps1` does require it: the
+export runs `InstallSdl2.ps1 -Verify` before building, ships `SDL2.dll` and `README-SDL.txt`
+beside the exe with the licence as `LICENSE-SDL2.txt`, and records the SDL version, commit and DLL
+hash in `BUILD-INFO.txt`.
 
 ## The mech3ax fork (`tools/mech3ax/`)
 

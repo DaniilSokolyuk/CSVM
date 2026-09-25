@@ -159,7 +159,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 ### Wave A, SDL2 bridge and stick roster
 
-1. ☐ Pinned SDL2 download into `tools/sdl2/`, on the DLL path for every launch script and the release zip
+1. ☑ Pinned SDL2 download into `tools/sdl2/`, on the DLL path for every launch script and the release zip
 2. ☐ SDL2 P/Invoke bridge: gap-filling stick roster, hot-plug, gates, logging
 3. ☐ Stick device state: 128 buttons, 8 axes, hats, per-model identity, owned by seat 1
 
@@ -203,7 +203,52 @@ exists.>
 
 # Wave A, SDL2 bridge and stick roster
 
-## A1 ☐ Pinned SDL2 download into `tools/sdl2/`, on the DLL path for every launch script and the release zip
+## A1 ☑ Pinned SDL2 download into `tools/sdl2/`, on the DLL path for every launch script and the release zip
+
+**Landed.** `InstallSdl2.ps1` (repo root) is the setup step, following the `tools/` pattern of a
+git-ignored download installed once in the primary checkout and borrowed by worktrees through
+`CSVM_DATA_ROOT`. It pins SDL **2.32.10**, the newest 2.32.x release and the build the pygame-ce
+probe saw the sticks with:
+
+| File | Source | SHA-256 |
+|---|---|---|
+| release zip | `https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-2.32.10-win32-x64.zip` | `6CF9706EEFD0A4A06DC764007934D428AFAF029FABDD408A9E646048C91E18FB` (equal to GitHub's published asset digest) |
+| `SDL2.dll` | that zip | `B37740A72A7A9706216DF9F0134894BB7A850B356FD149398C67D874CBCFACB4` |
+| `README-SDL.txt` | that zip | `F17D8919136F9627468B4DFFBD7BDDD188EF2AAA8ED21914D2107D1C759E99D7` |
+| `LICENSE.txt` (zlib) | `https://raw.githubusercontent.com/libsdl-org/SDL/5d249570393f7a37e037abf22cd6012a4cc56a71/LICENSE.txt` | `97F35B302B361680EC1E891E95D2D52097BB95ABFF361434916D99DC1305F127` |
+
+The runtime zip carries no licence, only `README-SDL.txt` and a `.git-hash` naming commit
+`5d249570...`, which is the `release-2.32.10` tag; the licence is read from that commit. Every file
+is hashed in staging before any installed file is replaced. `-Verify` installs nothing and returns
+the version, commit and DLL hash, and is the one place the pins live. `ExportRelease.ps1` runs it
+before building, copies `SDL2.dll`, `README-SDL.txt` and `LICENSE-SDL2.txt` to the zip root beside
+`CSVM.exe`, and adds an `SDL2.dll` section (version, source tag, commit, DLL hash) to
+`BUILD-INFO.txt`. `packaging/MANIFEST.md` gained the three rows, `docs/tooling.md` the section
+"SDL2 for flight sticks", and `PROJECT_CONTEXT.md` the script's bullet.
+
+**No launch script changed, and none alters `PATH`.** The C# side loads the DLL by absolute path
+(Decision 13's resolver option), so `RunGame.ps1`, `RunDev.ps1`, `RunTests.ps1` and `RunProbe.ps1`
+already reach it: Godot inherits `CSVM_DATA_ROOT` from them, which is the only input the resolver
+needs beyond paths the process knows. **The wiring contract A2 implements** (also in
+`docs/tooling.md`): `NativeLibrary.TryLoad(<absolute path>)` on the first of these that exists,
+through a `NativeLibrary.SetDllImportResolver` for the name `SDL2` or an explicit handle, never
+`SetDllDirectory`, `PATH` or the OS default search:
+
+1. `<folder of OS.GetExecutablePath()>/SDL2.dll` (the exported build).
+2. `<Launcher's repo root>/tools/sdl2/SDL2.dll`, the repo root being `res://`'s parent in an
+   editor-hosted run.
+3. `$CSVM_DATA_ROOT/tools/sdl2/SDL2.dll` (the worktree fallback, as `RunProbe.ps1:63-66` does for
+   Godot).
+4. `<folder of OS.GetExecutablePath()>/../../sdl2/SDL2.dll`, the `tools/` of the checkout whose
+   Godot is running, which covers a worktree launched without `CSVM_DATA_ROOT`.
+
+No candidate, or a failed load, means no sticks and one log line naming the paths tried; the launch
+continues. An `SDL2.dll` found through `PATH` is an unpinned build and is not used. A2 may log the
+loaded version through `SDL_GetVersion`, which needs no `SDL_Init`.
+
+**Verified.** <pending orchestrator run>
+
+**Original approach (kept for reference).**
 
 **Goal.** A fresh setup fetches the official SDL2 Windows x64 runtime, every dev launch
 (`RunGame.ps1`, `RunDev.ps1`, `RunTests.ps1`, `RunProbe.ps1`) and every worktree loads it, and the
@@ -218,14 +263,19 @@ worktrees (`RunProbe.ps1:63-66`). The only export preset is Windows Desktop
 pinned SHA-256, and extracts `SDL2.dll` and the license to `tools/sdl2/`. Launch scripts resolve it
 with the same `CSVM_DATA_ROOT` fallback Godot uses and make it loadable (the process DLL search
 path or an explicit `NativeLibrary.SetDllImportResolver` in A2). `ExportRelease.ps1` copies it
-beside the exe with the license. <TODO: exact SDL2 2.32.x release and its SHA-256; where the setup
-step lives (its own script vs an existing tools-setup script); which of the resolver or the
-PATH approach A2 uses.>
+beside the exe with the license. The release, its hashes, the setup script and the resolver
+choice are answered under **Landed** above.
 
-**Model recommendation.** <TODO>
+**Model recommendation.** A mid-tier model: a download script, an export payload row and docs, no
+engine code.
 
-**Verify.** <TODO: e.g. a fresh worktree run finds the DLL through the fallback; the release zip
-lists `SDL2.dll` and the license; a run with the DLL removed still starts.>
+**Verify.** `InstallSdl2.ps1` installs, is idempotent, and refuses a tampered file or a wrong pin
+without touching the installed copy; the installed DLL loads by absolute path in a 64-bit process
+and reports 2.32.10; `ExportRelease.ps1` parses and its `-Verify` call returns the facts
+`BUILD-INFO.txt` quotes. A fresh-worktree load through the fallback and a run with the DLL removed
+are A2's to show, since until A2 nothing in the game loads it. The release zip listing `SDL2.dll`
+and `LICENSE-SDL2.txt` needs a full `ExportRelease.ps1` run, which opens a rendering window for
+the shader bake.
 
 **⚠ Traps.** Never junction or symlink `tools/` from a worktree into the main checkout (CLAUDE.md);
 use the `CSVM_DATA_ROOT` fallback. Keep any script that writes repo files pure ASCII with explicit

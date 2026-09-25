@@ -51,6 +51,7 @@ $ProjectGodot = Join-Path $ProjectDir "project.godot"
 $Mech3axRepo  = Join-Path $RepoRoot "tools\mech3ax"
 $ThirdPartyNotices = Join-Path $RepoRoot "packaging\LICENSE-thirdparty.txt"
 $BuildInfo    = Join-Path $ExportDir "BUILD-INFO.txt"
+$Sdl2Dir      = Join-Path $RepoRoot "tools\sdl2"
 
 # The zip payload beside the export output, from packaging/MANIFEST.md. Sources are the
 # files' one home in the repo, so a copy is byte-identical to what the manifest names.
@@ -64,7 +65,10 @@ $ReleaseFiles = @(
     @{ Source = Join-Path $RepoRoot "packaging\LICENSE";        Dest = "LICENSE" },
     @{ Source = Join-Path $RepoRoot "packaging\LICENSE-unzbd";  Dest = "LICENSE-unzbd" },
     @{ Source = $ThirdPartyNotices;                             Dest = "LICENSE-thirdparty.txt" },
-    @{ Source = $UnzbdExe;                                      Dest = "tools\unzbd.exe" }
+    @{ Source = $UnzbdExe;                                      Dest = "tools\unzbd.exe" },
+    @{ Source = Join-Path $Sdl2Dir "SDL2.dll";                  Dest = "SDL2.dll" },
+    @{ Source = Join-Path $Sdl2Dir "README-SDL.txt";            Dest = "README-SDL.txt" },
+    @{ Source = Join-Path $Sdl2Dir "LICENSE.txt";               Dest = "LICENSE-SDL2.txt" }
 )
 
 if (-not (Test-Path $Sln)) {
@@ -92,6 +96,11 @@ if (-not (Test-Path $UnzbdExe)) {
     throw "unzbd.exe not found at $UnzbdExe -- build the mech3ax fork (branch cs-anim) first; " +
         "see packaging\MANIFEST.md. The pinned v0.6.1 binary is not a substitute."
 }
+
+# SDL2.dll is the flight-stick reader (docs/tooling.md, "SDL2 for flight sticks"). A dev launch
+# without it only loses sticks, but a release without it ships a build that cannot see them, so
+# the export requires the pinned files. InstallSdl2.ps1 holds the pins and throws naming itself.
+$Sdl2 = & (Join-Path $RepoRoot "InstallSdl2.ps1") -Root $RepoRoot -Verify
 
 foreach ($file in $ReleaseFiles) {
     if (-not (Test-Path $file.Source)) {
@@ -281,7 +290,8 @@ foreach ($file in $ReleaseFiles) {
 # instead of refusing: an export off a dirty tree is the normal development case, and
 # PublishRelease.ps1 is where a qualifier becomes a refusal, since only a published binary
 # makes a false source-correspondence claim to anybody. UTF8Encoding($false) rather than
-# Set-Content, whose 5.1 default is ANSI (CLAUDE.md).
+# Set-Content, whose 5.1 default is ANSI (CLAUDE.md). PublishRelease.ps1 refuses any text
+# matching 'MODIFIED' case-insensitively, so no other line may contain the word "modified".
 $buildInfoText = @"
 CSVM build provenance
 =====================
@@ -300,9 +310,16 @@ tools\unzbd.exe
   pushed:   $(if ($forkPushed) { "yes, origin/cs-anim is at this commit" } else { "NO -- this commit is not on origin/cs-anim" })
   worktree: $(if ($forkDirty) { "MODIFIED -- this build does not match the commit above" } else { "clean" })
 
+SDL2.dll
+  version:  SDL $($Sdl2.Version), the official libsdl-org Windows x64 runtime as released
+  source:   https://github.com/libsdl-org/SDL  (tag release-$($Sdl2.Version))
+  commit:   $($Sdl2.Commit)
+  sha256:   $($Sdl2.DllSha256)
+
 CSVM's own licence is LICENSE (GPL-3) and unzbd's is LICENSE-unzbd (EUPL-1.2).
 The notices for the third-party software inside both binaries, including the
-Godot engine and the .NET runtime, are in LICENSE-thirdparty.txt.
+Godot engine and the .NET runtime, are in LICENSE-thirdparty.txt. SDL2.dll is
+under the zlib licence in LICENSE-SDL2.txt.
 "@
 $buildInfoText = ($buildInfoText -replace "`r`n", "`n") -replace "`n", "`r`n"
 [System.IO.File]::WriteAllText($BuildInfo, $buildInfoText, (New-Object System.Text.UTF8Encoding($false)))
