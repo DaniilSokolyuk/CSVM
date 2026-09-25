@@ -132,4 +132,8 @@ public enum InputAction
     SnapLookMode,
     SmoothLookMode,
     TrackTarget,
+
+    // The absolute throttle, a lever or wheel whose whole travel is the commanded setting. This
+    // port's own action: the original reads no axis at all. Appended because the enum is positional.
+    ThrottleLever,
 }

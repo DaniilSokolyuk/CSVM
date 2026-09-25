@@ -19,13 +19,17 @@ public static class BindingLabels
     public const string Unbound = "unbound";
 
     /// <summary>An action's caption: the original's own keybind-page string where it binds that
-    /// action, else the enum name with its words separated, so <c>FireRockets</c> reads as "Fire
-    /// Rockets". The original's captions read under their category heading, which is why the
+    /// action. Otherwise it is the enum name with its words separated, so <c>FireRockets</c> reads as
+    /// "Fire Rockets". The throttle lever has a caption of its own. The original's captions read under their category heading, which is why the
     /// targeting ones carry no "Target" prefix.</summary>
     public static string Name(InputAction action)
     {
         if (Original(action) is { } original)
             return original;
+        // Parenthesised so it reads beside the original's "Throttle Up" and "Throttle 0/8" rows as
+        // one more way to set the same lever.
+        if (action == InputAction.ThrottleLever)
+            return "Throttle (lever)";
 
         string name = action.ToString();
         var text = new StringBuilder(name.Length + 8);

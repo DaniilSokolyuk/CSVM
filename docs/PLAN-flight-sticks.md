@@ -168,7 +168,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 4. ☑ Full-axis binding kind, and hats made bindable for sticks
 5. ☐ Stick action source in the flight model: linear, bypassing `StickCurve`
-6. ☐ Absolute Throttle (lever) action with the takeover rule
+6. ☑ Absolute Throttle (lever) action with the takeover rule
 
 ### Wave C, profiles and defaults
 
@@ -544,7 +544,7 @@ hat is accepted on any `DeviceKind.Joypad` id.
 - `AxisPairs.All`, `PartnerOf(action)`, `SideOf(action)` (+1, -1, 0), `PositiveOf(action)`, and
   `AxisPairs.FullAxisFor(row, axis, movedSign, deadzone)`, which is D10's capture step: moving
   toward the row's own direction binds the axis the way round that fires that row. It throws for a
-  row in no pair, so a Throttle (lever) row (B6) must route to its own absolute binding first.
+  row that takes no full axis; the Throttle (lever) row takes one (see B6).
 - `ActionMap.Assign(row, new Binding(stickId, control))` puts it on both rows and returns the
   losers; `ActionMap.Unassign(eitherRow, binding)` clears both (D11's "clear from either row").
 - B5: a stick-only `ActionMap` resolved into its own `ActionSnapshot` gives
@@ -613,7 +613,78 @@ command, and the pad path's outputs are bit-identical before and after; the user
 **⚠ Traps.** Flight feel is the user's judgement, not an instrument's. Do not retune `StickCurve`
 for pads in this item.
 
-## B6 ☐ Absolute Throttle (lever) action with the takeover rule
+## B6 ☑ Absolute Throttle (lever) action with the takeover rule
+
+**Landed.** `InputAction.ThrottleLever` (appended last), captioned "Throttle (lever)" by
+`BindingLabels.Name`, owned by the Flight context after the nine digit rows, and shipped unbound
+(`DefaultBindings.Unbound`): neither a keyboard nor a pad has a lever.
+
+- **Representation.** No new kind: the lever row holds an ordinary `ControlKind.FullAxis`.
+  `AxisPairs.IsAbsolute(action)` names the one absolute row and `AxisPairs.TakesFullAxis(action)`
+  (pair row or absolute row) replaces "in a pair" in `ActionMap.Assign`/`Add` and the store's row
+  check. The full axis sits on that row alone (no partner). `ActionMap.ResolveInto` reads an absolute
+  row through `BindingSet.ResolveAbsolute` -> `Binding.ResolveAbsolute`: a full axis maps its whole
+  travel to a position, `(clamp(raw * sign, -r, r) + r) / 2r` with `r = 1 - deadzone`, so -1 is idle
+  (0), centre is 0.5, +1 is full (1); invert (`Sign` -1) swaps the ends, and the **deadzone trims
+  both ends** of the travel so a lever stopping short of full scale still reaches 0 and 1 (its
+  honoured range stays [0, 0.95]). Any other kind on the lever row reads as it does anywhere, so a
+  pad trigger bound as a half axis is already an idle-to-full lever. The deepest binding wins, as on
+  every row.
+- **Token.** Unchanged grammar: `pad:<id>/fullaxis:<axis><+|->@<deadzone>` under `"ThrottleLever"`,
+  written once under that row by `StoredRow`. `BindingStore.Version` stays 3, since a new action is
+  not a new token shape (the file's own version rule). An older build skips the unknown action name
+  and keeps its defaults. A full axis on any other unpaired row stays unreadable. `docs/org/input.md`
+  states the lever meaning.
+- **Steal rule.** Unchanged `SameControl`: the lever's axis is the same control as a pair's full axis
+  or either half on that axis, so assigning the lever takes the axis off both pair rows (both
+  reported), and assigning it to a pair row or a half takes it off the lever.
+- **Takeover rule** (`CSVM/src/Bindings/LeverTakeover.cs`, pure, unit-tested). `Step(position,
+  otherCommand)` returns the setting the lever commands this tick or null. The first reading after
+  construction or `Release()` only records the position (so a bound but untouched lever never moves a
+  throttle placed some other way). A move of more than `Epsilon` = **0.02** of lever travel (a sixth
+  of one digit's eighth; TUNE) from the anchor engages it; once engaged it follows the lever every
+  tick. Another command in a tick where the lever moved no more than epsilon disengages it; a move
+  past epsilon engages it even in a tick that also carries another command (the hand on the lever is
+  the newer command).
+- **Digits.** ThrottleSet0..8 count as another command, as do the rate pair and a `--lever=` schedule
+  step. They must: an engaged lever rewrites the setting every tick, so a digit that did not
+  disengage it would be undone the tick after the key came up.
+- **Ordering** in `FlightController.ReadKeyboard`: rate step (keys + pad, as before), then the lever,
+  then `ScheduledThrottle`, then `RequestedThrottle`. The lever writes over the rate and under the
+  schedule and the digits, which is the order a live digit beating the schedule already follows. The
+  rate counts as a command only when `|rate| > LeverTakeover.Epsilon`, so a resting trigger's noise
+  cannot keep disengaging the lever. The lever is read from `_padActions` (every non-keyboard
+  device). While `Pads.InputBlocked` holds (`--no-pads`, `--det`, focus lost) every axis reads
+  centred, so the takeover is released rather than read as half throttle; `SetLever` (spawn, respawn,
+  launch, the held-control path) releases it too. With nothing bound the lever reads 0 forever, never
+  engages, and every throttle path is byte-for-byte the old one.
+
+**Wiring contract** (what D10 and C7 call):
+
+- D10 capture: on the Throttle (lever) row, call `AxisPairs.FullAxisFor(InputAction.ThrottleLever,
+  axis, movedSign, deadzone)` exactly as on a pair row; the lever row's own direction is **toward
+  full throttle**, so the prompt asks the player to push the lever to full, and moving toward raw -1
+  infers `inverted`. Then `ActionMap.Assign(InputAction.ThrottleLever, new Binding(stickId, control))`
+  (returns the losers); `Unassign`/`Clear` on the row clears it. `AxisPairs.TakesFullAxis(row)` is
+  the test for "this row captures a whole axis". The deadzone to stamp is TUNE (0.02 like the flight
+  axes is a reasonable start; it trims the ends, not the centre).
+- C7 profiles: nothing new. `BindingStore.Encode`/`Decode` and `StoredRow(map,
+  InputAction.ThrottleLever)` already carry it; a profile loader must accept a full axis on any row
+  where `AxisPairs.TakesFullAxis` holds.
+- B5: leave the throttle block's order intact. If B5 moves stick bindings to their own snapshot, the
+  lever read (`_padActions.Value(InputAction.ThrottleLever)` in `LeverSetting`) moves with them.
+
+**Left open.** A bound lever on an unplugged device reads centred (0.5) through `IDeviceState`'s
+absent-device answer, so unplugging it mid-flight counts as a move to half throttle; A3's stick
+state could release the takeover on a disconnect instead. `LeverTakeover.cs` has no `.uid` yet. No
+engine suite drives the lever, since no device source produces a full axis until A3; the unit suite
+`ThrottleLeverTests` carries the mapping, the store, the steal rule and the takeover rule. The
+original-style KEYS AND BUTTONS page lists its throttle rows explicitly
+(`OriginalOptionsScreen.cs:444`) and was not touched; D11/D12 decide where the lever row shows there.
+
+**Verified.** <pending orchestrator run>
+
+**Original approach (kept for reference).**
 
 **Goal.** A new **Throttle (lever)** action sets `_throttleSetting` directly from a lever's
 position (0 to max); while the lever is still, keyboard and pad rate keys move the throttle, and

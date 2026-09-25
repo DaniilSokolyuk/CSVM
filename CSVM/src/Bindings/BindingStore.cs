@@ -22,8 +22,9 @@ public sealed class BindingStore
     /// <summary>The schema version written into every file: how the tokens are encoded, not which
     /// actions exist. A file not naming an action leaves it at its default. Bump it when a
     /// token's shape changes. Version 2 is the key token's modifier prefix (<c>key:Shift+E</c>).
-    /// Version 3 adds the full-axis token and readable stick hat tokens. An older file names none of
-    /// them and still loads whole, which is why the reader checks no version.</summary>
+    /// Version 3 adds the full-axis token (the throttle lever row reuses it) and readable stick hat
+    /// tokens. An older file names none of them and still loads whole, which is why the reader checks
+    /// no version.</summary>
     public const int Version = 3;
 
     private const string MouseFlyingField = "mouseFlying";
@@ -345,14 +346,14 @@ public sealed class BindingStore
 
     // The whole row or none of it. One token this build cannot read leaves the action on its
     // default rather than on a keymap the player never chose. An empty array is the deliberate
-    // unbind. A full axis on an action in no pair is unreadable too.
+    // unbind. A full axis is unreadable on an action that is neither in a pair nor the lever.
     private static bool TryRow(JsonElement array, InputAction action, DeviceId pad, out List<Binding> bindings)
     {
         bindings = new List<Binding>();
         foreach (var item in array.EnumerateArray())
         {
             if (item.ValueKind != JsonValueKind.String || Decode(item.GetString()!) is not { } binding
-                || (binding.Control.Kind == ControlKind.FullAxis && AxisPairs.SideOf(action) == 0))
+                || (binding.Control.Kind == ControlKind.FullAxis && !AxisPairs.TakesFullAxis(action)))
             {
                 return false;
             }

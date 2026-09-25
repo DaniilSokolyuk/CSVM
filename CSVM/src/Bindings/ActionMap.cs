@@ -58,16 +58,18 @@ public sealed class ActionMap
 
     /// <summary>Gives a control to an action, taking it off every action that held it. Returns those
     /// in enum order, so a screen can name each loss. A full axis goes onto both actions of the pair,
-    /// the partner is not reported, and an action in no pair throws. ⚠ Every owner, not the first:
-    /// <see cref="Add"/> puts one control on two actions (a numpad snap-look diagonal). Stopping at
-    /// the first leaves it on the other, which the original forbids (`FUN_005371d0`).</summary>
+    /// the partner is not reported, and an action that takes no full axis throws. ⚠ Every owner, not
+    /// the first: <see cref="Add"/> puts one control on two actions (a numpad snap-look diagonal).
+    /// Stopping at the first leaves it on the other, which the original forbids (`FUN_005371d0`).
+    /// </summary>
     public IReadOnlyList<InputAction> Assign(InputAction action, Binding binding)
     {
         InputAction? partner = null;
         if (binding.Control.Kind == ControlKind.FullAxis)
         {
-            partner = AxisPairs.PartnerOf(action)
-                ?? throw new ArgumentException($"{action} is in no axis pair, so it cannot hold a full axis.", nameof(binding));
+            if (!AxisPairs.TakesFullAxis(action))
+                throw new ArgumentException($"{action} is in no axis pair, so it cannot hold a full axis.", nameof(binding));
+            partner = AxisPairs.PartnerOf(action);
         }
 
         var stolenFrom = new List<InputAction>();
@@ -88,19 +90,20 @@ public sealed class ActionMap
     /// <summary>Gives a control to an action without taking it off anyone. The shipped defaults and
     /// a loaded file need this, since a numpad snap-look diagonal is deliberately on two actions. A
     /// full axis goes onto both actions of the pair, replacing a copy with another invert or
-    /// deadzone. On an action in no pair it is refused (false).
+    /// deadzone. On the lever row it goes onto that row alone, and on any other it is refused.
     /// ⚠ Not for a rebinding screen; <see cref="Assign"/> is the only path that keeps the steal rule.</summary>
     public bool Add(InputAction action, Binding binding)
     {
         _contestedStale = true;
         if (binding.Control.Kind != ControlKind.FullAxis)
             return SetFor(action).Add(binding);
-        if (AxisPairs.PartnerOf(action) is not { } partner)
+        if (!AxisPairs.TakesFullAxis(action))
             return false;
 
         bool added = !SetFor(action).Contains(binding);
         Put(SetFor(action), binding);
-        Put(SetFor(partner), binding);
+        if (AxisPairs.PartnerOf(action) is { } partner)
+            Put(SetFor(partner), binding);
         return added;
     }
 
@@ -202,14 +205,19 @@ public sealed class ActionMap
     }
 
     /// <summary>Reads every bound action out of this tick's hardware into the snapshot, reusing it
-    /// rather than allocating one per tick. Unbound actions read as nothing.</summary>
+    /// rather than allocating one per tick. Unbound actions read as nothing. An absolute row reads
+    /// its position, so an idle lever and an unbound one both read zero.</summary>
     public void ResolveInto(ActionSnapshot snapshot, IDeviceState state)
     {
         snapshot.Reset();
         RebuildContested();
         var gate = ModifierGate.Read(state, _contested);
         foreach (var pair in _sets)
-            snapshot.Store(pair.Key, pair.Value.Resolve(state, gate, AxisPairs.SideOf(pair.Key)));
+        {
+            snapshot.Store(pair.Key, AxisPairs.IsAbsolute(pair.Key)
+                ? pair.Value.ResolveAbsolute(state, gate)
+                : pair.Value.Resolve(state, gate, AxisPairs.SideOf(pair.Key)));
+        }
     }
 
     /// <summary>A fresh snapshot of this tick, for a caller that keeps no snapshot of its own.

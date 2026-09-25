@@ -74,4 +74,21 @@ public sealed class BindingSet
 
         return new ControlValue(pressed, value);
     }
+
+    /// <summary>The same read for an absolute row, each binding read through
+    /// <see cref="Binding.ResolveAbsolute"/>, the furthest position winning.</summary>
+    public ControlValue ResolveAbsolute(IDeviceState state, ModifierGate gate)
+    {
+        bool pressed = false;
+        float value = 0f;
+        foreach (var binding in _bindings)
+        {
+            var read = binding.ResolveAbsolute(state, gate);
+            pressed |= read.Pressed;
+            if (read.Value > value)
+                value = read.Value;
+        }
+
+        return new ControlValue(pressed, value);
+    }
 }

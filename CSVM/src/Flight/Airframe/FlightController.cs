@@ -556,6 +556,7 @@ public partial class FlightController : Node3D
     private readonly PlayerActions _actions;      // keyboard, mouse and pad together
     private readonly PlayerActions _keyActions;   // the keyboard and mouse half alone
     private readonly PlayerActions _padActions;   // the pad half alone
+    private readonly LeverTakeover _leverTakeover = new(); // when a bound throttle lever commands
     private readonly SeatDeviceState _seatState;
     private readonly SeatDeviceState _padMutedState;
     // The pad haptics for this seat, routed to the same devices the bindings above read. A
@@ -4294,15 +4295,18 @@ public partial class FlightController : Node3D
         // The commanded lever, as FUN_00487460 writes it. The up and down keys move it at 0.5/s,
         // and a digit puts it on its eighth. It stays there once the key is up. The handler never
         // reads the tank, so a dry engine still takes the command.
-        _throttleSetting = Mathf.Clamp(
-            _throttleSetting
-            + (_keyActions.Axis(InputAction.ThrottleUp, InputAction.ThrottleDown) + padThrottle)
-                * ThrottleRate * dt,
-            0f, 1f);
-        if (ScheduledThrottle(dt) is { } scheduled)
-            _throttleSetting = scheduled;
-        if (RequestedThrottle() is { } requested)
-            _throttleSetting = requested;
+        float rate = _keyActions.Axis(InputAction.ThrottleUp, InputAction.ThrottleDown) + padThrottle;
+        _throttleSetting = Mathf.Clamp(_throttleSetting + (rate * ThrottleRate * dt), 0f, 1f);
+        float? scheduled = ScheduledThrottle(dt);
+        float? requested = RequestedThrottle();
+        // An absolute lever writes over the rate step and under the schedule and the digits. That is
+        // the rule a live digit beating the schedule already follows. Any of those three hands it back.
+        if (LeverSetting(Mathf.Abs(rate) > LeverTakeover.Epsilon || scheduled != null || requested != null) is { } lever)
+            _throttleSetting = lever;
+        if (scheduled is { } step)
+            _throttleSetting = step;
+        if (requested is { } digit)
+            _throttleSetting = digit;
 
         // ⚠ Slew every tick, not only while a key is down. Stepping it inside the digit test leaves
         // a tapped setting barely moved. A dry tank skips the slew, so the lever holds rather than
@@ -4440,6 +4444,20 @@ public partial class FlightController : Node3D
         return requested;
     }
 
+    // What a bound Throttle (lever) commands this tick, or null while the other controls hold the
+    // throttle. A rate under the takeover epsilon is a resting trigger's noise, not a command. While
+    // input is blocked every axis reads centred, so the lever is forgotten rather than read as half.
+    private float? LeverSetting(bool otherCommand)
+    {
+        if (CSVM.Pads.InputBlocked)
+        {
+            _leverTakeover.Release();
+            return null;
+        }
+
+        return _leverTakeover.Step(_padActions.Value(InputAction.ThrottleLever), otherCommand);
+    }
+
     // Which lever the --lever= schedule presses on this step, or null while none is due. A step is
     // one press: the commanded lever jumps there and stays. The live one then slews to it at its own
     // rate, so the gap the exhaust smoke charges from is a real one. A live digit beats it, since
@@ -4457,8 +4475,13 @@ public partial class FlightController : Node3D
 
     // Both levers on one value, for the writers that place an aircraft rather than fly it. The
     // original's spawn and launch writers set +0x124 and +0x128 together. A stale command left
-    // behind would slew a respawned lever away from where it was placed.
-    private void SetLever(float lever) => _throttle = _throttleSetting = lever;
+    // behind would slew a respawned lever away from where it was placed. A bound throttle lever is
+    // released for the same reason; it takes over again when it moves.
+    private void SetLever(float lever)
+    {
+        _throttle = _throttleSetting = lever;
+        _leverTakeover.Release();
+    }
 #pragma warning restore SA1202
 
     // This plane's state entering a contact, as the resolver's per-call half.

@@ -285,8 +285,11 @@ row by hand.
   under the pair's positive row (`PitchUp`, `RollRight`, `YawRight`, `ThrottleUp`), and loaded onto
   both rows. Its sign is invert: `+` feeds raw positive travel to the positive row, `-` to the
   negative one. Each side reads 0 at the deadzone edge and 1 at full travel. The deadzone is
-  honoured anywhere in 0 to 0.95 and written back exactly as read. A full axis on a row outside
-  every pair, or on the keyboard or mouse, is unreadable.
+  honoured anywhere in 0 to 0.95 and written back exactly as read. The same token under
+  `ThrottleLever` is an absolute lever on that row alone: its whole travel maps to 0 (idle) to 1
+  (full), `-` swapping the ends, and the deadzone trims both ends of the travel instead of the
+  centre. A full axis on any other row outside every pair, or on the keyboard or mouse, is
+  unreadable.
 - A `hat:` direction is `Up`, `Right`, `Down` or `Left` in any case, on a joypad other than the
   placeholder `*`. Version 3 of the file adds the full-axis and hat tokens; an older file names
   neither and still loads whole.

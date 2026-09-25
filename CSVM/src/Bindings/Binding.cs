@@ -110,6 +110,19 @@ public readonly record struct Binding(DeviceId Device, BindingControl Control)
         }
     }
 
+    /// <summary>The same read for an absolute row (<see cref="AxisPairs.IsAbsolute"/>). A full axis
+    /// reads its whole travel as one position, 0 at the end invert names idle and 1 at the other. The
+    /// deadzone trims both ends, so a lever stopping short of full scale still reaches 0 and 1. Every
+    /// other kind reads as it does anywhere.</summary>
+    public ControlValue ResolveAbsolute(IDeviceState state, ModifierGate gate)
+    {
+        if (Control.Kind != ControlKind.FullAxis)
+            return Resolve(state, gate, 0);
+        float reach = 1f - Control.Deadzone;
+        float travel = Math.Clamp(state.AxisValue(Device, Control.Index) * Control.Sign, -reach, reach);
+        return ControlValue.Analogue((travel + reach) / (2f * reach));
+    }
+
     public override string ToString() => $"{Device}/{Control}";
 
     // Rescaled rather than raw, unlike a half axis. A flight stick past a small deadzone flies

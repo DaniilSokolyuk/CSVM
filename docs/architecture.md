@@ -642,7 +642,8 @@ both sit on top of these types.
 
 - `src/Bindings/DeviceId.cs`, which device a binding is on, as a value: the one keyboard, the one mouse, or a joypad named by its stable hardware string.
 - `src/Bindings/BindingControl.cs`, the tagged control: a key, a button, a mouse button, one signed half of an axis past a deadzone, a whole axis over an action pair, or one hat direction.
-- `src/Bindings/AxisPairs.cs`, the four action pairs a full-axis binding drives and which member is the positive side, shared by the map, the store and capture.
+- `src/Bindings/AxisPairs.cs`, the four action pairs a full-axis binding drives and which member is the positive side, plus the absolute lever row, shared by the map, the store and capture.
+- `src/Bindings/LeverTakeover.cs`, when a bound throttle lever commands the throttle: only after it moves, until another command arrives while it is still.
 - `src/Bindings/Binding.cs`, one control on one named device, plus `ControlValue`, the held/how-far pair every resolution returns.
 - `src/Bindings/IDeviceState.cs`, the tick's raw hardware state addressed by device identity; the seam that keeps resolution engine-free.
 - `src/Bindings/GodotDeviceState.cs`, the live `IDeviceState` over Godot's `Input` singleton, resolving an identity to an index through a `DeviceRegistry`.

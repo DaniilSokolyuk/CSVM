@@ -37,6 +37,7 @@ public static class DefaultBindings
     {
         InputAction.SelectChaseView,
         InputAction.MenuJoin,
+        InputAction.ThrottleLever,
     };
 
     /// <summary>Which context owns that action. Every member of <see cref="InputAction"/> has
@@ -110,6 +111,10 @@ public static class DefaultBindings
         {
             b.Keys(InputAction.ThrottleSet0 + eighths, (Key)((int)Key.Key1 + eighths));
         }
+
+        // The absolute lever ships unbound, since neither a keyboard nor a pad has a lever. A pad
+        // stick bound here would drop to half throttle whenever its spring centred it.
+        b.Leave(InputAction.ThrottleLever);
 
         // The two weapons sit under the mouse hand as well, the left button firing the guns and the
         // right the rockets, which is where a pilot flying with the mouse reaches for them. This
