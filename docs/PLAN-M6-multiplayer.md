@@ -57,6 +57,7 @@ that finds itself replicating a mesh, a node or an animation has left this plan.
 | 7 | Where the seam goes | **Two interfaces above the transport**: a remote-airframe arm beside `IFlightInputSource` on the aircraft side and a transport interface on the session side; a remote human is a pose that arrives late, never a stick that arrives late |
 | 8 | Hit authority | **Shooter's client decides the hit, the victim applies the damage and reports its own death, the host scores**, the decoded original's order, no lag compensation. The hit itself is a **reliable** message, confirmed after A2 found the original batches hits inside its unreliable aircraft-state packet: a lost hit would be a lost kill |
 | 9 | Topology | **Star, the host relays.** A guest connects to the host only; the host forwards every guest's aircraft state and events to the other guests, so one port and one UPnP mapping serve a match and a guest-to-guest packet costs one extra hop. No mesh between guests |
+| 10 | The co-op door | **The campaign hosts, the Network screen joins.** The Remake campaign flow opens itself to the network (socket and router port), and remote guests appear in the campaign boards' P1 to P4 strip beside local joiners; a guest joins by IP from B15's Network join board, which names the session as campaign co-op and holds the guest on a waiting board until the host launches. The Network screen's host rows stay the original's modes |
 
 ## ⚠ Read this before implementing anything
 
@@ -185,6 +186,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 22. ☑ Host-owned AI and world: aircraft, zeppelins, turrets, generators, vehicles and destructibles as spawn, state and death events
 23. ☐ Guests as the human field: `CampaignHumanField` and the objective rules see remote humans, the scripted P1 stays the host
 24. ☐ The co-op session flow: cabin and briefing on the host, guests joining into the mission, mission end and debrief on every peer
+25. ☐ The co-op door: the campaign flow opens to the network, guests join from the Network board and wait for the host's launch
 
 ### Wave D, hardening
 
@@ -208,6 +210,8 @@ beside B11 to B14 as long as it stays out of `GameSession.cs`. Wave C needs B12 
 chain, C21 → C22 → C23 → C24. D31 needs Wave B; D32 needs only A1. File contention: B11, B12, B14,
 C21 and C22 all edit `GameSession.cs` and `SessionSimulation.cs`, never run two of them in parallel
 worktrees; give each concurrent agent one namespace and name the files it may not touch.
+C25 needs only B15 and owns the UI side (`LaunchMenu`, `CampaignFlow`, the Network screen), so it
+can run beside C23; C24 needs C25, since C25's door is how a guest reaches C24's launch.
 Wave E needs C22 and extends its `NetWorldLink`; E41 edits `GameSession.cs`'s AI capture phase and
 runs alone against C23, C24 and any other `GameSession.cs` item. E42 and E43 own their own world
 runtimes and can run beside each other; E44 owns `AnimRuntime`'s spend and the `0x48` world event.
@@ -1259,8 +1263,9 @@ undecided.
 
 **Approach.** The host's `SessionSpec` carries the campaign position as today; the launch message
 to guests carries chapter, mission and roster, and guests build the same session with no profile.
-Mission end: the host records, guests hold and return. <TODO: decide what a guest sees while the
-host is in the cabin and briefing; a waiting board is the least work>
+Mission end: the host records, guests hold and return. A guest reaches the session through C25's
+door and holds on its waiting board while the host is in the cabin and briefing. <TODO: whether a
+guest also sees the briefing, or only the waiting board>
 
 **Model recommendation.** <TODO: not settled in the scoping session>
 
@@ -1268,6 +1273,39 @@ host is in the cabin and briefing; a waiting board is the least work>
 
 **⚠ Traps.** A guest has no profile; every path that writes one (`CampaignProfileStore`,
 `CampaignSnapshot`'s photographs, the memento) must be a no-op on a guest, not a crash.
+
+## C25 ☐ The co-op door: the campaign flow opens to the network, guests join from the Network board and wait for the host's launch
+
+**Goal.** From the Remake menus, a host opens their campaign to the network and a friend on another
+machine joins it, without a command line; the joined guest shows in the host's campaign boards as a
+player and waits until the host launches a mission.
+
+**Evidence (confidence: traced).** Decision 10. The launch menu's Campaign row opens `CampaignFlow`,
+whose composed boards draw a `P1 P2 P3 P4` chip strip in `SplitScreen.PlayerColor` once more than
+one local player has joined (`CSVM/src/UI/LaunchMenu.cs`). B15 built the Network screen, its join
+board by direct IP with UPnP, and the `--net-host`/`--net-join` paths through `NetCarrier`
+(`docs/architecture/Net.md`). The original has no campaign co-op, so no screen of it to copy; the
+Original presentation has no multiplayer door at all (`BL-1021`).
+
+**Approach.** A toggle in the campaign flow (the Remake presentation only) opens the carrier through
+`NetCarrier.Host` and its router mapping and shows the address to give a friend. The Network join
+board accepts a co-op host: the session advertises its kind (a campaign co-op, with chapter and
+mission) in its join reply, and a guest that joins one lands on a waiting board instead of the
+original modes' lobby. Remote guests take net seats (A4) and appear in the chip strip as joined
+players. The launch itself, the briefing a guest sees and the mission end are C24's.
+
+**Model recommendation.** Opus. It crosses the UI, the seat roster and the join handshake, and the
+screens are judged by the user.
+
+**Verify.** <TODO: a two-session harness run that opens a campaign to the network, joins a guest over
+the loopback, and asserts the guest holds a net seat, the host's chip strip counts it, and the
+guest's screen is the waiting board; plus montages of the toggle, the join board and the waiting
+board for the user>
+
+**⚠ Traps.** Local and remote joiners share the chip strip and the seat ceiling of 16; a remote guest
+must not take a local controller's pane. The toggle opens a port, so closing the campaign flow or
+leaving the menu must close the carrier and remove the router mapping. Screens are look judgements:
+montage them for the user, never park them on a measurement.
 
 # Wave D, hardening
 
