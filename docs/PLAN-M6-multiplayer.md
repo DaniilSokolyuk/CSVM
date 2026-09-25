@@ -1058,11 +1058,14 @@ belong to the episode's owner, and definitions started by a player's position (l
 rows, `PlayerRange` conditions, the ladder switch) are not graph events. **C24 marker**: the
 guest's own profile record, and a late joiner, who has missed every earlier event.
 
-**Verified.** <pending orchestrator run> On the agent's fork: `dotnet build CSVM/CSVM.sln` clean
-with zero warnings; 720 units passed under the NetDirectorLink, ObjectiveGraph, Campaign and Net
-filters; `net-director-follow`, `net-two-session`, `campaign-cutscene-ownership`,
-`campaign-objectives` and `campaign-cm09-docking` pass together with engine errors clean;
-`RunTests -Quick` green (534 units, 13 suites). No golden was re-pinned: nothing that draws changed.
+**Verified.** The complete battery on the merged tree (C21 and D31 over Wave B): build clean, 4903
+units passed with 2 skipped, 388 of 388 engine suites passed with engine errors clean in all six
+shards, 19 of 19 golden shots hash-identical. `net-director-follow` drives a host and a guest
+director over two built C5/M02 worlds on a lossy loopback: the guest decides nothing alone, refuses
+the docking code, replays the host's transitions in order, derives the ending cutscene's codes from
+its own playback, ends Won with the host and records no attempt on its own profile. The limit: both
+directors are driven by the suite, since no launch path runs a campaign with a net seat until C24,
+and the guest applies each event one link latency after the host.
 
 **Owed.**
 - The goal's "at the same moment on the shared clock" is not what landed: a guest applies each
@@ -1222,7 +1225,13 @@ in `analysis/engine-suite-weights.json`. Docs: `docs/architecture/Net.md` (a new
 entries changed), `docs/architecture/UI.md`, the index bullets in `docs/architecture.md`, and
 `docs/cli.md`. Backlog: `BL-1041`, `BL-1042`.
 
-**Verified.** <pending orchestrator run>
+**Verified.** The complete battery on the merged tree (C21 and D31 over Wave B): build clean, 4903
+units passed with 2 skipped, 388 of 388 engine suites passed with engine errors clean in all six
+shards, 19 of 19 golden shots hash-identical. `net-soak` passes all four link cells with zero order
+violations and zero stale arrivals, each machine's inferred drop count equal to what the loopback
+lost or discarded, and both able-to-fail controls moving as expected. The limit: every number is
+the loopback's model of a link, the position-error bars are TUNE (`BL-1041`), and the
+`--debug-net` corner readout has not been seen on screen, only its text line is unit-tested.
 
 **Owed.** Fire rides its seat's state channel, so jitter discards gunfire behind a newer state
 sample (`BL-1042`): at 50 ms and 5 per cent the carriers discard 10 payloads beside 12 lost, and
