@@ -58,7 +58,8 @@ the SDL2 path on its own.
 | 8 | Where user profile files live | **`user://stick_profiles/`**, plus an "Open profiles folder" button in the controls screen. Shipped profiles are read-only; the first edit writes a user copy that overrides them. |
 | 9 | Capture gesture for a full axis | **Move toward the row's direction**: a stick axis captured on either row of a pair binds the whole axis with invert inferred; clearing from either row clears both. |
 | 10 | Do sticks drive menus? | **Yes**: hat navigates, trigger confirms, a second button backs out. |
-| 11 | Joystick-class devices that are not flight sticks (the Tartarus) | **The generic default needs a stick shape**: at least 3 axes, resting near centre at connect. A profile can mark a model "ignore". |
+| 11 | Joystick-class devices that are not flight sticks (the Tartarus) | **The generic default needs a stick shape**: at least 3 axes, with axes 0 and 1 resting near centre at connect (other axes may be levers parked anywhere). A profile can mark a model "ignore". |
+| 16 | The generic default's axis map | **X (axis 0) roll, Y (axis 1) pitch, Rz (axis 5) yaw when the device has 6+ axes, Z (axis 2) as the absolute Throttle (lever)**, the common DirectInput layout; on both VKBs axis 2 is a throttle (at rest 1.00 on L, -0.57 on R). |
 | 12 | HOSAS throttle deadzone | **L stick Y as a rate, 0.08 deadzone**; flight axes stamp 0.02. |
 | 12b | Deadzone configuration | **Per binding in the profile files**, honoured 0..0.95 and kept across a re-save. No UI slider in this plan. |
 | 13 | Where `SDL2.dll` comes from | **Pinned, SHA-256-checked download into `tools/sdl2/`**, copied beside the exe by `ExportRelease.ps1` with SDL's license. |
@@ -665,13 +666,18 @@ Decision 3/7b). A user edit must never write into the shipped `res://` file.
 ## C8 ☐ Generic single-stick default for exactly one stick-shaped unprofiled device
 
 **Goal.** When exactly one connected, non-ignored device has no matching profile and looks like a
-flight stick (at least 3 axes, axes resting near centre at connect), it gets: axis 0 roll, axis 1
-pitch, axis 2 yaw, button 0 primary fire, button 1 secondary fire, hat navigating menus (C9). Any
+flight stick (at least 3 axes, axes 0 and 1 resting near centre at connect), it gets: axis 0 roll,
+axis 1 pitch, axis 5 (Rz, twist) yaw when the device has 6 or more axes, axis 2 (Z) as the absolute
+Throttle (lever), button 0 primary fire, button 1 secondary fire, hat navigating menus (C9). Any
 other case gets nothing, and the controls screen says the device needs binding.
 
-**Evidence (confidence: lead-only).** Decisions 7, 7a, 11. The Tartarus reports 6 axes, 24 buttons
-and 1 hat under SDL2 and would otherwise qualify as the one unprofiled stick once the VKBs carry
-profiles.
+**Evidence (confidence: lead-only).** Decisions 7, 7a, 11, 16. The Tartarus reports 6 axes, 24
+buttons and 1 hat under SDL2 and would otherwise qualify as the one unprofiled stick once the VKBs
+carry profiles. `--dump-sticks` at rest reads axis 2 as 1.00 on L and -0.57 on R, and the user
+confirmed axis 2 is a throttle on both, so a "every axis near centre" test would reject both VKBs.
+That twist is axis 5 under SDL2 rests on DirectInput's usual X, Y, Z, Rx, Ry, Rz, slider order and
+is not yet measured: ask the user to twist R during a `--dump-sticks`-style probe that reports
+movement before building on it.
 
 **Approach.** Evaluate on connect and on roster change; the default lives in memory until the
 player edits it, at which point it becomes a user profile for that model. <TODO: the "near centre"
