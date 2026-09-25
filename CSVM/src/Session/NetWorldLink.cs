@@ -8,12 +8,12 @@ using Godot;
 namespace CSVM.Session;
 
 /// <summary>
-/// The host-owned world over the wire: AI aircraft, zeppelin paths and destructible pools. The
-/// host flies every AI and zeppelin and decides every world hit, then says what happened. A
-/// guest's AI is a replicated airframe fed by <see cref="AiStateMessage"/>, its zeppelins chase
-/// <see cref="ZeppelinStateMessage"/>, and its world pools spend nothing of their own. An AI is
-/// named by its admission ordinal and a zeppelin by its placement index. Both ends must build both
-/// lists in the same order. Which simulation phase replays and which is replicated is in
+/// The host-owned world over the wire: AI aircraft, zeppelin paths, surface-vehicle patrols, warps
+/// and destructible pools. The host flies every AI, zeppelin and hull, draws every warp and decides
+/// every world hit, then says what happened. A guest's AI flies <see cref="AiStateMessage"/>, its
+/// zeppelins and hulls chase their state messages, and its pools spend nothing of their own. Both
+/// ends must admit AI and place zeppelins in the same order, since those indices name them; a
+/// hull's index is checked against its name. The phase mapping is in
 /// <c>docs/org/multiplayer-messages.md</c>.
 /// </summary>
 internal sealed class NetWorldLink
@@ -23,13 +23,20 @@ internal sealed class NetWorldLink
     internal static readonly int ZeppelinSendSteps =
         Math.Max(1, (int)Math.Round(ZeppelinReplica.SendSeconds / Utils.GameClock.FixedDt));
 
+    /// <summary>Sim steps between two surface-vehicle samples. The original sends no hull state, so
+    /// a hull takes the zeppelin's cadence, the one world-hull stream it does send.</summary>
+    internal static readonly int SurfaceSendSteps = ZeppelinSendSteps;
+
     private readonly NetSession _net;
     private readonly NetWorldSeats _seats;
     private readonly AnimRuntime? _world;
     private readonly List<FlightController> _admitted = new();
     private readonly List<ushort> _sequence = new();
     private readonly List<ushort> _zeppelinSequence = new();
+    private readonly List<ushort> _surfaceSequence = new();
     private ZeppelinRuntime? _zeppelins;
+    private SurfaceVehicleRuntime? _surface;
+    private CampaignDirector? _director;
     private int _steps;
 
     /// <summary>Wires one session's end. A host hears the guests' hit claims and publishes its
@@ -80,12 +87,26 @@ internal sealed class NetWorldLink
     /// <summary>Zeppelin samples a guest has taken into a replica.</summary>
     internal int ZeppelinSamplesTaken { get; private set; }
 
+    /// <summary>Surface-vehicle samples the host has put on the wire.</summary>
+    internal int SurfaceSamplesSent { get; private set; }
+
+    /// <summary>Surface-vehicle samples a guest has taken into a hull.</summary>
+    internal int SurfaceSamplesTaken { get; private set; }
+
     /// <summary>A stable name for one destructible pool, the guard a guest checks the host's
-    /// registration index against. FNV-1a over the definition and anchor names, lower-cased.</summary>
+    /// registration index against. <see cref="NameKey"/> over the definition and anchor names.</summary>
     internal static int PoolKey(DestructibleRegistry.Instance inst)
     {
         ArgumentNullException.ThrowIfNull(inst);
-        string text = $"{inst.Def.AnimName ?? inst.Def.Name}/{inst.Anchor.Name}".ToLowerInvariant();
+        return NameKey($"{inst.Def.AnimName ?? inst.Def.Name}/{inst.Anchor.Name}");
+    }
+
+    /// <summary>A name's wire key, FNV-1a over the lower-cased name. A guest checks or finds by it
+    /// what a host's index names when the two ends' lists have shifted apart.</summary>
+    internal static int NameKey(string name)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        string text = name.ToLowerInvariant();
         uint hash = 2166136261u;
         foreach (char c in text)
         {
@@ -114,6 +135,33 @@ internal sealed class NetWorldLink
 
         zeppelins.Replicate();
         _net.On<ZeppelinStateMessage>((_, state) => TakeZeppelin(state));
+    }
+
+    /// <summary>Puts the mission's surface vehicles and its <c>WARP_VEHICLE</c> draws under the
+    /// link; either may be null. The host samples each patrolling hull every
+    /// <see cref="SurfaceSendSteps"/> and sends each warp it draws. A guest hands its hulls over
+    /// (<see cref="SurfaceVehicleRuntime.Replicate"/>) and its warps wait for the host's draw.
+    /// Call once the roster has placed its hulls.</summary>
+    internal void FollowVehicles(SurfaceVehicleRuntime? hulls, CampaignDirector? director)
+    {
+        _surface = hulls;
+        _director = director;
+        if (_net.IsHost)
+        {
+            if (director != null)
+            {
+                director.WarpDrawn += SendWarp;
+            }
+
+            return;
+        }
+
+        director?.TakeWarpsFromHost();
+        if (hulls != null)
+        {
+            hulls.Replicate();
+            _net.On<SurfaceVehicleStateMessage>((_, state) => TakeSurface(state));
+        }
     }
 
     /// <summary>Admits every AI the roster gained since the last call, in roster order. Run at the
@@ -155,6 +203,11 @@ internal sealed class NetWorldLink
         if (step % ZeppelinSendSteps == 0)
         {
             SendZeppelins();
+        }
+
+        if (step % SurfaceSendSteps == 0)
+        {
+            SendSurfaceVehicles();
         }
 
         if (step % AircraftStateCadence.SendStepInterval != 0)
@@ -332,6 +385,84 @@ internal sealed class NetWorldLink
         }
     }
 
+    // Every patrolling hull by build index, its name's key riding along. A hull with nothing to
+    // send keeps its sequence unspent, and the guest's copy holds where the last sample left it.
+    private void SendSurfaceVehicles()
+    {
+        if (_surface is not { } hulls)
+        {
+            return;
+        }
+
+        var vessels = hulls.Vessels;
+        for (int i = 0; i < vessels.Count && i <= ushort.MaxValue; i++)
+        {
+            while (_surfaceSequence.Count <= i)
+            {
+                _surfaceSequence.Add(0);
+            }
+
+            var hull = vessels[i];
+            if (!GodotObject.IsInstanceValid(hull.Body)
+                || !hull.TryReadPatrol(out var position, out float speed, out float yaw))
+            {
+                continue;
+            }
+
+            _net.Broadcast(
+                new SurfaceVehicleStateMessage((ushort)i, _surfaceSequence[i]++, NameKey(hull.Name),
+                    position, speed, yaw),
+                NetChannels.Events);
+            SurfaceSamplesSent++;
+        }
+    }
+
+    // The host's index first, then a search by name: a generator launch on one end alone shifts
+    // every index after it.
+    private void TakeSurface(in SurfaceVehicleStateMessage state)
+    {
+        if (_surface is not { } hulls)
+        {
+            return;
+        }
+
+        var vessels = hulls.Vessels;
+        SurfaceVehicle? hull = null;
+        if (state.Vehicle < vessels.Count && NameKey(vessels[state.Vehicle].Name) == state.NameKey)
+        {
+            hull = vessels[state.Vehicle];
+        }
+        else
+        {
+            foreach (var candidate in vessels)
+            {
+                if (!candidate.IsDestroyed && NameKey(candidate.Name) == state.NameKey)
+                {
+                    hull = candidate;
+                    break;
+                }
+            }
+        }
+
+        if (hull != null && GodotObject.IsInstanceValid(hull.Body)
+            && hull.TakeSample(state.Sequence, state.Position, state.Speed, state.YawRad))
+        {
+            SurfaceSamplesTaken++;
+        }
+    }
+
+    private void SendWarp(string vehicle, int index)
+    {
+        if (index is < 0 or > ushort.MaxValue)
+        {
+            return;
+        }
+
+        _net.Broadcast(
+            new WorldEventMessage((ushort)NetWorldEvent.VehicleWarped, (ushort)index, NameKey(vehicle), 0f),
+            NetChannels.Events);
+    }
+
     private void TakeZeppelin(in ZeppelinStateMessage state)
     {
         if (_zeppelins?.TakePath(state.Zeppelin, state.Sequence, state.Position, state.Speed,
@@ -387,6 +518,14 @@ internal sealed class NetWorldLink
                 if (_world != null && FindPool(_world.Destructibles.All, e.Subject, e.Argument) is { } pool
                     && _world.ApplyReplicatedHealth(pool, e.Value))
                 {
+                    WorldEventsApplied++;
+                }
+
+                break;
+            case NetWorldEvent.VehicleWarped:
+                if (_director != null)
+                {
+                    _director.TakeHostWarp(e.Argument, e.Subject);
                     WorldEventsApplied++;
                 }
 

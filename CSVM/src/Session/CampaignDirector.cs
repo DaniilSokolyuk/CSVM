@@ -77,6 +77,11 @@ public sealed class CampaignDirector
         new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, SurfaceVehicle> _vessels = new(StringComparer.OrdinalIgnoreCase);
 
+    // A guest's two WARP_VEHICLE halves, keyed by the vehicle's name hash: the directive its graph
+    // replayed and the host's drawn index. Either can arrive first, so each waits for the other.
+    private readonly Dictionary<int, Queue<(string Vehicle, IReadOnlyList<WarpPoint> Points)>> _warpsAwaitingPick = new();
+    private readonly Dictionary<int, Queue<int>> _warpPicksAwaitingDirective = new();
+
     // Roster blocks authoring their own objectiveTarget flag (aiv slot 37), keyed by block name,
     // with the MSG_OBJ_* label their own slot 39 carries. The mission authors this ON the
     // vehicle, not through a targets.zrd entry, which is why the marker is stamped onto the
@@ -153,6 +158,14 @@ public sealed class CampaignDirector
 
     /// <summary>Fired once the mission has ended and the profile has been written.</summary>
     public event Action<CampaignMissionResult>? MissionEnded;
+
+    /// <summary>Raised on each <c>WARP_VEHICLE</c> draw with the vehicle's name and the index drawn
+    /// from the directive's list, before the placement. The host's network link sends it.</summary>
+    public event Action<string, int>? WarpDrawn;
+
+    /// <summary>Whether <c>WARP_VEHICLE</c> waits for another machine's draw
+    /// (<see cref="TakeHostWarp"/>) instead of drawing its own.</summary>
+    public bool WarpsFromHost { get; private set; }
 
     /// <summary>The process's music channel, or null when the session was built without one. The
     /// mission's own <c>WAKEUP_SOUND_GROUP music_*_sg</c> is what cues prebattle, the stingers and
@@ -714,6 +727,30 @@ public sealed class CampaignDirector
         }
         RegisterObjectiveMarker(launchName, template);
         Log.Info("core", $"campaign: launch '{launchName}' ({template.Name}) booked into the roster team={template.Team?.ToString() ?? "-"} group={template.Group}");
+    }
+
+    /// <summary>Makes every later <c>WARP_VEHICLE</c> wait for the host's draw instead of drawing
+    /// from this machine's world stream. Set on a guest, whose aircraft the host flies.</summary>
+    internal void TakeWarpsFromHost() => WarpsFromHost = true;
+
+    /// <summary>The host's <c>WARP_VEHICLE</c> draw for the vehicle whose name hashes to
+    /// <paramref name="vehicleKey"/> (<see cref="NetWorldLink.NameKey"/>). Placed at once when the
+    /// directive already ran here, else held until it does.</summary>
+    internal void TakeHostWarp(int vehicleKey, int index)
+    {
+        if (_warpsAwaitingPick.TryGetValue(vehicleKey, out var waiting) && waiting.Count > 0)
+        {
+            var (vehicle, points) = waiting.Dequeue();
+            PlaceHostWarp(vehicle, points, index);
+            return;
+        }
+
+        if (!_warpPicksAwaitingDirective.TryGetValue(vehicleKey, out var picks))
+        {
+            _warpPicksAwaitingDirective[vehicleKey] = picks = new Queue<int>();
+        }
+
+        picks.Enqueue(index);
     }
 
     private static CampaignMission? MissionFor(string zrdrPath, int seq)
@@ -1301,6 +1338,60 @@ public sealed class CampaignDirector
     private FlightController? Commanded(string name) =>
         _roster.TryGetValue(name, out var rig) ? rig : null;
 
+    // The directive's half on a guest: placed at once when the host's draw is already here.
+    private void AwaitHostWarp(string vehicle, IReadOnlyList<WarpPoint> points)
+    {
+        int key = NetWorldLink.NameKey(vehicle);
+        if (_warpPicksAwaitingDirective.TryGetValue(key, out var picks) && picks.Count > 0)
+        {
+            PlaceHostWarp(vehicle, points, picks.Dequeue());
+            return;
+        }
+
+        if (!_warpsAwaitingPick.TryGetValue(key, out var waiting))
+        {
+            _warpsAwaitingPick[key] = waiting = new Queue<(string, IReadOnlyList<WarpPoint>)>();
+        }
+
+        waiting.Enqueue((vehicle, points));
+        Log.Info("core", $"campaign: WARP_VEHICLE '{vehicle}' waits for the host's draw");
+    }
+
+    private void PlaceHostWarp(string vehicle, IReadOnlyList<WarpPoint> points, int index)
+    {
+        if (index < 0 || index >= points.Count || Commanded(vehicle) is not { } rig)
+        {
+            Gap("WARP_VEHICLE", $"the host's draw {index} for '{vehicle}' names no waypoint or vehicle here");
+            return;
+        }
+
+        Log.Info("core", $"campaign: WARP_VEHICLE '{vehicle}' takes the host's waypoint {index + 1} of {points.Count}");
+        PlaceWarp(rig, vehicle, points[index], points.Count);
+    }
+
+    // One drawn waypoint. A plain entry teleports the vehicle (FUN_00493fb0); an entry naming a
+    // path this chapter has puts it on that path and releases it moving (FUN_004940d0).
+    private void PlaceWarp(FlightController rig, string vehicle, WarpPoint point, int count)
+    {
+        if (point.PointName is { Length: > 0 } path && _paths != null && PlaceOnPath(rig, vehicle, path))
+        {
+            _paths.Release(vehicle);
+            Log.Info("core", $"campaign: WARP_VEHICLE put '{vehicle}' on path '{path}', moving");
+            return;
+        }
+
+        // A named point whose path this chapter lacks is the original's own no-op branch. It
+        // leaves the vehicle where it stands and still writes the velocity below.
+        bool authored = point.PointName is not { Length: > 0 };
+        var at = authored ? new Vector3(point.X, point.Y, point.Z) : rig.WorldPosition;
+        float heading = authored ? point.Heading : Mathf.RadToDeg(rig.GlobalRotation.Y);
+        // The speed it flies out at, along the placed nose: the original takes
+        // min(plane_speed_max, fd_speed). CSVM models no plane_speed_max
+        // (docs/org/flightModel.md, "What this changes" #13), so fd_speed stands in alone.
+        rig.WarpTo(at, heading, rig.Stats?.FdSpeed ?? 0f);
+        Log.Info("core", $"campaign: WARP_VEHICLE moved '{vehicle}' to ({at.X:0},{at.Y:0},{at.Z:0}) heading {heading:0} deg, 1 of {count} waypoint(s)");
+    }
+
     // The hull a clause names: a roster block's, or a generator launch's through the runtime,
     // since a boat generator's launches are what C2/M01's SET_AI_NET clauses address.
     private SurfaceVehicle? CommandedVessel(string name) =>
@@ -1758,11 +1849,10 @@ public sealed class CampaignDirector
         }
 
         /// <summary>`WARP_VEHICLE` (<c>FUN_0046a490</c> at <c>0x0046a8f2</c>): ONE waypoint drawn
-        /// from the list at random. A plain entry teleports the vehicle there (<c>FUN_00493fb0</c>);
-        /// an entry carrying the 5th string puts it on that named scripted path and releases it
-        /// moving instead (<c>FUN_004940d0</c>, which clears the freeze flag <c>+0xd4</c>). The
-        /// forward velocity is the caller's, not the placement's, and it is written only for a
-        /// vehicle that did NOT end up path-driven.</summary>
+        /// from the list at random, placed by <see cref="PlaceWarp"/>. The forward velocity is the
+        /// caller's, written only for a vehicle that did NOT end up path-driven. ⚠ A guest never
+        /// draws: its stream stands elsewhere than the host's, so it waits for the host's pick
+        /// (<see cref="WarpsFromHost"/>).</summary>
         public void WarpVehicle(string vehicle, IReadOnlyList<WarpPoint> points)
         {
             if (points.Count == 0)
@@ -1776,27 +1866,18 @@ public sealed class CampaignDirector
                 return;
             }
 
-            // The goal runtime's own `rand() % count`, on the world phase's stream: uniform over
-            // the authored list, so a mission hiding one aircraft in four places hides it evenly.
-            var point = points[_in.Rng.Next(points.Count)];
-            if (point.PointName is { Length: > 0 } path
-                && _owner._paths != null && _owner.PlaceOnPath(rig, vehicle, path))
+            if (_owner.WarpsFromHost)
             {
-                _owner._paths.Release(vehicle);
-                Log.Info("core", $"campaign: WARP_VEHICLE put '{vehicle}' on path '{path}', moving");
+                _owner.AwaitHostWarp(vehicle, points);
                 return;
             }
 
-            // A named point whose path this chapter has not is the original's own no-op branch: it
-            // leaves the vehicle where it stands and still writes the velocity below.
-            bool authored = point.PointName is not { Length: > 0 };
-            var at = authored ? new Vector3(point.X, point.Y, point.Z) : rig.WorldPosition;
-            float heading = authored ? point.Heading : Mathf.RadToDeg(rig.GlobalRotation.Y);
-            // The speed it flies out at, along the placed nose: the original takes
-            // min(plane_speed_max, fd_speed). CSVM models no plane_speed_max
-            // (docs/org/flightModel.md, "What this changes" #13), so fd_speed stands in alone.
-            rig.WarpTo(at, heading, rig.Stats?.FdSpeed ?? 0f);
-            Log.Info("core", $"campaign: WARP_VEHICLE moved '{vehicle}' to ({at.X:0},{at.Y:0},{at.Z:0}) heading {heading:0} deg, 1 of {points.Count} waypoint(s)");
+            // The goal runtime's own `rand() % count`, on the world phase's stream. It is
+            // uniform over the authored list, so a mission hiding one aircraft in four places
+            // hides it evenly.
+            int index = _in.Rng.Next(points.Count);
+            _owner.WarpDrawn?.Invoke(vehicle, index);
+            _owner.PlaceWarp(rig, vehicle, points[index], points.Count);
         }
 
         /// <summary>The vehicle arm of <c>SET_AI_TEAM</c> (<c>FUN_00469e20</c>): the script's raw

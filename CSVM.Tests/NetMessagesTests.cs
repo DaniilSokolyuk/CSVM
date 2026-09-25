@@ -447,6 +447,45 @@ public class NetMessagesTests
         Assert.False(AiStateMessage.TryRead(buffer[..ZeppelinStateMessage.Size], out _));
     }
 
+    // The zeppelin's order without its pitch, the name key in the pitch's place, at 32 bytes.
+    [Fact]
+    public void SurfaceVehicleStateRoundTripsWithItsNameKey()
+    {
+        Span<byte> buffer = stackalloc byte[64];
+        var sent = new SurfaceVehicleStateMessage(2, 65530, unchecked((int)0x9E3779B9u),
+            new Vector3(-4211.5f, 0.25f, 8120f), 17.8816f, -2.1f);
+        Assert.Equal(SurfaceVehicleStateMessage.Size, sent.Write(buffer));
+        Assert.True(SurfaceVehicleStateMessage.TryRead(buffer[..SurfaceVehicleStateMessage.Size], out var got));
+        Assert.Equal(sent, got);
+        Assert.Equal(NetReliability.Unreliable, NetMessage.ReliabilityOf(NetMessageType.SurfaceVehicleState));
+        Assert.Equal(0x004D, (int)NetMessageType.SurfaceVehicleState);
+        Assert.False(NetMessage.IsOriginalId(NetMessageType.SurfaceVehicleState));
+        Assert.False(ZeppelinStateMessage.TryRead(buffer[..SurfaceVehicleStateMessage.Size], out _));
+    }
+
+    // A warp's pick rides the world event: the drawn index as the subject, the name key as the
+    // argument.
+    [Fact]
+    public void VehicleWarpedRidesTheWorldEvent()
+    {
+        Span<byte> buffer = stackalloc byte[32];
+        var sent = new WorldEventMessage((ushort)NetWorldEvent.VehicleWarped, 3, -1640531527, 0f);
+        Assert.Equal(WorldEventMessage.Size, sent.Write(buffer));
+        Assert.True(WorldEventMessage.TryRead(buffer[..WorldEventMessage.Size], out var got));
+        Assert.Equal(sent, got);
+        Assert.Equal(4, (int)NetWorldEvent.VehicleWarped);
+    }
+
+    // The key a hull's sample and a warp's pick carry: FNV-1a, blind to case, so the two ends'
+    // spellings of one roster name agree.
+    [Fact]
+    public void NameKeyIsCaseBlindFnv1a()
+    {
+        Assert.Equal(unchecked((int)0xE40C292Cu), CSVM.Session.NetWorldLink.NameKey("a"));
+        Assert.Equal(CSVM.Session.NetWorldLink.NameKey("patrolboat_1"), CSVM.Session.NetWorldLink.NameKey("PatrolBoat_1"));
+        Assert.NotEqual(CSVM.Session.NetWorldLink.NameKey("patrolboat_1"), CSVM.Session.NetWorldLink.NameKey("patrolboat_2"));
+    }
+
     [Fact]
     public void WorldEventRoundTripsANegativeArgument()
     {

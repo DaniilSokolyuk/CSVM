@@ -199,7 +199,7 @@ class building no node of its own. `ResolveSpec` runs in `GameSession`'s constru
 the `aiv` blocks through `CampaignRoster.cs`; `Attach` arms the graph once every runtime a
 directive can touch is up; `BindCallbackHost` takes the `CALLBACK` slot ahead of the generator
 runtime's, where 801 to 803 reactivate the lowest-numbered still-deactivated Black Hat of their
-family, CM19's only launch path, and 968 takes C4/M03's escorting wingman out of the world as that mission's docking film says her name; `Step` runs the graph, the escort repair, the music and the danger-zone tracker, whose completed zones both photograph into the profile through `CampaignSnapshot` and make `DangerZoneMask`, the id 18 to 30 half of the completed-objective mask. The
+family, CM19's only launch path; `WarpDrawn` raises the world stream's `WARP_VEHICLE` pick, and `TakeWarpsFromHost` makes a guest director wait for the host's instead of drawing; 968 takes C4/M03's escorting wingman out of the world as that mission's docking film says her name; `Step` runs the graph, the escort repair, the music and the danger-zone tracker, whose completed zones both photograph into the profile through `CampaignSnapshot` and make `DangerZoneMask`, the id 18 to 30 half of the completed-objective mask. The
 nested `World` is the `IObjectiveWorld`, a directive with no seam here a named no-op, and `WidenGroupEngagement` is where an awake `DEDG` reaches its group's live members; `Memento` is the picture the flying profile hangs, which the pause sheet's own slot takes; mission end records the attempt, folds the persist log into the profile and holds before the cabin behind `LeavingFade`, the ramp `UI.MissionEndFade` paints. A replicated graph's end builds the result and holds the world the same way but records nothing, since the attempt is the host's. Debrief: [../org/debrief.md](../org/debrief.md).
 
 ## src/Session/NetDirectorLink.cs
@@ -222,13 +222,13 @@ for the event's sounds. It then has `AnimRuntime.CatchUp` step the instances the
 
 ## src/Session/NetWorldLink.cs
 The host-owned world over the wire, one per network session. `Admit` names each AI by its roster
-ordinal before any is stepped: the host hooks its fire, death and hull and leaves a guest's round to
-the guest; a guest gives it a pose buffer and claims its own seat's rounds to the host. `StepSends`
-sends every host AI on the seat cadence and every zeppelin path each `ZeppelinSendSteps` (half a
-second); `FollowZeppelins` puts a guest's zeppelins on those samples by placement index. Pool stage
-changes go out through `AnimRuntime.DestructibleDamaged`, and a guest's runtime, set
-`DamageReplicated`, applies them through `ApplyReplicatedHealth`. `NetWorldSeats` is its seat
-lookups. Phase mapping and layouts: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
+ordinal: the host hooks its fire, death and hull; a guest gives it a pose buffer and claims its own
+seat's rounds. `StepSends` sends every host AI on the seat cadence and every zeppelin and hull path
+each half second; `FollowZeppelins` puts a guest's zeppelins on those samples by placement index,
+`FollowVehicles` its hulls by spawn index and `NameKey` hash, and carries the host director's
+`WARP_VEHICLE` picks to a guest's, which draws none. Pool stage changes go out through
+`AnimRuntime.DestructibleDamaged` and apply through `ApplyReplicatedHealth`. `NetWorldSeats` is its
+seat lookups. Layouts: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
 
 ## src/Session/CampaignProgression.cs
 The campaign's progression rules over a profile: recording one mission attempt with the original's
@@ -335,17 +335,17 @@ definitions anchor on it and register its destructible pool. `GameSession` build
 the roster phase and the generator block; `SessionSimulation` steps it after the generators that
 may launch another hull. `CollectVehicles` offers every hull to the aim assist's vehicle list
 ([../org/aim-assist.md](../org/aim-assist.md)); `Projectiles`/`Weapons`/`Voices` arm and voice its gun on the attack radius `AttackRadiusOf` resolves in the engine's own write order, the block's and net's slot over the def's `attack` over the decoded 400 m default and never a zero reach ([../org/aiPilot.md](../org/aiPilot.md)); `Strings` names it, slot 20 into `MarkerName`.
-Read `SurfaceVehicle.cs` next.
+A guest's `Replicate`d runtime puts every hull it holds or spawns on the host's samples. Read `SurfaceVehicle.cs` next.
 
 ## src/Session/SurfaceVehicle.cs
 One built hull: no pilot, no flight model, no `FlightController`. Its movement is the scripted-path
 follower's law (`Flight/PathFollower.cs`, [../org/flightModel.md](../org/flightModel.md)) over an
 unbounded route, the generator's take-off run then a lazy walk of the patrol net's edges, height
 pinned to the water. `Patrol` is the roster and `SET_AI_NET` assignment, `Launch` the generator's,
-`Wake` the `WAKEUP_ENEMIES` arm a block's `deactivated` waits on. Damage is the pool the chapter's
-definition registered on the root: a rung of the injure ladder plays as the pool falls through its
-fraction, the death leaving the parts to the death sequence. Its gun is `SurfaceGunner.cs`, stepped
-from here for a woken, undestroyed hull; `SurfaceVehicleRuntime.cs` is how one is built.
+`Wake` the `WAKEUP_ENEMIES` arm a block's `deactivated` waits on. Damage is the chapter's pool on
+the root, a rung of the injure ladder playing as it falls, the death leaving the parts to the death
+sequence. Its gun is `SurfaceGunner.cs`, stepped for a woken, undestroyed hull. A replicated hull
+walks no net: it chases the host's `TryReadPatrol` samples under `Flight/ZeppelinReplica.cs`'s law.
 
 ## src/Session/SurfaceGunner.cs
 One hull's gun ([../org/aiPilot.md](../org/aiPilot.md) "What a `mode ship` vehicle runs"): the

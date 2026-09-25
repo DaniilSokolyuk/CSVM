@@ -70,6 +70,10 @@ public enum NetMessageType : ushort
     /// <summary>One zeppelin's path position as the host has it: where it is, its facing and its
     /// speed.</summary>
     ZeppelinState = 0x004B,
+
+    /// <summary>One surface vehicle's patrol position as the host has it: where it is, its heading
+    /// and its speed.</summary>
+    SurfaceVehicleState = 0x004D,
 }
 
 /// <summary>What kind of session a host holds open, the word a join board names it by.</summary>
@@ -101,6 +105,10 @@ public enum NetWorldEvent : ushort
     /// registration index, the argument a hash of its definition and anchor names, and the value
     /// its health.</summary>
     DestructibleHealth = 3,
+
+    /// <summary>The host drew a <c>WARP_VEHICLE</c> waypoint. The subject is the drawn index into
+    /// the directive's list, the argument a hash of the vehicle's name.</summary>
+    VehicleWarped = 4,
 }
 
 /// <summary>Why a pilot died, the original's own cause word
@@ -1028,6 +1036,7 @@ public static class NetMessage
         NetMessageType.ClockPing => ClockPingMessage.Reliability,
         NetMessageType.SessionAdvert => SessionAdvertMessage.Reliability,
         NetMessageType.ZeppelinState => ZeppelinStateMessage.Reliability,
+        NetMessageType.SurfaceVehicleState => SurfaceVehicleStateMessage.Reliability,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "no such message type"),
     };
 

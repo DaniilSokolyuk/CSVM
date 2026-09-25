@@ -66,9 +66,24 @@ public sealed partial class SurfaceVehicleRuntime : Node
     /// shipped case for all but four blocks anyway.</summary>
     public Messages? Strings { get; set; }
 
+    /// <summary>Whether every hull, built or yet to be built, follows another machine's samples.
+    /// </summary>
+    public bool Replicated { get; private set; }
+
     /// <summary>The hull a mission clause names, or null.</summary>
     public SurfaceVehicle? ByName(string name) =>
         _byName.TryGetValue(name, out var vessel) ? vessel : null;
+
+    /// <summary>Hands every hull's patrol to another machine (<see cref="SurfaceVehicle.Replicate"/>),
+    /// those a generator launches later included.</summary>
+    public void Replicate()
+    {
+        Replicated = true;
+        foreach (var vessel in _vessels)
+        {
+            vessel.Replicate();
+        }
+    }
 
     /// <summary>Builds one hull from <paramref name="plan"/> at <paramref name="position"/>,
     /// facing <paramref name="forward"/>, on the water. <paramref name="nodeName"/> is a
@@ -120,6 +135,10 @@ public sealed partial class SurfaceVehicleRuntime : Node
         float attackRadius = AttackRadiusOf(plan);
         vessel.Gunner = SurfaceGunner.Build(vessel, Projectiles, Weapons,
             _defs.WeaponsOf(plan.Def), attackRadius, Voices);
+        if (Replicated)
+        {
+            vessel.Replicate();
+        }
         _vessels.Add(vessel);
         _byName[name] = vessel;
         Log.Info("world", $"surface: '{name}' ({plan.Def}, {plan.Mode}) built at ({position.X:0},{waterY:0.##},{position.Z:0}){waterNote} team={plan.Team?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-"} group={plan.Group}{(vessel.MarkerName.Length > 0 ? $" marker '{vessel.MarkerName}'" : " unnamed")}{(pool != null ? Log.Format($" pool '{pool.Def.Name}' HP {pool.MaxHealth:0}") : " no destructible pool")}{(vessel.Gunner != null ? Log.Format($" armed {vessel.Gunner.Ammo} rounds, reach {attackRadius:0} m") : " unarmed")}{(plan.Inert ? " DEACTIVATED" : "")}");

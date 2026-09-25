@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using CSVM.Flight;
 using CSVM.Mech3;
+using CSVM.Net;
 using CSVM.Session;
 using Godot;
 
@@ -45,6 +47,13 @@ internal static class CampaignBlackeSearchSuites
     // The seed the world phase draws the waypoint with, so the suite knows which of the four the
     // mission picked and can assert the placement rather than describe it.
     private const int WarpSeed = 1;
+
+    // How far behind the host the late guest's graph starts, so the host's pick lands before that
+    // guest's own directive runs. Several times the link's latency.
+    private const float LateGraphS = 1f;
+
+    // The warp run: past the directive's 5 s on the late guest, with time for the pick to land.
+    private const float WarpRunS = 7f;
 
     // The mission's own opening cutscene, shared with every other story mission but for this one
     // authoring no re-placement callback in its RESET_STATE, so the hand-back reads
@@ -121,6 +130,52 @@ internal static class CampaignBlackeSearchSuites
 
         ctx.WriteArtifact($"test-campaign-blacke-search-{Chapter}-{Mission}.txt", report.ToString());
         ctx.Note($"{Chapter}/{Mission}: Blacke is warped, spotted at 500 m, and a miss reads false");
+    }
+
+    [Suite("net-blacke-warp",
+        "C4/M02's WARP_VEHICLE over a 100 ms, 10 per cent lossy loopback: the host's director draws "
+        + "Blacke's waypoint and sends its index; two guest directors whose own world streams would "
+        + "draw another waypoint draw nothing and put him on the host's, one whose directive runs "
+        + "before the pick lands and one whose graph runs a second late, so the pick is waiting; "
+        + "and a control director drawing for itself lands elsewhere")]
+    internal static void NetBlackeWarp(TestContext ctx)
+    {
+        ctx.RequireData(ctx.PlanesGamezPath, $"planes gamez");
+        ctx.RequireData(ctx.ZrdrPath, $"zrdr archive");
+        string missionZrdr = SessionPaths.MissionZrdr(ctx.DataRoot, Chapter, Mission);
+        string chapterZrdr = SessionPaths.ChapterZrdr(ctx.DataRoot, Chapter);
+        string texturesPath = SessionPaths.ChapterTextures(ctx.DataRoot, Chapter);
+        ctx.RequireData(missionZrdr, $"{Chapter}/{Mission} zrdr");
+        ctx.RequireData(chapterZrdr, $"{Chapter} zrdr");
+        ctx.RequireData(texturesPath, $"{Chapter} textures");
+        if (MissionAt(ctx, Chapter, Mission) is not { } mission)
+        {
+            throw new SuiteSkippedException($"{Chapter}/{Mission} is not in cm_sequence");
+        }
+
+        var script = ObjectiveScript.Load(missionZrdr);
+        var points = Numbered(script, WarpObjective)?.Warp?.Points ?? new List<WarpPoint>();
+        if (points.Count < 2)
+        {
+            throw new SuiteSkippedException($"OBJECTIVE{WarpObjective} authors fewer than two waypoints");
+        }
+
+        // A guest seed whose own draw is another waypoint, so a guest that drew would be caught.
+        int hostPick = new Random(WarpSeed).Next(points.Count);
+        int guestSeed = WarpSeed + 1;
+        while (new Random(guestSeed).Next(points.Count) == hostPick)
+        {
+            guestSeed++;
+        }
+
+        var report = new StringBuilder();
+        report.AppendLine($"host draws waypoint {hostPick + 1} of {points.Count}; a guest drawing on seed {guestSeed} would take {new Random(guestSeed).Next(points.Count) + 1}");
+        var blocks = AiSkills.LoadRoster(missionZrdr);
+        var skills = AiSkills.Load(ctx.ZrdrPath);
+        ctx.WithWorld(Chapter, collision: false, Mission, world =>
+            DriveWarp(ctx, world, script, mission, blocks, skills, points, hostPick, guestSeed,
+                missionZrdr, chapterZrdr, texturesPath, report));
+        ctx.WriteArtifact($"test-net-blacke-warp-{Chapter}-{Mission}.txt", report.ToString());
     }
 
     // generic_intro's RESET_STATE reparents 'player' back to the world root and raises no 951, so
@@ -489,6 +544,177 @@ internal static class CampaignBlackeSearchSuites
         }
     }
 
+    // Four directors over one world, each with a roster of Blacke alone. They are the host, two
+    // linked guests (one in step with the host, one a second behind) and an unlinked control.
+    private static void DriveWarp(TestContext ctx, TestWorld world, ObjectiveScript script,
+        CampaignMission mission, IReadOnlyList<(string Name, List<object?> Fields)> blocks,
+        AiSkills skills, IReadOnlyList<WarpPoint> points, int hostPick, int guestSeed,
+        string missionZrdr, string chapterZrdr, string texturesPath, StringBuilder report)
+    {
+        var textures = new TextureArchive(texturesPath);
+        var planesGamez = GameZ.Load(ctx.PlanesGamezPath);
+        var live = new ProjectilePool(textures, null, null);
+        ctx.Host.AddChild(live);
+        var pose = PlayerPose(blocks);
+        var human = HumanRig(ctx, planesGamez, textures, live, pose.Position, pose.Position + pose.Forward);
+        var ends = new List<WarpEnd>();
+        try
+        {
+            WarpEnd Build(string name, int seed)
+            {
+                var roster = Spawner(ctx, planesGamez, textures, live);
+                var director = CampaignDirector.Create(script, mission, CampaignProfileDef.NewProfile(name), null);
+                var end = new WarpEnd(name, director, roster, new CountingRandom(seed));
+                ends.Add(end);
+                director.BuildRoster(new CampaignDirector.RosterInputs
+                {
+                    ChapterZrdrPath = chapterZrdr,
+                    MissionZrdrPath = missionZrdr,
+                    ZrdrPath = ctx.ZrdrPath,
+                    MinAiActiveDist = skills.MinAiActiveDist,
+                    Player = () => human,
+                    FindNodes = n => world.Runtime.FindNodes(n),
+                    Spawn = (plan, at, look, pilot) => plan.Name.Equals(Gyro, StringComparison.OrdinalIgnoreCase)
+                        ? roster.SpawnAi(CampaignRosterPlan.SpawnFor(plan, at, look, pilot))
+                        : null,
+                    Rng = new Random(1),
+                });
+                director.Attach(new CampaignDirector.WorldInputs
+                {
+                    Runtime = world.Runtime,
+                    Projectiles = live,
+                    Gamez = world.Gamez,
+                    ListenerPosition = () => pose.Position,
+                    PlayerAircraft = () => human,
+                    Rng = end.Draws,
+                });
+                return end;
+            }
+
+            var host = Build("host", WarpSeed);
+            var early = Build("early", guestSeed);
+            var late = Build("late", guestSeed);
+            var control = Build("control", guestSeed);
+            if (ends.Any(e => e.Blacke == null || e.Director.Graph == null))
+            {
+                ctx.Check(false, $"every director spawned '{Gyro}' and armed its graph");
+                return;
+            }
+
+            var spawnedAt = host.Blacke!.WorldPosition;
+            var mesh = LoopbackTransport.Mesh(3, LoopbackConditions.Perfect, new Random(WarpSeed));
+            var seats = new NetSeat[]
+            {
+                new() { PeerId = 0, SeatIndex = 0, IsLocal = true, Callsign = "host", PlaneNode = "player_pfighter" },
+                new() { PeerId = 1, SeatIndex = 1, Callsign = "early", PlaneNode = "player_fbrand" },
+                new() { PeerId = 2, SeatIndex = 2, Callsign = "late", PlaneNode = "player_fbrand" },
+            };
+            NetSeats.Validate(seats);
+            var nets = new[] { NetSession.Host(mesh[0], seats, 0x2E43UL), NetSession.Guest(mesh[1]), NetSession.Guest(mesh[2]) };
+            var links = nets.Select(n => new NetWorldLink(n, NoSeats(), null)).ToArray();
+            links[0].FollowVehicles(null, host.Director);
+            links[1].FollowVehicles(null, early.Director);
+            links[2].FollowVehicles(null, late.Director);
+            early.Blacke!.RemotePoses = new RemotePoseBuffer();
+            late.Blacke!.RemotePoses = new RemotePoseBuffer();
+            ctx.Check(!host.Director.WarpsFromHost && early.Director.WarpsFromHost
+                    && late.Director.WarpsFromHost && !control.Director.WarpsFromHost,
+                $"the linked guests wait for the host's draw, the host and the control draw their own");
+
+            for (int s = 0; s < 60; s++)
+            {
+                StepNets(nets);
+            }
+
+            ctx.Check(nets[1].Joined && nets[2].Joined, $"both guests joined over the clean link");
+            var lossy = new LoopbackConditions(0.10, 0.02, 0.10);
+            for (int peer = 1; peer < 3; peer++)
+            {
+                mesh[0].SetConditions(peer, lossy);
+                mesh[peer].SetConditions(0, lossy);
+            }
+
+            for (float t = 0f; t < WarpRunS + LateGraphS; t += StepDt)
+            {
+                foreach (var end in ends)
+                {
+                    if (end != late || t >= LateGraphS)
+                    {
+                        end.Step(StepDt);
+                    }
+                }
+
+                StepNets(nets);
+            }
+
+            foreach (var end in ends)
+            {
+                var at = end.Blacke!.WorldPosition;
+                report.AppendLine($"{end.Name}: draws {end.Draws.Count}, OBJECTIVE{WarpObjective} ran with him at "
+                    + $"({end.RanAt.X:0},{end.RanAt.Y:0},{end.RanAt.Z:0}), now ({at.X:0},{at.Y:0},{at.Z:0}), "
+                    + $"{at.DistanceTo(host.Blacke.WorldPosition):0.#} m from the host's");
+                ctx.Check(end.Director.Graph!.CompletedOf(WarpObjective), $"{end.Name}: OBJECTIVE{WarpObjective} ran");
+            }
+
+            ctx.Check(host.Draws.Count >= 1 && control.Draws.Count >= 1,
+                $"the host and the control draw their own waypoint ({host.Draws.Count}, {control.Draws.Count} draw(s))");
+            ctx.Check(early.Draws.Count == 0 && late.Draws.Count == 0,
+                $"neither guest draws from its world stream ({early.Draws.Count}, {late.Draws.Count})");
+            ctx.Check(early.RanAt.DistanceTo(spawnedAt) <= PlacedToleranceM,
+                $"the early guest's directive ran before the pick landed and left him where he was spawned");
+            ctx.Check(late.RanAt.DistanceTo(spawnedAt) > PlacedToleranceM,
+                $"the late guest's directive found the pick waiting and placed him in the same step");
+            if (points[hostPick].PointName is { Length: > 0 } path)
+            {
+                foreach (var end in new[] { host, early, late })
+                {
+                    ctx.Check(end.Director.Paths?.IsFrozen(Gyro) == false,
+                        $"{end.Name}: the host's waypoint names path '{path}', which releases him onto it");
+                }
+            }
+            else
+            {
+                var want = new Vector3(points[hostPick].X, points[hostPick].Y, points[hostPick].Z);
+                foreach (var end in new[] { host, early, late })
+                {
+                    ctx.Check(end.Blacke!.WorldPosition.DistanceTo(want) <= PlacedToleranceM,
+                        $"{end.Name}: Blacke stands on the host's waypoint ({want.X:0},{want.Y:0},{want.Z:0})");
+                }
+
+                ctx.Check(control.Blacke!.WorldPosition.DistanceTo(want) > PlacedToleranceM,
+                    $"the control, drawing for itself, put him elsewhere: {control.Blacke.WorldPosition.DistanceTo(want):0} m off");
+            }
+        }
+        finally
+        {
+            human.Free();
+            foreach (var end in ends)
+            {
+                end.Free();
+            }
+
+            live.Free();
+            textures.Dispose();
+        }
+    }
+
+    private static void StepNets(NetSession[] nets)
+    {
+        foreach (var net in nets)
+        {
+            net.Step(StepDt);
+        }
+    }
+
+    private static NetWorldSeats NoSeats() => new()
+    {
+        SeatOfShooter = _ => -1,
+        IsLocal = _ => false,
+        ShooterOfSeat = _ => null,
+        WeaponIndex = _ => -1,
+        WeaponAt = _ => null,
+    };
+
     // The regression itself. A miss must read FALSE, not "cannot answer": an unresolved reference
     // is counted rather than decided, and four of those in a row is the mission that cannot end.
     private static void Spot(TestContext ctx, CampaignDirector director, ObjectiveGraph graph,
@@ -638,5 +864,79 @@ internal static class CampaignBlackeSearchSuites
             null!, ctx.Host, resources,
             new FlightWorldBindings { Projectiles = live, Gamez = planesGamez },
             new HumanRosterBindings());
+    }
+
+    // A world stream that counts what is drawn from it, so a guest that drew is caught.
+    private sealed class CountingRandom : Random
+    {
+        public CountingRandom(int seed)
+            : base(seed)
+        {
+        }
+
+        public int Count { get; private set; }
+
+        public override int Next(int maxValue)
+        {
+            Count++;
+            return base.Next(maxValue);
+        }
+
+        public override int Next(int minValue, int maxValue)
+        {
+            Count++;
+            return base.Next(minValue, maxValue);
+        }
+
+        public override double NextDouble()
+        {
+            Count++;
+            return base.NextDouble();
+        }
+    }
+
+    // One director of the warp run, its roster of Blacke alone, and where he stood the step its
+    // OBJECTIVE23 ran.
+    private sealed class WarpEnd
+    {
+        private readonly FlightRoster _roster;
+
+        public WarpEnd(string name, CampaignDirector director, FlightRoster roster, CountingRandom draws)
+        {
+            Name = name;
+            Director = director;
+            _roster = roster;
+            Draws = draws;
+        }
+
+        public string Name { get; }
+
+        public CampaignDirector Director { get; }
+
+        public CountingRandom Draws { get; }
+
+        public FlightController? Blacke => Director.Roster.TryGetValue(Gyro, out var rig) ? rig : null;
+
+        public Vector3 RanAt { get; private set; }
+
+        public void Step(float dt)
+        {
+            bool before = Director.Graph?.CompletedOf(WarpObjective) == true;
+            Director.Step(dt);
+            if (!before && Director.Graph?.CompletedOf(WarpObjective) == true && Blacke is { } rig)
+            {
+                RanAt = rig.WorldPosition;
+            }
+        }
+
+        public void Free()
+        {
+            var members = new List<FlightController>(_roster.AiAircraft);
+            _roster.ClearMembership();
+            foreach (var rig in members)
+            {
+                rig.Free();
+            }
+        }
     }
 }

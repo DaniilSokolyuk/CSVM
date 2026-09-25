@@ -4325,6 +4325,8 @@ public partial class GameSession : Node3D
             _netWorld.FollowZeppelins(_zeppelins);
         }
 
+        _netWorld.FollowVehicles(_surfaceVehicles, _campaign);
+
         Log.Info("core", $"net world: {(net.IsHost ? $"host (flying every AI and deciding every world hit, {world?.Destructibles.Count ?? 0} pool(s))" : "guest (AI replicated from the host, world pools spending nothing of their own)")}");
     }
 

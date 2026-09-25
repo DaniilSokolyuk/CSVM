@@ -198,7 +198,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 41. ☐ Host-owned AI spawns: generator launches, Black Hat launches and `WAKEUP_*` as spawn events carrying the host's admission ordinal
 42. ☑ Zeppelin paths from the host: the path position as a periodic state message, in the original's `0x1e` shape
-43. ☐ Surface vehicles from the host: patrols and `WARP_VEHICLE` placed by the host, not replayed from a diverging draw
+43. ☑ Surface vehicles from the host: patrols and `WARP_VEHICLE` placed by the host, not replayed from a diverging draw
 44. ☐ Destructible chip damage: a pool's health between stages mirrored on every guest
 
 ## Dependency and parallelism notes
@@ -1796,20 +1796,73 @@ path runtime to it instead of advancing it alone.
 **⚠ Traps.** Zeppelin parts and cannons are already destructible pools under C22; a path message must
 not re-spawn or re-arm them.
 
-## E43 ☐ Surface vehicles from the host: patrols and `WARP_VEHICLE` placed by the host, not replayed from a diverging draw
+## E43 ☑ Surface vehicles from the host: patrols and `WARP_VEHICLE` placed by the host, not replayed from a diverging draw
+
+**Landed.** A guest's surface hulls chase the host's patrol samples, and a guest director's
+`WARP_VEHICLE` takes the host's draw instead of making its own. By file:
+- `CSVM/src/Net/NetMessages.cs`, `CSVM/src/Net/NetWorldMessages.cs`: `SurfaceVehicleStateMessage`,
+  id **`0x4D`** (not `0x4C`, which E41 may take), 32 bytes, plain unreliable on
+  `NetChannels.Events`: spawn index, per-hull sequence, name hash, position, speed, yaw. World
+  event code **4** `VehicleWarped`: subject the drawn index, argument the vehicle's name hash.
+- `CSVM/src/Session/SurfaceVehicle.cs`: `Replicate`, `TakeSample`, `TryReadPatrol` and
+  `Replicated`. A replicated hull steps a `ZeppelinReplica` (no pitch) instead of its follower, and a
+  later route assignment keeps the net without drawing a route.
+- `CSVM/src/Session/SurfaceVehicleRuntime.cs`: `Replicate`, which also covers hulls spawned later.
+- `CSVM/src/Session/CampaignDirector.cs`: `WarpDrawn` (the host's pick), `TakeWarpsFromHost` and
+  `TakeHostWarp`. A guest's directive queues until the pick arrives, or places at once when the pick
+  came first; the placement body is `PlaceWarp`, shared by both.
+- `CSVM/src/Session/NetWorldLink.cs`: `FollowVehicles(SurfaceVehicleRuntime?, CampaignDirector?)`,
+  `SurfaceSendSteps` (the zeppelin's 30 steps), `NameKey` (the FNV-1a that `PoolKey` now calls), and
+  the counters `SurfaceSamplesSent` and `SurfaceSamplesTaken`.
+- `CSVM/src/Testing/NetSurfaceVehicleSuites.cs` (new): `net-surface-patrol`.
+- `CSVM/src/Testing/CampaignBlackeSearchSuites.cs`: `net-blacke-warp`.
+- Tests: three in `NetMessagesTests` (the `0x4D` round trip, code 4, `NameKey`).
+- `docs/org/multiplayer-messages.md`: the `0x4D` row and its paragraph, code 4, the phase row, and
+  `WARP_VEHICLE` moved out of the replayed list.
+
+**Verified.** The complete battery on the merged tree (E43 over E42 and everything before it, with
+`GameSession.WireNetWorld` calling `FollowVehicles(_surfaceVehicles, _campaign)` after the zeppelin
+hook): build clean, 4946 units passed with 0 failed and 2 skipped, 394 engine suites passed with
+engine errors clean, and 19 goldens hash-identical. `net-surface-patrol` and `net-blacke-warp` pass
+inside it.
+
+**Approach.** Replication for patrols, a host draw for the warp. The survey in `net-surface-patrol`
+finds no branch node on any roster or `SET_AI_NET` hull net of C1B/M03 or C2/M01, and one on C2/M01's
+launch net, so the branch pick is not the main risk. A replayed patrol still diverges from timing: a
+late wake, a `SET_AI_NET` route that starts wherever the hull stands, a launch on each end's own timer,
+and a late join. Samples remove all four, at the cost of the chase lag. `WARP_VEHICLE` only ever
+targets an aircraft rig (C4/M02 hides Blacke, who stays `Inert`, so no `0x45` would move him), so it
+needs the pick and not a hull message.
+
+**Owed.**
+- A generator launch still spawns a hull on each end's own timer, so hull indices can shift. The
+  name hash finds the hull, but a launch the guest has not made has no hull to take the sample. That
+  is solved when E41 moves the launch to the host.
+- A late joiner's hulls hold where they were built until the first sample, at most half a second. A
+  late joiner has missed the warp event.
+- A guest hull's gun still fires locally, as the zeppelin broadside does.
+- A path-named warp point is released locally on each end, the same as `START_TAXI`. No shipped
+  mission authors one.
+
+**Model recommendation.** Medium. The patrol side copies E42's pattern, and the work is in reading
+which draws exist and where the warp's directive and its pick can arrive in either order.
+
+**Verify.** `.\RunTests.ps1 -Suite net-surface-patrol -SkipUnits -SkipGoldens`: C1B/M03's four
+boats through net-soak's four link cells. The guest's hull must stay within speed times (latency +
+jitter + 0.5 s chase + 0.5 s slack) of the host's, and an unfed replicated guest must exceed that
+bar. `.\RunTests.ps1 -Suite net-blacke-warp -SkipUnits -SkipGoldens`: C4/M02 over a 100 ms, 10 per
+cent loopback. Two guests, one early and one late, draw nothing and land on the host's waypoint, and
+a control drawing for itself lands elsewhere. Units: `NetMessagesTests`.
+
+**Original approach (kept for reference).**
 
 **Goal.** Every surface vehicle patrols and warps where the host's does.
 
 **Evidence (confidence: traced).** Surface-vehicle patrols are replayed locally on a guest, and
 `WARP_VEHICLE` takes a random draw that diverges between machines (C22's markers).
 
-**Approach.** <TODO: map whether a patrol is deterministic from the seed and clock once `WARP_VEHICLE`
-is taken from the host, or needs state samples like an AI aircraft>
-
-**Model recommendation.** <TODO>
-
-**Verify.** <TODO: a harness run of a mission with a patrol and a `WARP_VEHICLE`, the guest's vehicle
-set and positions against the host's>
+**Approach.** Map whether a patrol is deterministic from the seed and clock once `WARP_VEHICLE` is
+taken from the host, or needs state samples like an AI aircraft.
 
 **⚠ Traps.** "Same seed" is not "same world" once any draw depends on world state; decide per vehicle
 path, as C22 did per phase.

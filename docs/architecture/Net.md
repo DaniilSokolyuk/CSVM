@@ -98,7 +98,8 @@ The host-owned world's messages, beside the vocabulary rather than in it: `AiSta
 (an AI's pose by admission ordinal, plain unreliable because every AI shares one channel, with
 `AsAircraftState` for the pose buffer), `AiFireMessage`, `AiHitMessage` (a guest's claim on an AI,
 to the host alone), `ZeppelinStateMessage` (one zeppelin of the original's `0x1e`, by placement
-index) and `WorldEventMessage`, whose `NetWorldEvent` code says what its subject, argument and
+index), `SurfaceVehicleStateMessage` (one hull's patrol by spawn index and name hash) and
+`WorldEventMessage`, whose `NetWorldEvent` code says what its subject, argument and
 value carry. Their ids and the phase mapping they serve are
 [../org/multiplayer-messages.md](../org/multiplayer-messages.md)'s.
 
