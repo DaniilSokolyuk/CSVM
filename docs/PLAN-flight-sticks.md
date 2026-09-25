@@ -167,7 +167,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 ### Wave B, binding model
 
 4. ☑ Full-axis binding kind, and hats made bindable for sticks
-5. ☐ Stick action source in the flight model: linear, bypassing `StickCurve`
+5. ☑ Stick action source in the flight model: linear, bypassing `StickCurve`
 6. ☑ Absolute Throttle (lever) action with the takeover rule
 
 ### Wave C, profiles and defaults
@@ -247,7 +247,9 @@ No candidate, or a failed load, means no sticks and one log line naming the path
 continues. An `SDL2.dll` found through `PATH` is an unpinned build and is not used. A2 may log the
 loaded version through `SDL_GetVersion`, which needs no `SDL_Init`.
 
-**Verified.** <pending orchestrator run>
+**Verified.** `InstallSdl2.ps1 -Verify` passes on the main checkout's install, which worktrees
+reach through `CSVM_DATA_ROOT`. A full `ExportRelease.ps1`
+zip listing has not been run, since its shader bake opens a window.
 
 **Original approach (kept for reference).**
 
@@ -362,7 +364,8 @@ and quit cleanly. ⚠ Per ⚠ row 2 none of this is foreground evidence, and hot
 and the Tartarus's F13+ keys with SDL2 holding its joystick view still need the user's foreground
 run.
 
-**Verified.** <pending orchestrator run>
+**Verified.** `--dump-sticks` on the hidden desktop lists both VKB units and the Tartarus with the
+GUIDs the pygame-ce probe reported. The full `RunTests.ps1` passes on the merged branch.
 
 **Original approach (kept for reference).**
 
@@ -461,7 +464,8 @@ re-seated player loses the sticks, blocked reads neutral with the devices still 
 roster reads nothing, `Devices()` dedupes identical units, and `SeatDeviceState` answering sticks
 beside `AnyPad`, muted with `readsPads: false`, and silent without a stick reader.
 
-**Verified.** <pending orchestrator run>
+**Verified.** The full `RunTests.ps1` passes on the merged branch with the 19 goldens
+hash-identical. No stick has flown at the controls yet.
 
 **Original approach (kept for reference).**
 
@@ -564,7 +568,8 @@ orchestrator may want it in the landing commit). `ControlGlyphs` draws no glyph 
 falls back to text. No engine suite exercises a full axis, since no device source produces one until
 A3; the unit suites carry the rules.
 
-**Verified.** <pending orchestrator run>
+**Verified.** The full `RunTests.ps1` passes on the merged branch; the bindings engine suites
+(`bindings-launch-load`, `bindings-prompt-device`, `menu-original-controls`) pass unchanged.
 
 **Original approach (kept for reference).**
 
@@ -591,7 +596,76 @@ invert, rescale and both sides.>
 **⚠ Traps.** Pads keep half-axis bindings and their current behaviour; this kind is for sticks.
 Deadzone values are TUNE, not fact.
 
-## B5 ☐ Stick action source in the flight model: linear, bypassing `StickCurve`
+## B5 ☑ Stick action source in the flight model: linear, bypassing `StickCurve`
+
+**Landed.** Two new engine-free files in `CSVM/src/Flight/Airframe/` (entries in
+`docs/architecture/Flight.md`) and a small edit to `FlightController`.
+
+- **The split.** `StickSplit` is an `IDeviceState` filter over the seat's own reader:
+  `SticksOnly(state)` passes stick identities alone (`StickModel.TryFromDevice`), `WithoutSticks`
+  passes everything else. It follows the `PlayerActions.MutedKeyboard` idiom, so `_seatState` stays
+  the only hardware reader. `FlightController` gained two readers over the **same** flight map,
+  `_padAxes` (polled through `WithoutSticks(_seatState)`) and `_stickAxes` (through
+  `SticksOnly(_seatState)`), polled in `PollInput` beside the others, also in
+  `ObserveDeviceForTest`; `HoldActionForTest` writes `_padAxes` as it writes `_padActions`, never
+  `_stickAxes`, so a held test action is not counted twice. **`_padActions` is unchanged** (pads and
+  sticks together): every discrete pad-half read (look back, target hold, spyglass, view keys,
+  respawn, the weapon selectors), `ObserveDevice` and the look-aim camera still read a stick button
+  or axis exactly as A3 left them. Only the attitude and throttle-rate reads moved.
+- **Where the source is built (the TODO, answered).** In `FlightController`'s constructor, over
+  `_seatState`, whose stick reader is `StickDeviceState.Live(() => PlayerIndex)`. Only player index 0
+  (`StickDeviceState.OwningSeat`) reads a stick, so every other seat's `_stickAxes` reads nothing.
+  It reads the seat's own flight map, so a stick token in `bindings_p1.json` flies today, and C7's
+  profile rows fly as soon as they reach that map.
+- **The shares.** `AnalogAxes.Pad(snapshot)` is the old pad read verbatim: `PadCurve` (the
+  `StickCurve` body moved here; `FlightController.StickCurve` forwards to it for the camera reads)
+  on pitch and `-PadCurve` on roll, yaw and throttle unbent. `AnalogAxes.Stick(snapshot)` reads the
+  same four expressions with the same signs and no curve, so the full-axis binding's own deadzone
+  and linear rescale (B4) is the whole response, and a stick on the throttle pair is a rate in
+  proportion to deflection.
+- **How the sources combine (the TODO, answered): per axis, sum, then clamp to [-1, 1].** That is the
+  rule `ReadKeyboard` already had for keys, pad and mouse (`Mathf.Clamp(_keyPitch + padPitch +
+  mouse.Pitch, -1f, 1f)`), and `MouseFlightRead`'s comment names summing as the original's own arm;
+  the stick share is one more term in each sum. The throttle rate is summed unclamped
+  (`keys + pad + stick`), as keys and pad already were, since `_throttleSetting` is clamped after
+  the step. Largest-magnitude was not chosen because no other source in this reader combines that
+  way, and a stick is one more analogue source beside the pad.
+- **Bit-identity for the pad path.** With no stick bound, the stick share is `(0, -0, 0, 0)`, and
+  adding a signed zero leaves any float unchanged, so every sum is the old one. `_padAxes` resolves
+  the same bindings the old `_padActions` axis read did, minus stick rows.
+- **The lever (B6's read, moved).** `LeverSetting` now reads `AnalogAxes.LeverPosition(row,
+  padValue, stickValue, roster)`: the furthest of the pad share (any non-stick binding on the row)
+  and the stick share (a stick binding whose model is open in `StickPump.Roster`, seat 1 only), or
+  null when neither is present. `AnalogAxes.StepLever` releases the takeover on null. **This closes
+  B6's open point:** unplugging the stick carrying the lever releases it instead of reading its
+  centred axis as a move to half throttle, and plugging it back in only seeds. A pad axis on the
+  lever row still reads as before. An unbound row now releases every tick instead of seeding once;
+  both return null, so the throttle path is unchanged.
+
+**Tests.** `CSVM.Tests/AnalogAxesTests.cs` (19 cases): a stick at 10%, 25%, -10% and full past a
+zero deadzone commands exactly that pitch, and a 0.02 deadzone rescales linearly; a roster stick
+(`FakeStickNative`, raw 3277) at 10% pitches 0.1; stick roll and yaw take the pad's signs; the pad
+share matches the old `StickCurve` formula exactly at 101 points across the travel; pad and stick
+rows on one action resolve apart; the split silences the other side's buttons and hats; a stick on
+the throttle pair gives a rate equal to its deflection at four points; an unbound lever has no
+position, a pad lever reads with no sticks, a lever on both sides keeps the pad when the stick
+goes; unplugging the lever's stick releases an engaged takeover and a re-plug only seeds. The unit
+battery ran 4942 passed, 2 skipped; the engine suites `exhaust-smoke`, `exhaust-smoke-ai`,
+`flight-mouse-scheme`, `flight-mouse-capture`, `flight-mouse-scheme-live`,
+`bindings-prompt-device`, `hud-auto-dock-line`, `hud-crash-prompt`, `weapon-selector-input`,
+`flight-input-handback`, `look-stick` and `target-input` passed (12/12, engine errors clean).
+
+**Left open.** Flight feel at the controls is the user's to judge, and no engine suite flies a
+stick, since no headless source produces one. A stick bound to the look-aim rows still bends
+through `StickCurve`, because the camera reads `_padActions`. `AnalogAxes.cs` and `StickSplit.cs`
+have no `.uid` yet. Two stick lever bindings on different models where only one is unplugged still
+read the absent one as centred, since presence is decided per source, not per binding.
+
+**Verified.** The full `RunTests.ps1` passes on the merged branch with 381 engine suites and the 19
+goldens hash-identical, which covers the pad path. Stick flight feel is owed to the user at the
+controls.
+
+**Original approach (kept for reference).**
 
 **Goal.** Stick pitch, roll and yaw reach the plane linearly past the binding's own deadzone, while
 pad input keeps `StickCurve` and keyboard input keeps `StickRamp`; a stick bound to
@@ -674,15 +748,15 @@ for pads in this item.
 - B5: leave the throttle block's order intact. If B5 moves stick bindings to their own snapshot, the
   lever read (`_padActions.Value(InputAction.ThrottleLever)` in `LeverSetting`) moves with them.
 
-**Left open.** A bound lever on an unplugged device reads centred (0.5) through `IDeviceState`'s
-absent-device answer, so unplugging it mid-flight counts as a move to half throttle; A3's stick
-state could release the takeover on a disconnect instead. `LeverTakeover.cs` has no `.uid` yet. No
+**Left open.** B5 releases the takeover when the stick carrying the lever is unplugged (see B5).
+`LeverTakeover.cs` has no `.uid` yet. No
 engine suite drives the lever, since no device source produces a full axis until A3; the unit suite
 `ThrottleLeverTests` carries the mapping, the store, the steal rule and the takeover rule. The
 original-style KEYS AND BUTTONS page lists its throttle rows explicitly
 (`OriginalOptionsScreen.cs:444`) and was not touched; D11/D12 decide where the lever row shows there.
 
-**Verified.** <pending orchestrator run>
+**Verified.** The full `RunTests.ps1` passes on the merged branch. No lever has moved at the
+controls yet.
 
 **Original approach (kept for reference).**
 
