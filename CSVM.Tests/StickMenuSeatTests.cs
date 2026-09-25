@@ -90,7 +90,7 @@ public sealed class StickMenuSeatTests : IDisposable
         feature.Context = InputContext.Menu;
         Bind(feature, InputAction.MenuUp, Button(5));
         Bind(feature, InputAction.MenuDown, Button(7));
-        Bind(feature, InputAction.MenuBack, Button(2));
+        Bind(feature, InputAction.MenuBack, Button(3));
         feature.Context = InputContext.Flight;
         Bind(feature, InputAction.Nitro, Button(4));
         feature.Accept();
@@ -316,7 +316,7 @@ public sealed class StickMenuSeatTests : IDisposable
         var menu = _set.ActiveFor(VkbR)!.Map(InputContext.Menu);
         Assert.Equal(Button(5), Assert.Single(menu.Bindings(InputAction.MenuUp)));
         Assert.Equal(Button(7), Assert.Single(menu.Bindings(InputAction.MenuDown)));
-        Assert.Equal(Button(2), Assert.Single(menu.Bindings(InputAction.MenuBack)));
+        Assert.Equal(Button(3), Assert.Single(menu.Bindings(InputAction.MenuBack)));
         Assert.Equal(Button(0), Assert.Single(menu.Bindings(InputAction.MenuAccept)));
     }
 

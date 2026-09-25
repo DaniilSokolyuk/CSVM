@@ -918,7 +918,7 @@ Decision 3/7b). A user edit must never write into the shipped `res://` file.
 - **Rows** (`GenericStickDefault.For`). Flight: `RollRight` full axis 0, `PitchUp` full axis 1
   (not inverted: pulled back reads positive, the pad convention), `YawRight` full axis 5 when the
   device has 6 or more axes, `ThrottleLever` full axis 2 inverted (raw -1 is full throttle), all at
-  deadzone 0.02; `FireGuns` button 0, `FireRockets` button 1. Menu: C9's rows.
+  deadzone 0.02; `FireGuns` button 0, `FireRockets` button 2. Menu: C9's rows.
 - **In memory until edited.** `StickProfileSet.Select` adds the default to the resolver's choice as
   a `StickProfileSource.Generic` file named `(generic default)`, keeping the same file object while
   the claim holds so a quiet refresh reports no change. Nothing is written on connect. A controls
@@ -963,7 +963,7 @@ replugged. The two new `.cs` files have no Godot `.uid` yet. The controls screen
 **Goal.** When exactly one connected, non-ignored device has no matching profile and looks like a
 flight stick (at least 3 axes, axes 0 and 1 resting near centre at connect), it gets: axis 0 roll,
 axis 1 pitch, axis 5 (Rz, twist) yaw when the device has 6 or more axes, axis 2 (Z) as the absolute
-Throttle (lever), button 0 primary fire, button 1 secondary fire, hat navigating menus (C9). Any
+Throttle (lever), button 0 primary fire, button 2 secondary fire, hat navigating menus (C9). Any
 other case gets nothing, and the controls screen says the device needs binding.
 
 **Evidence (confidence: lead-only).** Decisions 7, 7a, 11, 16. The Tartarus reports 6 axes, 24
@@ -993,7 +993,7 @@ default is limited to the single-device case. The shape thresholds are TUNE.
 way pads do.
 
 - **Rows.** The generic default's menu context binds `MenuUp`/`MenuDown`/`MenuLeft`/`MenuRight` to
-  hat 0, `MenuAccept` to button 0 (the trigger) and `MenuBack` to button 1. E13's shipped profiles
+  hat 0, `MenuAccept` to button 0 (the trigger) and `MenuBack` to button 2. E13's shipped profiles
   should carry the same menu rows.
 - **Reader.** `MenuInput` builds its `SeatDeviceState` with `sticks: new StickDeviceState(() =>
   _player - 1, ...)` over `StickPump.Roster`, so only a menu seat loaded for player 1 reads a
@@ -1015,7 +1015,7 @@ way pads do.
 - **Screens.** Capturing stick rows into the menu context and showing them is D10/D11's.
 
 **Verified.** In `GenericStickDefaultTests`: a player-1 `MenuInput` over `FakeStickNative` moves
-down on hat Down, left on hat Left, accepts on button 0 and backs out on button 1 (`Back` and
+down on hat Down, left on hat Left, accepts on button 0 and backs out on button 2, not on button 1 (the second trigger stage) (`Back` and
 `PadBack`); players 0 and 2 read nothing; a menu seat picks up the default after a late settle. The
 engine suites listed under C8 and the full `RunTests.ps1` on the merged branch pass. At the
 controls the main and campaign menus navigate by stick. The pause menus read no stick until

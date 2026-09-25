@@ -429,8 +429,9 @@ two candidates leave no way to tell which one should fly.
   inverted. Axis 2 (Z) is the absolute Throttle (lever),
   inverted so raw -1 is full throttle, deadzone 0.02; on the VKB R the lever reads -1 pushed
   forward. The lever's takeover rule keeps a parked lever from moving the throttle until it is moved. Button
-  0 fires the guns and button 1 the rockets. In menus the hat moves the cursor, button 0 confirms
-  and button 1 backs out. Button 0 is also Skip Cutscene (below).
+  0 fires the guns and button 2 the rockets. In menus the hat moves the cursor, button 0 confirms
+  and button 2 backs out. Button 1 is left free because a two-stage trigger (the VKB EVO's)
+  reports its second stage there, and a hard pull must not back out of a menu. Button 0 is also Skip Cutscene (below).
 - **It lives in memory.** The profile log names it `generic (generic default)`. A controls screen
   save that changes any of its rows writes the whole layout as a user file under the model's name,
   which from then on is the model's profile; an unchanged save writes nothing.

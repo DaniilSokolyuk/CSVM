@@ -104,7 +104,7 @@ public sealed class GenericStickDefaultTests
         Assert.Equal(FullAxis(2, true), flight.Bindings(InputAction.ThrottleLever).Single());
         Assert.Empty(flight.Bindings(InputAction.ThrottleUp));
         Assert.Equal(Button(0), flight.Bindings(InputAction.FireGuns).Single());
-        Assert.Equal(Button(1), flight.Bindings(InputAction.FireRockets).Single());
+        Assert.Equal(Button(2), flight.Bindings(InputAction.FireRockets).Single());
     }
 
     [Fact]
@@ -127,7 +127,7 @@ public sealed class GenericStickDefaultTests
         Assert.Equal(Hat(HatDirection.Left), menu.Bindings(InputAction.MenuLeft).Single());
         Assert.Equal(Hat(HatDirection.Right), menu.Bindings(InputAction.MenuRight).Single());
         Assert.Equal(Button(0), menu.Bindings(InputAction.MenuAccept).Single());
-        Assert.Equal(Button(1), menu.Bindings(InputAction.MenuBack).Single());
+        Assert.Equal(Button(2), menu.Bindings(InputAction.MenuBack).Single());
     }
 
     [Fact]
@@ -320,6 +320,10 @@ public sealed class GenericStickDefaultTests
 
             native.Release(1, 0);
             native.Press(1, 1);
+            input.Poll(0.016f);
+            Assert.False(input.Back); // the trigger's second stage
+            native.Release(1, 1);
+            native.Press(1, 2);
             input.Poll(0.016f);
             Assert.True(input.Back);
             Assert.True(input.PadBack);
