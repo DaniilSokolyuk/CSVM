@@ -143,6 +143,7 @@ public sealed partial class CutsceneController : Node
     private bool _fastForwardLogged;
     private AnimRuntime? _runtime;
     private IReadOnlyList<PlayerRig> _rigs = Array.Empty<PlayerRig>();
+    private PlayerRig? _scriptedPlayer;
     private Func<IReadOnlyList<FlightController>>? _aiPlanes;
     private Node3D? _cutsceneCamera;
     // The node the code being dispatched was raised from, which is the aircraft a capture
@@ -262,8 +263,9 @@ public sealed partial class CutsceneController : Node
     public MeshInstance3D? CardMesh => _cardMesh;
 
     // The scripted player's rig: P1's, the one aeroplane an authored `player` token means. It is
-    // what an unclaimed episode owns, so a 1P session and every mission intro resolve to P1.
-    private PlayerRig? ScriptedPlayer => _rigs.Count > 0 ? _rigs[0] : null;
+    // what an unclaimed episode owns, so a 1P session and every mission intro resolve to P1. On a
+    // network guest that is the host's P1 rather than the guest's own pane.
+    private PlayerRig? ScriptedPlayer => _scriptedPlayer ?? (_rigs.Count > 0 ? _rigs[0] : null);
 
     // The one pilot the staged `player` marker poses and the re-placement moves: the episode owner's,
     // which is the scripted player's in an unclaimed episode and in every 1P session. There is
@@ -392,10 +394,13 @@ public sealed partial class CutsceneController : Node
 
     /// <summary>The session's rigs and its live AI aircraft, once both exist. Re-applies whatever
     /// state the codes already asked for, which is how a cutscene that started during the world
-    /// build reaches the aircraft built after it.</summary>
-    public void BindRigs(IReadOnlyList<PlayerRig> rigs, Func<IReadOnlyList<FlightController>> aiPlanes)
+    /// build reaches the aircraft built after it. The scripted player is given only where it is not
+    /// the first pane, which is on a network guest: the host's seat 0 there.</summary>
+    public void BindRigs(IReadOnlyList<PlayerRig> rigs, Func<IReadOnlyList<FlightController>> aiPlanes,
+        PlayerRig? scriptedPlayer = null)
     {
         _rigs = rigs;
+        _scriptedPlayer = scriptedPlayer;
         _aiPlanes = aiPlanes;
         StageFlownAirframe();
         if (!Playing)

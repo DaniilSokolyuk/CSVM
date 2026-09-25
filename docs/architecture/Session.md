@@ -16,7 +16,7 @@ ahead of `Rng.Reset` and the seat sizing, and the handshake's clock opens the `N
 `SessionSimulation`, which owns the step order; both step paths step the wire first, so an arrival is applied on the step after it landed, and the human-aircraft phase
 puts every seat flown here on the wire on the `AircraftStateCadence` as the SIM pose, while a sample for a seat flown elsewhere reaches that seat's own pose buffer.
 `WireNetCombat` puts combat on the same wire: an owner's fire event spawns the round on every peer, the shooter's machine decides a hit and addresses the victim's owner,
-that owner applies the damage and reports its own death (a match from its own `Downed` handler, any other mission from the one `WireNetCombat` adds, which is what plays a guest's wreck in a host's campaign field), and the host alone scores it and relays each of those between guests. `WireNetSpawns` puts placement on it under one rule: the OPENING spawn is the shared seed's own walk over the mission table and crosses no wire, while every later return is GRANTED, a downed seat asking the host and the host's single rotation answering the whole field with a table entry every peer applies through the same call the owner would have made locally. `WireNetMatch` makes the host the only writer of the match itself: it sends the clock, both limits and the ending as one reliable message, change-driven (a rematch, an ending) plus a `MatchStateCadence` tick a second that carries the host's session clock into every guest's `NetClockSlew`, and a guest hands its `VersusMatch` over rather than advancing a clock or arming a limit of its own. ⚠ The ending is sent AFTER the scores that settled the round and never from the match's completion event, which fires before them. The scoreboard itself is never sent: every machine derives it from the scores it was already sent seat by seat. `WireNetDirector` puts a campaign mission's objective graph on the same wire through `NetDirectorLink.cs`: the host's graph publishes every event it raises and a guest's is replicated, so it follows them and decides nothing. `WireNetWorld` hands the AI aircraft and the world's destructible pools to `NetWorldLink.cs`, admitted from the capture phase and sent after the AI phase: the host flies every AI and spends every world hit, and a guest's AI fly from the host's samples while its pools spend nothing of their own.
+that owner applies the damage and reports its own death (a match from its own `Downed` handler, any other mission from the one `WireNetCombat` adds, which is what plays a guest's wreck in a host's campaign field), and the host alone scores it and relays each of those between guests. `WireNetSpawns` puts placement on it under one rule: the OPENING spawn is the shared seed's own walk over the mission table and crosses no wire, while every later return is GRANTED, a downed seat asking the host and the host's single rotation answering the whole field with a table entry every peer applies through the same call the owner would have made locally. `WireNetMatch` makes the host the only writer of the match itself: it sends the clock, both limits and the ending as one reliable message, change-driven (a rematch, an ending) plus a `MatchStateCadence` tick a second that carries the host's session clock into every guest's `NetClockSlew`, and a guest hands its `VersusMatch` over rather than advancing a clock or arming a limit of its own. ⚠ The ending is sent AFTER the scores that settled the round and never from the match's completion event, which fires before them. The scoreboard itself is never sent: every machine derives it from the scores it was already sent seat by seat. `WireNetDirector` puts a campaign mission's objective graph on the same wire through `NetDirectorLink.cs`: the host's graph publishes every event it raises and a guest's is replicated, so it follows them and decides nothing. `WireNetWorld` hands the AI aircraft and the world's destructible pools to `NetWorldLink.cs`, admitted from the capture phase and sent after the AI phase: the host flies every AI and spends every world hit, and a guest's AI fly from the host's samples while its pools spend nothing of their own. The landing trigger and the ladder switch read `_seatRigs`, and `WireNetPositionalStarts` hands their decisions to `NetPositionalStartLink.cs`; an airframe swap wires its replacement for combat again through `WireSeatCombat`, since that wiring is per controller.
 A guest builds no rotation of its own, and a field larger than the table is served by that rotation relaxing its one-living-seat-per-point rule rather than failing. `AllAircraft` combines the roster's AI view with the ordered rig controllers, and `OrderWaveAirframes` with `StepOwedLoad` puts the coming waves behind the load screen.
 Exit frees the session subtree atomically and releases only the non-node resources it owns; the prohibitions that keep these rules true sit on the members they bind. Read `SessionSimulation.cs` next.
 
@@ -230,6 +230,14 @@ placement index, `FollowVehicles` its hulls by spawn index and `NameKey` hash pl
 host's ordinals. Pools go out off `DestructibleDamaged` at once and `DestructibleChipped` once per
 seat tick, and apply through `ApplyReplicatedHealth`. Layouts: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
 
+## src/Session/NetPositionalStartLink.cs
+The landing rows and the ladder switch over the wire, one per network session with either runtime
+bound. On the host it sends each row start and holder change from `LandingApproachRuntime.Started`
+and `LadderSwitchRuntime.HolderChanged`, and gives a guest's copy the held auto-land button that
+seat's own machine reports. On a guest it replicates both runtimes, starts the row the host named
+for that seat's rig, takes the host's holder, and `Step` reports its own seats' held button when it
+changes. Kinds and replay mapping: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
+
 ## src/Session/CampaignProgression.cs
 The campaign's progression rules over a profile: recording one mission attempt with the original's
 best-of merge, raising the position, and granting the aircraft awards. The position is a single
@@ -364,17 +372,17 @@ the aircraft, the humans out of flight with the episode owner posed on the stage
 and the runtime's range gates reading where they last flew rather than where the film puts them,
 the AI parked (at the start of a mission of any type, and again before any intro plays whether or not its own data authors 913, lifted by code 914 from whichever definition the mission bootstraps), the mid-mission airframe swap, the re-placement, the clearing of every round still in flight, and one restore at the definition's end or at a skip, refused once the mission has ended under the episode so the leaving fade keeps the film's shot. It also owns the held-input fast-forward (`Mech3/Anim/CutsceneFastForward.cs`), scoped to the episode's call closure and offered only where no skip is armed. A `Node`
 only so it can tick last in the frame, after the animation advance that poses `camera1`. Which
-definition and which human an episode belongs to is the slot `Own` claims, not the raiser of the first code. Decode: [../formats/anim-definitions/cutscenes.md](../formats/anim-definitions/cutscenes.md).
+definition and which human an episode belongs to is the slot `Own` claims, not the raiser of the first code; an episode nobody claimed belongs to the scripted player, the host's first seat on a network guest. Decode: [../formats/anim-definitions/cutscenes.md](../formats/anim-definitions/cutscenes.md).
 
 ## src/Session/LandingApproachRuntime.cs
 The mid-mission cutscene trigger: a story mission's resolved `LandingApproaches` are tested each
 frame against every flying human (arming gate, speed band, attitude cone, condition volume), and
 the first passing row is started as an explicit mission trigger with `CutsceneController.Own` given
 both the row and the human who flew it. A row fires once per entry into its volume; an `auto` row
-lights the auto-land prompt in each passing human's pane instead of starting anything. Rows whose
-approach nodes are staged later are bound when those nodes appear. Read `CutsceneController.cs` for
-what a started row then does, and
-[../formats/anim-definitions/cutscenes.md](../formats/anim-definitions/cutscenes.md) for the table.
+lights the auto-land prompt in each passing human's pane instead of starting anything. Rows staged
+later bind when their nodes appear. `Started` reports each start; a `Replicate`d trigger on a
+network guest starts only what `StartRow` names, still offering its own humans the prompt and
+recording a held button (`Pressing`). Next: `CutsceneController.cs`, [../formats/anim-definitions/cutscenes.md](../formats/anim-definitions/cutscenes.md).
 
 ## src/Session/LadderSwitch.cs
 The original's rope-ladder switch as an engine-free rule and state machine: the ladder is wanted
@@ -390,7 +398,8 @@ attitude and position against the mission's pickup sensors, resolves the one hol
 ladder definitions as mission triggers, so the drop's `OBJECT_ADD_CHILD` can materialize the
 library rope ladder. It takes the runtime's `CALLBACK` host slot and chains to the cutscene host
 behind it, which is where the original registers the switch on each definition. Bound with the
-landings trigger, story missions only. Read `LadderSwitch.cs` for the rule it flies.
+landings trigger, story missions only. `HolderChanged` reports a new holder; a `Replicate`d switch
+steps on the holder `TakeHolder` hands it. Read `LadderSwitch.cs` for the rule it flies.
 
 ## src/Session/GeneratorCycle.cs
 The decoded egen launch timing law for ONE generator, pure over `Step` calls (no clock, no

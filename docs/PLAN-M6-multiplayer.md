@@ -187,7 +187,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 23. ☑ Guests as the human field: `CampaignHumanField` and the objective rules see remote humans, the scripted P1 stays the host
 24. ☐ The co-op session flow: cabin and briefing on the host, guests joining into the mission, mission end and debrief on every peer
 25. ☑ The co-op door: the campaign flow opens to the network, guests join from the Network board and wait for the host's launch
-26. ☐ Host-decided positional starts and the airframe swap: landing approaches, the ladder switch, `PlayerRange` and codes 965 to 967 for a guest
+26. ☑ Host-decided positional starts and the airframe swap: landing approaches, the ladder switch, `PlayerRange` and codes 965 to 967 for a guest
 
 ### Wave D, hardening
 
@@ -1505,7 +1505,86 @@ must not take a local controller's pane. The toggle opens a port, so closing the
 leaving the menu must close the carrier and remove the router mapping. Screens are look judgements:
 montage them for the user, never park them on a measurement.
 
-## C26 ☐ Host-decided positional starts and the airframe swap: landing approaches, the ladder switch, `PlayerRange` and codes 965 to 967 for a guest
+## C26 ☑ Host-decided positional starts and the airframe swap: landing approaches, the ladder switch, `PlayerRange` and codes 965 to 967 for a guest
+
+**Landed.**
+- `CSVM/src/Net/NetMessages.cs`: `PositionalStart = 0x004E`, the `NetPositionalStart` kinds
+  (landing row, ladder holder, auto-land held) and its `ReliabilityOf` arm.
+- `CSVM/src/Net/NetPositionalMessages.cs` (new): `PositionalStartMessage`, 12 bytes, reliable
+  (kind, seat, flags with bit 0 held, pad, `i32` row index in the bound table).
+- `CSVM/src/Session/NetPositionalStartLink.cs` (new): on the host, `Started` and `HolderChanged` go
+  out as broadcasts, and a guest's `AutoLandHeld` sets `RemoteAutoLand` on the host's copy of that
+  seat, accepted only from the peer owning it. On a guest, both runtimes are replicated, a landing
+  row is started for the named seat's rig through `StartRow`, the holder is taken through
+  `TakeHolder`, and `Step` reports its own seats' held button on change.
+- `CSVM/src/Session/LandingApproachRuntime.cs`: `Started` (row id, rig), `Replicate`/`Replicated`,
+  `StartRow`, `Pressing`. A replicated tick offers only `auto` rows to its own (not remote-owned)
+  humans and holds a press until the prompt goes away; it starts nothing itself.
+- `CSVM/src/Session/LadderSwitchRuntime.cs`: `HolderChanged`, `Replicate`/`Replicated`, `TakeHolder`;
+  a replicated switch steps on the host's holder.
+- `CSVM/src/Flight/FlightController.cs`: `RemoteAutoLand`, which a remote-owned copy's
+  `AutoLandPressed` answers with.
+- `CSVM/src/Session/CutsceneController.cs`: `BindRigs` takes an optional scripted player; on a
+  network guest an unclaimed episode belongs to the host's seat 0.
+- `CSVM/src/Session/GameSession.cs`: the landing trigger and ladder switch bind over `_seatRigs` at
+  both bind sites; `WireNetPositionalStarts` opens the link after `WireNetWorld`, stepped after the
+  trigger's tick; the anim runtime's range reads take `FieldPositionsSnapshot` (every seat's
+  aeroplane in a network session, the panes otherwise; the per-viewer consumers keep the panes);
+  `WireNetCombat`'s per-seat body is `WireSeatCombat`, which `SwapPlayerAirframe` runs again on the
+  owner's seat; `Cutscene` and `SkipSwapRewire` (the rewire control) for the suites.
+- `CSVM/src/Testing/NetPositionalStartSuites.cs` (new): suites `net-positional-start` and
+  `net-swap-rewire`, weighted in `analysis/engine-suite-weights.json` (8.0 s and 7.1 s).
+  `CoopEpisodeOwnerSuites.StageAi`/`BuildRoster` (now with seats and a world root) and
+  `LandingApproachSuites.TopAncestorOf` are internal for it.
+- `CSVM.Tests/NetMessagesTests.cs`: `PositionalStartRoundTripsEveryKind` (3 cases).
+- Docs: `org/multiplayer-messages.md` (the `0x4E` table, a Positional starts section, the phase row
+  and the director's "not the director's" bullet), `architecture/Net.md`, `Session.md`, `Flight.md`,
+  and two index bullets in `architecture.md`.
+- Message id `0x4E` used. No `NetWorldEvent` code added.
+
+**Verified.** The complete battery on the merged tree (C26 over E44, E41, E43, E42 and everything
+before it): build clean, 4950 units passed with 0 failed and 2 skipped, 397 engine suites passed with
+engine errors clean, and 19 goldens hash-identical. `net-positional-start` and `net-swap-rewire` pass
+inside it.
+
+Agent-side evidence: build clean with 0 warnings; units 4950 passed with 2 skipped; `-Quick` passed
+(578 units, 13 engine suites). `net-positional-start` passes over two built C3/M05 worlds on a 30 ms,
+25 per cent lossy loopback: with the host's trigger over its panes alone nothing starts on either end
+(the control), and over the whole field the host starts `ww_balmoral1` for seat 1 and the guest
+replays it 0.18 s later, both episodes owned by seat 1; the capture's 967 rebuilds the guest's seat on
+`pbalmoral` on both ends (the host's copy still remote-owned, 0.00 m from the guest's aeroplane),
+both in group 5 with the captured Balmoral inert, and the host's own aeroplane untouched.
+`net-swap-rewire` passes: with the rewire withheld the host builds 0 of the swapped guest's rounds and
+the copy has no hit route (the control); rewired, 8 fired and 8 rebuilt, and the guest's death
+crosses in 17 ms. The related suites (`campaign-coop-episode-owner`, `campaign-coop-approach-row`,
+`campaign-airframe-swap`, `campaign-cutscene-ownership`, seven `landings-*`, `net-combat-events`,
+`net-director-follow`, `net-human-field`) pass, 16 of 16 with the two new ones.
+
+**The wiring contract.** The host's landing trigger and ladder switch read `_seatRigs`, so a guest's
+copy qualifies at its interpolated pose. Every row start crosses as `0x4E` kind 1 with the seat whose
+flying started it; a guest starts the same bound row for that seat's rig, so `EpisodeOwner` is that
+seat on every end, and the 965 to 967 swap runs on every end from each end's own playback. The
+owner's machine rebuilds its own aeroplane; every other end rebuilds a remote-owned copy (a fresh
+`RemotePoseBuffer`, fed because the sample lookup is by seat on arrival) and re-wires it for combat.
+An `auto` row's button crosses as kind 3 and is held until the prompt goes away. The ladder holder
+crosses as kind 2. A guest's scripted player is seat 0.
+
+**Owed.**
+- `PlayerRange` gates are evaluated on each end over the whole field, not sent by the host, so a
+  range-started definition can start a link delay apart on the two ends. No shipped range gate that
+  raises a code has been exercised across the link.
+- The suites' capture row is CM02's manual row, so the auto-land crossing (kind 3) is covered by the
+  message test and not by an engine suite; the first story mission's `auto` row is the candidate.
+- A ladder holder is not re-sent when the host re-binds the switch after the roster graft; a guest
+  that re-binds at a different time starts from no holder until the next change.
+- The director's `PlayerAircraft` stays the guest's own pane on a guest: its uses are the music
+  scan, the scored shooter and the kill credit, which are per viewer. Roster leaders resolved from it
+  lead AI the host flies, so the guest's choice is not visible.
+- The whole path through a `GameSession` co-op campaign (a guest session flying a capture mission)
+  waits on C24, since a campaign session needs a profile; the suites drive the runtimes over built
+  worlds and two `GameSession` free flights.
+
+**Original approach (kept for reference).**
 
 **Goal.** A guest who flies into a landing approach or a capture volume is captured on every
 machine: the host starts the definition, the swap runs for that guest everywhere, and the host's
@@ -1525,9 +1604,12 @@ group, and every rebuilt controller is re-wired for combat. `If PlayerRange` was
 **Model recommendation.** Opus. The swap rebuilds controllers under live net feeds, and a wrong order
 drops a seat's `RemotePoses` feed or its combat wiring without an error.
 
-**Verify.** <TODO: a two-session harness run of a capture mission where the guest flies the approach:
-the host's copy swaps and joins the captured group, and the swapped guest's fire and death still
-cross, with a control that fails without the host-decided start>
+**Verify.** Engine suite `net-positional-start`: two built C3/M05 worlds over a lossy loopback, a
+guest flying CM02's Balmoral capture row; the host's copy swaps and joins the captured group, the
+guest's own aeroplane likewise, with a control (the host's trigger over its panes alone) that starts
+nothing. Engine suite `net-swap-rewire`: two `GameSession`s swap the guest's seat, and the swapped
+guest's fire and death still cross, with a control (the rewire withheld) where they do not. Unit:
+`PositionalStartRoundTripsEveryKind`.
 
 **⚠ Traps.** Binding the approaches to `_seatRigs` alone is wrong: a swap would rebuild the host's
 copy of a guest and drop its `RemotePoses` feed. On a guest, `PlayerAircraft` and an unclaimed

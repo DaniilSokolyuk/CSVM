@@ -271,6 +271,8 @@
     "net-director-follow": 16.0,
     "net-human-field": 6.0,
     "net-match-state": 10.0,
+    "net-positional-start": 8.0,
+    "net-swap-rewire": 7.1,
     "net-relay-star": 10.0,
     "net-seats": 1.26,
     "net-soak": 8.5,

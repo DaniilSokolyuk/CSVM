@@ -211,6 +211,10 @@ public partial class FlightController : Node3D
     /// gun trigger: a suite's twin for the auto-land button, with no live key or pad to press.</summary>
     public bool AutoLand;
 
+    /// <summary>A seat flown elsewhere: its owner's auto-land button as the owner last reported it.
+    /// The only press such a seat has, since no key or pad on this machine is its.</summary>
+    public bool RemoteAutoLand;
+
     /// <summary>Holds the nitro command down, the way <see cref="AutoLand"/> holds the auto-land
     /// button: a suite's twin for the N key, so a rig built the way a session builds one can reach
     /// the engage edge through the production step instead of calling the animation runtime itself.
@@ -2770,6 +2774,8 @@ public partial class FlightController : Node3D
 #pragma warning disable SA1202
     internal bool AutoLandPressed()
     {
+        if (RemoteOwned)
+            return AutoLand || RemoteAutoLand;
         PollInput();    // read from outside this node's own tick, so it resolves its own frame
         return AutoLand || ReadLatched(InputAction.AutoLand);
     }

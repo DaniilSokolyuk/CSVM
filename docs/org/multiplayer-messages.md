@@ -205,7 +205,7 @@ score, `0x17` match state, `0x22` hit and `0x27` seat roster. Damage, spawn, the
 director transition, the join handshake and a seat's ask to be spawned again have no
 counterpart, so they are minted at `0x40`, `0x41`, `0x42`, `0x43` and `0x44`, above the ceiling
 above. The host-owned world's four (AI state, AI fire, a guest's hit claim on an AI, and a world
-event) are minted at `0x45` to `0x48`, below, the clock ping at `0x49`, the lobby's session advert at `0x4A`, the zeppelin path at `0x4B`, a generator's AI launch at `0x4C` and the surface-vehicle patrol at `0x4D`. The handshake carries the master seed, the host's clock and the seat the joining peer was
+event) are minted at `0x45` to `0x48`, below, the clock ping at `0x49`, the lobby's session advert at `0x4A`, the zeppelin path at `0x4B`, a generator's AI launch at `0x4C`, the surface-vehicle patrol at `0x4D` and a positional start at `0x4E`. The handshake carries the master seed, the host's clock and the seat the joining peer was
 given; the original needs none of the three, because it draws from no shared stream and hands
 out no seat. The ask carries a seat and nothing else: the original's client takes its own
 respawn, while here the host owns every placement and answers the ask with a spawn event.
@@ -293,8 +293,9 @@ What a guest replays, and what it derives from what it replayed:
   generator's credit) change AI world state and still run locally on each end. A Black Hat launch
   reactivates a block built dormant with its ordinal, so on a guest it waits for the host's presence
   event like `WAKEUP_ENEMIES`; 800's credit launches nothing there of its own. 965 to 967 (the
-  airframe swap) belong to the episode's owner. Definitions started by a player's position (the
-  landing approach rows, the `PlayerRange` conditions, the ladder switch) are not graph events.
+  airframe swap) belong to the episode's owner and run on every end (below). Definitions started
+  by a player's position are not graph events: the landing rows and the ladder switch cross as
+  `0x4E` (below), and the `PlayerRange` conditions run on each end over the whole field.
   The escorting wingman is a roster block spawned at build, not a director event.
 
 A guest applies each event on arrival and then catches up on it (`Session/NetDirectorCatchUp.cs`).
@@ -395,7 +396,8 @@ Each simulation phase, as a guest runs it:
 
 | Phase | On a guest |
 |---|---|
-| Ending hold, landing approaches, radio, smoke screens, beeper tags, incoming fire | Local presentation or per-pane rules, no world authority. |
+| Ending hold, radio, smoke screens, beeper tags, incoming fire | Local presentation or per-pane rules, no world authority. |
+| Landing approaches, ladder switch | **Host-decided**: a row start and a ladder holder arrive as `0x4E`; the guest offers the auto-land prompt to its own humans and sends their held button. |
 | Capture AI aircraft | Local membership; new AI are admitted by ordinal before any is stepped. |
 | Projectiles | Local on every end, spawned from fire events; the guest's rounds spend nothing on the world or on an AI. |
 | Human aircraft | Replicated per seat (`0x0f`, `0x10`, `0x22`, `0x40`, `0x12`). |
@@ -408,6 +410,46 @@ Each simulation phase, as a guest runs it:
 | Campaign | The director replay above. |
 | AI voice | Derived locally; a replicated AI runs no mode machine, so its mode-driven call-outs are silent. |
 | Versus | The match state above. |
+
+## Positional starts
+
+A landing row and the ladder switch start definitions off where a human is, and in a campaign
+across a link that human may be flying on another machine. The host decides both over the whole
+field, its own panes and each guest's copy, and sends the decision; a guest's trigger and switch
+are replicated and decide nothing (`Session/NetPositionalStartLink.cs`). Deciding on each end
+instead would start a row twice or not at all, since each end reads a guest's aeroplane a buffer
+delay apart.
+
+| Id | Message | Class | Carries |
+|---|---|---|---|
+| `0x4E` | Positional start | reliable | kind, seat, flags (bit 0 held), row index in the bound table (12 bytes) |
+
+The kinds are `NetPositionalStart`:
+
+| Kind | Sender | Meaning |
+|---|---|---|
+| 1 Landing row | host to all | the row the host's trigger started, and the seat whose flying started it |
+| 2 Ladder holder | host to all | the seat now holding the switch, or no seat |
+| 3 Auto-land held | guest to host | the guest's own seat has the auto-land button down while offered the prompt, or has let it go |
+
+A guest starts the named row for the named seat's rig, which makes that seat the episode's owner
+on the guest as on the host. An `auto` row's prompt is per pane, so a guest still tests its own
+humans against the row and draws the prompt; a press is held from the button until the prompt goes
+away, because the host's copy reaches the sphere a buffer delay later and a one-frame press would
+be over by then. The host accepts a held button only from the machine that owns the seat, and its
+copy of that seat answers the auto-land test with it.
+
+What the row then plays is derived on each end from its own playback, like the director's
+cutscene codes. The airframe swap (965 to 967) runs on every end for the owner's seat: the owner's
+machine rebuilds its own aeroplane, every other end rebuilds its copy as a copy again, fed by the
+same seat's samples and wired for combat as a fresh seat is. The captured aircraft's group and
+hidden hull are applied on every end. The hand-over to the wingman activates a block built with
+the world, so it names an ordinal both ends already hold, and the host's samples fly it on a
+guest. A guest's scripted player, which an episode claimed by nobody
+belongs to, is the host's first seat.
+
+The `PlayerRange` conditions are not sent: each end tests them over the whole field, so a range
+start can differ between ends by the link delay.
 
 ## The lobby
 

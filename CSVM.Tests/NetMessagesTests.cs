@@ -463,6 +463,24 @@ public class NetMessagesTests
         Assert.False(ZeppelinStateMessage.TryRead(buffer[..SurfaceVehicleStateMessage.Size], out _));
     }
 
+    // Every kind round-trips at 12 bytes, reliable, and the row survives a value past a short.
+    [Theory]
+    [InlineData(NetPositionalStart.LandingRow, 1, 70000, false)]
+    [InlineData(NetPositionalStart.LadderHolder, NetMessage.NoSeat, 0, false)]
+    [InlineData(NetPositionalStart.AutoLandHeld, 3, -1, true)]
+    public void PositionalStartRoundTripsEveryKind(NetPositionalStart kind, byte seat, int row, bool held)
+    {
+        Span<byte> buffer = stackalloc byte[32];
+        var sent = new PositionalStartMessage(kind, seat, row, held);
+        Assert.Equal(PositionalStartMessage.Size, sent.Write(buffer));
+        Assert.True(PositionalStartMessage.TryRead(buffer[..PositionalStartMessage.Size], out var got));
+        Assert.Equal(sent, got);
+        Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.PositionalStart));
+        Assert.Equal(0x004E, (int)NetMessageType.PositionalStart);
+        Assert.False(NetMessage.IsOriginalId(NetMessageType.PositionalStart));
+        Assert.False(WorldEventMessage.TryRead(buffer[..PositionalStartMessage.Size], out _));
+    }
+
     // A warp's pick rides the world event: the drawn index as the subject, the name key as the
     // argument.
     [Fact]

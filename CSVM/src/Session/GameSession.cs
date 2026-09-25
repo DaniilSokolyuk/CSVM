@@ -195,6 +195,7 @@ public partial class GameSession : Node3D
     private Net.MatchStateCadence? _matchCadence;
     // AI aircraft and world pools over the wire, null outside a network match.
     private NetWorldLink? _netWorld;
+    private NetPositionalStartLink? _netStarts;
     // Why the match stopped, as the host named it. Written where the state is sent and where it
     // is applied, so every machine holds one reason for an end screen to read.
     private Net.NetMatchEnd _matchEnd;
@@ -519,6 +520,14 @@ public partial class GameSession : Node3D
     /// admitted AI and the applied events off it.</summary>
     internal NetWorldLink? NetWorld => _netWorld;
 
+    /// <summary>The cutscene host, null outside a flown world. A suite drives its airframe swap
+    /// seam the way a replayed definition's code does.</summary>
+    internal CutsceneController? Cutscene => _cutscene;
+
+    /// <summary>A suite's control: an airframe swap leaves the replacement off the wire, which is
+    /// how a swapped pilot's reports stop crossing.</summary>
+    internal bool SkipSwapRewire { get; set; }
+
     /// <summary>The mission's enemy generators, null on a stage without them. The harness suites
     /// credit them and read their launch counters.</summary>
     internal AiGeneratorRuntime? Generators => _generators;
@@ -764,9 +773,11 @@ public partial class GameSession : Node3D
             {
                 BuildFlightRigs(state);
                 ApplyDebugSpectate();
-                // AFTER the rigs, for the same reason the spectate override is: a cutscene that
-                // started during the world build has nothing to hide until they exist.
-                _cutscene?.BindRigs(_rigs, () => AiPlanes);
+                // AFTER the rigs, like the spectate override. A cutscene that started during the
+                // world build has nothing to hide until they exist. On a network guest the scripted
+                // player is the host's seat 0, not this pane.
+                _cutscene?.BindRigs(_rigs, () => AiPlanes,
+                    _netSeats.Count > 0 && _seatRigs.Count > 0 ? _seatRigs[0] : null);
                 if (_cutscene != null)
                 {
                     // The original parks the AI at the start of a mission of every type, before
@@ -1461,10 +1472,9 @@ public partial class GameSession : Node3D
                         positions[i] = _rigs[i].Camera.GlobalPosition;
                     return positions;
                 },
-                // ⚠ Measure EXECUTION_BY_RANGE and PLAYER_RANGE from the aircraft, not the camera:
-                // the chase camera trails far enough behind to eat most of a 50 m radius. The same
-                // closure goes to the world-effects runtime, so the two agree on who is nearest.
-                PlayerPositions = PlayerPositionsSnapshot,
+                // ⚠ Measure EXECUTION_BY_RANGE and PLAYER_RANGE from the aircraft, not the camera.
+                // The chase camera trails far enough behind to eat most of a 50 m radius.
+                PlayerPositions = FieldPositionsSnapshot,
                 // PLAYER_1ST_PERSON: any pilot in Cockpit or Nose. There is one world runtime for
                 // every pane, so in splitscreen the condition is "someone is in a cockpit", the
                 // per-pane reading needs per-pane runtimes and is E41's filed splitscreen item.
@@ -1546,8 +1556,8 @@ public partial class GameSession : Node3D
         if (_cutscene != null && _landings != null)
         {
             _cutscene.HostDefinitions(session.LandingCutsceneAnims);
-            _landings.Bind(session.Runtime, session.Landings, _cutscene, () => _rigs);
-            _ladder?.Bind(session.Runtime, _cutscene, () => _rigs, session.Pickups);
+            _landings.Bind(session.Runtime, session.Landings, _cutscene, () => _seatRigs);
+            _ladder?.Bind(session.Runtime, _cutscene, () => _seatRigs, session.Pickups);
         }
         // The screen wash. Set here rather than inside WorldSession for the same reason the
         // contact mask below is: the overlay is a session-owned surface and WorldSession builds
@@ -2970,8 +2980,8 @@ public partial class GameSession : Node3D
             if (grafted > 0 && _landings != null && _cutscene != null
                 && state.WorldRuntime is { } landingWorld && state.Landings is { } landingRows)
             {
-                _landings.Bind(landingWorld, landingRows, _cutscene, () => _rigs);
-                _ladder?.Bind(landingWorld, _cutscene, () => _rigs, state.Pickups);
+                _landings.Bind(landingWorld, landingRows, _cutscene, () => _seatRigs);
+                _ladder?.Bind(landingWorld, _cutscene, () => _seatRigs, state.Pickups);
             }
         }
         // After every roster build, because a staged prop's livery is the one its own aeroplane's
@@ -3393,6 +3403,7 @@ public partial class GameSession : Node3D
 
         WireNetDirector();
         WireNetWorld(state.WorldRuntime);
+        WireNetPositionalStarts();
 
         // F15 / --debug-targets: who is aiming at whom. Reads the live gunners through closures
         // rather than a snapshot, waves activate, AI planes spawn and emplacements die long
@@ -3782,6 +3793,24 @@ public partial class GameSession : Node3D
         return positions;
     }
 
+    // The anim runtime's range reads: every seat's aeroplane, a guest's copy included. A range gate
+    // that starts a swap then counts a guest on every end. Outside a network session it is the
+    // panes' snapshot, which the per-viewer consumers keep in every session.
+    private IReadOnlyList<Vector3> FieldPositionsSnapshot()
+    {
+        if (_netSeats.Count == 0)
+            return PlayerPositionsSnapshot();
+        var positions = new List<Vector3>(_seatRigs.Count);
+        foreach (var rig in _seatRigs)
+        {
+            if (rig.Controller is { } fc)
+                positions.Add(fc.GlobalPosition);
+            else if (rig.Camera is { } cam)
+                positions.Add(cam.GlobalPosition);
+        }
+        return positions;
+    }
+
     // Which human that key or button belongs to. A pad is bound to exactly one seat by
     // Pads.AssignPads, and the keyboard is P1's alone (HumanFlightAdapter); an unmatched device is
     // the scripted player's, so a skip always has a skipper to name rather than a hole.
@@ -4019,30 +4048,38 @@ public partial class GameSession : Node3D
 
         for (int i = 0; i < _seatRigs.Count && i < _netSeats.Count; i++)
         {
-            if (_seatRigs[i].Controller is not { } rig)
-            {
-                continue;
-            }
-
-            int seat = i;
-            rig.HitRouter = hit => RouteHit(seat, hit);
-            if (!_netSeats[i].IsLocal)
-            {
-                continue;
-            }
-
-            rig.WeaponFired += (weapon, origin, direction) => SendFire(seat, weapon, origin, direction);
-            rig.DamageApplied += (hurt, _) => SendDamage(seat, hurt);
-            // A match reports from its own Downed handler, which also keeps the last killer. Any
-            // other mission reports here. A campaign's human field on the host counts a guest
-            // down only when this report plays the wreck there.
-            if (_versus == null)
-            {
-                rig.Downed += (_, killer) => ReportDeath(seat, killer);
-            }
+            WireSeatCombat(i);
         }
 
         Log.Info("core", $"net combat: {_seatRigs.Count} seats, {(net.IsHost ? "host (relaying fire, damage, death and every hit to its owner)" : "guest (talking to the host alone)")}");
+    }
+
+    // One seat's aeroplane on the wire. Every copy routes the hits it takes, and the seat's own
+    // machine reports what it fires, what it suffers and its death. Per controller, so an airframe
+    // swap's replacement is wired here again or its reports stop crossing.
+    private void WireSeatCombat(int seat)
+    {
+        if (seat < 0 || seat >= _seatRigs.Count || seat >= _netSeats.Count
+            || _seatRigs[seat].Controller is not { } rig)
+        {
+            return;
+        }
+
+        rig.HitRouter = hit => RouteHit(seat, hit);
+        if (!_netSeats[seat].IsLocal)
+        {
+            return;
+        }
+
+        rig.WeaponFired += (weapon, origin, direction) => SendFire(seat, weapon, origin, direction);
+        rig.DamageApplied += (hurt, _) => SendDamage(seat, hurt);
+        // A match reports from its own Downed handler, which also keeps the last killer. Any
+        // other mission reports here. A campaign's human field on the host counts a guest
+        // down only when this report plays the wreck there.
+        if (_versus == null)
+        {
+            rig.Downed += (_, killer) => ReportDeath(seat, killer);
+        }
     }
 
     // One round this machine fired, told to the field so every other copy of the aeroplane
@@ -4309,6 +4346,19 @@ public partial class GameSession : Node3D
         }
 
         Log.Info("core", $"net director: {(net.IsHost ? $"host (every transition of {graph.Count} objective(s), and the ending, as they happen)" : $"guest (replaying the host's transitions over {graph.Count} objective(s), evaluating none of its own)")}");
+    }
+
+    // The landing rows and the ladder switch over the wire. The host decides them off every seat,
+    // and a guest replays those decisions and reports its own auto-land button.
+    private void WireNetPositionalStarts()
+    {
+        if (_net is not { } net || _netSeats.Count == 0 || (_landings == null && _ladder == null))
+        {
+            return;
+        }
+
+        _netStarts = NetPositionalStartLink.Open(net, () => _seatRigs, _landings, _ladder);
+        Log.Info("core", $"net positional starts: {(net.IsHost ? $"host (landing rows and the ladder decided over {_seatRigs.Count} seats)" : "guest (replaying the host's row starts and holder, reporting its own auto-land button)")}");
     }
 
     // The host-owned world over the wire, once the pools and the combat catalogue stand. AI
@@ -4910,8 +4960,15 @@ public partial class GameSession : Node3D
 
         try
         {
-            return _flightRoster.RunSwap(order.Owner ?? _rigs[0], order,
+            var owner = order.Owner ?? _rigs[0];
+            var result = _flightRoster.RunSwap(owner, order,
                 AirframeHandover.Resolves(_spec.Chapter, _spec.Mission));
+            if (_net != null && _weaponDefs != null && !SkipSwapRewire)
+            {
+                WireSeatCombat(_seatRigs.IndexOf(owner));
+            }
+
+            return result;
         }
         catch (Exception e)
         {
@@ -5439,6 +5496,7 @@ public partial class GameSession : Node3D
         public void StepLandingApproaches()
         {
             session._landings?.Tick();
+            session._netStarts?.Step();
             if (session._landings is not { } landings)
             {
                 return;

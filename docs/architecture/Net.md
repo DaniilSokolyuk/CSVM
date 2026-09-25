@@ -86,7 +86,7 @@ how a guest's board learns that the host's session has answered. Read `NetLobbyT
 ## src/Net/NetMessages.cs
 The vocabulary: `NetMessageType` (one word per message), the death, spawn and match-end enums
 taken from the original's own values, `NetDirectorEvent` (the director message's codes and id
-layouts), `NetWorldEvent` (the world event's codes), `NetSessionKind`, and the message structs, the host's spawn grant, a seat's ask, the clock ping and the lobby's `SessionAdvertMessage` among them. Each is a value type implementing `INetMessage<TSelf>`,
+layouts), `NetWorldEvent` (the world event's codes), `NetPositionalStart` (the positional start's kinds), `NetSessionKind`, and the message structs, the host's spawn grant, a seat's ask, the clock ping and the lobby's `SessionAdvertMessage` among them. Each is a value type implementing `INetMessage<TSelf>`,
 which carries its type word and its `INetTransport.cs` reliability class as static abstracts, so
 a sender reads the class off the type without constructing anything. `NetMessage` holds what they
 share: the four-byte header, the no-seat and no-spawn-entry markers, the aircraft-state width
@@ -102,6 +102,12 @@ index), `AiSpawnMessage` (a host generator launch at the ordinal it claims, reli
 `SurfaceVehicleStateMessage` (one hull's patrol by spawn index and name hash) and
 `WorldEventMessage`, whose `NetWorldEvent` code says what its subject, argument and value carry.
 Ids and phase mapping: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
+
+## src/Net/NetPositionalMessages.cs
+`PositionalStartMessage`, the one message a position-started definition crosses as: a landing row
+the host's trigger started and the seat that flew it, the ladder switch's holder, and a guest's
+held auto-land button, told apart by `NetPositionalStart`. Reliable, since each is a decision sent
+once. Kinds and the replay mapping: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
 
 ## src/Net/NetMessageWriter.cs
 The two cursors every serialiser and deserialiser runs on, `NetMessageWriter` and

@@ -78,6 +78,27 @@ public enum NetMessageType : ushort
     /// <summary>One surface vehicle's patrol position as the host has it: where it is, its heading
     /// and its speed.</summary>
     SurfaceVehicleState = 0x004D,
+
+    /// <summary>A start the host decides off where the seats are flying. It carries a landing row
+    /// and its seat, the ladder switch's holder, or a guest's auto-land button.</summary>
+    PositionalStart = 0x004E,
+}
+
+/// <summary>What a <see cref="PositionalStartMessage"/> says. Each member names what the seat,
+/// the row and the held flag carry.</summary>
+public enum NetPositionalStart : byte
+{
+    /// <summary>The host started a landing approach row. The row is its index in the chapter's
+    /// resolved table, the seat the human whose flying started it.</summary>
+    LandingRow = 1,
+
+    /// <summary>The ladder switch changed hands. The seat is the new holder, or
+    /// <see cref="NetMessage.NoSeat"/> when nobody qualifies.</summary>
+    LadderHolder = 2,
+
+    /// <summary>A guest's auto-land button, sent to the host whenever it changes while an auto row
+    /// is offered to that seat. The seat is the guest's own.</summary>
+    AutoLandHeld = 3,
 }
 
 /// <summary>What kind of session a host holds open, the word a join board names it by.</summary>
@@ -1047,6 +1068,7 @@ public static class NetMessage
         NetMessageType.ZeppelinState => ZeppelinStateMessage.Reliability,
         NetMessageType.AiSpawn => AiSpawnMessage.Reliability,
         NetMessageType.SurfaceVehicleState => SurfaceVehicleStateMessage.Reliability,
+        NetMessageType.PositionalStart => PositionalStartMessage.Reliability,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "no such message type"),
     };
 

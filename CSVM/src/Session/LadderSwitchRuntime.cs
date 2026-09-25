@@ -32,6 +32,10 @@ public sealed partial class LadderSwitchRuntime : Node
         _host = Host;
     }
 
+    /// <summary>Raised with the new holder, or null, whenever the holder changes on a switch that
+    /// decides its own. The host sends it on from here.</summary>
+    public event Action<PlayerRig?>? HolderChanged;
+
     /// <summary>Where the ladder is, for a suite and the log.</summary>
     public LadderState State => _switch.State;
 
@@ -44,6 +48,17 @@ public sealed partial class LadderSwitchRuntime : Node
     /// humans drifting in and out of the same sensor would otherwise thrash
     /// <c>drop_ladder</c> against <c>retract_ladder</c>. Null while nobody qualifies.</summary>
     public PlayerRig? Holder { get; private set; }
+
+    /// <summary>A guest's switch. It steps on the host's holder (<see cref="TakeHolder"/>), never
+    /// on this machine's own read of the humans.</summary>
+    public bool Replicated { get; private set; }
+
+    /// <summary>Hands the holder to the host, for the reason
+    /// <see cref="LandingApproachRuntime.Replicate"/> is one way.</summary>
+    public void Replicate() => Replicated = true;
+
+    /// <summary>The holder the host decided, which the next <see cref="Tick"/> steps on.</summary>
+    public void TakeHolder(PlayerRig? holder) => Holder = holder;
 
     /// <summary>Binds the switch to the built world and takes the runtime's <c>CALLBACK</c> host
     /// slot, chaining to whatever held it. A re-bind after the roster graft keeps the chain intact
@@ -86,8 +101,17 @@ public sealed partial class LadderSwitchRuntime : Node
         // ⚠ Stepped whether or not a holder was found: a holder that has stopped qualifying with
         // nobody to take over is what retracts the ladder, and the same pass finding a replacement
         // is what stops that retraction ever starting.
-        Holder = LadderSwitch.Holder(Holder,
-            _humans?.Invoke() ?? Array.Empty<PlayerRig>(), Qualifies);
+        if (!Replicated)
+        {
+            var was = Holder;
+            Holder = LadderSwitch.Holder(Holder,
+                _humans?.Invoke() ?? Array.Empty<PlayerRig>(), Qualifies);
+            if (!ReferenceEquals(was, Holder))
+            {
+                HolderChanged?.Invoke(Holder);
+            }
+        }
+
         string? started = _switch.Step(Holder != null, Start);
         if (started != null)
         {
