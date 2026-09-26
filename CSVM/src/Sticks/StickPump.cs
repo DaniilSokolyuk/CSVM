@@ -187,7 +187,7 @@ public sealed partial class StickPump : Node
             hats.Add(roster.Hat(stick, h).ToString());
         }
 
-        return $"axes_at_rest=[{string.Join(" ", axes)}] held=[{string.Join(" ", held)}] hats=[{string.Join(" ", hats)}]";
+        return $"axes_at_rest=[{string.Join(" ", axes)}] held=[{string.Join(" ", held)}] hats=[{string.Join(" ", hats)}]{StickRoster.QuirksText(stick.Model)}";
     }
 
     // The movement half of --dump-sticks=<seconds>. An axis is logged each time it travels a quarter

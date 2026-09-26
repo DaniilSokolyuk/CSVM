@@ -440,9 +440,8 @@ two candidates leave no way to tell which one should fly.
   again. While any candidate is still unsampled nothing is claimed.
 - **The layout.** Axis 0 (X) is roll and axis 1 (Y) pitch, each a full axis with deadzone 0.02 and
   pitch not inverted (pulled back is positive, as on a pad). Axis 5 (Rz, the twist) is yaw when the
-  device has six axes or more, DirectInput's usual X, Y, Z, Rx, Ry, Rz order; on the VKB Gladiator
-  EVO R the twist reads -1..1 on axis 5 through SDL2, negative twisted right, so yaw is bound
-  inverted. Axis 2 (Z) is the absolute Throttle (lever),
+  device has six axes or more, DirectInput's usual X, Y, Z, Rx, Ry, Rz order, bound uninverted
+  because a twist right reads positive (after the polarity quirks below). Axis 2 (Z) is the absolute Throttle (lever),
   inverted so raw -1 is full throttle, deadzone 0.02; on the VKB R the lever reads -1 pushed
   forward. The lever's takeover rule keeps a parked lever from moving the throttle until it is moved. Button
   0 fires the guns and button 2 the rockets. In menus the hat moves the cursor, button 0 confirms
@@ -456,6 +455,22 @@ two candidates leave no way to tell which one should fly.
   device. A profile file with `"ignore": true` for that model keeps it off. The Razer Tartarus
   (`1532/022B`, six centred axes under SDL2) ships with one, so it neither takes the default nor
   counts against a stick beside it.
+
+### Axis polarity quirks
+
+A model whose axis reads opposite to DirectInput's convention is corrected where the roster reads
+it (`Sticks/StickQuirks.cs`, applied in `StickRoster`), so flight, capture, menus, the rest sample
+and `--dump-sticks` all see the corrected value, and a profile token means the corrected value.
+`--dump-sticks` and the `stick at rest` log line name the correction (`quirks=[axis 5 flipped]`).
+
+- **VKB Gladiator EVO R (`231D/0200`) and L (`231D/0201`), axis 5 flipped.** Through SDL2 each
+  grip's twist reads negative twisted right, unlike its other axes: a `--dump-sticks` watch of the
+  L twisted right alone logs axis 5 falling to -0.86. Flipped, a twist right captured on Turn Right
+  reads `R Axis 6`, and only the opposite twist reads `R Axis 6 inverted`.
+- The table is built in and not part of the profile files, because a user profile replaces the
+  shipped one whole and the correction must hold whichever profile is active. Nothing migrates a
+  user file: a VKB yaw row saved as `fullaxis:5-` from an uncorrected capture flies yaw backwards
+  until yaw is captured again.
 
 ### Skip Cutscene, the stick's skip
 

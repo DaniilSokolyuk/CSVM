@@ -231,6 +231,7 @@ lines**.
 - `--dump-sticks` (does **not** imply `--det`, whose `--no-pads` would empty the Godot roster the
   gap-filler subtracts; load `SDL2.dll`, log Godot's pad models, the stick roster (name, model,
   GUID, axis/button/hat counts) and each stick's resting axes, held buttons and hats, then quit.
+  Axes print corrected by the model's polarity quirks, named on the line (`quirks=[axis 5 flipped]`).
   Exits nonzero only when no `SDL2.dll` loads. Under `--no-pads` it prints `reads blocked` instead
   of the readings. Run it through `RunProbe.ps1`)
 - `--dump-sticks=<seconds>` (the `--dump-sticks` report, then a watch of 1 to 120 seconds that

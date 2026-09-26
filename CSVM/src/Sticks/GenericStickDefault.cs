@@ -29,8 +29,9 @@ public static class GenericStickDefault
     /// sticks carry a throttle here.</summary>
     public const int LeverAxis = 2;
 
-    /// <summary>Rz, the twist. On the VKB Gladiator EVO R it reads -1..1 here under SDL2, negative
-    /// twisted right, so the default binds it inverted.</summary>
+    /// <summary>Rz, the twist, positive twisted right by DirectInput's convention, so the default
+    /// binds it uninverted. A model that reads it the other way is corrected in
+    /// <see cref="StickQuirks"/>.</summary>
     public const int TwistAxis = 5;
 
     /// <summary>The skip's button, the trigger, which also confirms in menus and fires the guns. The
@@ -87,7 +88,7 @@ public static class GenericStickDefault
         flight.Add(InputAction.PitchUp, new Binding(device, BindingControl.FullAxis(PitchAxis, false, AxisDeadzone)));
         if (axes >= TwistMinAxes)
         {
-            flight.Add(InputAction.YawRight, new Binding(device, BindingControl.FullAxis(TwistAxis, true, AxisDeadzone)));
+            flight.Add(InputAction.YawRight, new Binding(device, BindingControl.FullAxis(TwistAxis, false, AxisDeadzone)));
         }
 
         // Inverted: a DirectInput throttle reads its low end pushed forward (the VKB R does), which

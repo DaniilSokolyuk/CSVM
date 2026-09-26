@@ -87,6 +87,11 @@ public sealed class StickRoster : IDisposable
         return Log.Format($"\"{stick.Name}\" {stick.Model} guid={stick.Guid} axes={stick.Axes} buttons={stick.Buttons} hats={stick.Hats}");
     }
 
+    /// <summary>The suffix a line printing a model's axis values carries, <c> quirks=[axis 5 flipped]</c>,
+    /// so a reader knows the values are corrected. Empty for a model with none.</summary>
+    public static string QuirksText(StickModel model) =>
+        StickQuirks.Describe(model) is { Length: > 0 } quirks ? $" quirks=[{quirks}]" : string.Empty;
+
     /// <summary>Once per frame: pumps the library, and re-applies the gap-filler when a device came
     /// or went or Godot's roster changed. True when the opened set changed or a stick's rest was
     /// just sampled (<see cref="RestingAxes"/>). The first call always lists, so a roster is
@@ -115,10 +120,11 @@ public sealed class StickRoster : IDisposable
         return _rest.TryGetValue(stick.Instance, out var rest) ? rest : null;
     }
 
-    /// <summary>A stick's axis, -1..1; 0 while blocked, for an axis it lacks, or once it is gone.</summary>
+    /// <summary>A stick's axis, -1..1, after its model's <see cref="StickQuirks"/>; 0 while blocked,
+    /// for an axis it lacks, or once it is gone.</summary>
     public float Axis(Stick stick, int axis) =>
         Readable(stick, out var live) && axis >= 0 && axis < live.Axes
-            ? Normalise(_native.Axis(live.Instance, axis))
+            ? Read(live, axis)
             : 0f;
 
     /// <summary>Whether a stick's button is held; false while blocked, past its count or past
@@ -192,6 +198,14 @@ public sealed class StickRoster : IDisposable
         _native.Dispose();
     }
 
+    // ⚠ Do not read _native.Axis anywhere else. This is where a model's flipped axis is corrected,
+    // so a read that bypasses it would disagree with every profile token.
+    private float Read(Stick stick, int axis)
+    {
+        float value = Normalise(_native.Axis(stick.Instance, axis));
+        return StickQuirks.Flips(stick.Model, axis) ? -value : value;
+    }
+
     private bool Readable(Stick stick, out Stick live)
     {
         ArgumentNullException.ThrowIfNull(stick);
@@ -236,13 +250,13 @@ public sealed class StickRoster : IDisposable
             var printed = new List<string>(stick.Axes);
             for (int a = 0; a < stick.Axes; a++)
             {
-                rest[a] = Normalise(_native.Axis(stick.Instance, a));
+                rest[a] = Read(stick, a);
                 printed.Add(Log.Format($"{rest[a]:0.00}"));
             }
 
             _rest[stick.Instance] = rest;
             sampled = true;
-            Log.Info("core", $"stick at rest: \"{stick.Name}\" {stick.Model} axes=[{string.Join(" ", printed)}]");
+            Log.Info("core", $"stick at rest: \"{stick.Name}\" {stick.Model} axes=[{string.Join(" ", printed)}]{QuirksText(stick.Model)}");
         }
 
         return sampled;

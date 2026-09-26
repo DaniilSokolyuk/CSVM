@@ -100,6 +100,29 @@ public class StickCaptureTests
         Assert.Equal(StickCapture.FlightDeadzone, binding.Control.Deadzone);
     }
 
+    /// <summary>A VKB grip's twist right reads raw negative, and the roster flips it. Twisting right on
+    /// Turn Right captures the axis uninverted ("R Axis 6"), twisting left captures it inverted.</summary>
+    [Theory]
+    [InlineData(2, -32768, false)]
+    [InlineData(2, 32767, true)]
+    [InlineData(1, -32768, false)]
+    public void AVkbTwistRightOnTurnRightCapturesUninverted(int instance, int raw, bool inverted)
+    {
+        using var rig = new Rig();
+        var capture = rig.Arm(InputAction.YawRight);
+
+        rig.Native.SetAxis(instance, 5, (short)raw);
+        var binding = capture.Poll(rig.Seat)!.Value;
+
+        Assert.Equal(instance == 1 ? VkbL.Device : VkbR.Device, binding.Device);
+        Assert.Equal(BindingControl.FullAxis(5, inverted, StickCapture.FlightDeadzone), binding.Control);
+        if (instance == 2)
+        {
+            Func<DeviceId, string?> names = d => StickLabels.Prefix(d, m => m == VkbR ? "R" : null);
+            Assert.Equal(inverted ? "R Axis 6 inverted" : "R Axis 6", BindingLabels.Describe(binding, names));
+        }
+    }
+
     /// <summary>The lever row's direction is toward full throttle. L's lever, resting at raw +1 and
     /// pushed toward -1, infers inverted; R's, moved toward +1, does not.</summary>
     [Theory]

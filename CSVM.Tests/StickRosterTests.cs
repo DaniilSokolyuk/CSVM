@@ -194,6 +194,61 @@ public class StickRosterTests
         Assert.Equal(0f, roster.ModelAxis(VkbL, 0));
     }
 
+    /// <summary>Both VKB grips read their twist, axis 5, negated, and every other axis as it comes.
+    /// Another model's axis 5 is not touched.</summary>
+    [Fact]
+    public void TheVkbTwistReadsFlippedAndNothingElseDoes()
+    {
+        var native = new FakeStickNative();
+        native.Plug(1, "L", VkbL);
+        native.Plug(2, "R", VkbR);
+        native.Plug(3, "Tartarus", Tartarus, axes: 6);
+        using var roster = new StickRoster(native, Array.Empty<StickModel>, () => false);
+        roster.Update();
+        foreach (int instance in new[] { 1, 2, 3 })
+        {
+            for (int a = 0; a < 6; a++)
+            {
+                native.SetAxis(instance, a, 16384);
+            }
+        }
+
+        float half = 16384 / 32767f;
+        foreach (var stick in roster.Sticks)
+        {
+            for (int a = 0; a < 6; a++)
+            {
+                bool flipped = a == 5 && stick.Model != Tartarus;
+                Assert.Equal(flipped ? -half : half, roster.Axis(stick, a));
+                Assert.Equal(flipped, StickQuirks.Flips(stick.Model, a));
+            }
+        }
+
+        Assert.Equal(-half, roster.ModelAxis(VkbR, 5));
+        Assert.Equal(" quirks=[axis 5 flipped]", StickRoster.QuirksText(VkbR));
+        Assert.Equal(string.Empty, StickRoster.QuirksText(Tartarus));
+    }
+
+    /// <summary>The rest sample goes through the same correction: a flipped twist resting at raw -0.5
+    /// is sampled at +0.5. The shape test's axes 0 and 1 are as read.</summary>
+    [Fact]
+    public void TheRestSampleIsCorrectedToo()
+    {
+        var native = new FakeStickNative();
+        native.Plug(1, "R", VkbR);
+        native.SetAxis(1, 1, 300);
+        native.SetAxis(1, 5, -16384);
+        using var roster = new StickRoster(native, Array.Empty<StickModel>, () => false);
+        for (int i = 0; i <= StickRoster.SettleUpdates; i++)
+        {
+            roster.Update();
+        }
+
+        var rest = roster.RestingAxes(roster.Sticks[0])!;
+        Assert.Equal(16384 / 32767f, rest[5]);
+        Assert.Equal(300 / 32767f, rest[1]);
+    }
+
     [Fact]
     public void AFailedOpenLeavesTheDeviceOutAndTheRosterRunning()
     {

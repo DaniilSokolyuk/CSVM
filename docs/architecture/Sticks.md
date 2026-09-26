@@ -39,6 +39,13 @@ units of one model. `RestingAxes` is each stick's axes sampled ungated `SettleUp
 after it opened, which the shape test reads. Engine-free; read `Pads.cs` for the roster-versus-gate
 split it follows.
 
+## src/Sticks/StickQuirks.cs
+The built-in per-model axis corrections, keyed by `StickModel`: today the twist on axis 5 of both
+VKB grips (R `231D/0200`, L `231D/0201`), read negated so a twist right is positive. `StickRoster` applies it on its one
+native axis read, so every consumer and the rest sample see corrected values; `Describe` is what
+`--dump-sticks` prints. Kept out of the profile files, which a user copy replaces whole. Rules in
+`docs/org/input.md`, "Axis polarity quirks".
+
 ## src/Sticks/StickDeviceState.cs
 The sticks behind the binding seam: an `IDeviceState` answering for `StickModel.Device` identities
 through the roster's `Model*` reads, so L and R are two devices and identical units one. Only

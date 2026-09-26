@@ -474,6 +474,16 @@ beside `AnyPad`, muted with `readsPads: false`, and silent without a stick reade
 **Verified.** The full `RunTests.ps1` passes on the merged branch with the 19 goldens
 hash-identical. No stick has flown at the controls yet.
 
+**Axis polarity quirks.** Both VKB grips (R `231D/0200`, L `231D/0201`) read their twist on axis 5
+negative twisted right through SDL2, so uncorrected, a Turn Right captured by twisting right reads
+`R Axis 6 inverted`. `CSVM/src/Sticks/StickQuirks.cs` is a built-in table of flipped axes by model,
+applied in `StickRoster`'s one native axis read (`Axis` and the rest sample), which every reader goes
+through: `StickDeviceState` (flight, capture, menus), the shape test and `--dump-sticks`, whose lines
+end `quirks=[axis 5 flipped]`. It is not in the profile files, since a user copy replaces a shipped
+one whole. The generic default binds yaw uninverted. User files holding `fullaxis:5-` for a VKB
+yaw row are not migrated and need yaw captured again. Rules in `docs/org/input.md`, "Axis polarity
+quirks"; covered by `StickRosterTests` and `StickCaptureTests`.
+
 **Original approach (kept for reference).**
 
 **Goal.** `IDeviceState` answers button, axis and hat reads for a stick's model identity, and seat
