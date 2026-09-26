@@ -144,7 +144,7 @@ absolute path or null, and `log` is an `Action<string>` receiving one line per s
 counts), `Movies.Present` (the stamp's `movies` field), `StringRows` and the `MenuLayout`
 document. It runs synchronously; the caller owns threading, install lookup and the stamp.
 
-**Verified.** <pending orchestrator run>
+**Verified.** The full battery passes on the merged branch: units 4,886 (3 data skips), engine 383 of 383, 19 golden shots hash-identical.
 
 Output comparison, run by the item agent: `ExtractRof.ps1 -Source <install>\GOSDATA\ASSETS -Dest
 .scratch\old\rof` against `RofExtraction.Run` into `.scratch\new\rof` (the opt-in test
@@ -204,7 +204,7 @@ so parallel runs would buy little and cost a deterministic progress order. `CSVM
 covers the rules, the stamp merge over a BOM file, and the runner over a fake install with a batch
 file standing in for unzbd. The scripts and their `$StampSchema` stay until A6.
 
-**Verified.** <pending orchestrator run>. Against `ExtractAssets.ps1` with the same fork unzbd, into
+**Verified.** The full battery passes on the merged branch: units 4,886 (3 data skips), engine 383 of 383, 19 golden shots hash-identical. Against `ExtractAssets.ps1` with the same fork unzbd, into
 two scratch trees: 186 files each with identical names, the two unzbd `.json` outputs byte-identical,
 183 zips with identical entry lists and entry contents (59,610 entries), 185 extracted, 172 transform
 and 4,714 anim notes in both. A second run left 185 up to date. With unzip, 59,794 files each, all
@@ -335,7 +335,7 @@ rimage rule, progress order and monotonic fraction, the non-install and missing-
 whole run and its up-to-date re-run over a fake unzbd, a failed and a missing archive, cancel, and
 the flag parsing and its stray-option warnings.
 
-**Verified.** <pending orchestrator run>. With the fork unzbd, `--headless --extract=CrimsonSkiesGame
+**Verified.** The full battery passes on the merged branch: units 4,886 (3 data skips), engine 383 of 383, 19 golden shots hash-identical. With the fork unzbd, `--headless --extract=CrimsonSkiesGame
 --extract-unzip --data-root=.scratch\a4-data` exited 0 (185 extracted, 183 unzipped, 172 transform
 and 4,714 anim notes; 847 `.rof` files, 184 `.BM` decoded, 10 of 10 movies, 1,283 string rows).
 Against `Z:\CSVM\extracted`: 61,021 files each with identical names; 60,651 byte-identical including
@@ -396,7 +396,7 @@ interface files". `--unzbd=` applies to the screen and no longer warns without `
 five engine messages name the Extract screen. Tests: `CSVM.Tests/ExtractionFlowTests.cs`,
 `NoGameDataScreenTests.cs`, and the engine suites `extraction-screen` and `extraction-picker`.
 
-**Verified.** <pending orchestrator run>
+**Verified.** The full battery passes on the merged branch: units 4,886 (3 data skips), engine 383 of 383, 19 golden shots hash-identical. The look judgement on the six screenshots and a pad-only picker run on the Deck are the author's.
 
 **Original approach (kept for reference).**
 
@@ -456,7 +456,7 @@ the `playtest.md` step that expects the screen to name `Extract.cmd`. The stale-
 schema bump over an unchanged install needs a forced run: A5's stale-data screen has to extract
 with `Force`.
 
-**Verified.** <pending orchestrator run>. `.\Extract.ps1 -DataRoot .scratch\a6-data -Unzbd
+**Verified.** The full battery passes on the merged branch: units 4,886 (3 data skips), engine 383 of 383, 19 golden shots hash-identical. `.\Extract.ps1 -DataRoot .scratch\a6-data -Unzbd
 Z:\CSVM\tools\mech3ax\target\release\unzbd.exe` (install from `CSVM_DATA_ROOT`) exited 0: 185
 archives extracted, 847 `.rof` files, 10 of 10 movies, 1,283 string rows, and
 `extracted\VERSION.json` stamped schema 3 with both halves; `Z:\CSVM\extracted` untouched. The
@@ -574,7 +574,7 @@ artefacts (the `win-x64` runtime pack, the `x86_64-pc-windows-msvc` crate tree);
 a Linux-assembled notice before it ships. (3) The Linux export log reports a completed shader bake;
 whether the baked pipelines are used on the Deck's driver is B16's to see.
 
-**Verified.** <pending orchestrator run>
+**Verified.** The full battery passes on the merged branch: units 4,886 (3 data skips), engine 383 of 383, 19 golden shots hash-identical.
 
 **Original approach (kept for reference).**
 
@@ -621,7 +621,7 @@ open). The OpenGL wording is hedged: `project.godot` does not set
 `rendering/rendering_device/fallback_to_opengl3`, so Godot's default decides whether a machine
 without Vulkan switches to the Compatibility renderer, and the README calls that path untested.
 
-**Verified.** <pending orchestrator run>
+**Verified.** No code; the staging was read through. The author reading it on the Deck while following it is owed.
 
 **Original approach (kept for reference).**
 
