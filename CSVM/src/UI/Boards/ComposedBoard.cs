@@ -300,6 +300,11 @@ public sealed record BoardLine(
     /// point at a time by the renderer, which is the only half that can measure it.</summary>
     public float Height { get; init; }
 
+    /// <summary>Whether the line stays on one line inside <see cref="BoardLine.Width"/>. A line that
+    /// fits draws as any other. A wider one is never wrapped: it is clipped to the box and scrolls
+    /// through <see cref="BoardMarquee"/>, since only the renderer can measure it.</summary>
+    public bool Marquee { get; init; }
+
     /// <summary>The pad control drawn where <see cref="GlyphSlot"/> stands in the text, or null for
     /// a line of words alone. ⚠ The gap after the glyph is the renderer's, since only it can measure
     /// the picture. A composer that spaces the words itself breaks the line on another face. A line

@@ -61,17 +61,25 @@
 param(
     # Empty means "the newest win-x64 runtime pack in the NuGet cache", which is what a
     # self-contained publish on this machine picks up.
-    [string] $RuntimeVersion = ""
+    [string] $RuntimeVersion = "",
+
+    # The checkout whose git-ignored tools\ holds Godot and the mech3ax fork, as for
+    # ExportRelease.ps1's -ToolsRoot; a worktree has none of its own.
+    [string] $ToolsRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 $RepoRoot     = Split-Path $PSScriptRoot -Parent
-# tools/ is git-ignored, so a worktree takes it from CSVM_DATA_ROOT, as ExportRelease.ps1 does.
-$ToolsRoot    = $RepoRoot
-if ((-not (Test-Path (Join-Path $RepoRoot "tools\godot"))) -and $env:CSVM_DATA_ROOT) {
-    $ToolsRoot = $env:CSVM_DATA_ROOT
+# tools/ is git-ignored, so a worktree with no -ToolsRoot takes it from CSVM_DATA_ROOT, as
+# ExportRelease.ps1 does.
+if (-not $ToolsRoot) {
+    $ToolsRoot = $RepoRoot
+    if ((-not (Test-Path (Join-Path $RepoRoot "tools\godot"))) -and $env:CSVM_DATA_ROOT) {
+        $ToolsRoot = $env:CSVM_DATA_ROOT
+    }
 }
+$ToolsRoot    = (Resolve-Path $ToolsRoot).Path
 $GodotExe     = Join-Path $ToolsRoot "tools\godot\Godot_v4.7-stable_mono_win64\Godot_v4.7-stable_mono_win64_console.exe"
 $Mech3axRepo  = Join-Path $ToolsRoot "tools\mech3ax"
 $OutFile      = Join-Path $PSScriptRoot "LICENSE-thirdparty.txt"

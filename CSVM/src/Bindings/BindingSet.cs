@@ -56,13 +56,34 @@ public sealed class BindingSet
 
     /// <summary>The same read against a tick's <see cref="ModifierGate"/>, which is how a key
     /// binding learns what its map holds under a modifier.</summary>
-    public ControlValue Resolve(IDeviceState state, ModifierGate gate)
+    public ControlValue Resolve(IDeviceState state, ModifierGate gate) => Resolve(state, gate, 0);
+
+    /// <summary>The same read for the action on <paramref name="side"/> of an axis pair, which is
+    /// the side a full-axis binding in this set feeds (<see cref="AxisPairs.SideOf"/>).</summary>
+    public ControlValue Resolve(IDeviceState state, ModifierGate gate, int side)
     {
         bool pressed = false;
         float value = 0f;
         foreach (var binding in _bindings)
         {
-            var read = binding.Resolve(state, gate);
+            var read = binding.Resolve(state, gate, side);
+            pressed |= read.Pressed;
+            if (read.Value > value)
+                value = read.Value;
+        }
+
+        return new ControlValue(pressed, value);
+    }
+
+    /// <summary>The same read for an absolute row, each binding read through
+    /// <see cref="Binding.ResolveAbsolute"/>, the furthest position winning.</summary>
+    public ControlValue ResolveAbsolute(IDeviceState state, ModifierGate gate)
+    {
+        bool pressed = false;
+        float value = 0f;
+        foreach (var binding in _bindings)
+        {
+            var read = binding.ResolveAbsolute(state, gate);
             pressed |= read.Pressed;
             if (read.Value > value)
                 value = read.Value;

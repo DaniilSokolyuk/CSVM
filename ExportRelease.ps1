@@ -56,9 +56,20 @@
 .EXAMPLE
     .\ExportRelease.ps1 -Linux
     The same, then the Linux export in .scratch\export-linux\ and its tarball.
-#>
 
+.EXAMPLE
+    .\ExportRelease.ps1 -ToolsRoot Z:\CSVM
+    The same from a worktree, taking Godot, unzbd.exe, SDL2 and the mech3ax fork from the main
+    checkout's tools\, since tools\ is git-ignored and a worktree has none.
+
+.PARAMETER ToolsRoot
+    The checkout whose tools\ folder holds Godot, SDL2 and the mech3ax fork. Defaults to this
+    script's own folder, or to CSVM_DATA_ROOT when this folder has no tools\godot (a worktree),
+    the same fallback RunTests.ps1 uses. Only the tools move: the build, the payload and the
+    recorded CSVM commit stay this tree's own.
+#>
 param(
+    [string] $ToolsRoot = "",
     [switch] $Linux,
     [string] $LinuxUnzbd = ""
 )
@@ -66,16 +77,15 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RepoRoot   = $PSScriptRoot
+if (-not $ToolsRoot) {
+    $ToolsRoot = $RepoRoot
+    if ((-not (Test-Path (Join-Path $RepoRoot "tools\godot"))) -and $env:CSVM_DATA_ROOT) {
+        $ToolsRoot = $env:CSVM_DATA_ROOT
+    }
+}
+$ToolsRoot  = (Resolve-Path $ToolsRoot).Path
 $ProjectDir = Join-Path $RepoRoot "CSVM"
 $Sln        = Join-Path $ProjectDir "CSVM.sln"
-
-# tools/ is git-ignored, so a git worktree checkout has none of it. Fall back to the primary tree
-# named by CSVM_DATA_ROOT, the same fallback RunTests.ps1 uses, so an export can be rehearsed from
-# a worktree. A tree that has its own tools/ never reaches the fallback.
-$ToolsRoot = $RepoRoot
-if ((-not (Test-Path (Join-Path $RepoRoot "tools\godot"))) -and $env:CSVM_DATA_ROOT) {
-    $ToolsRoot = $env:CSVM_DATA_ROOT
-}
 $GodotExe   = Join-Path $ToolsRoot "tools\godot\Godot_v4.7-stable_mono_win64\Godot_v4.7-stable_mono_win64_console.exe"
 
 $TemplateDir = Join-Path $env:APPDATA "Godot\export_templates\4.7.stable.mono"
@@ -86,6 +96,7 @@ $ProjectGodot = Join-Path $ProjectDir "project.godot"
 $Mech3axRepo  = Join-Path $ToolsRoot "tools\mech3ax"
 $ThirdPartyNotices = Join-Path $RepoRoot "packaging\LICENSE-thirdparty.txt"
 $BuildInfo    = Join-Path $ExportDir "BUILD-INFO.txt"
+$Sdl2Dir      = Join-Path $ToolsRoot "tools\sdl2"
 
 $LinuxExportDir = Join-Path $RepoRoot ".scratch\export-linux"
 $LinuxExportExe = Join-Path $LinuxExportDir "CSVM.x86_64"
@@ -106,7 +117,10 @@ $ReleaseFiles = @(
     @{ Source = Join-Path $RepoRoot "packaging\LICENSE";        Dest = "LICENSE" },
     @{ Source = Join-Path $RepoRoot "packaging\LICENSE-unzbd";  Dest = "LICENSE-unzbd" },
     @{ Source = $ThirdPartyNotices;                             Dest = "LICENSE-thirdparty.txt" },
-    @{ Source = $UnzbdExe;                                      Dest = "tools\unzbd.exe" }
+    @{ Source = $UnzbdExe;                                      Dest = "tools\unzbd.exe" },
+    @{ Source = Join-Path $Sdl2Dir "SDL2.dll";                  Dest = "SDL2.dll" },
+    @{ Source = Join-Path $Sdl2Dir "README-SDL.txt";            Dest = "README-SDL.txt" },
+    @{ Source = Join-Path $Sdl2Dir "LICENSE.txt";               Dest = "LICENSE-SDL2.txt" }
 )
 
 # The tarball payload, packaging/MANIFEST.md's Linux table: the zip's list with the Linux README and
@@ -144,6 +158,11 @@ if (-not (Test-Path $UnzbdExe)) {
     throw "unzbd.exe not found at $UnzbdExe -- build the mech3ax fork (branch cs-anim) first; " +
         "see packaging\MANIFEST.md. The pinned v0.6.1 binary is not a substitute."
 }
+
+# SDL2.dll is the flight-stick reader (docs/tooling.md, "SDL2 for flight sticks"). A dev launch
+# without it only loses sticks, but a release without it ships a build that cannot see them, so
+# the export requires the pinned files. InstallSdl2.ps1 holds the pins and throws naming itself.
+$Sdl2 = & (Join-Path $RepoRoot "InstallSdl2.ps1") -Root $ToolsRoot -Verify
 
 foreach ($file in $ReleaseFiles) {
     if (-not (Test-Path $file.Source)) {
@@ -450,8 +469,12 @@ function Copy-ReleaseFiles($Files, [string] $Dir) {
 # PublishRelease.ps1 is where a qualifier becomes a refusal, since only a published binary
 # makes a false source-correspondence claim to anybody. UTF8Encoding($false) rather than
 # Set-Content, whose 5.1 default is ANSI (CLAUDE.md). The names and line endings are the
-# target platform's, so the file reads as native in the archive it ships in.
-function Write-BuildInfo([string] $Path, [string] $ExeLine, [string] $UnzbdName, [string] $Newline) {
+# target platform's, so the file reads as native in the archive it ships in. $Extra is the
+# platform's further binaries (SDL2.dll on Windows) and the licence line naming theirs.
+# PublishRelease.ps1 refuses any text matching 'MODIFIED' case-insensitively, so no other line
+# may contain the word "modified".
+function Write-BuildInfo([string] $Path, [string] $ExeLine, [string] $UnzbdName, [string] $Newline,
+        [string] $Extra = "", [string] $ExtraLicence = "") {
     $text = @"
 CSVM build provenance
 =====================
@@ -469,10 +492,10 @@ $UnzbdName
   commit:   $script:forkCommit
   pushed:   $(if ($script:forkPushed) { "yes, origin/cs-anim is at this commit" } else { "NO -- this commit is not on origin/cs-anim" })
   worktree: $(if ($script:forkDirty) { "MODIFIED -- this build does not match the commit above" } else { "clean" })
-
+$Extra
 CSVM's own licence is LICENSE (GPL-3) and unzbd's is LICENSE-unzbd (EUPL-1.2).
 The notices for the third-party software inside both binaries, including the
-Godot engine and the .NET runtime, are in LICENSE-thirdparty.txt.
+Godot engine and the .NET runtime, are in LICENSE-thirdparty.txt.$ExtraLicence
 "@
     $text = ($text -replace "`r`n", "`n") -replace "`n", $Newline
     [System.IO.File]::WriteAllText($Path, $text, (New-Object System.Text.UTF8Encoding($false)))
@@ -504,7 +527,13 @@ if ($exeInfo.FileVersion -notlike "$Version*" -or $exeInfo.ProductVersion -notli
 
 Assert-ExportRuntime (Join-Path $ExportDir "data_CSVM_windows_x86_64")
 Copy-ReleaseFiles $ReleaseFiles $ExportDir
-Write-BuildInfo $BuildInfo "CSVM.exe, and data_CSVM_windows_x86_64\ beside it" "tools\unzbd.exe" "`r`n"
+$sdl2Info = "`nSDL2.dll`n" +
+    "  version:  SDL $($Sdl2.Version), the official libsdl-org Windows x64 runtime as released`n" +
+    "  source:   https://github.com/libsdl-org/SDL  (tag release-$($Sdl2.Version))`n" +
+    "  commit:   $($Sdl2.Commit)`n" +
+    "  sha256:   $($Sdl2.DllSha256)`n"
+Write-BuildInfo $BuildInfo "CSVM.exe, and data_CSVM_windows_x86_64\ beside it" "tools\unzbd.exe" "`r`n" `
+    $sdl2Info " SDL2.dll is`nunder the zlib licence in LICENSE-SDL2.txt."
 Remove-ExportJunk $ExportDir
 
 # The zip lands beside the staging folder, not inside it: an archiver walking a directory it is

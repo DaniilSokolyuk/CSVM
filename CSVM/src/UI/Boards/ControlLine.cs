@@ -80,17 +80,17 @@ public sealed record ControlLine
             marked[..at],
             BindingLabels.Describe(binding),
             marked[(at + Slot.Length)..],
-            ControlGlyphs.For(binding.Control));
+            ControlGlyphs.For(binding));
     }
 
     /// <summary>The control of <paramref name="action"/> a seat on <paramref name="side"/> would be
     /// told to press, filled into <paramref name="template"/>, or an empty line where that seat can
     /// reach no binding for it.</summary>
     public static ControlLine For(string template, ActionMap map, InputAction action, DeviceSide side,
-        bool readsKeyboard)
+        bool readsKeyboard, bool onStick = false)
     {
         var bindings = map?.Bindings(action);
-        return bindings != null && ActiveDevice.PromptBinding(bindings, side, readsKeyboard) is { } binding
+        return bindings != null && ActiveDevice.PromptBinding(bindings, side, readsKeyboard, onStick) is { } binding
             ? Compose(template, binding)
             : Empty;
     }

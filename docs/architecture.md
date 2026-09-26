@@ -133,6 +133,8 @@ only `Airframe`, and nothing else in `Flight` names `Hangar`.
 - `src/Flight/Airframe/FlightModel.cs`, the arcade velocity-vector flight physics: thrust/drag/gravity/lift, stall, calibrated control rates.
 - `src/Flight/Airframe/StickRamp.cs`, the keyboard stick as an accumulator: a held key ramps the axis at 2.5/s, release or reversal drops it to centre in one frame.
 - `src/Flight/Airframe/MouseFlight.cs`, the mouse as a stick: a cursor offset over the pane per axis, each deadzoned and rescaled, plus the autogyro exchange; engine-free.
+- `src/Flight/Airframe/AnalogAxes.cs`, the pad share of the flight command through the pad curve and the flight-stick share linear, plus the lever read that releases on an unplugged stick.
+- `src/Flight/Airframe/StickSplit.cs`, a device-state filter passing a seat's flight sticks alone or everything but them, so pad and stick rows of one keymap resolve apart.
 - `src/Flight/Airframe/PropAnimator.cs`, spins the collected prop/rotor discs about their local axes, throttle-scaled (idle floor 0.4); `--fly` only.
 - `src/Flight/Airframe/ExhaustSmoke.cs`, the original's code-built exhaust trail: near-black smoke whose strength charges from the commanded lever running ahead of the live one.
 - `src/Flight/Airframe/FuelTank.cs`, the flown tank: burns with the lever, and a dry one freezes the throttle lever where it stands. Engine-free.
@@ -317,6 +319,7 @@ else in `UI`, and nothing names `Labs`.
 - `src/UI/Boards/SliderTrack.cs`, a slider's track as a pointer sees it: the slot, the thumb on it, and the clamped value a press, a drag or a sideways step lands on.
 - `src/UI/Boards/BoardFit.cs`, how the original's fixed 800x600 dialog space lands on any window: one uniform scale, the board centred, the rest letterboxed.
 - `src/UI/Boards/ComposedBoard.cs`, what a composed screen is made of: a backdrop that may be a movie, fills, pictures, strokes, lines, plaques and flowed lists in draw order.
+- `src/UI/Boards/BoardMarquee.cs`, how far a one-line caption too wide for its box has scrolled: rest, scroll, rest, return, and the pin a deterministic run holds it at.
 - `src/UI/Boards/ComposedBoardView.cs`, the Godot half of the boards: a composed board drawn through `BoardFit` at nearest filtering, the art and movie cache, the hint band.
 - `src/UI/Boards/BoardPalette.cs`, the ink a campaign board writes in, one palette per background family.
 - `src/UI/Boards/SeatStrip.cs`, the shape both presentations' player chip strip shares: the face, the corner inset, the cell a chip centres in, and the ink a seat takes.
@@ -466,6 +469,7 @@ else in `UI`, and nothing names `Labs`.
 - `src/UI/Menu/Original/OriginalDropList.cs`, the one open-dropdown window rule every Original page stands on: the authored window, the hidden rows outside it, the arrows and the thumb.
 - `src/UI/Menu/Original/SliderControl.cs`, the shell's continuous control: a slider row's hold-and-move under the pointer, and the clamped sideways step.
 - `src/UI/Menu/Original/OriginalOptionsScreen.cs`, the five pages behind the Options hub's doors as one standalone module: the Game Options and VIDEO tables, AUDIO's slider rows, the seat chooser and the seven category tabs of rebinding.
+- `src/UI/Menu/Original/KeysStickColumn.cs`, the KEYS AND BUTTONS page's split of a row's bindings between Control A/B and the port's Stick column.
 - `src/UI/Menu/Original/OriginalCredits.cs`, the shell's credits screen (a `partial`): the painted background pane, ABOUT drawn disabled, the DONE plaque.
 - `src/UI/Menu/Original/OriginalJoinBoard.cs`, the join board as one standalone module: the crew manifest, the articles of the crew, and the one place a pad signs onto a seat.
 - `src/UI/Menu/Original/OriginalSeats.cs`, the shell's two sortie screens (a `partial`): the chapters, the windowed aircraft column, FLY.
@@ -643,7 +647,9 @@ for. The registry that turns a device identity into a live pad and the map that 
 both sit on top of these types.
 
 - `src/Bindings/DeviceId.cs`, which device a binding is on, as a value: the one keyboard, the one mouse, or a joypad named by its stable hardware string.
-- `src/Bindings/BindingControl.cs`, the tagged control: a key, a button, a mouse button, one signed half of an axis past a deadzone, or one hat direction.
+- `src/Bindings/BindingControl.cs`, the tagged control: a key, a button, a mouse button, one signed half of an axis past a deadzone, a whole axis over an action pair, or one hat direction.
+- `src/Bindings/AxisPairs.cs`, the four action pairs a full-axis binding drives and which member is the positive side, plus the absolute lever row, shared by the map, the store and capture.
+- `src/Bindings/LeverTakeover.cs`, when a bound throttle lever commands the throttle: only after it moves, until another command arrives while it is still.
 - `src/Bindings/Binding.cs`, one control on one named device, plus `ControlValue`, the held/how-far pair every resolution returns.
 - `src/Bindings/IDeviceState.cs`, the tick's raw hardware state addressed by device identity; the seam that keeps resolution engine-free.
 - `src/Bindings/GodotDeviceState.cs`, the live `IDeviceState` over Godot's `Input` singleton, resolving an identity to an index through a `DeviceRegistry`.
@@ -654,6 +660,8 @@ both sit on top of these types.
 - `src/Bindings/ActionMap.cs`, one player's keymap: which control fires which action, with assignment taking a control off every action that held it.
 - `src/Bindings/ControlCapture.cs`, what a rebinding screen may capture, and the release-first scan that turns a press into a binding on the seat's identity.
 - `src/Bindings/ICaptureDevices.cs`, the hardware a capture reads through: one reader per context, with the pad identity that context's bindings sit on.
+- `src/Bindings/StickCapture.cs`, the stick half of a capture: 128 buttons, hat directions, and axes measured from where they rested, a full axis on a pair or lever row.
+- `src/Bindings/IStickDevices.cs`, the seam a capture learns a seat's stick identities through, so this namespace never names the stick library.
 - `src/Bindings/SeatCaptureDevices.cs`, one seat's capture readers, a `SeatDeviceState` per context over one pad list, on that context's placeholder identity.
 - `src/Bindings/BindingLabels.cs`, what a rebinding screen prints: an action's name, a control's keycap name, and a row that counts what it is not showing.
 - `src/Bindings/ActionSnapshot.cs`, the tick's resolved values, so two consumers reading one action in one tick get the same answer. No edges and no history.
@@ -663,8 +671,33 @@ both sit on top of these types.
 - `src/Bindings/BindingProfile.cs`, one seat's whole input: a map and a `PlayerActions` per context, plus the keyboard gate that applies to all of them.
 - `src/Bindings/ActiveDevice.cs`, which side of a seat's hardware produced its last real input, and which of an action's bindings a prompt on that side names.
 - `src/Bindings/BindingStore.cs`, the versioned JSON keymap file, one per player under `user://`, falling back per action to the shipped default.
-- `src/Bindings/LaunchBindings.cs`, where a seat's keymap comes from when the seat is built: the player's saved file, or the shipped defaults.
+- `src/Bindings/LaunchBindings.cs`, where a seat's keymap comes from when the seat is built: the player's saved file, or the shipped defaults, plus seat 1's stick rows.
+- `src/Bindings/IStickRows.cs`, the seam seat 1's keymap is completed through from the stick profiles, so this namespace never names the stick library.
 - `src/Bindings/PadRumble.cs`, one seat's controller rumble on the original's own effect table, routed to the pads that seat's bindings read.
+
+### `src/Sticks/`, flight sticks through SDL2
+
+The DirectInput-only sticks Godot's SDL3 does not see, read through the pinned `SDL2.dll` and
+filling only the models Godot's pad roster lacks.
+
+- `src/Sticks/StickModel.cs`, a stick's identity as a value: the USB vendor and product id every unit of one model reports, printed `231D/0201`.
+- `src/Sticks/Stick.cs`, a device listed but unopened (`StickListing`), and an opened one with its axis, button and hat counts (`Stick`).
+- `src/Sticks/IStickNative.cs`, the stick library as the roster sees it: pump, list, open, close and raw reads, the seam a test fakes.
+- `src/Sticks/Sdl2Sticks.cs`, `SDL2.dll` loaded by absolute path and reduced to its DirectInput joystick backend, behind `IStickNative`.
+- `src/Sticks/StickRoster.cs`, the gap-filling roster: hot-plug, the input gate, normalised reads, identical units merged per model, the roster log.
+- `src/Sticks/StickQuirks.cs`, the built-in per-model axis corrections (the VKB twists read negated), applied at the roster's one native axis read.
+- `src/Sticks/StickDeviceState.cs`, the sticks as an `IDeviceState` keyed by model identity (`stick:231D/0201`), read by seat 1 alone.
+- `src/Sticks/StickPump.cs`, the node that loads SDL2 once per process, publishes the live roster and pumps it each frame; hosts `--dump-sticks`.
+- `src/Sticks/StickProfile.cs`, one model's bindings in one layout: companions, short name, the ignore flag, rows per context, and rows kept unread.
+- `src/Sticks/StickProfileStore.cs`, the profile files: shipped texts read-only, the user directory the only save target, atomic and versioned.
+- `src/Sticks/StickProfileResolver.cs`, which file is active per connected model (companions, then user over shipped, then name), and the rows it yields.
+- `src/Sticks/StickProfileSet.cs`, the profiles in force, re-selected on every roster change; merges seat 1's keymap and saves an accepted screen.
+- `src/Sticks/StickSkip.cs`, seat 1's stick skip press and held state for cinemas, boot cards and in-world cutscenes, read off the stick rows alone.
+- `src/Sticks/StickProfiles.cs`, the engine side: `res://data/stick_profiles/`, `user://stick_profiles/`, and the one live set.
+- `src/Sticks/StickScreens.cs`, the rebinding screens' save split (player 1's stick rows to the profile files, never the keymap file) and the profiles folder opener.
+- `src/Sticks/StickLabels.cs`, a stick's caption prefix for the rebinding screens: its profile's short name, else `Stick` and its model (the Stick column drops the latter).
+- `src/Sticks/StickShape.cs`, the flight-stick shape test: three axes or more, axes 0 and 1 resting near centre in the roster's rest sample.
+- `src/Sticks/GenericStickDefault.cs`, the in-memory default for the one stick-shaped unprofiled model: X, Y, Rz, Z lever, two fire buttons, hat menus.
 
 ### `src/Video/`, the MPEG-1 cinema decoder
 

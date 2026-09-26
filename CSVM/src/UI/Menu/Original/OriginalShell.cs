@@ -865,6 +865,11 @@ public sealed partial class OriginalShell : IOriginalScreenHost
         }
 
         _focus[(int)_screen] = focus;
+        if (commands.Unbind && _screen == OriginalScreen.Keys && focus >= 0 && Options.ClearCell(rows[focus]))
+        {
+            changed = true;
+        }
+
         if (exit == null && commands.Accept && focus >= 0 && rows[focus].Enabled)
         {
             exit = Activate(rows[focus], cues, byPointer: false);

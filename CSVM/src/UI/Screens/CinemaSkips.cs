@@ -38,6 +38,12 @@ public enum CinemaPress
 /// off engine; <see cref="PressOf"/> is the engine's half and holds no policy of its own.</summary>
 public static class CinemaSkips
 {
+    /// <summary>What a stick's skip press is to a set: a pad button, so a stick ends exactly the
+    /// cinemas a pad does and no other. A stick raises no input event, so a screen polls it
+    /// (<see cref="CSVM.Sticks.StickSkip"/>) instead of reading it through <see cref="PressOf"/>.
+    /// </summary>
+    public const CinemaPress StickPress = CinemaPress.PadButton;
+
     /// <summary>Whether <paramref name="press"/> ends a cinema whose set is <paramref name="skip"/>.
     /// <see cref="CinemaSkip.AnyPress"/> takes every press there is, a pad button included, because
     /// the screens carrying it have taught the player no key yet. Even that set ends nothing on

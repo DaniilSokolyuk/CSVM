@@ -15,7 +15,8 @@ internal static class CinemaSkipSuites
         "A pad button skips a cinema: a synthetic InputEventJoypadButton reads as CinemaPress.PadButton "
         + "and ends the chapter, closing and boot sets alike, a button release ends none of them, the "
         + "same button read with pads off is no press, and Escape, Space, Return and the left mouse "
-        + "still read as themselves so the authored sets keep their differences")]
+        + "still read as themselves so the authored sets keep their differences; a stick's skip press "
+        + "ends the sets a pad button ends, and reads nothing with sticks off")]
     internal static void CinemaSkipPad(TestContext ctx)
     {
         var button = new InputEventJoypadButton { ButtonIndex = JoyButton.A, Pressed = true };
@@ -52,6 +53,20 @@ internal static class CinemaSkipSuites
         var echo = CinemaSkips.PressOf(
             new InputEventKey { Keycode = Godot.Key.Space, Pressed = true, Echo = true }, padsLive: true);
         ctx.Check(echo == CinemaPress.None, $"a key repeat is no press, so a held key ends one cinema only ({echo})");
+
+        var stickSkip = CinemaSkips.StickPress;
+        ctx.Check(
+            CinemaScreen.ChapterKeys.Skips(stickSkip) && CinemaScreen.ClosingKeys.Skips(stickSkip)
+            && CinemaScreen.BootKeys.Skips(stickSkip) && !CinemaSkip.Escape.Skips(stickSkip),
+            $"a stick's skip press ends the chapter, closing and boot sets as a pad button does, and not an Escape-only one ({stickSkip})");
+
+        if (Sticks.StickPump.Roster == null)
+        {
+            var live = Sticks.StickSkip.Live();
+            live.Prime();
+            live.Poll();
+            ctx.Check(!live.Pressed && !live.Held, $"with sticks off the live skip reader reads nothing");
+        }
     }
 
     private static InputEventKey Key(Key code) =>

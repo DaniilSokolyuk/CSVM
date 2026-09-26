@@ -281,6 +281,19 @@ read from that file, never written into it, and never stamped into the preset du
 The zip is built through `System.IO.Compression`, since `Compress-Archive` reports success after
 writing nothing when a single file is locked.
 
+**Which number to bump** is decided per release, against what changed since the last tag
+(`git log v<last>..HEAD`), in the commit that is about to be published; builds between releases
+keep stating the last released version, and `BUILD-INFO.txt` names the exact commit. The **patch**
+number is for a release that only fixes, including a fix that brings behaviour closer to the
+original; a player finds nothing new in it. The **minor** number is for a release that adds
+something a player can see (a mode, a screen, an input device, a mechanic), which is where a
+milestone lands; fixes shipped alongside a feature do not make it a patch. The **major** number is
+the author's call that the remake stands in for the original end to end; until then the version
+stays `0.x`, and afterwards a major bump is reserved for a change that breaks saved profiles or
+replaces a subsystem wholesale. ⚠ A patch release never changes the format of anything written to
+`user://` and never changes the network protocol, so builds that differ only in the patch number
+read each other's profiles and can play in the same session.
+
 The payload is `packaging/MANIFEST.md`'s table, copied from its repo sources on every export, which
 keeps it byte-identical.
 
@@ -469,8 +482,74 @@ observed without data says nothing about the floor.
 ## `tools/` (git-ignored)
 
 Downloaded binaries: mech3ax v0.6.1 (pinned pre-fork extractor, for rollback), the fork checkout
-(below), and the Godot 4.7 .NET editor at `tools/godot/Godot_v4.7-stable_mono_win64/`; use
-`*_console.exe` for CLI runs.
+(below), the Godot 4.7 .NET editor at `tools/godot/Godot_v4.7-stable_mono_win64/` (use
+`*_console.exe` for CLI runs), and the SDL2 runtime at `tools/sdl2/` (below).
+
+### SDL2 for flight sticks (`tools/sdl2/`)
+
+The SDL3 inside Godot 4.7 enumerates no DirectInput-only device on the author's machine, so CSVM
+reads flight sticks through the official SDL2 runtime instead (`docs/architecture/Sticks.md`).
+**`InstallSdl2.ps1` (repo root)** downloads SDL 2.32.10's `SDL2-2.32.10-win32-x64.zip` from the
+libsdl-org GitHub release, checks it against a pinned SHA-256, and writes three files into
+`tools/sdl2/`: `SDL2.dll`, the zip's `README-SDL.txt`, and SDL's zlib `LICENSE.txt`, which the
+runtime zip does not carry and which is read from the release's own commit. Every file is hashed
+against its pin in a staging folder before any installed file is replaced, and a run over an
+install that already matches downloads nothing. `-Root <checkout>` installs into another tree,
+`-Force` re-downloads, and `-Verify` installs nothing: it throws unless the three files match their
+pins and otherwise returns the version, commit and DLL hash. The pins live in that script alone.
+⚠ Moving the version means repeating the stick-detection check on real hardware, because 2.32.10
+is the build that check passed on; a new hash alone says nothing about whether the sticks still
+enumerate.
+
+One install serves every worktree. Run it once in the primary checkout; a worktree finds the DLL
+through `CSVM_DATA_ROOT` like it finds Godot, and needs no copy of its own.
+
+**Nothing puts the DLL on `PATH`.** No launch script changes the environment or the DLL search
+path for it; the game loads it by absolute path, taking the first of these that exists:
+
+1. `SDL2.dll` in the running executable's own folder. This is the exported build, where
+   `ExportRelease.ps1` puts it beside `CSVM.exe`.
+2. `<repo root>/tools/sdl2/SDL2.dll`, the repo root being `res://`'s parent on disk (the
+   `Launcher` repo root of an editor-hosted run).
+3. `$CSVM_DATA_ROOT/tools/sdl2/SDL2.dll`, the fallback a worktree uses.
+4. `tools/sdl2/SDL2.dll` of the checkout that supplied the running Godot, found two folders above
+   the executable (`tools/godot/<build>/`), so a worktree launched without `CSVM_DATA_ROOT` still
+   finds it.
+
+The system's own DLL search is never consulted, since any `SDL2.dll` on `PATH` is an unpinned
+build of unknown version. When no candidate exists, or the load fails, the game runs without
+sticks and logs one line naming the paths it tried; a missing DLL never stops a launch, and
+`InstallSdl2.ps1` is not called by any launch script. `ExportRelease.ps1` does require it: the
+export runs `InstallSdl2.ps1 -Verify` before building, ships `SDL2.dll` and `README-SDL.txt`
+beside the exe with the licence as `LICENSE-SDL2.txt`, and records the SDL version, commit and DLL
+hash in `BUILD-INFO.txt`. With `-ToolsRoot <checkout>` a worktree's export takes the SDL2 files
+from that checkout's `tools/sdl2/`, as it does Godot and the mech3ax fork.
+
+**What is Windows-specific.** The bridge is SDL2's joystick API alone, and most of it is already
+portable. `Sdl2Sticks` uses no `DllImport`: it loads one file with `NativeLibrary.TryLoad` and
+binds every export by name with `TryGetExport`, and the 23 functions it calls exist unchanged in
+every SDL2 build. The roster, profiles, bindings, capture, prompts and glyphs never see the library.
+A port to another platform touches these places:
+
+- **The file name.** `Sdl2Sticks.Candidates` names `SDL2.dll` in all four candidates, and the load
+  failure lines say `SDL2.dll`. Linux's runtime is `libSDL2-2.0.so.0`. Whether a Linux build ships a
+  pinned copy beside the executable or loads the distribution's through the system search (which
+  the "never consulted" rule above forbids on Windows) is a decision the port makes, since
+  libsdl-org publishes no Linux binary to pin.
+- **`InstallSdl2.ps1`** fetches and pins the `win32-x64` zip only.
+- **The hints in `Sdl2Sticks.Load`** switch off HIDAPI, RawInput, WGI and XInput, which leaves
+  DirectInput. They exist so SDL2 cannot take a device or a process-wide registration from the SDL3
+  inside Godot. On Linux SDL2 reads evdev, where a second reader shares the device instead of
+  taking it; `SDL_JOYSTICK_HIDAPI=0` still keeps SDL2 off the pads' hidraw nodes.
+- **Whether the bridge is needed at all.** The bridge exists because Godot's SDL3 enumerates no
+  DirectInput-only stick on Windows. If Godot's SDL3 on Linux lists the stick, `StickRoster` skips
+  it (it fills gaps in Godot's roster only), and the stick reaches the game as an ordinary Godot
+  joypad, without its stick profile, stick glyphs or stick column. Run `--dump-sticks` with the
+  stick connected to see which roster holds it before porting anything.
+- **`ExportRelease.ps1`** ships `SDL2.dll`, `README-SDL.txt` and `LICENSE-SDL2.txt`, and
+  `BUILD-INFO.txt` states the Windows DLL's hash.
+- **`SDL_JOYSTICK_DIRECTINPUT=0`** in the launch scripts is a Windows workaround for Godot's SDL3
+  (BL-033) and has no Linux counterpart.
 
 ## The mech3ax fork (`tools/mech3ax/`)
 

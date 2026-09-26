@@ -1,15 +1,14 @@
+using System;
 using System.Collections.Generic;
 
 namespace CSVM.Bindings;
 
-/// <summary>One player's whole keymap: which controls fire which named action. A player owns a map,
-/// so two players' maps are independent and the same control means whatever each of them says it
-/// means. Resolution goes through <see cref="ResolveInto"/> once per tick rather than per read, so
-/// two consumers asking the same question in one tick cannot disagree.
-/// ⚠ A control belongs to at most one action. <see cref="Assign"/> takes it off its previous owner
-/// and reports which action lost it, which is the original's conflict rule (`FUN_005371d0`,
-/// `FUN_00535fb0`, `docs/org/input.md`) rather than a warning a screen may ignore. This type holds
-/// no defaults; the shipped set and its file are the persistence item's.</summary>
+/// <summary>One player's whole keymap: which controls fire which named action. Two players' maps are
+/// independent, so one control means whatever each map says it means. Resolution goes through
+/// <see cref="ResolveInto"/> once per tick, so two consumers asking in one tick cannot disagree.
+/// ⚠ A control belongs to at most one action. Assigning one takes it off its previous owner and
+/// names the loser (`FUN_005371d0`, `docs/org/input.md`). ⚠ A full axis sits on both actions of its pair or on neither, so
+/// unbinding it from either row clears both.</summary>
 public sealed class ActionMap
 {
     private readonly Dictionary<InputAction, BindingSet> _sets = new();
@@ -25,12 +24,20 @@ public sealed class ActionMap
     public IEnumerable<InputAction> BoundActions => _sets.Keys;
 
     /// <summary>Whether two bindings name the same physical control, ignoring an axis deadzone.
-    /// Deadzone is a tuning number rather than part of the control's identity, so rebinding an axis
-    /// that is already bound to the action adjusts it instead of stacking a second copy.</summary>
+    /// Deadzone is tuning, not identity, so rebinding an axis already on the action adjusts it
+    /// instead of stacking a copy. A full axis covers both halves of its travel. It is therefore
+    /// the same control as either half-axis binding on that axis of that device, and as any full
+    /// axis there whatever its invert.</summary>
     public static bool SameControl(Binding left, Binding right)
     {
-        if (left.Device != right.Device || left.Control.Kind != right.Control.Kind
-            || left.Control.Index != right.Control.Index)
+        if (left.Device != right.Device || left.Control.Index != right.Control.Index)
+            return false;
+        var leftKind = left.Control.Kind;
+        var rightKind = right.Control.Kind;
+        if ((leftKind == ControlKind.FullAxis && rightKind is ControlKind.Axis or ControlKind.FullAxis)
+            || (rightKind == ControlKind.FullAxis && leftKind == ControlKind.Axis))
+            return true;
+        if (leftKind != rightKind)
             return false;
         return left.Control.Kind switch
         {
@@ -41,6 +48,13 @@ public sealed class ActionMap
         };
     }
 
+    /// <summary>Whether two actions hold one control without either taking it from the other, which
+    /// the steal rule and a screen's steal prompt both skip. True when either is
+    /// <see cref="InputAction.SkipCutscene"/>, which is read only while a cutscene or cinema plays.
+    /// Its stick default shares the trigger with menu accept, and a rebind must not undo that.</summary>
+    public static bool Shares(InputAction left, InputAction right) =>
+        left != right && (left == InputAction.SkipCutscene || right == InputAction.SkipCutscene);
+
     /// <summary>Which modifiers this map holds that key under, which is what a bare binding on it
     /// must stand down under. Empty for a key no action names with a modifier.</summary>
     public KeyModifiers ContestedFor(int keyCode)
@@ -49,51 +63,89 @@ public sealed class ActionMap
         return _contested.TryGetValue(keyCode, out var modifiers) ? modifiers : KeyModifiers.None;
     }
 
-    /// <summary>Gives a control to an action, taking it off every action that held it, and returns
-    /// those in enum order so a screen can name each loss rather than performing it silently.
-    /// ⚠ Every owner, not the first. <see cref="Add"/> deliberately puts one control on two actions
-    /// (each numpad snap-look diagonal), and a steal stopping at the first owner
-    /// would leave it on the other, which is the state the original forbids (`FUN_005371d0`,
-    /// `FUN_00535fb0`).</summary>
+    /// <summary>Gives a control to an action, taking it off every action that held it. Returns those
+    /// in enum order, so a screen can name each loss. A full axis goes onto both actions of the pair,
+    /// the partner is not reported, and an action that takes no full axis throws. ⚠ Every owner, not
+    /// the first: <see cref="Add"/> puts one control on two actions (a numpad snap-look diagonal).
+    /// Stopping at the first leaves it on the other, which the original forbids (`FUN_005371d0`).
+    /// </summary>
     public IReadOnlyList<InputAction> Assign(InputAction action, Binding binding)
     {
+        InputAction? partner = null;
+        if (binding.Control.Kind == ControlKind.FullAxis)
+        {
+            if (!AxisPairs.TakesFullAxis(action))
+                throw new ArgumentException($"{action} is in no axis pair, so it cannot hold a full axis.", nameof(binding));
+            partner = AxisPairs.PartnerOf(action);
+        }
+
         var stolenFrom = new List<InputAction>();
         foreach (var pair in _sets)
         {
-            if (pair.Key != action && RemoveMatching(pair.Value, binding))
+            if (pair.Key != action && pair.Key != partner && !Shares(action, pair.Key)
+                && RemoveMatching(pair.Value, binding))
                 stolenFrom.Add(pair.Key);
         }
 
         stolenFrom.Sort();
-        var set = SetFor(action);
-        RemoveMatching(set, binding);
-        set.Add(binding);
+        Put(SetFor(action), binding);
+        if (partner is { } other)
+            Put(SetFor(other), binding);
         _contestedStale = true;
         return stolenFrom;
     }
 
     /// <summary>Gives a control to an action without taking it off anyone. The shipped defaults and
-    /// a loaded file both need this: a numpad snap-look diagonal is deliberately on two actions at
-    /// once, and <see cref="Assign"/> would undo the second one.
-    /// ⚠ Not for a rebinding screen. A control a player assigns goes through <see cref="Assign"/>,
-    /// which is the only path that keeps the steal rule.</summary>
+    /// a loaded file need this, since a numpad snap-look diagonal is deliberately on two actions. A
+    /// full axis goes onto both actions of the pair, replacing a copy with another invert or
+    /// deadzone. On the lever row it goes onto that row alone, and on any other it is refused.
+    /// ⚠ Not for a rebinding screen; <see cref="Assign"/> is the only path that keeps the steal rule.</summary>
     public bool Add(InputAction action, Binding binding)
     {
         _contestedStale = true;
-        return SetFor(action).Add(binding);
+        if (binding.Control.Kind != ControlKind.FullAxis)
+            return SetFor(action).Add(binding);
+        if (!AxisPairs.TakesFullAxis(action))
+            return false;
+
+        bool added = !SetFor(action).Contains(binding);
+        Put(SetFor(action), binding);
+        if (AxisPairs.PartnerOf(action) is { } partner)
+            Put(SetFor(partner), binding);
+        return added;
     }
 
-    /// <summary>Drops one control from one action, leaving every other action alone. This is the
-    /// unbind a screen performs; it is not part of the steal rule.</summary>
+    /// <summary>Drops one control from one action, leaving every other action alone. A full axis
+    /// leaves the pair's other action too, being one binding on both. This is the unbind a screen
+    /// performs; it is not part of the steal rule.</summary>
     public bool Unassign(InputAction action, Binding binding)
     {
         _contestedStale = true;
-        return _sets.TryGetValue(action, out var set) && RemoveMatching(set, binding);
+        if (!_sets.TryGetValue(action, out var set))
+            return false;
+
+        bool removed = false;
+        for (int i = set.Bindings.Count - 1; i >= 0; i--)
+        {
+            var held = set.Bindings[i];
+            if (!SameControl(held, binding))
+                continue;
+            removed |= set.Remove(held);
+            DropFromPartner(action, held);
+        }
+
+        return removed;
     }
 
+    /// <summary>Unbinds every control on that action. A full axis it held leaves the pair's other
+    /// action as well, as <see cref="Unassign"/> does.</summary>
     public void Clear(InputAction action)
     {
         _contestedStale = true;
+        if (!_sets.TryGetValue(action, out var set))
+            return;
+        foreach (var held in set.Bindings)
+            DropFromPartner(action, held);
         _sets.Remove(action);
     }
 
@@ -161,14 +213,19 @@ public sealed class ActionMap
     }
 
     /// <summary>Reads every bound action out of this tick's hardware into the snapshot, reusing it
-    /// rather than allocating one per tick. Unbound actions read as nothing.</summary>
+    /// rather than allocating one per tick. Unbound actions read as nothing. An absolute row reads
+    /// its position, so an idle lever and an unbound one both read zero.</summary>
     public void ResolveInto(ActionSnapshot snapshot, IDeviceState state)
     {
         snapshot.Reset();
         RebuildContested();
         var gate = ModifierGate.Read(state, _contested);
         foreach (var pair in _sets)
-            snapshot.Store(pair.Key, pair.Value.Resolve(state, gate));
+        {
+            snapshot.Store(pair.Key, AxisPairs.IsAbsolute(pair.Key)
+                ? pair.Value.ResolveAbsolute(state, gate)
+                : pair.Value.Resolve(state, gate, AxisPairs.SideOf(pair.Key)));
+        }
     }
 
     /// <summary>A fresh snapshot of this tick, for a caller that keeps no snapshot of its own.
@@ -191,6 +248,29 @@ public sealed class ActionMap
         }
 
         return removed;
+    }
+
+    // A copy already on the set under another sign, invert or deadzone goes first. It is the same
+    // control, and two of them would resolve the axis twice.
+    private static void Put(BindingSet set, Binding binding)
+    {
+        if (set.Contains(binding))
+            return;
+        RemoveMatching(set, binding);
+        set.Add(binding);
+    }
+
+    private void DropFromPartner(InputAction action, Binding held)
+    {
+        if (held.Control.Kind != ControlKind.FullAxis
+            || AxisPairs.PartnerOf(action) is not { } partner
+            || !_sets.TryGetValue(partner, out var other))
+            return;
+        for (int i = other.Bindings.Count - 1; i >= 0; i--)
+        {
+            if (other.Bindings[i].Control.Kind == ControlKind.FullAxis && SameControl(other.Bindings[i], held))
+                other.Remove(other.Bindings[i]);
+        }
     }
 
     private void RebuildContested()

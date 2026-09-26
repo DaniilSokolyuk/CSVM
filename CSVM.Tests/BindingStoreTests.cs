@@ -15,7 +15,9 @@ namespace CSVM.Tests;
 /// nothing else.</summary>
 public class BindingStoreTests
 {
+    private const string StickId = "03005fcf1d2300000002000000000000";
     private static readonly DeviceId Pad = DeviceId.Joypad("030000004c050000c405000000010000");
+    private static readonly DeviceId Stick = DeviceId.Joypad(StickId);
 
     [Fact]
     public void RoundTrip_PreservesEveryBinding()
@@ -264,11 +266,10 @@ public class BindingStoreTests
             loaded.Bindings(InputAction.Nitro));
     }
 
-    /// <summary>A hat row can only be a hand edit: nothing in the build authors one, and on this
-    /// backend it would alias a d-pad button binding. The action keeps its default instead.
-    /// </summary>
+    /// <summary>A hat row on the pad placeholder can only be a hand edit, and on a Godot pad it would
+    /// alias a d-pad button binding. The action keeps its default instead.</summary>
     [Fact]
-    public void Load_HatToken_LeavesTheActionAtItsDefault()
+    public void Load_HatTokenOnThePadPlaceholder_LeavesTheActionAtItsDefault()
     {
         var json = Row("flight", "\"SelectGunGroup\": [\"pad:*/hat:0:Right\"]");
         var loaded = BindingStore.Deserialize(json, Pad, readsKeyboard: true).Map(InputContext.Flight);
@@ -358,7 +359,7 @@ public class BindingStoreTests
     {
         var json = BindingStore.Serialize(1, BindingProfile.Defaults(Pad, readsKeyboard: true));
 
-        Assert.Contains("\"version\": 2", json, StringComparison.Ordinal);
+        Assert.Contains("\"version\": 3", json, StringComparison.Ordinal);
         Assert.Contains("\"FireGuns\"", json, StringComparison.Ordinal);
         Assert.Contains("keyboard/key:Space", json, StringComparison.Ordinal);
         Assert.Contains("keyboard/key:Shift+S", json, StringComparison.Ordinal);
@@ -437,6 +438,138 @@ public class BindingStoreTests
 
         AssertSameMaps(BindingProfile.Defaults(Pad, true), store.Load(1, Pad, true));
     }
+
+    /// <summary>A full axis is one binding, written once under its pair's positive row with its
+    /// deadzone exactly as held, and read back onto both rows.</summary>
+    [Fact]
+    public void RoundTrip_WritesAFullAxisOnceAndKeepsItsDeadzoneExactly()
+    {
+        var profile = BindingProfile.Defaults(Pad, readsKeyboard: true);
+        var full = new Binding(Stick, BindingControl.FullAxis(1, inverted: true, 0.0125f));
+        profile.Map(InputContext.Flight).Assign(InputAction.PitchDown, full);
+
+        var json = BindingStore.Serialize(1, profile);
+        var loaded = BindingStore.Deserialize(json, Pad, readsKeyboard: true);
+        var map = loaded.Map(InputContext.Flight);
+
+        const string token = "pad:" + StickId + "/fullaxis:1-@0.0125";
+        Assert.Equal(json.IndexOf(token, StringComparison.Ordinal), json.LastIndexOf(token, StringComparison.Ordinal));
+        Assert.Contains(full, map.Bindings(InputAction.PitchUp));
+        Assert.Contains(full, map.Bindings(InputAction.PitchDown));
+        AssertSameMaps(profile, loaded);
+        Assert.Equal(json, BindingStore.Serialize(1, loaded));
+    }
+
+    /// <summary>A deadzone a player types into the file is honoured anywhere in 0..0.95 and written
+    /// back as typed. Past that the row is unreadable and keeps its default.</summary>
+    [Theory]
+    [InlineData("0", 0f)]
+    [InlineData("0.3", 0.3f)]
+    [InlineData("0.95", 0.95f)]
+    [InlineData("0.96", null)]
+    [InlineData("-0.1", null)]
+    [InlineData("NaN", null)]
+    public void Load_AHandEditedFullAxisDeadzone(string typed, float? expected)
+    {
+        var json = Row("flight", "\"RollRight\": [\"pad:" + StickId + "/fullaxis:0+@" + typed + "\"]");
+        var map = BindingStore.Deserialize(json, Pad, readsKeyboard: true).Map(InputContext.Flight);
+
+        if (expected is not { } deadzone)
+        {
+            Assert.Equal(
+                DefaultBindings.MapFor(InputContext.Flight, Pad).Bindings(InputAction.RollRight),
+                map.Bindings(InputAction.RollRight));
+            return;
+        }
+
+        var full = new Binding(Stick, BindingControl.FullAxis(0, inverted: false, deadzone));
+        Assert.Equal(new[] { full }, map.Bindings(InputAction.RollRight));
+        Assert.Contains(full, map.Bindings(InputAction.RollLeft));
+        Assert.Contains("/fullaxis:0+@" + typed + "\"", BindingStore.Serialize(1, ProfileOf(json)), StringComparison.Ordinal);
+    }
+
+    /// <summary>A hand edit that names the full axis on the negative row, or on both, still binds
+    /// the pair once.</summary>
+    [Fact]
+    public void Load_AFullAxisOnTheNegativeRow_BindsThePair()
+    {
+        var json = Row(
+            "flight",
+            "\"YawLeft\": [\"keyboard/key:Comma\", \"pad:" + StickId + "/fullaxis:#2+@0.02\"], "
+            + "\"YawRight\": [\"keyboard/key:Period\"]");
+        var map = BindingStore.Deserialize(json, Pad, readsKeyboard: true).Map(InputContext.Flight);
+        var full = new Binding(Stick, BindingControl.FullAxis(2, inverted: false, 0.02f));
+
+        Assert.Equal(
+            new[] { new Binding(DeviceId.Keyboard, BindingControl.Key((int)Key.Comma)), full },
+            map.Bindings(InputAction.YawLeft));
+        Assert.Equal(
+            new[] { new Binding(DeviceId.Keyboard, BindingControl.Key((int)Key.Period)), full },
+            map.Bindings(InputAction.YawRight));
+    }
+
+    /// <summary>A file naming only the positive row keeps the negative row's defaults and adds the
+    /// full axis to it. The partner is not a default action that loses the control.</summary>
+    [Fact]
+    public void Load_AFullAxisOnOneNamedRow_KeepsThePartnersDefaults()
+    {
+        var json = Row("flight", "\"PitchUp\": [\"pad:" + StickId + "/fullaxis:1+@0.02\"]");
+        var map = BindingStore.Deserialize(json, Pad, readsKeyboard: true).Map(InputContext.Flight);
+        var full = new Binding(Stick, BindingControl.FullAxis(1, inverted: false, 0.02f));
+        var defaults = DefaultBindings.MapFor(InputContext.Flight, Pad).Bindings(InputAction.PitchDown);
+
+        Assert.Equal(new[] { full }, map.Bindings(InputAction.PitchUp));
+        Assert.Equal(defaults.Append(full).ToArray(), map.Bindings(InputAction.PitchDown).ToArray());
+    }
+
+    [Theory]
+    [InlineData("\"FireGuns\": [\"pad:" + StickId + "/fullaxis:1+@0\"]", InputAction.FireGuns)]
+    [InlineData("\"PitchUp\": [\"keyboard/fullaxis:1+@0\"]", InputAction.PitchUp)]
+    [InlineData("\"PitchUp\": [\"pad:" + StickId + "/fullaxis:1@0\"]", InputAction.PitchUp)]
+    [InlineData("\"PitchUp\": [\"pad:" + StickId + "/fullaxis:1+\"]", InputAction.PitchUp)]
+    [InlineData("\"FireGuns\": [\"keyboard/hat:0:Up\"]", InputAction.FireGuns)]
+    [InlineData("\"FireGuns\": [\"pad:" + StickId + "/hat:0:Diagonal\"]", InputAction.FireGuns)]
+    [InlineData("\"FireGuns\": [\"pad:" + StickId + "/hat:0:3\"]", InputAction.FireGuns)]
+    public void Load_AMisplacedOrMalformedStickToken_LeavesTheRowAtItsDefault(string row, InputAction action)
+    {
+        var map = BindingStore.Deserialize(Row("flight", row), Pad, readsKeyboard: true).Map(InputContext.Flight);
+
+        Assert.Equal(DefaultBindings.MapFor(InputContext.Flight, Pad).Bindings(action), map.Bindings(action));
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesAStickHatDirection()
+    {
+        var json = Row("flight", "\"SelectOrdnance\": [\"pad:" + StickId + "/hat:0:left\"]");
+        var profile = ProfileOf(json);
+        var hat = new Binding(Stick, BindingControl.Hat(0, HatDirection.Left));
+
+        Assert.Equal(new[] { hat }, profile.Map(InputContext.Flight).Bindings(InputAction.SelectOrdnance));
+        Assert.Contains("pad:" + StickId + "/hat:0:Left", BindingStore.Serialize(1, profile), StringComparison.Ordinal);
+    }
+
+    /// <summary>A stick's buttons and axes past the gamepad range are written as numbers, never as
+    /// the engine enum's range sentinels, which name no control.</summary>
+    [Fact]
+    public void Encode_WritesStickControlsPastTheGamepadRangeAsNumbers()
+    {
+        int buttonSentinel = (int)JoyButton.SdlMax;
+        int axisSentinel = (int)JoyAxis.SdlMax;
+        Assert.Equal(
+            "pad:" + StickId + "/button:#" + buttonSentinel,
+            BindingStore.Encode(new Binding(Stick, BindingControl.Button(buttonSentinel))));
+        Assert.Equal(
+            "pad:" + StickId + "/button:#127",
+            BindingStore.Encode(new Binding(Stick, BindingControl.Button(127))));
+        Assert.Equal(
+            "pad:" + StickId + "/axis:#" + axisSentinel + "+@0.5",
+            BindingStore.Encode(new Binding(Stick, BindingControl.Axis(axisSentinel, 1, 0.5f))));
+        Assert.Equal(
+            new Binding(Stick, BindingControl.Button(buttonSentinel)),
+            BindingStore.Decode("pad:" + StickId + "/button:SdlMax"));
+    }
+
+    private static BindingProfile ProfileOf(string json) => BindingStore.Deserialize(json, Pad, readsKeyboard: true);
 
     private static string Row(string context, string body) =>
         "{\"version\": 1, \"player\": 1, \"contexts\": {\"" + context + "\": {" + body + "}}}";

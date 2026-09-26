@@ -71,6 +71,9 @@ public sealed record MenuCommands
     /// <summary>Delete one character of captured text (edge).</summary>
     public bool Erase { get; init; }
 
+    /// <summary>Clear the highlighted control on a rebinding page (edge).</summary>
+    public bool Unbind { get; init; }
+
     /// <summary>This seat's pointer, or null when its devices have none.</summary>
     public MenuPointer? Pointer { get; init; }
 }

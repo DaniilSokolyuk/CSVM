@@ -218,6 +218,7 @@ public sealed partial class PausePreferences : Control
         _seat.CapturingText = _shell.CapturingText;
         bool picture = _view.AdvanceMovies(delta);
         picture |= _view.AdvanceCaret(delta);
+        picture |= _view.AdvanceMarquee(delta);
         if (changed)
         {
             Compose();
