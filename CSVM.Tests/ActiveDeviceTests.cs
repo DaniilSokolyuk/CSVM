@@ -166,6 +166,23 @@ public class ActiveDeviceTests
     }
 
     [Fact]
+    public void ALeverTheKeyboardHalfCannotSeeReadsCentredAndNeverClaimsThePrompt()
+    {
+        var device = new ActiveDevice();
+        var map = FlightMap();
+        var stick = DeviceId.Joypad("test-stick");
+        map.Add(InputAction.ThrottleLever, new Binding(stick, BindingControl.FullAxis(2, true, 0.02f)));
+        var trigger = new Fake();
+        trigger.Buttons.Add((Pad, (int)JoyButton.LeftStick));
+        Observe(device, map, new Fake(), trigger);
+
+        // The blind half reads the lever at 0.5, PressTravel itself; the pad side then falls quiet.
+        Assert.True(map.Resolve(new Fake()).Value(InputAction.ThrottleLever) >= ActiveDevice.PressTravel);
+        Assert.False(Observe(device, map, new Fake(), new Fake()));
+        Assert.Equal(DeviceSide.Pad, device.Side);
+    }
+
+    [Fact]
     public void OnTheStickAPromptNamesTheSticksBindingOverTheGamepadsListedFirst()
     {
         var stick = DeviceId.Joypad("test-stick");

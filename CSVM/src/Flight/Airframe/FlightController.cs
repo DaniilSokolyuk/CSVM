@@ -3451,7 +3451,8 @@ public partial class FlightController : Node3D
         // A prompt names the device the seat last took input from, so a handover recomposes it.
         if (_bindings.ObserveDevice(_keyActions.Current, _padActions.Current, _stickAxes.Current))
         {
-            LogHandover();
+            if (IsHumanPiloted)
+                LogHandover();
             ComposeControlPrompts();
         }
     }

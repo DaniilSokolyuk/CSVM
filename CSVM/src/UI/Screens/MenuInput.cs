@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using CSVM.Bindings;
+using CSVM.Flight.Airframe;
 using CSVM.Sticks;
 using CSVM.UI.Boards;
 using CSVM.Utils;
@@ -144,8 +145,11 @@ public sealed class MenuInput
     private readonly PlayerActions _keys;
     private readonly PlayerActions _padOnly;
 
-    // The keyboard half alone, over the pad-muted state, and which side the hints name.
+    // The keyboard half alone, over the pad-muted state, and which side the hints name. The flight
+    // sticks alone tell the hints a stick's press from a gamepad's.
     private readonly PlayerActions _keysOnly;
+    private readonly PlayerActions _sticksOnly;
+    private readonly StickSplit _sticksAlone;
     private readonly ActiveDevice _device = new();
 
     // The stick profiles this seat's menu rows follow, asked per tick so a set started after this
@@ -198,6 +202,8 @@ public sealed class MenuInput
         _typingKeys = new PlayerActions(TypingMap(map), true);
         _padOnly = new PlayerActions(map, false);
         _keysOnly = new PlayerActions(map, true);
+        _sticksOnly = new PlayerActions(map, false);
+        _sticksAlone = StickSplit.SticksOnly(_devices);
         _live = _keys;
     }
 
@@ -361,7 +367,7 @@ public sealed class MenuInput
     /// words or as a glyph. Empty where this seat reaches none, which leaves the hint off rather
     /// than naming a control the player does not have.</summary>
     public ControlLine Hint(string template, InputAction action) =>
-        ControlLine.For(template, Map, action, _device.Side, Keyboard);
+        ControlLine.For(template, Map, action, _device.Side, Keyboard, _device.OnStick);
 
     /// <summary>Puts this seat on the menu keymap <paramref name="player"/> saved, in place, so the
     /// map this poller's readers hold is the one that changed. Anything the file does not carry
@@ -379,7 +385,7 @@ public sealed class MenuInput
     public void Poll(float dt)
     {
         ReadDevices();
-        DeviceMoved = _device.Observe(_keysOnly.Current, _padOnly.Current, Keyboard);
+        DeviceMoved = _device.Observe(_keysOnly.Current, _padOnly.Current, Keyboard, _sticksOnly.Current);
         Move = StepAxis(RawDir(), ref _dirPrev, _repeat, dt);
         MoveX = StepAxis(RawDirX(), ref _dirXPrev, _repeatX, dt);
         PadMove = StepAxis(RawPadDir(), ref _dirPadPrev, _repeatPad, dt);
@@ -447,7 +453,7 @@ public sealed class MenuInput
         PrimeText();
         // Seeds the handover's own counts too, so a button still held from whatever raised this
         // screen is not read as the press that hands the hints to the other device.
-        _device.Observe(_keysOnly.Current, _padOnly.Current, Keyboard);
+        _device.Observe(_keysOnly.Current, _padOnly.Current, Keyboard, _sticksOnly.Current);
         Accept = Back = PadBack = Start = Loadout = Presets = Unbind = DeviceMoved = false;
     }
 
@@ -587,6 +593,7 @@ public sealed class MenuInput
         _live.Poll(_devices);
         _padOnly.Poll(_devices);
         _keysOnly.Poll(_padMuted);
+        _sticksOnly.Poll(_sticksAlone);
     }
 
     // A plug, or a stick settling into the generic default, changes the active profiles. The menu

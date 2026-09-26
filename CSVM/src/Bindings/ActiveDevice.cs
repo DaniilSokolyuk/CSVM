@@ -130,12 +130,14 @@ public sealed class ActiveDevice
 
     // How many of the seat's actions one side is deflecting past PressTravel. A count rather than a
     // flag, so a press registers even while something else on the same side stays down.
+    // ⚠ An absolute row is a position, never a press. A half blind to the lever's stick reads it
+    // centred at 0.5, which held the keyboard side "active" and flicked the prompt to a key.
     private static int ActiveCount(ActionSnapshot snapshot)
     {
         int active = 0;
         for (int i = 0; i < ActionCount; i++)
         {
-            if (snapshot.Value((InputAction)i) >= PressTravel)
+            if (!AxisPairs.IsAbsolute((InputAction)i) && snapshot.Value((InputAction)i) >= PressTravel)
                 active++;
         }
 

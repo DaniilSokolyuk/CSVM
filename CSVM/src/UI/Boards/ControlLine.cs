@@ -87,10 +87,10 @@ public sealed record ControlLine
     /// told to press, filled into <paramref name="template"/>, or an empty line where that seat can
     /// reach no binding for it.</summary>
     public static ControlLine For(string template, ActionMap map, InputAction action, DeviceSide side,
-        bool readsKeyboard)
+        bool readsKeyboard, bool onStick = false)
     {
         var bindings = map?.Bindings(action);
-        return bindings != null && ActiveDevice.PromptBinding(bindings, side, readsKeyboard) is { } binding
+        return bindings != null && ActiveDevice.PromptBinding(bindings, side, readsKeyboard, onStick) is { } binding
             ? Compose(template, binding)
             : Empty;
     }
