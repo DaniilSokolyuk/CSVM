@@ -97,6 +97,10 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
     /// answer, which is how a guest board learns that the host has launched.</summary>
     public int Held => _held.Count;
 
+    /// <summary>How many times a peer came or went, or a payload was kept here. A bound session's
+    /// own traffic and a dropped payload do not count, so a board repaints on news alone.</summary>
+    public int Changes { get; private set; }
+
     /// <summary>Whether a session has bound this lobby.</summary>
     public bool Bound => _listener != null;
 
@@ -261,11 +265,13 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
         // newcomer never reaches it. An unbound lobby announces every peer when a session binds.
         Tell(peer, new BuildVersionMessage(_version));
         SendAdvert(peer);
+        Changes++;
     }
 
     /// <inheritdoc/>
     public void OnPeerDisconnected(int peer)
     {
+        Changes++;
         _heard.Remove(peer);
         _clashing.Remove(peer);
         _held.RemoveAll(held => held.Peer == peer);
@@ -290,83 +296,10 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
     /// <inheritdoc/>
     public void OnPayload(int peer, int channel, ReadOnlySpan<byte> payload)
     {
-        if (BuildVersionMessage.TryRead(payload, out var named))
+        if (Keep(peer, channel, payload))
         {
-            Heard(peer, named.Version);
-            return;
+            Changes++;
         }
-
-        // A refused guest reads why it was refused, so a close notice is taken from any peer.
-        if (SessionClosedMessage.TryRead(payload, out var closed))
-        {
-            Closed = closed;
-            return;
-        }
-
-        if (_clashing.Contains(peer))
-        {
-            return;
-        }
-
-        if (SessionAdvertMessage.TryRead(payload, out var advert))
-        {
-            Advert = advert;
-            return;
-        }
-
-        if (CoopFlowMessage.TryRead(payload, out var flow))
-        {
-            Flow = flow;
-            Flows++;
-            // A flight under a new round is the host's restart. The ending of a flight names a
-            // board instead, and a bound session still hears that flight's tail.
-            _flightOver |= _listener != null && _boundFlow is { Screen: NetCoopScreen.InMission } under
-                && flow.Screen == NetCoopScreen.InMission && flow.Epoch != under.Epoch;
-            return;
-        }
-
-        if (CoopPickMessage.TryRead(payload, out var pick))
-        {
-            // A guest picks only on a board, so whatever it sent before is a flight's that ended.
-            _picks[peer] = pick;
-            _held.RemoveAll(held => held.Peer == peer);
-            _unpicked.Remove(peer);
-            return;
-        }
-
-        if (_unpicked.Contains(peer))
-        {
-            return;
-        }
-
-        if (CoopSeatFitMessage.TryRead(payload, out var seatFit))
-        {
-            _seatFits[seatFit.Seat] = seatFit.Fit;
-            return;
-        }
-
-        if (TakeDogfight(peer, payload))
-        {
-            return;
-        }
-
-        if (_listener != null && !_flightOver)
-        {
-            if (_bound.Contains(peer))
-            {
-                _listener.OnPayload(peer, channel, payload);
-            }
-
-            return;
-        }
-
-        // Past the depth the oldest goes. A lobby nobody ever binds must not grow without bound.
-        if (_held.Count >= HeldPayloads)
-        {
-            _held.RemoveAt(0);
-        }
-
-        _held.Add((peer, channel, payload.ToArray()));
     }
 
     /// <summary>Tells <paramref name="peer"/> why it is being sent away, with this end's version and
@@ -383,6 +316,90 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
     {
         _held.Clear();
         (_inner as IDisposable)?.Dispose();
+    }
+
+    // Takes one payload into the lobby's state, and says whether it was kept here. A payload passed
+    // to a bound session, or dropped, is not.
+    private bool Keep(int peer, int channel, ReadOnlySpan<byte> payload)
+    {
+        if (BuildVersionMessage.TryRead(payload, out var named))
+        {
+            Heard(peer, named.Version);
+            return true;
+        }
+
+        // A refused guest reads why it was refused, so a close notice is taken from any peer.
+        if (SessionClosedMessage.TryRead(payload, out var closed))
+        {
+            Closed = closed;
+            return true;
+        }
+
+        if (_clashing.Contains(peer))
+        {
+            return false;
+        }
+
+        if (SessionAdvertMessage.TryRead(payload, out var advert))
+        {
+            Advert = advert;
+            return true;
+        }
+
+        if (CoopFlowMessage.TryRead(payload, out var flow))
+        {
+            Flow = flow;
+            Flows++;
+            // A flight under a new round is the host's restart. The ending of a flight names a
+            // board instead, and a bound session still hears that flight's tail.
+            _flightOver |= _listener != null && _boundFlow is { Screen: NetCoopScreen.InMission } under
+                && flow.Screen == NetCoopScreen.InMission && flow.Epoch != under.Epoch;
+            return true;
+        }
+
+        if (CoopPickMessage.TryRead(payload, out var pick))
+        {
+            // A guest picks only on a board, so whatever it sent before is a flight's that ended.
+            _picks[peer] = pick;
+            _held.RemoveAll(held => held.Peer == peer);
+            _unpicked.Remove(peer);
+            return true;
+        }
+
+        if (_unpicked.Contains(peer))
+        {
+            return false;
+        }
+
+        if (CoopSeatFitMessage.TryRead(payload, out var seatFit))
+        {
+            _seatFits[seatFit.Seat] = seatFit.Fit;
+            return true;
+        }
+
+        if (TakeDogfight(peer, payload))
+        {
+            return true;
+        }
+
+        if (_listener != null && !_flightOver)
+        {
+            if (_bound.Contains(peer))
+            {
+                _listener.OnPayload(peer, channel, payload);
+            }
+
+            return false;
+        }
+
+        // Past the depth the oldest goes. A lobby nobody ever binds must not grow without bound.
+        if (_held.Count >= HeldPayloads)
+        {
+            _held.RemoveAt(0);
+        }
+
+        _held.Add((peer, channel, payload.ToArray()));
+        return true;
     }
 
     // The Dogfight lobby's three messages. A chat inbox past the held depth drops its oldest line,

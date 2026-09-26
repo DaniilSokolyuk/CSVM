@@ -29,7 +29,8 @@ internal static class MenuOriginalCoopFlowSuites
         "The Original co-op session flow over the loopback: a joined guest lands on the host's cabin "
         + "with every navigation button greyed and dead and is seated under its own last pilot's name, "
         + "follows the host into the briefing and the flight check, where its pick carries its plane "
-        + "and ammunition and the host's FLY MISSION waits until the guest's Ready arrives, a host "
+        + "and ammunition and the host's FLY MISSION waits until the guest's Ready arrives, which "
+        + "repaints the host's check with no input at the host, a host "
         + "back in the cabin clears the Ready, the host's launch names the flight InMission and the "
         + "guest launches into nothing it did not see open, the guest's plane and ammunition outlive "
         + "the host's Restart and the host builds the guest's seat on them, the host's debrief is the "
@@ -170,7 +171,7 @@ internal static class MenuOriginalCoopFlowSuites
 
         int picked = campaign.GuestAirframe;
         var fit = campaign.GuestCoopFit;
-        ClickRow(ctx, guest, nameof(BoardButton.FlyMission));
+        ReadyRepaintsTheHost(ctx, host, guest);
         Pump(host, guest, frames: 4);
         ctx.Check(guest.Door.CoopReady && host.Door.CoopAllReady && host.Door.CoopGuests[0].Ready,
             $"the guest's press answers Ready and the host hears it ({guest.Door.CoopReady}, {host.Door.CoopAllReady})");
@@ -188,6 +189,31 @@ internal static class MenuOriginalCoopFlowSuites
         ctx.Check(host.Shell.Screen == OriginalScreen.CampaignCabin && !host.Door.CoopAllReady && !guest.Door.CoopReady,
             $"the host backing out to the cabin clears it on both ends ({host.Shell.Screen}, {host.Door.CoopAllReady}, {guest.Door.CoopReady})");
         ctx.Check(guest.Shell.Screen == OriginalScreen.CampaignCabin, $"and the guest follows back ({guest.Shell.Screen})");
+    }
+
+    // The guest's Ready on the host's check, with no input at the host. A quiet frame keeps the
+    // board it drew, and the Ready arriving recomposes it with the guest's chip marked.
+    private static void ReadyRepaintsTheHost(TestContext ctx, End host, End guest)
+    {
+        var shown = (host.Host.Active as OriginalPresentation)!;
+        host.Host.Tick(Dt);
+        var quiet = shown.ShownBoard;
+        host.Host.Tick(Dt);
+        ctx.Check(quiet != null && ReferenceEquals(shown.ShownBoard, quiet),
+            $"ABLE-TO-FAIL CONTROL: a quiet frame on the host's check composes no new board");
+        ClickRow(ctx, guest, nameof(BoardButton.FlyMission));
+
+        // The press lands after the guest's door stepped, so its pick leaves on the next frame.
+        guest.Host.Tick(Dt);
+        int frames = 0;
+        while (frames < 2 && ReferenceEquals(shown.ShownBoard, quiet))
+        {
+            host.Host.Tick(Dt);
+            frames++;
+        }
+
+        ctx.Check(!ReferenceEquals(shown.ShownBoard, quiet) && host.Door.CoopGuests is [{ Ready: true }],
+            $"the guest's Ready repaints the host's check within {frames} frame(s) with no input at the host");
     }
 
     // The host flies once the guest is Ready again; the flight is advertised InMission.

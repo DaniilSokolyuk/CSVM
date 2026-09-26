@@ -2611,9 +2611,11 @@ public sealed partial class LaunchMenu : CanvasLayer
             _error = net.Fault;
         }
 
+        // The door's revision stands for everything it heard. The text reading stands for the
+        // board's own rows, which a step can rewrite without the door hearing anything.
         string reading = _screen == Screen.Campaign
-            ? $"{NetBand()}|{string.Join(" ", ChipTexts())}"
-            : $"{_coopWait}|{NetworkStatus()}|{RowText(CurrentIndex)}";
+            ? $"{net.Revision}|{NetBand()}|{string.Join(" ", ChipTexts())}"
+            : $"{net.Revision}|{_coopWait}|{NetworkStatus()}|{RowText(CurrentIndex)}";
         bool changed = reading != _netStatus;
         _netStatus = reading;
         return changed && _screen is Screen.Network or Screen.Campaign;

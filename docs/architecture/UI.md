@@ -1335,7 +1335,7 @@ a board edits, the socket it opens, and the readouts a board draws (`Stage`, `Pe
 `PortMap`, `Fault`, `HostStarted`, `Advert`). Carriers and port maps arrive as delegates (the
 launcher's `Net/NetCarrier.cs`, or a suite's loopback mesh and no router); every open wraps its
 carrier in a `Net/NetLobby.cs`. `OpenHost`, `OpenCoopHost` (whose `Offer` names the mission) and
-`OpenJoin` open; `Step` carries the link; `Close` unmaps the lease. In co-op `ShowCoop` sends each
+`OpenJoin` open; `Step` carries the link and moves `Revision` on news, which both menus repaint on; `Close` unmaps the lease. In co-op `ShowCoop` sends each
 guest the host's boards, `CoopAllReady` holds FLY MISSION until every guest is Ready, `CoopLaunchDue` tells a guest to follow, `TellSeatFits` sends every seat's fit before the opener, and
 `LeaveCoopMission` tells the host at once that a guest walked out. `OpenDogfightHost` opens a Dogfight lobby, and `Dogfight` is the `DogfightLobby` either end stands in, created on a guest when its host's advert names a Dogfight and unshown behind a Built-in host; `DogfightLaunchDue` tells a guest its host has launched, and a guest back from a match waits for the host's next round. `Version` is the build's `Net/NetBuildVersion.cs`: a host refuses a guest of another version, and a guest such a host, with both versions on `Fault`. Boards: `LaunchMenu.cs`.
 

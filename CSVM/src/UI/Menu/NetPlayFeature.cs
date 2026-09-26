@@ -130,6 +130,7 @@ public sealed class NetPlayFeature : IMenuFeature
     private bool _released;
     private double _joining;
     private int _mappedPort;
+    private DoorReading _seen;
 
     /// <summary>A door over the carrier <paramref name="openHost"/> and <paramref name="openJoin"/>
     /// build. The first takes a port, a guest count and a bind address, the second an address
@@ -153,6 +154,12 @@ public sealed class NetPlayFeature : IMenuFeature
 
     /// <summary>Where the door stands.</summary>
     public NetDoorStage Stage { get; private set; } = NetDoorStage.Shut;
+
+    /// <summary>Moves on at the end of any <see cref="Step"/> that finds the door's state changed.
+    /// That is a peer, a lobby message, the stage, a fault, the port mapping or the games heard. A
+    /// menu repaints the screen showing when it moves, since no input event follows network news.
+    /// </summary>
+    public int Revision { get; private set; }
 
     /// <summary>This build's version as the door names it to every peer and every LAN search. A
     /// host refuses a guest whose version does not play with it, and a guest refuses such a host.
@@ -641,120 +648,15 @@ public sealed class NetPlayFeature : IMenuFeature
     /// </summary>
     public void Step(double dt)
     {
-        StepLinger(dt);
-        _search?.Poll();
-        if (_transport == null)
+        StepDoor(dt);
+
+        // Read against the last step's reading rather than this step's start: a loopback carrier
+        // delivers on the sender's send, between this door's steps.
+        var reading = Read();
+        if (reading != _seen)
         {
-            return;
-        }
-
-        // A released wire is stepped by the session that carries it. A co-op door still seats,
-        // advertises and follows its link here, since it holds the session together in flight.
-        bool coop = _kind == NetSessionKind.CampaignCoop || IsCoopGuest;
-        if (_released && !coop)
-        {
-            // A Dogfight guest in flight still watches its host. A close notice or a lost link
-            // both mean the host left the match.
-            if (Stage == NetDoorStage.Joined && HostGone())
-            {
-                Fail(CoopDoorText.HostLeft);
-                return;
-            }
-
-            _responder?.Poll(CurrentAdvert(), Port);
-            return;
-        }
-
-        if (!_released)
-        {
-            _transport.Step(dt);
-        }
-
-        TakeMapping();
-        if (Stage == NetDoorStage.Hosting)
-        {
-            RefuseClashing();
-            if (_kind == NetSessionKind.CampaignCoop)
-            {
-                Admit();
-                SendFlows();
-            }
-
-            HangUpRefused(dt);
-            _dogfight?.Step();
-            var advert = CurrentAdvert();
-            _transport.Advertise(advert);
-            _responder?.Poll(advert, Port);
-            return;
-        }
-
-        // A host that says why it is sending this guest away is believed before its link drops.
-        if (_transport.Closed is { } closed)
-        {
-            Fail(closed.Reason switch
-            {
-                NetCloseReason.Full => CoopDoorText.GameFull,
-                NetCloseReason.VersionMismatch => CoopDoorText.VersionMismatch(closed.Host, closed.Guest),
-                _ => CoopDoorText.HostClosed,
-            });
-            return;
-        }
-
-        // A guest refuses a host of another version itself, whether or not the host says so.
-        if (_transport.Clashing.Count > 0 && _transport.TryVersionOf(_transport.Clashing[0], out var theirs))
-        {
-            Fail(CoopDoorText.VersionMismatch(theirs, Version));
-            return;
-        }
-
-        if (Stage == NetDoorStage.Joined)
-        {
-            bool hostGone = _hostPeer >= 0 && !Contains(_transport.AllPeers, _hostPeer);
-            if (_link?.LinkState == EnetLinkState.Down || hostGone)
-            {
-                Fail(CoopDoorText.HostLeft);
-                return;
-            }
-
-            if (IsCoopGuest)
-            {
-                FollowHost();
-            }
-            else if (IsDogfightGuest)
-            {
-                _dogfight ??= new DogfightLobby(_transport, () => PlayerName, _hostPeer);
-                if (_flownEpoch is { } flown)
-                {
-                    // The host names a new round only once its own match is freed, so everything
-                    // held up to that word is the old match's.
-                    _transport.DropHeld();
-                    _flownEpoch = _dogfight.Options.Epoch == flown ? flown : null;
-                }
-
-                _dogfight.Step();
-            }
-
-            return;
-        }
-
-        if (Stage != NetDoorStage.Joining)
-        {
-            return;
-        }
-
-        _joining += dt;
-        if (_link?.LinkState == EnetLinkState.Up || (_link == null && _transport.AllPeers.Count > 0))
-        {
-            Stage = NetDoorStage.Joined;
-            _hostPeer = _transport.AllPeers.Count > 0 ? _transport.AllPeers[0] : -1;
-        }
-        else if (_link?.LinkState == EnetLinkState.Down)
-        {
-            Fail($"{Address}:{Port} refused the join");
-        }
-        else if (_joining >= JoinTimeoutSeconds)
-        {
-            Fail($"{Address}:{Port} did not answer in {JoinTimeoutSeconds:0} seconds");
+            _seen = reading;
+            Revision++;
         }
     }
 
@@ -899,6 +801,126 @@ public sealed class NetPlayFeature : IMenuFeature
             latest = map(port);
             held = latest.IsMapped ? latest.LeaseSeconds : held;
             wait = UpnpLease.NextRenewal(latest, held);
+        }
+    }
+
+    // The step itself. Every return leaves the door in a state Step then reads.
+    private void StepDoor(double dt)
+    {
+        StepLinger(dt);
+        _search?.Poll();
+        if (_transport == null)
+        {
+            return;
+        }
+
+        // A released wire is stepped by the session that carries it. A co-op door still seats,
+        // advertises and follows its link here, since it holds the session together in flight.
+        bool coop = _kind == NetSessionKind.CampaignCoop || IsCoopGuest;
+        if (_released && !coop)
+        {
+            // A Dogfight guest in flight still watches its host. A close notice or a lost link
+            // both mean the host left the match.
+            if (Stage == NetDoorStage.Joined && HostGone())
+            {
+                Fail(CoopDoorText.HostLeft);
+                return;
+            }
+
+            _responder?.Poll(CurrentAdvert(), Port);
+            return;
+        }
+
+        if (!_released)
+        {
+            _transport.Step(dt);
+        }
+
+        TakeMapping();
+        if (Stage == NetDoorStage.Hosting)
+        {
+            RefuseClashing();
+            if (_kind == NetSessionKind.CampaignCoop)
+            {
+                Admit();
+                SendFlows();
+            }
+
+            HangUpRefused(dt);
+            _dogfight?.Step();
+            var advert = CurrentAdvert();
+            _transport.Advertise(advert);
+            _responder?.Poll(advert, Port);
+            return;
+        }
+
+        // A host that says why it is sending this guest away is believed before its link drops.
+        if (_transport.Closed is { } closed)
+        {
+            Fail(closed.Reason switch
+            {
+                NetCloseReason.Full => CoopDoorText.GameFull,
+                NetCloseReason.VersionMismatch => CoopDoorText.VersionMismatch(closed.Host, closed.Guest),
+                _ => CoopDoorText.HostClosed,
+            });
+            return;
+        }
+
+        // A guest refuses a host of another version itself, whether or not the host says so.
+        if (_transport.Clashing.Count > 0 && _transport.TryVersionOf(_transport.Clashing[0], out var theirs))
+        {
+            Fail(CoopDoorText.VersionMismatch(theirs, Version));
+            return;
+        }
+
+        if (Stage == NetDoorStage.Joined)
+        {
+            bool hostGone = _hostPeer >= 0 && !Contains(_transport.AllPeers, _hostPeer);
+            if (_link?.LinkState == EnetLinkState.Down || hostGone)
+            {
+                Fail(CoopDoorText.HostLeft);
+                return;
+            }
+
+            if (IsCoopGuest)
+            {
+                FollowHost();
+            }
+            else if (IsDogfightGuest)
+            {
+                _dogfight ??= new DogfightLobby(_transport, () => PlayerName, _hostPeer);
+                if (_flownEpoch is { } flown)
+                {
+                    // The host names a new round only once its own match is freed, so everything
+                    // held up to that word is the old match's.
+                    _transport.DropHeld();
+                    _flownEpoch = _dogfight.Options.Epoch == flown ? flown : null;
+                }
+
+                _dogfight.Step();
+            }
+
+            return;
+        }
+
+        if (Stage != NetDoorStage.Joining)
+        {
+            return;
+        }
+
+        _joining += dt;
+        if (_link?.LinkState == EnetLinkState.Up || (_link == null && _transport.AllPeers.Count > 0))
+        {
+            Stage = NetDoorStage.Joined;
+            _hostPeer = _transport.AllPeers.Count > 0 ? _transport.AllPeers[0] : -1;
+        }
+        else if (_link?.LinkState == EnetLinkState.Down)
+        {
+            Fail($"{Address}:{Port} refused the join");
+        }
+        else if (_joining >= JoinTimeoutSeconds)
+        {
+            Fail($"{Address}:{Port} did not answer in {JoinTimeoutSeconds:0} seconds");
         }
     }
 
@@ -1309,4 +1331,15 @@ public sealed class NetPlayFeature : IMenuFeature
         Fault = why;
         Stage = NetDoorStage.Failed;
     }
+
+    private DoorReading Read() => new(
+        _transport, _transport?.Changes ?? 0, _transport?.Held ?? 0, Stage, Fault, PortMap, _search,
+        _search?.Changes ?? 0, SearchFault, Link, _admitted.Count, _dogfight);
+
+    // Everything a board draws from this door that can move without an input event. The lobby's
+    // and the search's own counters stand for what arrived through them.
+    private readonly record struct DoorReading(
+        NetLobby? Wire, int WireChanges, int Held, NetDoorStage Stage, string Fault, UpnpPortMapResult? PortMap,
+        LanSearch? Search, int SearchChanges, string SearchFault, EnetLinkState? Link, int Admitted,
+        DogfightLobby? Dogfight);
 }

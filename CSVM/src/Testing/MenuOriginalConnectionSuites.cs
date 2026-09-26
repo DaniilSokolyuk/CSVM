@@ -121,7 +121,8 @@ internal static class MenuOriginalConnectionSuites
         + "lands in it, the host's map, Time 5 and Limited Lives reach the guest, a guest's option "
         + "set is refused, a Ready guest's plane box stays live and its changed pick clears its Ready "
         + "on both ends, the guest's second stock plane and a non-default shell build its seat "
-        + "in the host's field, one chat line arrives once on each end, LAUNCH waits for every "
+        + "in the host's field, one chat line arrives once on each end, a guest's line past the "
+        + "chat's depth repaints the host's lobby with no input at the host, LAUNCH waits for every "
         + "Ready, the guest launches behind the host on the same rules, a completed match lands "
         + "both ends on Game Scores with the same scores and every Ready cleared, a second LAUNCH "
         + "goes out with nobody rejoining, and Leave Game lands a second guest on the Connection "
@@ -665,6 +666,36 @@ internal static class MenuOriginalConnectionSuites
         var there = guest.Door.Dogfight!.Chat;
         ctx.Check(here.Count == 1 && there.Count == 1 && here[0].Text == "hello" && there[0].Text == "hello",
             $"one chat line arrives once on each end (host {here.Count}, guest {there.Count})");
+        ChatPastTheDepthRepaints(ctx, host, guest, ends);
+    }
+
+    // A line arriving on a full chat leaves its count where it was, so only the door's news can
+    // tell the host's board to repaint. The host sends no input while it arrives.
+    private static void ChatPastTheDepthRepaints(TestContext ctx, End host, End guest, List<End> ends)
+    {
+        var said = guest.Door.Dogfight!;
+        for (int line = 0; line < DogfightLobby.ChatDepth; line++)
+        {
+            said.Say($"line {line.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            Pump(ends.ToArray());
+        }
+
+        Pump(ends.ToArray());
+        var shown = (host.Host.Active as OriginalPresentation)!;
+        var quiet = shown.ShownBoard;
+        host.Host.Tick(Dt);
+        ctx.Check(host.Door.Dogfight!.Chat.Count == DogfightLobby.ChatDepth && quiet != null && ReferenceEquals(shown.ShownBoard, quiet),
+            $"ABLE-TO-FAIL CONTROL: a quiet frame on the host's full lobby chat composes no new board ({host.Door.Dogfight!.Chat.Count} lines)");
+        said.Say("the newest line");
+        int frames = 0;
+        while (frames < 2 && ReferenceEquals(shown.ShownBoard, quiet))
+        {
+            host.Host.Tick(Dt);
+            frames++;
+        }
+
+        ctx.Check(!ReferenceEquals(shown.ShownBoard, quiet) && host.Door.Dogfight!.Chat[^1].Text == "the newest line",
+            $"a guest's line past the chat's depth repaints the host's lobby within {frames} frame(s) with no input at the host");
     }
 
     // LAUNCH! waits for both Ready marks, then hands the host's launch out.

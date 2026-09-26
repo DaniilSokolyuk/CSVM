@@ -50,6 +50,10 @@ public sealed class LanSearch : IDisposable
     /// <summary>How many rounds this search has asked.</summary>
     public int Rounds => _round;
 
+    /// <summary>How many times <see cref="Games"/> changed: a game heard for the first time or
+    /// saying something new, or a silent one dropped.</summary>
+    public int Changes { get; private set; }
+
     /// <summary>The games heard in the current or the last round, in the order they first
     /// answered.</summary>
     public IReadOnlyList<LanGame> Games
@@ -70,7 +74,7 @@ public sealed class LanSearch : IDisposable
     /// one query under a fresh token to every address the round asks at.</summary>
     public void Ask()
     {
-        _games.RemoveAll(entry => entry.Round < _round);
+        Changes += _games.RemoveAll(entry => entry.Round < _round) > 0 ? 1 : 0;
         _round++;
         _token = (uint)_random.Next(1, int.MaxValue);
         int length = LanDiscovery.WriteQuery(_query, _token);
@@ -121,6 +125,7 @@ public sealed class LanSearch : IDisposable
         {
             if (_games[i].Game.Address == game.Address && _games[i].Game.Port == game.Port)
             {
+                Changes += _games[i].Game == game ? 0 : 1;
                 _games[i] = (game, _round);
                 return;
             }
@@ -129,6 +134,7 @@ public sealed class LanSearch : IDisposable
         if (_games.Count < MaxGames)
         {
             _games.Add((game, _round));
+            Changes++;
         }
     }
 }

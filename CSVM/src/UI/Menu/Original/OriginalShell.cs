@@ -647,7 +647,8 @@ public sealed partial class OriginalShell : IOriginalScreenHost
 
     /// <summary>One menu frame of the network door, whatever screen shows: the door is stepped, the
     /// cabin's co-op offer renewed and the Connection pages kept current. Returns whether the
-    /// picture changed.</summary>
+    /// picture changed. It has whenever the door's <see cref="NetPlayFeature.Revision"/> moved,
+    /// as a guest's Ready, a join, a host's word or a lobby line moves it.</summary>
     public bool StepNet(double dt)
     {
         if (_net is not { } net)
@@ -655,9 +656,9 @@ public sealed partial class OriginalShell : IOriginalScreenHost
             return false;
         }
 
-        string band = CoopDoorText.HostBand(net);
+        int revision = net.Revision;
         net.Step(dt);
-        bool changed = FollowCoopGuest(net) | FollowDogfight(net) | Campaign.StepCoop() | (CoopDoorText.HostBand(net) != band);
+        bool changed = FollowCoopGuest(net) | FollowDogfight(net) | Campaign.StepCoop() | (net.Revision != revision);
         return Connection.Tick(dt) | Lobby.Tick(dt) || changed;
     }
 

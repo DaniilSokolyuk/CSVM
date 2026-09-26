@@ -309,6 +309,10 @@ public sealed class OriginalPresentation : IMenuPresentation
     /// null while the presentation has no layer.</summary>
     internal ShotViewer? PhotoViewer => _shotViewer;
 
+    /// <summary>The board the view last composed, for a suite telling a repaint from a quiet frame:
+    /// each recompose hands the view a new one.</summary>
+    internal ComposedBoard? ShownBoard => _view?.Board;
+
     /// <summary>The board palette the shell's inks resolve to: list text in the file-wide
     /// disabled grey with the active white for the focused row, plaque labels in the paper
     /// button's own three colours.</summary>
