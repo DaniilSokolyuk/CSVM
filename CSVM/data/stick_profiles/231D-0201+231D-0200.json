@@ -15,9 +15,6 @@
       "FireGuns": [
         "button:#0"
       ],
-      "FireRockets": [
-        "button:#1"
-      ],
       "Nitro": [
         "button:#2"
       ],

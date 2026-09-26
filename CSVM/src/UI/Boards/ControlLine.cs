@@ -80,7 +80,7 @@ public sealed record ControlLine
             marked[..at],
             BindingLabels.Describe(binding),
             marked[(at + Slot.Length)..],
-            ControlGlyphs.For(binding.Control));
+            ControlGlyphs.For(binding));
     }
 
     /// <summary>The control of <paramref name="action"/> a seat on <paramref name="side"/> would be
