@@ -91,7 +91,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 ### Wave B, Linux build
 
 11. ☐ Linux `unzbd`: WSL toolchain and a musl build called from `ExportRelease.ps1`
-12. ☐ Linux export preset and `.tar.gz` packaging with executable bits
+12. ☑ Linux export preset and `.tar.gz` packaging with executable bits
 13. ☐ Linux README with an "On Steam Deck" section
 14. ☐ Pre-release Linux check in WSL: extract, then a headless mission load
 15. ☐ SDL2 stick bridge resolved per platform (after `PLAN-flight-sticks` lands)
@@ -391,7 +391,44 @@ contents as the Windows build. <TODO: exact command>
 **⚠ Traps.** A build through `/mnt/z` can be slow and may leave a Linux `target/` beside the Windows
 one; <TODO: decide whether to use `CARGO_TARGET_DIR` inside the distro>.
 
-## B12 ☐ Linux export preset and `.tar.gz` packaging with executable bits
+## B12 ☑ Linux export preset and `.tar.gz` packaging with executable bits
+
+**Landed.** `CSVM/export_presets.cfg` has a `Linux/X11` preset (`preset.1`, x86_64) carrying the
+Windows preset's filters, script mode, texture formats, embedded pck, Shader Baker and .NET options;
+it is not runnable and has no resource block to stamp. `ExportRelease.ps1 -Linux` is opt-in: a run
+without it produces the same Windows zip as before. With it, after the zip, the script exports the
+preset into `.scratch\export-linux\` (`CSVM.x86_64` plus `data_CSVM_linuxbsd_x86_64/`, the folder
+name Godot 4.7 gives a Linux .NET export), stages `tools/unzbd`, the README, the three licences and
+a Linux `BUILD-INFO.txt` (LF endings, Linux file names), and packs
+`.scratch\CSVM-v<version>-linux-x64.tar.gz` inside WSL Debian: a copy in the distro's filesystem gets
+`0755` on `CSVM.x86_64`, `tools/unzbd` and directories, `0644` on the rest, and is archived
+root-owned with entries at the archive root like the zip's. The script reads the two executables'
+modes back out of the archive and prints the tarball's SHA-256. `-LinuxUnzbd <path>` names the
+Linux `unzbd` (default `tools\mech3ax\target\x86_64-unknown-linux-musl\release\unzbd`, B11's
+output); a missing one, a missing `linux_release.x86_64` template or an unreachable WSL distro is a
+named error before the build. The Linux payload drops the PowerShell extractors, which SteamOS
+cannot run. The README is `packaging/README.md` through `$LinuxReadme`, the one line B13 changes.
+`packaging/MANIFEST.md` has the Linux table and `docs/tooling.md` the `-Linux` paragraph. In a
+worktree the script now takes `tools\` from `CSVM_DATA_ROOT`, as `RunTests.ps1` does.
+
+**PublishRelease (the TODO, resolved as a recommendation).** One release, two assets, one tag.
+`PublishRelease.ps1` gains a `-Linux` switch that passes `-Linux` to `ExportRelease.ps1`, checks the
+tarball exists and postdates the run like the zip, reads `BUILD-INFO.txt` out of it (Windows'
+`tar.exe` reads `.tar.gz`: `tar -xOf <tarball> BUILD-INFO.txt`) with the same refusals, runs B14's
+check before the tag, puts both SHA-256s in the notes and the tag message, and passes both paths to
+`gh release create`. Until then the Windows-only release path is unchanged.
+
+**Open, found while landing.** (1) The self-contained .NET runtime aborts at startup on a system
+without `libicu` ("Couldn't find a valid ICU package"), which the author's WSL Debian lacks. Either
+`InvariantGlobalization` in the csproj or a stated `libicu` requirement in the Linux README (B13)
+settles it; that is the author's call. (2) `LICENSE-thirdparty.txt` is assembled from the Windows
+artefacts (the `win-x64` runtime pack, the `x86_64-pc-windows-msvc` crate tree); the tarball needs
+a Linux-assembled notice before it ships. (3) The Linux export log reports a completed shader bake;
+whether the baked pipelines are used on the Deck's driver is B16's to see.
+
+**Verified.** <pending orchestrator run>
+
+**Original approach (kept for reference).**
 
 **Goal.** `ExportRelease.ps1` also produces `CSVM-v<version>-linux-x64.tar.gz` with the engine,
 `tools/unzbd`, the licences and `BUILD-INFO.txt`, and both executables marked executable.

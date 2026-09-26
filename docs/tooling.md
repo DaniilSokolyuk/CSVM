@@ -251,13 +251,28 @@ pinned editor: extract the inner `templates/` FILES of `tools/godot-4.7-mono-exp
 into `%APPDATA%\Godot\export_templates\4.7.stable.mono\` (create the dir; do not keep the
 `templates/` level).
 
-**`ExportRelease.ps1` (repo root)** takes no parameters and runs the whole sequence: it checks the
+**`ExportRelease.ps1` (repo root)** run with no parameters runs the whole Windows sequence: it checks the
 export templates, the fork-built `tools\mech3ax\target\release\unzbd.exe` and the rest of the
 payload exist (named errors up front), empties `.scratch\export\`,
 builds, imports headless, exports, copies the payload in beside the output, and zips the folder to
 `.scratch\CSVM-v<version>-win64.zip`. That folder is cleared because all of it is zipped, and the
 clear refuses to run if it holds a junction, since PowerShell 5.1's recursive delete follows one
-into its target.
+into its target. In a worktree, which has no `tools\`, it takes Godot, `unzbd.exe` and the mech3ax
+checkout from the tree `CSVM_DATA_ROOT` names, as `RunTests.ps1` does.
+
+**`-Linux`** is opt-in and leaves the Windows zip as it is. After the zip it exports the
+`Linux/X11` preset into `.scratch\export-linux\`, stages the Linux payload (`packaging/MANIFEST.md`'s
+Linux table) and packs `.scratch\CSVM-v<version>-linux-x64.tar.gz` inside WSL (`wsl -d Debian`),
+since only a tar written on Linux can carry the executable bit: the files are copied into the
+distro's own filesystem, given `0755` (`CSVM.x86_64`, `tools/unzbd`, directories) or `0644`
+(everything else), and archived root-owned. The script reads both executables' modes back from the
+archive and prints its SHA-256. `-LinuxUnzbd <path>` names the Linux `unzbd`, by default the musl
+build `tools\mech3ax\target\x86_64-unknown-linux-musl\release\unzbd`; a missing one, a missing Linux
+export template or an unreachable WSL distro is a named error before the build starts. ⚠ The
+self-contained .NET runtime needs `libicu` on the target; a system without it aborts at startup
+with "Couldn't find a valid ICU package installed on the system". The author's WSL Debian has no
+`libicu` and fails that way; with `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` the same build boots
+headless there and reaches the no-data screen.
 
 **The version has one home: `application/config/version` in `CSVM/project.godot`.** Bump it there
 and nowhere else. The engine reads it at startup for the log's first line and the menu's corner
