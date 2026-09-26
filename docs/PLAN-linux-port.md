@@ -84,7 +84,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 1. ☑ Extraction decoders move into `CSVM/src/Extraction/`, engine-side and platform-neutral
 2. ☑ `unzbd` runner: per-archive modes, messages, MPG copy, incremental skip, VERSION.json stamp
 3. ☑ Install discovery and case-insensitive install lookup, remembered path in `app_userdata`
-4. ☐ Headless `--extract=<install>` and its development options
+4. ☑ Headless `--extract=<install>` and its development options
 5. ☐ Extraction UI: Extract button, picker, progress, and the out-of-date-data screen
 6. ☐ Retire the scripts: `Extract.ps1` wrapper, one stamp constant, release payload, docs, bug form
 7. ☐ Windows release with in-engine extraction, through the Sandbox release test
@@ -209,7 +209,9 @@ two scratch trees: 186 files each with identical names, the two unzbd `.json` ou
 183 zips with identical entry lists and entry contents (59,610 entries), 185 extracted, 172 transform
 and 4,714 anim notes in both. A second run left 185 up to date. With unzip, 59,794 files each, all
 42,043 unpacked non-JSON files and 17,567 JSON files identical; only `VERSION.json` differs (date and
-`script`). Owed to A4: the 8-chapter `--freecam` regression on an engine-extracted tree.
+`script`). Through A4's `--extract`, the 8-chapter `--freecam` regression on an engine-extracted
+tree matches the script-extracted one: every chapter exits 0 with 0 errors, equal warning, node and
+mesh counts, identical screenshot hashes.
 
 **Original approach (kept for reference).**
 
@@ -269,8 +271,9 @@ in `user://options.json` (dropped on load unless fully qualified), read and writ
 refused on Z:), both mis-picks, the Windows order, a fake home with two Proton prefixes, and the two
 Steam roots folded through a junction.
 
-**Verified.** <pending orchestrator run>. Owed to A4: an extraction from a copy of the install with
-lower-cased folder names inside a case-sensitive folder, once `--extract` exists.
+**Verified.** Units pass on the merged tree. Through A4's `--extract`, a copy of the install's 199
+input files with every name lower-cased, inside a case-sensitive folder under `%TEMP%`, extracts
+with exit 0, and a second run reports all 185 archives up to date.
 
 **Original approach (kept for reference).**
 
@@ -302,7 +305,50 @@ confirmed working under `%TEMP%` on C: and refused on Z:).
 **⚠ Traps.** Extraction output keeps the names the install spells (`ExtractRof.ps1:367-369` explains
 why the MPG names are not normalised); only the lookup is case-insensitive, never a rename.
 
-## A4 ☐ Headless `--extract=<install>` and its development options
+## A4 ☑ Headless `--extract=<install>` and its development options
+
+**Landed.** `CSVM/src/Extraction/ExtractionRun.cs` is the one pipeline, engine-free, for `--extract`
+and A5's screen. `ExtractionRun.Run(new ExtractionRequest(install, dataRoot, unzbd, Force, Unzip),
+progress, cancel)` checks the pick with `InstallLocator.Check` (a non-install or a mis-pick fails
+before anything is written; the message names the install, it is not auto-corrected), runs
+`ZbdExtraction` into `<dataRoot>/extracted`, then `RofExtraction` into `extracted/rof` with every
+input resolved case-insensitively (`RofRequest`), then `ExtractionStampWriter.WriteRof`. It returns an
+`ExtractionResult` (install check, both halves' results, failures, warnings, `Succeeded`,
+`Summary(unzip)`). Failure rules: any ZBD failure, including a missing unzbd, stops the run before
+the `.rof` half; a missing `crimson.rof` fails; a missing `crimptch.rof`, missing movies or no string
+rows only warn; unknown archives warn. `ExtractionProgress` carries `ExtractionPhase` (Zbd, Rof,
+Done), a fraction (the ZBD half is 0 to 0.85, `ZbdFraction`), the console lines, and the raw
+`ZbdProgress`; a `Done` report at 1.0 always closes the run. Cancelling throws
+`OperationCanceledException` from either half. `RunToConsole` prints header, lines and summary and
+answers 0 or 1. `SessionSpec` parses `--extract=<install>` (`ExtractInstall`; a bare `--extract` is
+an empty path the check refuses), `--extract-force`, `--extract-unzip` and `--unzbd=`; each option
+without `--extract` warns and is ignored. `--extract` is a scripted mode named `extract` (hidden
+window, `extract-*.log`). The `Launcher` skips the boot stamp check, and after the instruments are
+built runs `RunToConsole` on a worker thread with per-frame processing off, then quits with its
+code, before any world or menu. The unzbd is `--unzbd`, else `tools/unzbd[.exe]` beside an exported
+executable, else `tools/mech3ax/target/release/` under the repo root (a worktree passes `--unzbd`).
+One change to A2's module: the root `rimage.zip` is always expanded (`ZbdPlan.AlwaysUnzipped`),
+because the HUD font, the reticle and the board art read its PNGs loose and `packaging\Extract.ps1`
+expanded it for a player's tree. The headless run does not write `RememberedInstall`; that is A5's.
+`CSVM.Tests/ExtractionRunTests.cs` covers the case-insensitive `.rof` inputs, the tool default, the
+rimage rule, progress order and monotonic fraction, the non-install and missing-tool refusals, a
+whole run and its up-to-date re-run over a fake unzbd, a failed and a missing archive, cancel, and
+the flag parsing and its stray-option warnings.
+
+**Verified.** <pending orchestrator run>. With the fork unzbd, `--headless --extract=CrimsonSkiesGame
+--extract-unzip --data-root=.scratch\a4-data` exited 0 (185 extracted, 183 unzipped, 172 transform
+and 4,714 anim notes; 847 `.rof` files, 184 `.BM` decoded, 10 of 10 movies, 1,283 string rows).
+Against `Z:\CSVM\extracted`: 61,021 files each with identical names; 60,651 byte-identical including
+all 183 zips, 368 PNGs pixel-identical, and only `VERSION.json` and `rof\ui_strings.json` differ in
+bytes, the latter equal row for row. A headless `--damage-test --chapter=C1` from that tree loaded
+its mission with no error. A missing install, the install's own `ZBD` folder, a missing `--unzbd`
+file and the absent default tool each exit 1 and write nothing. The 8-chapter `--freecam` regression
+through `RunProbe.ps1`'s hidden desktop, main tree against the engine tree: every chapter exit 0, no
+errors, identical warning, node and mesh counts, and identical screenshots (A2's owed item). A copy
+of the install's inputs with every name lower-cased in a case-sensitive `%TEMP%` folder extracted
+with exit 0 and re-ran as 185 up to date (A3's owed item); the copy was deleted.
+
+**Original approach (kept for reference).**
 
 **Goal.** `CSVM --headless --extract=<install>` runs the full extraction and exits with a status code,
 honouring `--data-root=`, `--extract-force`, `--extract-unzip` and `--unzbd=<path>`.
@@ -316,9 +362,11 @@ change.
 **Approach.** Parse the flags in `SessionSpec`, run A1 and A2 in order, print a summary like today's
 scripts, exit non-zero on any failure. Document the flags in `docs/cli.md`.
 
-**Model recommendation.** <TODO: not settled in session>
+**Model recommendation.** Settled by landing.
 
-**Verify.** <TODO: a `--extract` run into a scratch data root, then a headless mission load from it>
+**Verify.** A `--headless --extract=<install> --data-root=<scratch> --unzbd=<fork>` run, the tree
+compared with the script-built `extracted/` (file lists, SHA-256, zip entries, PNG pixels), then a
+headless `--damage-test --chapter=C1` mission load from it and the 8-chapter `--freecam` regression.
 
 **⚠ Traps.** `docs/cli.md` flag bullets are capped at 600 characters by `CheckDocEntries.ps1`.
 
@@ -445,9 +493,9 @@ check before the tag, puts both SHA-256s in the notes and the tag message, and p
 `gh release create`. Until then the Windows-only release path is unchanged.
 
 **Open, found while landing.** (1) The self-contained .NET runtime aborts at startup on a system
-without `libicu` ("Couldn't find a valid ICU package"), which the author's WSL Debian lacks. Either
-`InvariantGlobalization` in the csproj or a stated `libicu` requirement in the Linux README (B13)
-settles it; that is the author's call. (2) `LICENSE-thirdparty.txt` is assembled from the Windows
+without `libicu` ("Couldn't find a valid ICU package"), which the author's WSL Debian lacks. Settled
+by Decision 12: `InvariantGlobalization` in the engine csproj, so neither build needs a native
+locale library and B13's README states no `libicu` requirement. (2) `LICENSE-thirdparty.txt` is assembled from the Windows
 artefacts (the `win-x64` runtime pack, the `x86_64-pc-windows-msvc` crate tree); the tarball needs
 a Linux-assembled notice before it ships. (3) The Linux export log reports a completed shader bake;
 whether the baked pipelines are used on the Deck's driver is B16's to see.

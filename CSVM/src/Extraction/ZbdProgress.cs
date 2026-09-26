@@ -145,7 +145,7 @@ public sealed class ZbdExtractionResult
         yield return "  extracted:  " + Number(Extracted);
         yield return "  up to date: " + Number(UpToDate);
         yield return "  skipped:    " + Number(Skipped);
-        if (unzip)
+        if (unzip || Unzipped > 0)
         {
             yield return "  unzipped:   " + Number(Unzipped);
         }

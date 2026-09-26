@@ -68,6 +68,12 @@ public static class ZbdPlan
     public static bool UnzipNeeded(DateTime zipWrite, DateTime? folderWrite, bool force) =>
         force || folderWrite is not DateTime folder || zipWrite > folder;
 
+    /// <summary>Whether the output at <paramref name="outputRelativePath"/> is expanded into its
+    /// sibling folder even without the unzip option. Only the root <c>rimage.zip</c> is: the HUD
+    /// font, the gun reticle and the board art read its PNGs loose, never from the zip.</summary>
+    public static bool AlwaysUnzipped(string outputRelativePath) =>
+        string.Equals(outputRelativePath, "rimage.zip", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Sorts unzbd's stderr for an archive that extracted. A transform note is unzbd
     /// recomposing a node matrix from its angles inexactly; the stored matrix is kept and read.
     /// An anim note is an event field or connector ref failing validation; the value is kept.

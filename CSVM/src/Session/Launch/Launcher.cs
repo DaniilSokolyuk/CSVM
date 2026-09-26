@@ -442,8 +442,12 @@ public partial class Launcher : Node3D
         _messagesPath = _spec.Messages ?? Path.Combine(_dataRoot, "extracted", "messages.json");
         _rofPath = _spec.Rof ?? Path.Combine(_dataRoot, "extracted", "rof");
 
-        // The extraction tree's provenance check, at most one warning line, never a block.
-        ExtractionStamp.Check(_dataRoot);
+        // The extraction tree's provenance check, at most one warning line, never a block. An
+        // --extract run is about to write that tree, so a warning about it would only mislead.
+        if (_spec.ExtractInstall == null)
+        {
+            ExtractionStamp.Check(_dataRoot);
+        }
 
         // The drop-in writes statics every material built afterwards reads, so it is applied here
         // rather than carried as a session value.
@@ -573,6 +577,13 @@ public partial class Launcher : Node3D
         string hitchLogPath = Log.SinkPath
             ?? Path.Combine(Log.DirectoryFor(_repoRoot, _exported), $"{_spec.ModeName}-nolog.hitches.jsonl");
         _hitchSidecar = new HitchSidecar(hitchLogPath, _hitchMonitor.Last.Ring.Length);
+
+        // --extract builds no world and no menu: it writes the data root's extracted/ and quits.
+        if (_spec.ExtractInstall is { } extractInstall)
+        {
+            StartHeadlessExtraction(extractInstall);
+            return;
+        }
 
         // --headless + --screenshot can never produce a frame: the dummy renderer's GetImage()
         // never returns, so the capture loop never counts down. Reject the combo here, before
@@ -1099,6 +1110,34 @@ public partial class Launcher : Node3D
     // ⚠ Keep it internal rather than private. Nothing instantiates a Launcher headlessly, so the
     // launch-return suite pins this round trip on the live node or not at all.
     internal void LaunchedFrom(MenuExit exit) => ExitDestination = MenuReturnDestination.ForLaunch(exit);
+
+    // Runs on a worker thread, since the extraction must not hold the main thread. The per-frame
+    // callbacks are switched off until the quit, because _Ready returned before building what they read.
+    private void StartHeadlessExtraction(string install)
+    {
+        SetProcess(false);
+        SetPhysicsProcess(false);
+        SetProcessInput(false);
+        SetProcessUnhandledInput(false);
+        string unzbd = _spec.UnzbdPath is { } named ? Path.GetFullPath(named) : Extraction.ExtractionRun.DefaultUnzbd(_repoRoot, _exported);
+        var request = new Extraction.ExtractionRequest(install, _dataRoot, unzbd, _spec.ExtractForce, _spec.ExtractUnzip);
+        System.Threading.Tasks.Task.Run(() =>
+        {
+            int code;
+            try
+            {
+                code = Extraction.ExtractionRun.RunToConsole(request, Log.Raw, line => Log.Error("core", $"{line}"));
+            }
+            catch (System.Exception e)
+            {
+                // Anything unforeseen still ends the process with a verdict, never a hang.
+                Log.Error("core", $"extraction crashed", e);
+                code = 1;
+            }
+
+            Callable.From(() => GetTree().Quit(code)).CallDeferred();
+        });
+    }
 
     // The boot sequence in fmv.zrd's own order, its card and waits and fade included: the reader's
     // eight actions live in BootSequence and not one of them is written down here. A press ends the

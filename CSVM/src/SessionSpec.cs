@@ -232,7 +232,8 @@ public sealed record SessionSpec
     /// "dump" arm omits <c>--dump-flight</c>, so a <c>--dump-flight</c> run logs as
     /// <c>menu-*.log</c>. That is today's behaviour, reproduced on purpose.</summary>
     public string ModeName =>
-        Mode == SessionMode.AnimLab ? "anim-lab"
+        ExtractInstall != null ? "extract"
+        : Mode == SessionMode.AnimLab ? "anim-lab"
         : DamageTest || EffectsTest || WeaponTest || RunTests ? "test"
         : DumpMarkers || DumpWeapons || DumpLoadout || DumpConfig || DumpMips || DumpAi || DumpTileGrid ? "dump"
         : MovieName != null ? "movie"
@@ -248,7 +249,7 @@ public sealed record SessionSpec
     /// a drift, not a decision, the same omission as <see cref="ModeName"/>'s, and it means a
     /// <c>--dump-flight</c> run turns the bundle on yet still asks for focus.</summary>
     public bool IsScripted =>
-        NoFocus || ScreenshotPath != null || ExportGltfPath != null || RunTests
+        NoFocus || ScreenshotPath != null || ExportGltfPath != null || RunTests || ExtractInstall != null
         || DumpMarkers || DumpWeapons || DumpLoadout || DumpConfig || DumpMips || DumpAi || DumpTileGrid
         || DamageTest || EffectsTest || WeaponTest;
 
@@ -855,6 +856,21 @@ public sealed record SessionSpec
     /// <summary><c>--data-root=</c> verbatim. The precedence against <c>CSVM_DATA_ROOT</c> and the
     /// repo root, and the paths derived from the winner, are resolution.</summary>
     public string? DataRoot { get; private set; }
+
+    /// <summary><c>--extract=&lt;install&gt;</c> verbatim: extract that install into the data root's
+    /// <c>extracted</c> folder and quit with the verdict. Empty for a bare <c>--extract</c>, which
+    /// the install check refuses; null when the flag was absent.</summary>
+    public string? ExtractInstall { get; private set; }
+
+    /// <summary><c>--extract-force</c>: redo every output however new.</summary>
+    public bool ExtractForce { get; private set; }
+
+    /// <summary><c>--extract-unzip</c>: also expand every produced zip into its sibling folder.</summary>
+    public bool ExtractUnzip { get; private set; }
+
+    /// <summary><c>--unzbd=</c> verbatim: the unzbd an extraction runs instead of the default.</summary>
+    public string? UnzbdPath { get; private set; }
+
     public string? Gamez { get; private set; }
     public string? Textures { get; private set; }
     public string? Zrdr { get; private set; }
@@ -1345,6 +1361,11 @@ public sealed record SessionSpec
             else if (arg.StartsWith("--spawn-dir=")) { s.SpawnDir = ParseVec3(arg["--spawn-dir=".Length..]); Deprecate("--spawn-dir", "--direction"); }
             else if (arg.StartsWith("--sky-zone=")) { s.SkyZone = arg["--sky-zone=".Length..]; s.SkyZoneExplicit = true; }
             else if (arg.StartsWith("--data-root=")) { s.DataRoot = arg["--data-root=".Length..]; }
+            else if (arg == "--extract") { s.ExtractInstall = ""; }
+            else if (arg.StartsWith("--extract=")) { s.ExtractInstall = arg["--extract=".Length..]; }
+            else if (arg == "--extract-force") { s.ExtractForce = true; }
+            else if (arg == "--extract-unzip") { s.ExtractUnzip = true; }
+            else if (arg.StartsWith("--unzbd=")) { s.UnzbdPath = arg["--unzbd=".Length..]; }
             else if (arg.StartsWith("--gamez=")) { s.Gamez = arg["--gamez=".Length..]; }
             else if (arg.StartsWith("--textures=")) { s.Textures = arg["--textures=".Length..]; }
             else if (arg.StartsWith("--zrdr=")) { s.Zrdr = arg["--zrdr=".Length..]; }
@@ -1480,6 +1501,19 @@ public sealed record SessionSpec
                 else
                 {
                     notes.Add(new Note("core", $"--look={want} is not an x,y pair, leaving the look stick centred"));
+                }
+            }
+        }
+
+        // The development options mean nothing to a session, so a stray one is named rather than
+        // silently dropped.
+        if (s.ExtractInstall == null)
+        {
+            foreach (var (given, name) in new[] { (s.ExtractForce, "--extract-force"), (s.ExtractUnzip, "--extract-unzip"), (s.UnzbdPath != null, "--unzbd=") })
+            {
+                if (given)
+                {
+                    notes.Add(new Note("core", $"{name} does nothing without --extract=<install>, ignoring it"));
                 }
             }
         }

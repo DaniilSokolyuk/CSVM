@@ -85,7 +85,7 @@ at runtime.
 `InstallLocator`) for `.zbd` in any case, runs `unzbd cs <mode> <in> <out>` on each archive in turn,
 then `unzbd cs messages` on the install root's `strings.dll`. An archive fails on a non-zero exit
 only, is counted, and the run goes on; a run with no failure stamps the tree. Output keeps the
-install's spelling, relative path and base name. Unzip deletes and re-expands a folder older than its
+install's spelling, relative path and base name. Unzip (always for the root `rimage.zip`) deletes and re-expands a folder older than its
 zip, writing entry by entry so the later of two entries differing only by case wins, as
 `Expand-Archive` does. Blocks its thread; the caller runs it off the main thread.
 
@@ -94,7 +94,7 @@ The rules `ZbdExtraction` applies, each testable alone. `ModeFor` maps a lower-c
 `interp` to `interp` (`.json`); `planes`, `gamez` to `gamez`; `soundsh`, `soundsl` to `sounds`;
 `zrdr` to `reader`; `rimage`, `texture`, `rtexture<n>` to `textures`; `cam_anim`, `mis_anim` to
 `anim` (all `.zip`); anything else is an unknown type, skipped. An output as new as its source is up
-to date. `Classify` counts stderr notes: "object3d transform fail" (matrix recomposed inexactly, the
+to date. `AlwaysUnzipped` names the root `rimage.zip`, whose PNGs the HUD reads loose. `Classify` counts stderr notes: "object3d transform fail" (matrix recomposed inexactly, the
 stored one is kept) and "VAL FAIL" or "anim def duplicate anim ref" (anim fields kept as read); every
 other line is a warning.
 
@@ -119,3 +119,12 @@ Writes `extracted/VERSION.json`: `schema` (always `ExtractionStamp.Schema`), `as
 (`script`, `date`, `movies`) from `WriteRof`. `Merge` keeps every other field, reads an existing file
 as text so a BOM from the PowerShell scripts parses, rewrites an unreadable one, and writes UTF-8
 without a BOM. `script` is `CSVM`.
+
+## src/Extraction/ExtractionRun.cs
+The whole extraction as one call, shared by `--extract` and the extraction screen. `Run` checks the
+install with `InstallLocator.Check` and refuses a non-install before writing; then the ZBD half, then
+the `.rof` half into `extracted/rof`, and the `.rof` stamp. A ZBD failure (including a missing
+unzbd) stops the run before the `.rof` half; a missing `crimson.rof` fails; a missing patch, missing
+movies or no string rows only warn. `ExtractionProgress` carries a phase, a fraction (ZBD 0 to 0.85)
+and console lines; cancel throws. `RunToConsole` prints header, lines and `Summary`, answering 0 or 1.
+Blocks its thread. Read `ZbdExtraction.cs` next.

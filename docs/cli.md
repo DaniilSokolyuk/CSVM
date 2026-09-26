@@ -66,6 +66,9 @@ exactly how `PROJECT_CONTEXT.md`'s day-to-day table drifted from this page. One 
 **Data paths, override where the extraction is read from**
 `--data-root` · `--gamez` · `--textures` · `--zrdr` · `--interp` · `--sounds` · `--zip-assets` · `--messages`
 
+**Extraction, build `extracted/` from an original install and exit**
+`--extract` · `--extract-force` · `--extract-unzip` · `--unzbd`
+
 **Audio**
 `--mute` · `--volume` · `--sound-range-scale`
 
@@ -89,7 +92,7 @@ the shared selection (`--debug-select`), the node lab (`--debug-nodelab`), the w
 **Written exceptions to "one flag, one bullet":** `--spawn-dir` shares `--spawn-at`'s bullet, since
 the pair is one mechanism, so `Grep` the partner's name to find it; `--debug-nodelab` and
 `--debug-damage` each carry a short opener bullet plus the full behaviour under their lab's own
-section further down. The counts reconcile as **151 index entries, 151 parser flags and 152 bullet
+section further down. The counts reconcile as **155 index entries, 155 parser flags and 156 bullet
 lines**.
 
 ## Flags
@@ -291,6 +294,10 @@ lines**.
 - `--sounds=` (default extracted/soundsh.zip)
 - `--zip-assets` (**read the `.zip` archives even where `ExtractAssets.ps1 -Unzip` left an unpacked sibling folder**, the asset shape an exported build ships. Process-wide: it flips `SessionPaths.ForceZipped` before the first path resolves, so the chapter gamez, texture and zrdr paths, the sounds archive and the menu pages' own lookups all take it. A path that only ever had the folder still resolves to the folder: the flag narrows the choice rather than adding a requirement. **Use it before shipping a build**, since the two shapes do not fail alike (INSTR-46))
 - `--messages=` (default extracted/messages.json, the string table resolving targets.json `MSG_*` keys for objective marker text)
+- `--extract=<install>` (**extract an original install into `<data-root>/extracted/` and exit**, before any world or menu is built: the ZBD archives through unzbd, then the `.rof` UI resources, both stamped. Prints a summary and exits 0, or 1 on any failure, including a folder that is not an install. A ZBD failure stops the run before the `.rof` half. Scripted, so the window stays hidden even without `--headless`. Does not remember the install for the menu. `ExtractionRun`, `docs/architecture/Extraction.md`)
+- `--extract-force` (with `--extract`, **re-extract archives the stamp calls up to date**; without it an unchanged archive is skipped. Ignored with a warning when `--extract` is absent)
+- `--extract-unzip` (with `--extract`, **also expand every extracted `.zip` into a sibling folder**, the dev tree's shape. The root `rimage.zip` is expanded either way, since the HUD font, the reticle and the board art read its PNGs loose. Ignored with a warning when `--extract` is absent)
+- `--unzbd=<path>` (with `--extract`, **the unzbd executable to run**. Default: next to the executable in an exported build, else `tools/mech3ax/target/release/` under the repo root, which a worktree lacks, so a worktree run passes this flag. A missing tool fails the run before anything is written. Ignored with a warning when `--extract` is absent)
 - `--mips=authored|generated` (**which mip levels a texture gets**, default `authored`. A chapter ships hand-drawn half- and quarter-resolution siblings (`cblock1_1`, `cblock1_2`) that no gamez material references, the original's own mip chain (`docs/formats/gamez.md`). `authored` installs those siblings as levels 1 and 2 wherever one exists, box-filtering the rest; a texture with no sibling is untouched. `generated` runs `Image.GenerateMipmaps()` all the way down. A sibling whose size disagrees with the level it claims is refused with a warning, never installed. Measure it with `--dump-mips`)
 - `--graphics=original|enhanced` (the opt-in lit-world mode, default `original`. Precedence: **this flag**, then the **saved `graphicsMode` option** (`user://options.json`), then the **`graphics.mode`** config key, then `original`. Under `--det` only the flag survives, so it is the one way to ask for the enhanced path in a scripted or golden capture. It resolves once at launch (`GraphicsMode.Resolve`), announced on the `[world] graphics mode:` line, so a choice applied in Options reaches the world on the next start. An unrecognised word at any layer warns and falls back to `original`)
 - `--no-ssao` (**enhanced bisect door**: leave the ambient-occlusion pass out of the `--graphics=enhanced` build. The four doors here accumulate on one command line and reach enhanced alone, the faithful path building none of these passes; together they bisect a full-screen artefact to the pass that draws it, one pose per closed door. ⚠ Read the result on a plain `--screenshot=`, never a `--shots` burst, whose frames carry `--jitter`'s camera dither)

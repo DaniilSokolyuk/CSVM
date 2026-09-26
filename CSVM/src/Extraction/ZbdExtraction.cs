@@ -117,7 +117,7 @@ public static class ZbdExtraction
             report(ZbdStep.Extracted, outRel, mode.Mode, notes, null);
         }
 
-        if (options.Unzip && mode.Extension == ".zip" && File.Exists(output))
+        if ((options.Unzip || ZbdPlan.AlwaysUnzipped(outRel)) && mode.Extension == ".zip" && File.Exists(output))
         {
             Unzip(output, options.Force, result, () => report(ZbdStep.Unzipped, outRel, mode.Mode, null, null));
         }
