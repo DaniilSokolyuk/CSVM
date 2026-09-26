@@ -328,7 +328,7 @@ public sealed class ControlsFeature : IMenuFeature
 
     /// <summary>Proposes a stick control in place of the focused action's binding on the same stick
     /// model, or beside the others when that model holds none. One stick's capture never takes
-    /// another stick's, a key's or a pad's control (Decision 15b, docs/PLAN-flight-sticks.md).</summary>
+    /// another stick's, a key's or a pad's control.</summary>
     public bool OfferStick(Binding binding)
     {
         var bindings = FocusedBindings;

@@ -457,7 +457,7 @@ Downloaded binaries: mech3ax v0.6.1 (pinned pre-fork extractor, for rollback), t
 ### SDL2 for flight sticks (`tools/sdl2/`)
 
 The SDL3 inside Godot 4.7 enumerates no DirectInput-only device on the author's machine, so CSVM
-reads flight sticks through the official SDL2 runtime instead (`docs/PLAN-flight-sticks.md`).
+reads flight sticks through the official SDL2 runtime instead (`docs/architecture/Sticks.md`).
 **`InstallSdl2.ps1` (repo root)** downloads SDL 2.32.10's `SDL2-2.32.10-win32-x64.zip` from the
 libsdl-org GitHub release, checks it against a pinned SHA-256, and writes three files into
 `tools/sdl2/`: `SDL2.dll`, the zip's `README-SDL.txt`, and SDL's zlib `LICENSE.txt`, which the

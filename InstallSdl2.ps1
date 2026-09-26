@@ -3,8 +3,8 @@
     Downloads the pinned official SDL2 Windows x64 runtime into tools\sdl2\, checked by SHA-256.
 
 .DESCRIPTION
-    CSVM reads DirectInput-only flight sticks through SDL2.dll (docs/PLAN-flight-sticks.md,
-    Decision 13), because the SDL3 inside Godot 4.7 enumerates none of them. tools\ is
+    CSVM reads DirectInput-only flight sticks through SDL2.dll (docs/tooling.md,
+    "SDL2 for flight sticks"), because the SDL3 inside Godot 4.7 enumerates none of them. tools\ is
     git-ignored, so the DLL is fetched here rather than committed.
 
     Installs into <Root>\tools\sdl2\:

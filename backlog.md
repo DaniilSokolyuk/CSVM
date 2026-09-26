@@ -337,6 +337,16 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   flight tick's own steps (forces, contact, damage) out; they share the accumulator and belong
   together. *Cross-refs:* `BL-1015`, `BL-1016` (the same shape in `GameSession.cs` and
   `OriginalOptionsScreen.cs`), `docs/architecture/Flight.md`.
+- `BL-1045` `[Bug]` `[S]` `[Next: code]` `[Impact: low]` `[Evidence: trace]` **A throttle lever bound
+  on two stick models reads at least half throttle when one of the two is unplugged.**
+  *Evidence:* `AnalogAxes.LeverPosition` (`CSVM/src/Flight/Airframe/AnalogAxes.cs`) decides presence
+  per source, not per binding: one connected stick model makes the whole stick source count, and
+  the stick value is read over every stick binding on the row. The unplugged model's axis reads 0,
+  which a full axis maps to 0.5, and `Math.Max` then holds the lever at half or more. The
+  single-lever case (the shipped VKB profiles) is unaffected, because an unplugged stick leaves no
+  connected model and the lever is released. *Fix shape:* read the stick value over the bindings
+  whose model `AnalogAxes.Connected` lists, not over the whole row. *Cross-refs:*
+  `docs/architecture/Bindings.md` (`LeverTakeover`), `CSVM.Tests/ThrottleLeverTests.cs`.
 
 ## Environment & world
 
@@ -902,6 +912,23 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   four modules duplicate them; a page module that reaches back into the form's fields for its
   layout is the form in another file. *Cross-refs:* `BL-1014`, `BL-1015`,
   `docs/menu-presentations.md`, `docs/architecture/UI.md`.
+- `BL-1046` `[Bug]` `[S]` `[Next: code]` `[Impact: low]` `[Evidence: trace]` **A throttle lever
+  resting near the end the player pushes toward cannot be captured that way round.**
+  *Evidence:* `StickCapture` (`CSVM/src/Bindings/StickCapture.cs`) takes the lever's position at arm
+  as its baseline and captures once it travels `MoveThreshold` (0.5). The VKB R's lever rests at
+  -0.57 with full at -1, so pushing to full travels 0.43 and captures nothing. The player moves it
+  the other way, which captures, and gets the opposite invert. *Fix shape:* for the lever row,
+  measure travel against the axis's whole range (or the end not yet reached) rather than a fixed
+  distance from rest, or prompt the player to move the lever to the idle end first. *Cross-refs:*
+  `BL-693` (the gamepad capture's constants), `CSVM.Tests/StickCaptureTests.cs`.
+- `BL-1047` `[Bug]` `[S]` `[Next: code]` `[Impact: low]` `[Evidence: trace]` **Two unnamed sticks
+  bound on one row read alike in the KEYS AND BUTTONS page's Stick column.** *Evidence:*
+  `StickLabels.Column` (`CSVM/src/Sticks/StickLabels.cs`) drops the `Stick` prefix and the model of a
+  stick with no profile name, since the column is half a panel wide; two such sticks on one
+  row both print as "Button 5 +1". The remake Controls screen keeps the model and tells them apart,
+  and a named stick ("R") is unaffected. *Fix shape:* fall back to the short model id (`231D/0200`)
+  when two unnamed models share a row. *Cross-refs:* `docs/architecture/Sticks.md` (`StickLabels`),
+  `CSVM/src/UI/Menu/Original/KeysStickColumn.cs`.
 
 ## Splitscreen
 

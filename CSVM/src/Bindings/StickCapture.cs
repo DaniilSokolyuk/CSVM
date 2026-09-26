@@ -25,12 +25,12 @@ public sealed class StickCapture
     /// TUNE.</summary>
     public const float MoveThreshold = 0.5f;
 
-    /// <summary>The deadzone stamped on a captured flight axis and on the lever (Decision 12). TUNE.
+    /// <summary>The deadzone stamped on a captured flight axis and on the lever. TUNE.
     /// </summary>
     public const float FlightDeadzone = 0.02f;
 
     /// <summary>The deadzone stamped on a full axis captured on the throttle rate pair, wider so a
-    /// spring-centred stick's rest cannot creep the throttle (Decision 12). TUNE.</summary>
+    /// spring-centred stick's rest cannot creep the throttle. TUNE.</summary>
     public const float RateThrottleDeadzone = 0.08f;
 
     private static readonly HatDirection[] Directions =
