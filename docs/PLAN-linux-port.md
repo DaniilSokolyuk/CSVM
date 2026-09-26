@@ -689,7 +689,10 @@ changed while it is in testing.
 
 **Goal.** The author installs the tarball on the Deck with a copied install folder, extracts, flies,
 and publishes one release with both downloads (Decision 9, through `PublishRelease.ps1 -Linux` as
-B12 recommends); whatever looks wrong becomes backlog issues.
+B12 recommends); whatever looks wrong becomes backlog issues. That release is v0.2.0, which also
+carries `PLAN-flight-sticks` and the Milestone 6 multiplayer work, so all three are on main before
+the export: flight sticks and multiplayer land first, this branch merges over them, and B15 fixes
+the SDL2 load on the merged tree.
 
 **Evidence (confidence: lead-only).** Decisions 1, 5b, 9 and 11. Expected areas to look at:
 16:10 UI layout at 1280×800, frame rate on the Deck GPU, a controller appearing twice (Steam Input's
