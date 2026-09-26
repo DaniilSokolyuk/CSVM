@@ -332,6 +332,155 @@ internal static class NetCombatSuites
         }
     }
 
+    [Suite("net-versus-host-left",
+        "a lobby Dogfight flown by a host and a guest through their doors over a perfect loopback: a "
+        + "host whose link drops ends the guest's flight with Host left the game and the host "
+        + "retires the guest's seat, and a host leaving through its pause sheet sends the guest a "
+        + "close notice that ends the guest's flight the same way")]
+    internal static void AVersusHostLeaves(TestContext ctx)
+    {
+        var spec = MatchSpec(ctx, out _);
+        var ambient = Ambient.Save();
+        try
+        {
+            HostLeaves(ctx, spec, 7301, quits: false);
+            HostLeaves(ctx, spec, 7302, quits: true);
+        }
+        finally
+        {
+            ambient.Restore();
+        }
+    }
+
+    // One lobby Dogfight, launched through both doors, whose host then goes: its link cut, or its
+    // pause sheet's exit run in the launcher's order. The guest's door is stepped as the launcher
+    // steps it in flight.
+    private static void HostLeaves(TestContext ctx, SessionSpec spec, int seed, bool quits)
+    {
+        string how = quits ? "pause-sheet exit" : "dropped link";
+        var mesh = LoopbackTransport.Mesh(2, LoopbackConditions.Perfect, new Random(seed));
+        var hostDoor = new UI.Menu.NetPlayFeature((_, _, _) => mesh[0], (_, _) => mesh[1]);
+        var guestDoor = new UI.Menu.NetPlayFeature((_, _, _) => mesh[0], (_, _) => mesh[1]);
+        Ends? host = null;
+        Ends? guest = null;
+        try
+        {
+            hostDoor.OpenDogfightHost(1);
+            guestDoor.OpenJoin();
+            StepDoors(SettleSteps, hostDoor, guestDoor);
+            ctx.Check(guestDoor.IsDogfightGuest, $"[{how}] the guest joins the host's Dogfight ({guestDoor.Stage})");
+            var hostLaunch = hostDoor.BuildLaunch();
+            if (!guestDoor.IsDogfightGuest || hostLaunch == null)
+            {
+                return;
+            }
+
+            var planes = new[] { UI.Hangar.PlanePickerRoster.AirframeNode(UI.Menu.NetPlayFeature.StarterAirframe) };
+            var (roster, _) = Launcher.VersusLaunchField(hostLaunch.Transport, planes, new LoadoutChoice?[] { null }, StockLoadouts.Load());
+            host = Ends.Open(ctx, spec, hostLaunch.Transport, isHost: true, HostSeed, roster,
+                UI.Hangar.PlanePickerRoster.StockAirframes);
+            for (int i = 0; i < GrantSteps && !guestDoor.DogfightLaunchDue; i++)
+            {
+                host.Session._PhysicsProcess(GameClock.FixedDt);
+                StepDoors(1, hostDoor, guestDoor);
+            }
+
+            var guestLaunch = guestDoor.DogfightLaunchDue ? guestDoor.BuildLaunch() : null;
+            if (guestLaunch == null)
+            {
+                ctx.Check(false, $"[{how}] the guest's door hears the host's opener");
+                return;
+            }
+
+            guest = Ends.Open(ctx, spec, guestLaunch.Transport, isHost: false, HostSeed + 1, null,
+                UI.Hangar.PlanePickerRoster.StockAirframes);
+            ctx.Check(host.Built && guest.Built, $"[{how}] both sessions build ({host.Built}, {guest.Built})");
+            if (!host.Built || !guest.Built)
+            {
+                return;
+            }
+
+            FlyTogether(SettleSteps, host, guest, hostDoor, guestDoor);
+            ctx.Check(guestDoor.Stage == UI.Menu.NetDoorStage.Joined && !Launcher.VersusGuestFlightOver(guestDoor),
+                $"ABLE-TO-FAIL CONTROL: [{how}] with the host flying the guest's flight goes on ({guestDoor.Stage})");
+
+            var guestWire = (NetLobby)guestLaunch.Transport;
+            int steps = quits
+                ? QuitThroughThePause(host, guest, hostDoor, guestDoor, hostLaunch.Transport)
+                : DropTheHost(ctx, mesh, host, guest, hostDoor, guestDoor);
+            ctx.Check(Launcher.VersusGuestFlightOver(guestDoor) && guestDoor.Fault == UI.Menu.CoopDoorText.HostLeft,
+                $"[{how}] the guest's flight ends {steps} step(s) later with \"{UI.Menu.CoopDoorText.HostLeft}\" ({guestDoor.Stage}, \"{guestDoor.Fault}\")");
+            ctx.Check(quits ? guestWire.Closed is { Reason: NetCloseReason.Closed } : guestWire.Closed == null,
+                $"[{how}] {(quits ? "on the host's close notice" : "with no close notice, off the link alone")} ({guestWire.Closed?.Reason.ToString() ?? "none"})");
+        }
+        finally
+        {
+            guest?.Close();
+            host?.Close();
+            guestDoor.Discard();
+            hostDoor.Discard();
+        }
+    }
+
+    // The host's link cut under a running match. The host retires the guest's seat, as a guest's
+    // own drop does.
+    private static int DropTheHost(TestContext ctx, IReadOnlyList<LoopbackTransport> mesh, Ends host, Ends guest,
+        UI.Menu.NetPlayFeature hostDoor, UI.Menu.NetPlayFeature guestDoor)
+    {
+        mesh[0].Disconnect(mesh[1].LocalPeer);
+        int steps = 0;
+        while (steps < SettleSteps && !Launcher.VersusGuestFlightOver(guestDoor))
+        {
+            FlyTogether(1, host, guest, hostDoor, guestDoor);
+            steps++;
+        }
+
+        ctx.Check(host.Session.SeatRigs[1].Controller is { Inert: true },
+            $"and the host takes the guest's seat out of its match");
+        return steps;
+    }
+
+    // The launcher's order for a host's pause-sheet exit: the session freed, then the wire handed
+    // to the door's end of the flight. The menu steps the host's door from then on.
+    private static int QuitThroughThePause(Ends host, Ends guest, UI.Menu.NetPlayFeature hostDoor,
+        UI.Menu.NetPlayFeature guestDoor, INetTransport hostWire)
+    {
+        host.Close();
+        Launcher.EndNetWire(hostDoor, hostWire, keepLobby: false);
+        int steps = 0;
+        while (steps < SettleSteps && !Launcher.VersusGuestFlightOver(guestDoor))
+        {
+            guest.Session._PhysicsProcess(GameClock.FixedDt);
+            StepDoors(1, hostDoor, guestDoor);
+            steps++;
+        }
+
+        return steps;
+    }
+
+    // A flight's step on both ends, the way the launcher runs one: each session, then each door.
+    private static void FlyTogether(int steps, Ends host, Ends guest, UI.Menu.NetPlayFeature hostDoor,
+        UI.Menu.NetPlayFeature guestDoor)
+    {
+        for (int i = 0; i < steps; i++)
+        {
+            host.Session._PhysicsProcess(GameClock.FixedDt);
+            guest.Session._PhysicsProcess(GameClock.FixedDt);
+            StepDoors(1, hostDoor, guestDoor);
+        }
+    }
+
+    private static void StepDoors(int steps, params UI.Menu.NetPlayFeature[] doors)
+    {
+        for (int i = 0; i < steps; i++)
+        {
+            foreach (var door in doors)
+            {
+                door.Step(GameClock.FixedDt);
+            }
+        }
+    }
+
     // One host and one guest on the same launch, settled; null when either failed to build.
     private static GameSession[]? Pair(TestContext ctx, SessionSpec spec, int seed, List<Ends> ends)
     {

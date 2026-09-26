@@ -1087,6 +1087,7 @@ public partial class Launcher : Node3D
         }
 
         TickCoopFlight(delta);
+        TickVersusGuestFlight(delta);
 
         // An Options apply, one frame after the exit that asked for it.
         if (_pendingApply is { } applied)
@@ -1234,6 +1235,43 @@ public partial class Launcher : Node3D
         lobbyFlight && lobby is { Shown: true } && match is { Completed: true }
             ? new LobbyReturn(UI.Menu.DogfightLobby.ScoresOf(match.Standings(), lobby.LaunchNames))
             : null;
+
+    /// <summary>Whether a lobby Dogfight guest's host left its flight. The door, stepped in
+    /// flight, has failed on a close notice or a lost link.</summary>
+    internal static bool VersusGuestFlightOver(UI.Menu.NetPlayFeature door) =>
+        door.Stage == UI.Menu.NetDoorStage.Failed;
+
+    /// <summary>The door's half of a network flight's end. A co-op door, or a lobby whose match
+    /// ran to its end, takes <paramref name="wire"/> back. A host otherwise closes through its
+    /// door, which tells every guest first. Anything else disposes the wire and shuts the door.
+    /// </summary>
+    internal static void EndNetWire(UI.Menu.NetPlayFeature? door, Net.INetTransport wire, bool keepLobby)
+    {
+        if (door != null && (door.IsCoopHost || door.IsCoopGuest || keepLobby) && door.Reclaim())
+        {
+            return;
+        }
+
+        // ⚠ Do not dispose a host's wire here. The door's close sends every guest the close notice
+        // first; a bare dispose leaves a guest flying on until its link drops.
+        if (door is { IsHost: true } && door.Reclaim())
+        {
+            Log.Info("core", $"net: left the flight as host, telling {door.Peers} guest(s) the session closed");
+            door.Close();
+            return;
+        }
+
+        if (wire is System.IDisposable open)
+        {
+            open.Dispose();
+        }
+
+        // A door that failed keeps its fault, which the Connection page then names.
+        if (door is { Stage: not UI.Menu.NetDoorStage.Failed } shut)
+        {
+            shut.Close();
+        }
+    }
 
     // Where a flight left early lands, taken from the launch that starts it. Every menu launch path
     // writes it here, ExitSession reads it back, and the rule stands in one place.
@@ -2532,21 +2570,7 @@ public partial class Launcher : Node3D
         _coopFlight = false;
         _lobbyFlight = false;
         _keepLobby = false;
-        if (_netDoor is { } door && (door.IsCoopHost || door.IsCoopGuest || keepLobby) && door.Reclaim())
-        {
-            return;
-        }
-
-        if (wire is System.IDisposable open)
-        {
-            open.Dispose();
-        }
-
-        // A door that failed keeps its fault, which the Connection page then names.
-        if (_netDoor is { Stage: not UI.Menu.NetDoorStage.Failed } shut)
-        {
-            shut.Close();
-        }
+        EndNetWire(_netDoor, wire, keepLobby);
     }
 
     // A co-op flight's upkeep. The door still seats, advertises and follows the host while the
@@ -2581,6 +2605,23 @@ public partial class Launcher : Node3D
             // The host's ending reaches the guest's director inside the host's own hold. A result
             // is therefore banked here whenever the host went on to its debrief.
             ReturnToMenu(new CoopGuestReturn(_session.Campaign?.Result?.Attempt));
+        }
+    }
+
+    // A lobby Dogfight guest's upkeep. The session steps the wire, and the door only watches the
+    // host. A host that leaves ends the match here, and the Connection page names why.
+    private void TickVersusGuestFlight(double delta)
+    {
+        if (!_lobbyFlight || _netIsHost || _netDoor is not { } door || _netWire == null || _session is not { InSession: true })
+        {
+            return;
+        }
+
+        door.Step(delta);
+        if (VersusGuestFlightOver(door))
+        {
+            Log.Info("core", $"net: versus flight over, the host left ({door.Fault})");
+            ReturnToMenu(new LobbyReturn(System.Array.Empty<UI.Menu.DogfightScore>()));
         }
     }
 

@@ -2670,7 +2670,9 @@ guest's own Ready on both ends. After a match every player lands back in the sam
 Scores tab (the user's decision, "Lobby, Game Scores tab"): `Launcher.LobbyLanding` builds a
 `MenuReturnDestination.LobbyReturn` off each end's own `VersusMatch`, the door reclaims its wire,
 `DogfightLobby.Land` fills the scores and clears Ready, and the host's next round lets it launch
-again with nobody rejoining. A payload left over from the match is dropped by epoch.
+again with nobody rejoining. A payload left over from the match is dropped by epoch. A host that
+leaves a match early sends its guests the close notice, and a guest whose host sends it or drops
+its link lands on the Connection page with "Host left the game" (suite `net-versus-host-left`).
 
 An Original guest can join a Built-in (B15) host: `NetPlayFeature.OpenHost` runs the lobby's host
 side unshown behind the Built-in board, and the Built-in LAUNCH goes through

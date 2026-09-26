@@ -642,6 +642,14 @@ public sealed class NetPlayFeature : IMenuFeature
         bool coop = _kind == NetSessionKind.CampaignCoop || IsCoopGuest;
         if (_released && !coop)
         {
+            // A Dogfight guest in flight still watches its host. A close notice or a lost link
+            // both mean the host left the match.
+            if (Stage == NetDoorStage.Joined && HostGone())
+            {
+                Fail(CoopDoorText.HostLeft);
+                return;
+            }
+
             _responder?.Poll(CurrentAdvert(), Port);
             return;
         }
@@ -1130,6 +1138,10 @@ public sealed class NetPlayFeature : IMenuFeature
         _pickLeft = false;
         _flownFlow = false;
     }
+
+    private bool HostGone() =>
+        _transport!.Closed != null || _link?.LinkState == EnetLinkState.Down
+        || (_hostPeer >= 0 && !Contains(_transport.AllPeers, _hostPeer));
 
     private bool Refused(int peer)
     {
