@@ -140,6 +140,18 @@ public sealed class SceneBuilder
     /// in every ordinary run, so nothing but an isolation capture sees it.</summary>
     public TransparencyClass HiddenAlpha;
 
+    /// <summary>Texture names whose polygons this builder leaves unbuilt, null for none. Enhanced
+    /// mode's volumetric clouds set it for the dome's painted cloud cards, which the volume stands in
+    /// for. Set before building: it drops polygons, and the mesh cache keeps what was built.</summary>
+    public Func<string, bool>? HiddenTexture;
+
+    /// <summary>Builds the surfaces as sky at infinity: an opaque surface writes its depth squeezed
+    /// towards the far plane, so anything nearer than the far plane draws over it, and the materials
+    /// and meshes it builds are cached apart from the world's. Enhanced mode sets it for the horizon
+    /// dome under the volumetric cloud field, whose star layer sits nearer than a far cloud and would
+    /// otherwise hide the cloud behind each star. Set before building.</summary>
+    public bool AtInfinity;
+
     /// <summary>Where a material's own texture flipbook (the gamez `cycle` block) is delivered.
     /// Set by the caller before building; null leaves cycling materials static.</summary>
     public TextureCycler? Cycler;
@@ -364,27 +376,27 @@ void fragment() {
     // about every one of them: scroll rate, ClampUv, NoClutter, the model's own Lit/Fogged render
     // flags, and Pass. Dropping one hands a cached material back at the wrong setting.
     // Non-scrolling surfaces all key on (0,0), so the common path's cache behaviour is unchanged.
-    private readonly Dictionary<(int Material, int Priority, int Rank, bool NoClutter, bool DoubleSided, float ScrollU, float ScrollV, bool ClampUv, UvClampAxes EdgeClamp, bool Lit, bool Fogged, int Pass, bool ClutterFade), Material> _materialCache = new();
+    private readonly Dictionary<(int Material, int Priority, int Rank, bool NoClutter, bool DoubleSided, float ScrollU, float ScrollV, bool ClampUv, UvClampAxes EdgeClamp, bool Lit, bool Fogged, int Pass, bool ClutterFade, bool AtInfinity), Material> _materialCache = new();
     // Keyed by (model index, force-double-sided, force-lit, clutter-fade): every override is baked
     // into the built surfaces (sidedness into the geometry groups, `lit` and the fade into which
     // material/shader a surface gets), so a forced build must not be handed back for the same
     // model referenced normally. No model in this install is referenced both ways (the deck's 144
     // tiles have exclusive model indices), so this is defence. `ForceLit` is the deck-underside
     // exception (`WorldBuilder.Add`); `ClutterFade` is ClutterBuilder's 3D-decoration build.
-    private readonly Dictionary<(int Model, bool Force, bool ForceLit, bool ClutterFade), ArrayMesh?> _meshCache = new();
+    private readonly Dictionary<(int Model, bool Force, bool ForceLit, bool ClutterFade, bool AtInfinity), ArrayMesh?> _meshCache = new();
     private readonly Dictionary<int, Vector3> _meshPivotCache = new(); // billboard meshes only: local quad center
     private readonly Dictionary<int, ArrayMesh> _lightMeshCache = new();
     private readonly Dictionary<int, List<(string Name, string? Surface, int SurfaceId, List<ConcavePolygonShape3D> Shapes)>> _colliderCache = new();
-    private readonly Dictionary<(float Far, float Slope, float Blink), ShaderMaterial> _lightMaterialCache = new();
+    private readonly Dictionary<(float Far, float Slope, float Blink, bool AtInfinity), ShaderMaterial> _lightMaterialCache = new();
     // Billboard glow material for a flare sprite quad: always alpha-blended (the soft ramp
     // must never scissor into a hard star cutout), no night dimming (it's a light source).
-    private readonly Dictionary<(int Material, bool Fogged, bool ClampUv), Material> _glowMaterialCache = new();
+    private readonly Dictionary<(int Material, bool Fogged, bool ClampUv, bool AtInfinity), Material> _glowMaterialCache = new();
     // Cylindrical (Y- or X-axis) billboard material. Unlike glow flares it respects the texture's
     // own alpha classification (trees and cables are hard cutouts, fire and flame are soft) and it
     // dims with the world SUNLIGHT unless the texture is itself a light source, the caller's
     // glowTexture predicate, the same delegate the spherical path uses, so one rule governs every
     // light-vs-scenery billboard in the renderer.
-    private readonly Dictionary<(int Material, int Axis, bool Lit, bool Fogged, bool ClampUv), Material> _cylindricalMaterialCache = new();
+    private readonly Dictionary<(int Material, int Axis, bool Lit, bool Fogged, bool ClampUv, bool AtInfinity), Material> _cylindricalMaterialCache = new();
     // Every textured material this builder made, paired with the texture name it resolved
     // from, the registry a live repaint needs (the viewer's livery lab re-runs the paint
     // and swaps each material's albedo in place, instead of rebuilding the whole aircraft
@@ -1145,10 +1157,10 @@ void fragment() {
 
         // Group the mesh's lights by their fade/blink params → one POINTS surface +
         // shared material per group (a mesh's lights are uniform in practice).
-        var groups = new Dictionary<(float Far, float Slope, float Blink), (List<Vector3> P, List<Color> C)>();
+        var groups = new Dictionary<(float Far, float Slope, float Blink, bool AtInfinity), (List<Vector3> P, List<Color> C)>();
         foreach (var l in _gamez.Meshes[meshIndex].Lights)
         {
-            var key = (l.FadeFar, l.FadeSlope, l.BlinkPeriod);
+            var key = (l.FadeFar, l.FadeSlope, l.BlinkPeriod, AtInfinity);
             if (!groups.TryGetValue(key, out var g))
                 groups[key] = g = (new List<Vector3>(), new List<Color>());
             g.P.Add(l.Position);
@@ -1182,10 +1194,10 @@ void fragment() {
     private ArrayMesh? GetMesh(int meshIndex, bool forceDoubleSided = false, bool forceLit = false,
         bool clutterFade = false)
     {
-        if (_meshCache.TryGetValue((meshIndex, forceDoubleSided, forceLit, clutterFade), out var cached))
+        if (_meshCache.TryGetValue((meshIndex, forceDoubleSided, forceLit, clutterFade, AtInfinity), out var cached))
             return cached;
         var mesh = BuildMesh(_gamez.Meshes[meshIndex], meshIndex, forceDoubleSided, forceLit, clutterFade);
-        _meshCache[(meshIndex, forceDoubleSided, forceLit, clutterFade)] = mesh;
+        _meshCache[(meshIndex, forceDoubleSided, forceLit, clutterFade, AtInfinity)] = mesh;
         return mesh;
     }
 
@@ -1225,6 +1237,8 @@ void fragment() {
                 UndrawnPolygonCount++;
                 continue;
             }
+            if (IsHiddenTexture(poly.MaterialIndex))
+                continue;
             bool doubleSided = forceDoubleSided || !_cullBackfaces || poly.ShowBackface;
             var key = (poly.MaterialIndex, poly.Priority, poly.NoClutter, doubleSided, 0);
             if (!groupIndex.TryGetValue(key, out int gi))
@@ -1268,6 +1282,8 @@ void fragment() {
                     UndrawnPolygonCount++;
                     continue;
                 }
+                if (IsHiddenTexture(poly.MaterialIndex))
+                    continue;
                 bool doubleSided = forceDoubleSided || !_cullBackfaces || poly.ShowBackface;
                 var key = (poly.OverlayPasses[pass - 1].MaterialIndex, poly.Priority, poly.NoClutter, doubleSided, pass);
                 if (!groupIndex.TryGetValue(key, out int gi))
@@ -1372,6 +1388,12 @@ void fragment() {
         && _gamez.Materials[materialIndex].TextureName is { } texName
         && _textures.IsAbsentAndUndrawn(texName);
 
+    // A polygon the caller asked to leave out (HiddenTexture). Kept apart from DrawsNothing, whose
+    // UndrawnPolygonCount is the tripwire for the absent-texture rule and must not count these.
+    private bool IsHiddenTexture(int materialIndex) =>
+        HiddenTexture != null && materialIndex >= 0 && materialIndex < _gamez.Materials.Count
+        && _gamez.Materials[materialIndex].TextureName is { } texName && HiddenTexture(texName);
+
     // True if any of the mesh's polygons is skinned with a billboard (cloud-sprite) texture.
     private bool UsesBillboardTexture(GameZMesh mesh)
     {
@@ -1412,7 +1434,7 @@ void fragment() {
     // place, so the model's `lighting` flag has no term to gate here and is not part of the key.
     private Material GetGlowMaterial(int materialIndex, bool fogged, bool clampUv)
     {
-        var key = (materialIndex, fogged, clampUv);
+        var key = (materialIndex, fogged, clampUv, AtInfinity);
         if (_glowMaterialCache.TryGetValue(key, out var cached))
             return cached;
         var texName = _gamez.Materials[materialIndex].TextureName;
@@ -1434,7 +1456,7 @@ void fragment() {
 
     private Material GetCylindricalMaterial(int materialIndex, CylAxis axis, bool lit, bool fogged, bool clampUv)
     {
-        var key = (materialIndex, (int)axis, lit, fogged, clampUv);
+        var key = (materialIndex, (int)axis, lit, fogged, clampUv, AtInfinity);
         if (_cylindricalMaterialCache.TryGetValue(key, out var cached))
             return cached;
         var texName = _gamez.Materials[materialIndex].TextureName;
@@ -1465,7 +1487,7 @@ void fragment() {
         UvClampAxes edgeClamp = UvClampAxes.None, bool clutterFade = false)
     {
         rank = Math.Min(rank, SurfaceRankCap);
-        var key = (materialIndex, priority, rank, noClutter, doubleSided, scroll.X, scroll.Y, clampUv, edgeClamp, lit, fogged, pass, clutterFade);
+        var key = (materialIndex, priority, rank, noClutter, doubleSided, scroll.X, scroll.Y, clampUv, edgeClamp, lit, fogged, pass, clutterFade, AtInfinity);
         if (_materialCache.TryGetValue(key, out var cached))
             return cached;
         var mat = BuildMaterial(materialIndex, priority, rank, noClutter, doubleSided, scroll, clampUv, lit, fogged, pass, edgeClamp, clutterFade);
@@ -1622,7 +1644,8 @@ void fragment() {
     // the shader text it always did, so honouring the flags cannot perturb the overwhelming
     // majority of the world through float rounding in a mix().
     // Key bits: 1-64 the flags above, 128 !lit, 256 !fogged, 512/1024 edgeClamp, 2048 clutterFade,
-    // 4096 DebugClutterFlag, 8192 enhanced, 16384 water, 32768 sun, 65536 gamma blend; free 131072.
+    // 4096 DebugClutterFlag, 8192 enhanced, 16384 water, 32768 sun, 65536 gamma blend, 131072
+    // AtInfinity; free 262144.
     private Shader GetBiasShader(bool shaded, bool textured, bool blend, bool scissor, bool doubleSided,
         bool scroll, bool clampUv, bool lit, bool fogged, UvClampAxes edgeClamp = UvClampAxes.None,
         bool clutterFade = false, bool water = false)
@@ -1645,7 +1668,7 @@ void fragment() {
             | (scroll ? 32 : 0) | (clampUv ? 64 : 0) | (lit ? 0 : 128) | (fogged ? 0 : 256)
             | ((int)edgeClamp << 9) | (clutterFade ? 2048 : 0) | (DebugClutterFlag ? 4096 : 0)
             | (GraphicsMode.Enhanced ? 8192 : 0) | (waterLit ? 16384 : 0) | (sunLit ? 32768 : 0)
-            | (gammaBlend ? 65536 : 0);
+            | (gammaBlend ? 65536 : 0) | (AtInfinity ? 131072 : 0);
         if (BiasShaders.TryGetValue(key, out var cached))
             return cached;
 
@@ -1761,6 +1784,11 @@ void vertex() {{
 }}
 
 void fragment() {{");
+        // Sky at infinity (AtInfinity): reversed z puts the far plane at 0, so scaling the depth
+        // keeps the dome's own layers in order, moon over sky, while it moves every one of them
+        // behind anything short of a thousand times their distance.
+        if (AtInfinity)
+            sb.AppendLine("    DEPTH = FRAGCOORD.z * 0.001;");
         if (clutterFade)
             sb.AppendLine("    if (!csky_clutter_dither_keep(FRAGCOORD.xy, v_clutter_alpha)) { discard; }");
         // Shaded (planes) keeps raw COLOR for the real-lighting path; fullbright (world) applies

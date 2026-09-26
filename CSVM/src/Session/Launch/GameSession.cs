@@ -1656,6 +1656,10 @@ public partial class GameSession : Node3D
                 // container is what Tick anchors, so each dome keeps its own scale and gate.
                 var zones = builder.HorizonZones();
                 var domeZones = Mech3.WorldBuilder.DomeZonesToBuild(zones, activeZone);
+                // The volumetric layer below stands in for the dome's painted cloud cards too.
+                builder.HideCloudCards = Utils.GraphicsMode.Enhanced
+                    && (_spec.SkippedPasses & EnhancedPasses.Clouds) == 0;
+                builder.SkyAtInfinity = builder.HideCloudCards;
                 foreach (var rig in _rigs)
                 {
                     var anchor = new Node3D { Name = "horizon" };
@@ -1689,6 +1693,9 @@ public partial class GameSession : Node3D
 
                 // The evidence that the swap exists at all, since a broken gate and a one-dome
                 // chapter render identically at the state they share (docs/verification.md).
+                builder.HideCloudCards = false;
+                builder.SkyAtInfinity = false;
+
                 if (_rigs.Count > 0)
                 {
                     var built = _rigs[0].HorizonDomes;
@@ -1702,6 +1709,33 @@ public partial class GameSession : Node3D
             {
                 _fogStateBeforeWeather = null;
                 _weatherRig.ApplyFogState(heldFog);
+            }
+            // Enhanced mode alone: the baked cloud field, overcast at the band where the chapter has a
+            // deck, scattered at its authored cloud height where it has none (Effects.VolumetricClouds).
+            if (Utils.GraphicsMode.Enhanced && (_spec.SkippedPasses & EnhancedPasses.Clouds) == 0)
+            {
+                var (floor, overcast) = Effects.VolumetricClouds.LayerFor(
+                    builder.CloudDeck != null, _weatherRig.CloudBand, builder.CloudClusters, state.Gamez);
+                // Where the original fills the sky: its fvol boxes and the placed cloudparent clusters.
+                var authored = new List<Aabb>();
+                foreach (var v in fogVolumes)
+                    authored.Add(v.Box);
+                foreach (var cluster in builder.CloudClusters)
+                {
+                    if (Effects.VolumetricClouds.ClusterBox(cluster, state.Gamez) is { } clusterBox)
+                        authored.Add(clusterBox);
+                }
+                if (Effects.VolumetricClouds.Create(state.Gamez, floor, overcast, _spec.Chapter, authored) is { } clouds)
+                {
+                    _worldRoot!.AddChild(clouds);
+                    _weatherRig.DeckReplaced = true;
+                    // The volume stands in for every authored cloud population, not only the deck: the
+                    // fvol sprite field and the placed cloudparent clusters would float inside it.
+                    if (cloudField != null)
+                        cloudField.Visible = false;
+                    foreach (var cluster in builder.CloudClusters)
+                        cluster.Visible = false;
+                }
             }
             StartupProfile.Record("weather", weatherMark);
         }

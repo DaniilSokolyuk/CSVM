@@ -43,6 +43,9 @@ public sealed class WorldBuilder
     // root sits above its own deck.
     private const float DeckCoverageFraction = 0.5f;
 
+    // DrawSkyFirst's render priority, below the default 0 every other draw keeps.
+    private const int SkyRenderPriority = -10;
+
     private readonly GameZ _gamez;
     private readonly TextureArchive _textures;
     private readonly SceneBuilder _scene;
@@ -170,6 +173,21 @@ public sealed class WorldBuilder
     /// <c>Node.Name</c>. Siblings share the name <c>cloudparent</c>, so Godot's duplicate-sibling
     /// renaming is free to have touched the built name.</summary>
     public IReadOnlyList<Node3D> CloudClusters => _cloudClusters;
+
+    /// <summary>Leave the painted cloud cards out of whatever is built next (the dome's cumulus and
+    /// cloud facades), for enhanced mode's volumetric layer, which stands in for them. Set before
+    /// <see cref="BuildHorizon"/> and cleared after it.</summary>
+    public bool HideCloudCards
+    {
+        get => _scene.HiddenTexture != null;
+        set => _scene.HiddenTexture = value ? IsCloudCardTexture : null;
+    }
+
+    /// <summary>Builds the dome as sky at infinity (<see cref="SceneBuilder.AtInfinity"/>), every one
+    /// of its draws behind every cloud: its depth at the far plane and its blended and additive
+    /// draws, stars and moon, ahead of the field's. Enhanced mode sets it with
+    /// <see cref="HideCloudCards"/>, when the volumetric field fills the sky.</summary>
+    public bool SkyAtInfinity { get; set; }
 
     /// <summary>This world's shared scene builder, its mesh/material/shape caches and its
     /// fullbright world materials. Handed to <see cref="ClutterBuilder"/> so the clutter's 3D
@@ -526,12 +544,16 @@ public sealed class WorldBuilder
         // ⚠ Do not force-fog the dome. Every horizon model is authored `fog: false` and the
         // FOG_ALTITUDE fade never reaches the dome's own authored size, so force-fogging paints
         // nothing but flat fog colour. Decode: docs/formats/weather.md.
+        _scene.AtInfinity = SkyAtInfinity;
         var built = _scene.BuildSubtree(horizon, SkipOtherZones, collisionSkip: _ => true);
+        _scene.AtInfinity = false;
         if (built == null)
             return null;
         DisableShadows(built);
         BillboardMoon(built);
         DisableLightRangeFade(built);
+        if (SkyAtInfinity)
+            DrawSkyFirst(built);
         return built;
     }
 
@@ -619,6 +641,11 @@ public sealed class WorldBuilder
     private static bool IsCloudSpriteTexture(string tex) =>
         tex.StartsWith("cloud", StringComparison.OrdinalIgnoreCase)
         && !tex.StartsWith("cloudlayer", StringComparison.OrdinalIgnoreCase);
+
+    // The painted cloud cards: the sprite textures above plus the dome's cumulus facades (C3 ships
+    // cumulus1/cumulus2 on its horizon). Never the cloudlayer deck, which the deck rule owns.
+    private static bool IsCloudCardTexture(string tex) =>
+        IsCloudSpriteTexture(tex) || tex.StartsWith("cumulus", StringComparison.OrdinalIgnoreCase);
 
     // ⚠ Keep `skywal*` out of the collision exemption; it is a building wall texture, not sky.
     // MeshUsesTexture matches if any polygon carries it, so one such face makes a whole structure
@@ -719,6 +746,25 @@ public sealed class WorldBuilder
             if (child is Node3D n3d && FindChildByName(n3d, name) is { } found)
                 return found;
         return null;
+    }
+
+    // The dome's draws take a render priority under every world draw's 0, so its stars and moon,
+    // which sort by distance to a camera-centred dome and would land last, draw ahead of the clouds.
+    // Only a SkyAtInfinity build calls this, and its materials are that build's own.
+    private static void DrawSkyFirst(Node node)
+    {
+        if (node is MeshInstance3D instance)
+        {
+            if (instance.MaterialOverride is { } over)
+                over.RenderPriority = SkyRenderPriority;
+            for (int i = 0; instance.Mesh != null && i < instance.Mesh.GetSurfaceCount(); i++)
+            {
+                if ((instance.GetSurfaceOverrideMaterial(i) ?? instance.Mesh.SurfaceGetMaterial(i)) is { } material)
+                    material.RenderPriority = SkyRenderPriority;
+            }
+        }
+        foreach (var child in node.GetChildren())
+            DrawSkyFirst(child);
     }
 
     // The backdrop populations: the dome, the overcast deck and the ambient cloud sprites each
