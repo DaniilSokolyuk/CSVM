@@ -39,12 +39,15 @@
     here cannot, which is why the Linux download is a tarball.
 
 .PARAMETER Linux
-    Also export the Linux build and package the .tar.gz. Needs the Linux export templates,
-    a WSL Debian distro with tar, and the musl unzbd build.
+    Also export the Linux build and package the .tar.gz. Needs the Linux export templates
+    and a WSL Debian distro with tar, plus, unless -LinuxUnzbd is given, the Rust musl
+    toolchain in that distro (docs/tooling.md, "-Linux").
 
 .PARAMETER LinuxUnzbd
-    The Linux unzbd binary to ship as tools/unzbd. Defaults to the musl build of the
-    mech3ax fork, tools\mech3ax\target\x86_64-unknown-linux-musl\release\unzbd.
+    An existing Linux unzbd binary to ship as tools/unzbd, skipping the build. Without it,
+    -Linux builds the mech3ax checkout for x86_64-unknown-linux-musl inside WSL (Debian;
+    the cargo target dir is ~/cargo-target/mech3ax in the distro) and copies the binary
+    to tools\mech3ax\target\x86_64-unknown-linux-musl\release\unzbd before shipping it.
 
 .EXAMPLE
     .\ExportRelease.ps1
@@ -87,6 +90,8 @@ $BuildInfo    = Join-Path $ExportDir "BUILD-INFO.txt"
 $LinuxExportDir = Join-Path $RepoRoot ".scratch\export-linux"
 $LinuxExportExe = Join-Path $LinuxExportDir "CSVM.x86_64"
 $LinuxDistro    = "Debian"
+# A named -LinuxUnzbd is shipped as given; without one the run builds the default path itself.
+$BuildLinuxUnzbd = -not $LinuxUnzbd
 if (-not $LinuxUnzbd) {
     $LinuxUnzbd = Join-Path $ToolsRoot "tools\mech3ax\target\x86_64-unknown-linux-musl\release\unzbd"
 }
@@ -154,15 +159,9 @@ if ($Linux) {
         throw "Linux export template not found at $linuxTemplate -- the one-time template " +
             "install above must include the linux_release.x86_64 file of the .tpz."
     }
-    if (-not (Test-Path $LinuxUnzbd)) {
-        throw "Linux unzbd not found at $LinuxUnzbd -- one-time setup: build the mech3ax fork " +
-            "(branch cs-anim) for x86_64-unknown-linux-musl in WSL (docs/PLAN-linux-port.md B11), " +
-            "or pass -LinuxUnzbd <path>. unzbd.exe is not a substitute."
-    }
-    foreach ($file in $LinuxReleaseFiles) {
-        if (-not (Test-Path $file.Source)) {
-            throw "Linux payload file not found at $($file.Source) -- see packaging\MANIFEST.md."
-        }
+    if ((-not $BuildLinuxUnzbd) -and (-not (Test-Path $LinuxUnzbd))) {
+        throw "Linux unzbd not found at $LinuxUnzbd -- pass an existing file to -LinuxUnzbd, or " +
+            "leave it out to build the musl unzbd in WSL. unzbd.exe is not a substitute."
     }
     try {
         & wsl.exe -d $LinuxDistro --exec tar --version | Out-Null
@@ -174,6 +173,92 @@ if ($Linux) {
         throw "WSL distro '$LinuxDistro' with tar is not reachable (wsl.exe -d $LinuxDistro) -- " +
             "one-time setup: 'wsl --install -d Debian'. The tarball is packed inside it so the " +
             "executable bits survive."
+    }
+}
+
+# PowerShell 5.1 mangles embedded double quotes in a native command's arguments, so every WSL step
+# is a script file with LF endings, run with its paths passed as arguments.
+function ConvertTo-WslPath([string] $Path) {
+    $wslPath = (& wsl.exe -d $script:LinuxDistro --exec wslpath -u $Path)
+    if ($LASTEXITCODE -ne 0 -or -not $wslPath) {
+        throw "wslpath could not translate $Path for WSL."
+    }
+    return $wslPath.Trim()
+}
+function Write-WslScript([string] $Name, [string] $Text) {
+    $path = Join-Path $script:RepoRoot ".scratch\$Name-$PID.sh"
+    New-Item -ItemType Directory -Force (Split-Path $path -Parent) | Out-Null
+    [System.IO.File]::WriteAllText($path, ($Text -replace "`r`n", "`n"),
+        (New-Object System.Text.UTF8Encoding($false)))
+    return $path
+}
+
+# The Linux unzbd is built from the same mech3ax checkout as unzbd.exe, so the two cannot drift
+# apart between releases. The build runs before the Windows export because a missing toolchain
+# would otherwise surface only after minutes of exporting. The cargo target dir sits in the
+# distro's own filesystem: a build through /mnt/z is slow and would leave a Linux target tree
+# inside the checkout. The toolchain checks exit with their own codes so each failure names the
+# setup step that fixes it; rust-toolchain.toml pins the Rust version, which is why the musl
+# target has to be added to that toolchain rather than to stable. cargo's stderr is folded into
+# stdout because a caller that redirects this script's streams turns every native stderr line
+# into a terminating error under "Stop", ending the run at cargo's first warning.
+if ($Linux -and $BuildLinuxUnzbd) {
+    $buildScript = Write-WslScript "build-unzbd" @'
+set -eu
+exec 2>&1
+repo="$1"; out="$2"
+target=x86_64-unknown-linux-musl
+cargo="$HOME/.cargo/bin/cargo"; rustup="$HOME/.cargo/bin/rustup"
+[ -x "$cargo" ] && [ -x "$rustup" ] || exit 10
+command -v cc >/dev/null 2>&1 && command -v musl-gcc >/dev/null 2>&1 || exit 11
+cd "$repo"
+"$rustup" target list --installed 2>/dev/null | grep -qx "$target" || exit 12
+export CARGO_TARGET_DIR="$HOME/cargo-target/mech3ax"
+"$cargo" build --release --locked --target "$target" --bin unzbd
+mkdir -p "$(dirname "$out")"
+cp -- "$CARGO_TARGET_DIR/$target/release/unzbd" "$out"
+"$out" --version
+'@
+    $pinnedRust = "the version tools\mech3ax\rust-toolchain.toml pins"
+    $pinMatch = Select-String -Path (Join-Path $Mech3axRepo "rust-toolchain.toml") `
+        -Pattern '^channel\s*=\s*"([^"]+)"' -ErrorAction SilentlyContinue
+    if ($pinMatch) {
+        $pinnedRust = $pinMatch.Matches[0].Groups[1].Value
+    }
+    Write-Host "Building the Linux unzbd in WSL ($LinuxDistro)..." -ForegroundColor Cyan
+    try {
+        & wsl.exe -d $LinuxDistro --exec sh (ConvertTo-WslPath $buildScript) `
+            (ConvertTo-WslPath $Mech3axRepo) (ConvertTo-WslPath $LinuxUnzbd)
+        $buildExit = $LASTEXITCODE
+    } finally {
+        Remove-Item $buildScript -Force -ErrorAction SilentlyContinue
+    }
+    $setup = "one-time setup in WSL $LinuxDistro, see docs/tooling.md '-Linux'"
+    switch ($buildExit) {
+        0 { }
+        10 {
+            throw "rustup/cargo not found in ~/.cargo/bin in WSL $LinuxDistro -- $setup`: " +
+                "install rustup from https://rustup.rs, or pass -LinuxUnzbd <path>."
+        }
+        11 {
+            throw "No C compiler or musl-gcc in WSL $LinuxDistro -- $setup`: " +
+                "'sudo apt install build-essential musl-tools'."
+        }
+        12 {
+            throw "Rust $pinnedRust has no x86_64-unknown-linux-musl target in WSL $LinuxDistro " +
+                "-- $setup`: 'rustup target add --toolchain $pinnedRust x86_64-unknown-linux-musl'."
+        }
+        default {
+            throw "cargo build of the Linux unzbd failed in WSL $LinuxDistro (exit $buildExit)."
+        }
+    }
+}
+
+if ($Linux) {
+    foreach ($file in $LinuxReleaseFiles) {
+        if (-not (Test-Path $file.Source)) {
+            throw "Linux payload file not found at $($file.Source) -- see packaging\MANIFEST.md."
+        }
     }
 }
 
@@ -464,18 +549,9 @@ Remove-ExportJunk $LinuxExportDir
 # Files on a Windows drive have no Unix mode of their own (WSL reports every one as 0777), so the
 # modes are set on a copy in the distro's own filesystem and the tar is written from there: 0755
 # for the two executables and every directory, 0644 for everything else, root-owned so an unpack
-# by any user does not try to restore this machine's uid. The pack script is written to a file
-# rather than passed inline because PowerShell 5.1 mangles embedded double quotes in a native
-# command's arguments. Entries sit at the archive root, as they do in the zip.
-function ConvertTo-WslPath([string] $Path) {
-    $wslPath = (& wsl.exe -d $script:LinuxDistro --exec wslpath -u $Path)
-    if ($LASTEXITCODE -ne 0 -or -not $wslPath) {
-        throw "wslpath could not translate $Path for WSL."
-    }
-    return $wslPath.Trim()
-}
-$packScript = Join-Path $RepoRoot ".scratch\pack-linux-$PID.sh"
-$packText = @'
+# by any user does not try to restore this machine's uid. Entries sit at the archive root, as they
+# do in the zip.
+$packScript = Write-WslScript "pack-linux" @'
 set -eu
 src="$1"; out="$2"
 tmp="$(mktemp -d)"
@@ -489,8 +565,6 @@ cd "$tmp"
 tar --create --gzip --file="$out" --owner=0 --group=0 --numeric-owner --sort=name -- *
 tar --list --verbose --gzip --file="$out"
 '@
-[System.IO.File]::WriteAllText($packScript, ($packText -replace "`r`n", "`n"),
-    (New-Object System.Text.UTF8Encoding($false)))
 
 Write-Host "Packaging $TarPath in WSL ($LinuxDistro)..." -ForegroundColor Cyan
 try {

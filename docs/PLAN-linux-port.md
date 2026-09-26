@@ -91,7 +91,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 ### Wave B, Linux build
 
-11. ☐ Linux `unzbd`: WSL toolchain and a musl build called from `ExportRelease.ps1`
+11. ☑ Linux `unzbd`: WSL toolchain and a musl build called from `ExportRelease.ps1`
 12. ☑ Linux export preset and `.tar.gz` packaging with executable bits
 13. ☑ Linux README with an "On Steam Deck" section
 14. ☐ Pre-release Linux check in WSL: extract, then a headless mission load
@@ -519,7 +519,41 @@ in-game flow is the author's to click through.
 
 # Wave B, Linux build
 
-## B11 ☐ Linux `unzbd`: WSL toolchain and a musl build called from `ExportRelease.ps1`
+## B11 ☑ Linux `unzbd`: WSL toolchain and a musl build called from `ExportRelease.ps1`
+
+**Landed.** `ExportRelease.ps1 -Linux` builds the Linux `unzbd` itself, before the Windows build
+starts: a generated LF script run through `wsl -d Debian` checks `~/.cargo/bin/{cargo,rustup}`,
+`cc` and `musl-gcc`, and the `x86_64-unknown-linux-musl` target on the toolchain the checkout's
+`rust-toolchain.toml` pins (1.91.1), then runs `cargo build --release --locked --target
+x86_64-unknown-linux-musl --bin unzbd` in `tools/mech3ax` through `/mnt/z` and copies the binary to
+`tools\mech3ax\target\x86_64-unknown-linux-musl\release\unzbd`, which the payload list ships as
+`tools/unzbd`. Each missing piece is a named error with its setup command (rustup, `apt install
+build-essential musl-tools`, `rustup target add --toolchain <pin> ...`). `-LinuxUnzbd <path>` ships
+an existing file instead and skips the build; a named file that is absent is an error. cargo's
+stderr is folded into stdout inside the script, because a caller that redirects the export's
+streams turns native stderr into a terminating error under `Stop`. The `ConvertTo-WslPath` and
+`Write-WslScript` helpers are shared with B12's pack step. The one-time setup is in
+PROJECT_CONTEXT.md's `tools/` line and `docs/tooling.md`'s `-Linux` paragraph.
+`packaging/BuildThirdPartyNotices.ps1` takes `tools\` from `CSVM_DATA_ROOT` in a worktree, as the
+export does, and `packaging/LICENSE-thirdparty.txt` is regenerated for .NET 8.0.31.
+
+**The TODOs, resolved.** `CARGO_TARGET_DIR` is `~/cargo-target/mech3ax` inside the distro: the
+build stays out of the checkout's `target/` and off `/mnt/z` for its many small writes (a first
+build takes about 45 s, an up-to-date one 2 s). The exact verify command is below.
+
+**Verified.** Engineering checks by the item agent: `unzbd cs gamez
+<install>/ZBD/C1/gamez.zbd <out>.zip` (the mode and argument order `ZbdExtraction` uses) run with the
+musl build in WSL and with `unzbd.exe` on Windows gives byte-identical zips (5 entries, same names
+and order, every entry's SHA-256 equal, whole-file SHA-256 equal); both print the same
+transform-precision notes. The musl binary runs from the distro's filesystem. A full
+`ExportRelease.ps1 -Linux` run built it, and the tarball's `CSVM.x86_64` and `tools/unzbd` list as
+`-rwxr-xr-x`. The unpacked tarball, run in WSL as `./CSVM.x86_64 --headless -- --extract=<install>
+--data-root=<distro folder>`, exits 0 with 185 ZBD archives extracted and the `.rof` half done.
+Orchestrator check: `ldd` reports the musl `unzbd` as statically linked, the tarball holds 193
+files, and the headless extraction takes 23 s and writes 847 `.rof` files (688 MB). B11 changes no
+C#, so the battery on 37262923 stands for this tree.
+
+**Original approach (kept for reference).**
 
 **Goal.** `ExportRelease.ps1` produces a static Linux `unzbd` from the same `tools/mech3ax` checkout
 as the Windows one.

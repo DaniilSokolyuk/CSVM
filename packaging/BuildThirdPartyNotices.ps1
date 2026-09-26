@@ -67,8 +67,13 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RepoRoot     = Split-Path $PSScriptRoot -Parent
-$GodotExe     = Join-Path $RepoRoot "tools\godot\Godot_v4.7-stable_mono_win64\Godot_v4.7-stable_mono_win64_console.exe"
-$Mech3axRepo  = Join-Path $RepoRoot "tools\mech3ax"
+# tools/ is git-ignored, so a worktree takes it from CSVM_DATA_ROOT, as ExportRelease.ps1 does.
+$ToolsRoot    = $RepoRoot
+if ((-not (Test-Path (Join-Path $RepoRoot "tools\godot"))) -and $env:CSVM_DATA_ROOT) {
+    $ToolsRoot = $env:CSVM_DATA_ROOT
+}
+$GodotExe     = Join-Path $ToolsRoot "tools\godot\Godot_v4.7-stable_mono_win64\Godot_v4.7-stable_mono_win64_console.exe"
+$Mech3axRepo  = Join-Path $ToolsRoot "tools\mech3ax"
 $OutFile      = Join-Path $PSScriptRoot "LICENSE-thirdparty.txt"
 $PlMpegFile   = Join-Path $PSScriptRoot "LICENSE-plmpeg"
 $PromptFontLicense = Join-Path $PSScriptRoot "LICENSE-promptfont"

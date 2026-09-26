@@ -14,7 +14,7 @@ Assembled from these exact payload versions, which ExportRelease.ps1 re-checks
 against what it packages before it will build a zip:
 
   Godot Engine build: 4.7.stable.mono.official.5b4e0cb0f
-  .NET runtime version: 8.0.30
+  .NET runtime version: 8.0.31
   mech3ax cs-anim commit: afc9a7f0929843e4ed3085f35f1f33ada8be7688
 
 Regenerate with packaging\BuildThirdPartyNotices.ps1, which reads every text in

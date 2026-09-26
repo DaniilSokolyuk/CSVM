@@ -252,9 +252,19 @@ Linux table) and packs `.scratch\CSVM-v<version>-linux-x64.tar.gz` inside WSL (`
 since only a tar written on Linux can carry the executable bit: the files are copied into the
 distro's own filesystem, given `0755` (`CSVM.x86_64`, `tools/unzbd`, directories) or `0644`
 (everything else), and archived root-owned. The script reads both executables' modes back from the
-archive and prints its SHA-256. `-LinuxUnzbd <path>` names the Linux `unzbd`, by default the musl
-build `tools\mech3ax\target\x86_64-unknown-linux-musl\release\unzbd`; a missing one, a missing Linux
-export template or an unreachable WSL distro is a named error before the build starts. The engine csproj sets
+archive and prints its SHA-256. Before the Windows build starts, the script builds the Linux
+`unzbd` from the same `tools\mech3ax` checkout as `unzbd.exe`: `cargo build --release --locked
+--target x86_64-unknown-linux-musl --bin unzbd` inside WSL, with `CARGO_TARGET_DIR` at
+`~/cargo-target/mech3ax` in the distro (a target dir on `/mnt/z` is slow and would put a Linux tree
+in the checkout), then copies the static binary to
+`tools\mech3ax\target\x86_64-unknown-linux-musl\release\unzbd`. `-LinuxUnzbd <path>` ships an
+existing binary instead and skips the build. A missing toolchain, target or compiler, a missing
+`-LinuxUnzbd` file, a missing Linux export template or an unreachable WSL distro is a named error
+before the Windows build starts. One-time setup in WSL Debian: `sudo apt install build-essential
+curl musl-tools`, rustup from <https://rustup.rs> (into `~/.cargo/bin`, where the script looks),
+then `rustup target add --toolchain 1.91.1 x86_64-unknown-linux-musl`. The toolchain is the one
+`tools/mech3ax/rust-toolchain.toml` pins; adding the target to `stable` does not reach it. The
+musl `unzbd` of a given fork commit writes byte-identical archives to `unzbd.exe`'s. The engine csproj sets
 `InvariantGlobalization`, so the self-contained .NET runtime never loads `libicu`; without it, a
 system lacking that library (the author's WSL Debian among them) aborts at startup with "Couldn't
 find a valid ICU package installed on the system".
