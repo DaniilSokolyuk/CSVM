@@ -571,6 +571,10 @@ public partial class Launcher : Node3D
             RenderingServer.GlobalShaderParameterType.Vec3, new Vector3(0f, 1f, 0f));
         RenderingServer.GlobalShaderParameterAdd("csky_sun_light",
             RenderingServer.GlobalShaderParameterType.Vec2, new Vector2(1f, 0f));
+        // 1 under a night zone (WeatherRig.IsNightZone), for the enhanced cloud field, which dims
+        // to moonlight where the ground keeps the zone's capped energies.
+        RenderingServer.GlobalShaderParameterAdd("csky_night",
+            RenderingServer.GlobalShaderParameterType.Float, 0f);
         // The same pair with its colours (WeatherRig.SunVertexLight), which the faithful aircraft
         // reads. SetupLighting replaces these registration defaults with the day pair.
         RenderingServer.GlobalShaderParameterAdd("csky_sun_ambient_rgb",

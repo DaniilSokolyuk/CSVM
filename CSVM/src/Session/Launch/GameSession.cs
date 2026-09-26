@@ -88,6 +88,8 @@ public partial class GameSession : Node3D
     private readonly int[][]? _menuPads;
     // The panes handed to a spectator when their pilot ran out of lives, so a rerun can take them
     // back. Freed with this node otherwise.
+    // Each dome as authored and as built under the volumetric field, for ApplyCloudMode.
+    private readonly List<(Node3D Authored, Node3D UnderClouds)> _domeVariants = new();
     private readonly List<SpectatorCamera> _spectatorCameras = new();
     // The --screenshot=/--shots=/--frames= state machine, see
     // src/Tooling/CaptureDirector.cs's entry. Process-scoped and owned by the Launcher (which
@@ -224,6 +226,11 @@ public partial class GameSession : Node3D
     // weathered build exists to write it; WeatherRig.Tick is what fills it in.
     private Effects.EffectAmbience _ambience = new();
     private LensFlareRig? _lensFlareRig;
+    // The clouds ApplyCloudMode swaps between: enhanced mode's volumetric field, and the authored
+    // populations it stands in for, with each dome as authored and as built under the field.
+    private Effects.VolumetricClouds? _volumetricClouds;
+    private Effects.FogVolumeClutter? _spriteClouds;
+    private IReadOnlyList<Node3D> _cloudClusters = Array.Empty<Node3D>();
     // The FBFX_COLOR_FROM_TO wash, one ramp per rendered view, painted into the pane(s) the burst
     // was near.
     private UI.Boards.ScreenFlash? _screenFlash;
@@ -703,6 +710,7 @@ public partial class GameSession : Node3D
     /// their own next commit.</summary>
     public void ApplyGraphicsMode()
     {
+        ApplyCloudMode();
         _weatherRig?.ReapplyZone();
         foreach (var rig in _rigs)
             rig.Controller?.CockpitPass?.ApplyGraphicsMode(_spec.SkippedPasses);
@@ -1679,19 +1687,39 @@ public partial class GameSession : Node3D
                 // container is what Tick anchors, so each dome keeps its own scale and gate.
                 var zones = builder.HorizonZones();
                 var domeZones = Mech3.WorldBuilder.DomeZonesToBuild(zones, activeZone);
+                // Where the volumetric field can come up, each dome is built twice: as authored, and
+                // for the field, without the painted cloud cards it stands in for and as sky at
+                // infinity. A graphics switch shows one or the other (ApplyCloudMode).
+                bool cloudsAllowed = (_spec.SkippedPasses & EnhancedPasses.Clouds) == 0;
                 foreach (var rig in _rigs)
                 {
                     var anchor = new Node3D { Name = "horizon" };
                     foreach (string zoneName in domeZones)
                     {
-                        var dome = builder.BuildHorizon(zoneName);
-                        if (dome == null)
+                        var authoredDome = builder.BuildHorizon(zoneName);
+                        if (authoredDome == null)
                             continue;
-                        dome.Name = $"dome_{zoneName}";
+                        var dome = new Node3D { Name = $"dome_{zoneName}" };
                         // ⚠ Scale per dome, never once for the container: a chapter's two zone domes
                         // differ in size, and the flown one's scale must not move because a second
                         // was added beside it. See HorizonScaleFor.
-                        dome.Scale = Vector3.One * HorizonScaleFor(dome);
+                        dome.Scale = Vector3.One * HorizonScaleFor(authoredDome);
+                        authoredDome.Name = "authored";
+                        dome.AddChild(authoredDome);
+                        if (cloudsAllowed)
+                        {
+                            builder.HideCloudCards = true;
+                            builder.SkyAtInfinity = true;
+                            var skyDome = builder.BuildHorizon(zoneName);
+                            builder.HideCloudCards = false;
+                            builder.SkyAtInfinity = false;
+                            if (skyDome != null)
+                            {
+                                skyDome.Name = "under_clouds";
+                                dome.AddChild(skyDome);
+                                _domeVariants.Add((authoredDome, skyDome));
+                            }
+                        }
                         anchor.AddChild(dome);
                         int zoneId = -1;
                         foreach (var z in zones)
@@ -1712,6 +1740,7 @@ public partial class GameSession : Node3D
 
                 // The evidence that the swap exists at all, since a broken gate and a one-dome
                 // chapter render identically at the state they share (docs/verification.md).
+
                 if (_rigs.Count > 0)
                 {
                     var built = _rigs[0].HorizonDomes;
@@ -1726,6 +1755,29 @@ public partial class GameSession : Node3D
                 _fogStateBeforeWeather = null;
                 _weatherRig.ApplyFogState(heldFog);
             }
+            // Enhanced mode's baked cloud field, overcast at the band where the chapter has a deck,
+            // scattered at its authored cloud height where it has none (Effects.VolumetricClouds).
+            // Built in either mode, so a live switch only swaps what shows (ApplyCloudMode).
+            if ((_spec.SkippedPasses & EnhancedPasses.Clouds) == 0)
+            {
+                var (floor, overcast) = Effects.VolumetricClouds.LayerFor(
+                    builder.CloudDeck != null, _weatherRig.CloudBand, builder.CloudClusters, state.Gamez);
+                // Where the original fills the sky: its fvol boxes and the placed cloudparent clusters.
+                var authored = new List<Aabb>();
+                foreach (var v in fogVolumes)
+                    authored.Add(v.Box);
+                foreach (var cluster in builder.CloudClusters)
+                {
+                    if (Effects.VolumetricClouds.ClusterBox(cluster, state.Gamez) is { } clusterBox)
+                        authored.Add(clusterBox);
+                }
+                _volumetricClouds = Effects.VolumetricClouds.Create(state.Gamez, floor, overcast, _spec.Chapter, authored);
+                if (_volumetricClouds != null)
+                    _worldRoot!.AddChild(_volumetricClouds);
+            }
+            _spriteClouds = cloudField;
+            _cloudClusters = builder.CloudClusters;
+            ApplyCloudMode();
             StartupProfile.Record("weather", weatherMark);
         }
 
@@ -1768,6 +1820,29 @@ public partial class GameSession : Node3D
             BuildAnimLabStage(state, session);
         }
         return true;
+    }
+
+    // Which clouds fill the sky under the current graphics mode. Enhanced shows the volumetric
+    // field, which stands in for every authored cloud population: the flat deck, the fvol sprite
+    // field, the placed cloudparent clusters (they would float inside it) and the dome's painted
+    // cards, whose dome variant it swaps in. Original shows the authored ones, as does a chapter
+    // the field could not be built over.
+    private void ApplyCloudMode()
+    {
+        bool field = GraphicsMode.Enhanced && _volumetricClouds != null;
+        if (_volumetricClouds != null)
+            _volumetricClouds.Visible = field;
+        if (_weatherRig != null)
+            _weatherRig.DeckReplaced = field;
+        if (_spriteClouds != null)
+            _spriteClouds.Visible = !field;
+        foreach (var cluster in _cloudClusters)
+            cluster.Visible = !field;
+        foreach (var (authored, underClouds) in _domeVariants)
+        {
+            authored.Visible = !field;
+            underClouds.Visible = field;
+        }
     }
 
     // The anchor scale for one built skydome: HorizonScale, reduced where that would push the

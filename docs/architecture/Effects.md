@@ -60,3 +60,21 @@ SNOW flutters as flakes; RAIN streaks along the data's world fall velocity. The 
 procedural (`MakeFlakeTexture`/`MakeStreakTexture`), the original having drawn untextured
 primitives no archive carries. Schema and the data-to-look TUNE mapping:
 [../formats/weather.md](../formats/weather.md).
+
+## src/Effects/VolumetricClouds.cs
+Enhanced mode's cloud field: static volumetric impostors. At session start an offscreen pass,
+one tile a frame, raymarches sixteen procedural cloud parts into an atlas (sunlit, ambient and
+opacity channels): cumulus with a flat ragged base, tower crowns and flat sheets, shaped with
+Nubis-style Worley billows and a frayed Perlin-Worley rim and lit with Hillaire's energy-conserving
+step and multiple-scattering octaves. A generator builds each cloud from a few camera-facing cards
+(a single cumulus, a tower, a cloud street or a stratocumulus patch) in one MultiMesh sorted back
+to front. Placement follows the original: an overcast field where the chapter has a deck, the fvol
+boxes and merged `cloudparent` clusters at their own heights, and a sparse scatter elsewhere,
+seeded per chapter. The cards take the world's `csky_fog_*` fog and relight off the zone's
+`csky_sun_*` pair with a dual-lobe phase, dimmed to moonlight under `csky_night`.
+It stands in for the flat deck (`WeatherRig.DeckReplaced`), the fvol field, the `cloudparent`
+clusters and the dome's cloud cards (`WorldBuilder.HideCloudCards`), and has the dome built as sky
+at infinity (`WorldBuilder.SkyAtInfinity`) so no star or moon draws over a cloud. It is built in
+either graphics mode, beside a second dome variant, and `GameSession.ApplyCloudMode` swaps the two
+cloud populations on a live switch; `--no-clouds` leaves it out.
+The divergence itself is written up in [Root.md](Root.md).

@@ -70,6 +70,9 @@ public enum EnhancedPasses
     /// <summary><c>--no-soft-shadows</c>: the sun's penumbra, angular distance and blur both 0,
     /// leaving a hard shadow edge rather than no shadow.</summary>
     SoftShadows = 8,
+
+    /// <summary><c>--no-clouds</c>: the volumetric cloud layer; the flat deck returns.</summary>
+    Clouds = 16,
 }
 
 /// <summary>One <c>--ai=</c> entry: the airframe, plus the optional tokens that follow it.
@@ -1356,10 +1359,9 @@ public sealed record SessionSpec
             else if (arg == "--no-clutter") { s.NoClutter = true; }
             else if (arg == "--no-zone-cull") { s.NoZoneCull = true; }
             else if (arg == "--no-flare") { s.NoFlare = true; }
-            else if (arg == "--no-ssao") { s.SkippedPasses |= EnhancedPasses.Ssao; }
-            else if (arg == "--no-ssr") { s.SkippedPasses |= EnhancedPasses.Ssr; }
-            else if (arg == "--no-glow") { s.SkippedPasses |= EnhancedPasses.Glow; }
-            else if (arg == "--no-soft-shadows") { s.SkippedPasses |= EnhancedPasses.SoftShadows; }
+            // One branch for every enhanced bisect door: this chain sits at the compiler's
+            // expression-depth limit (CS8078), so a new door joins the table rather than the chain.
+            else if (EnhancedPassDoor(arg) is { } door) { s.SkippedPasses |= door; }
             else if (arg.StartsWith("--mips=")) { s.SetMips(arg["--mips=".Length..]); }
             else if (arg.StartsWith("--graphics="))
             {
@@ -1619,6 +1621,17 @@ public sealed record SessionSpec
         }
         return names;
     }
+
+    /// <summary>The enhanced pass a bisect-door flag closes, or null for any other argument.</summary>
+    public static EnhancedPasses? EnhancedPassDoor(string arg) => arg switch
+    {
+        "--no-ssao" => EnhancedPasses.Ssao,
+        "--no-ssr" => EnhancedPasses.Ssr,
+        "--no-glow" => EnhancedPasses.Glow,
+        "--no-soft-shadows" => EnhancedPasses.SoftShadows,
+        "--no-clouds" => EnhancedPasses.Clouds,
+        _ => null,
+    };
 
     /// <summary>Parse an "x,y,z" triple, invariant culture.</summary>
     public static Vector3 ParseVec3(string s)

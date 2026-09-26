@@ -29,7 +29,7 @@ leaving the fog where it is; `LIGHT_STATE` point lights are mirrored onto real
 (`WorldLights.cs`); the light-source class of glow-arm sprites (flares, beacons, signal lamps)
 scales its colour above 1.0 to feed an Environment glow pass, and an AgX tonemap rolls the
 resulting HDR scene off instead of clipping it; SSAO adds contact shading in ambient light, and
-SSR reflects the shoreline off water surfaces the engine already classifies as `"water"`
+a static field of baked volumetric cloud impostors (`Effects/VolumetricClouds.cs`) takes the place of the flat overcast deck, the sprite clouds (the `fvol` field and the `cloudparent` clusters) and the dome's painted cloud cards, overcast at the `CLOUD_COVER` floor where the chapter has a deck and scattered at its authored cloud height where not; SSR reflects the shoreline off water surfaces the engine already classifies as `"water"`
 (`Launcher.cs`'s `SetupLighting`); the sky those water surfaces reflect where SSR finds nothing is
 the flown zone's own `FOG_COLOR`, painted flat over Godot's procedural placeholder as a `Sky`
 resource (`Launcher.cs`'s `UseMissionSky`, `WeatherRig.WriteSkyColor`). The cockpit interior pass

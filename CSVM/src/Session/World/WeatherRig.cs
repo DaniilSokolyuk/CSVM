@@ -208,6 +208,15 @@ public sealed class WeatherRig
     /// the band stops drawing for a camera below it.</summary>
     public ObjectZoneGate ObjectGate => _objectGate;
 
+    /// <summary>Enhanced mode's cloud field is up (<c>Effects.VolumetricClouds</c>): the flat deck it
+    /// stands in for stays switched off at every camera state.</summary>
+    public bool DeckReplaced { get; set; }
+
+    /// <summary>The mission's <c>CLOUD_COVER</c> band as (bottom, top) metres, null when the loaded
+    /// weather authors none or no weather.json loaded. Read after <see cref="Build"/>.</summary>
+    public (float Bottom, float Top)? CloudBand =>
+        _weather is { HasCloudBand: true } w ? (w.CloudBottom, w.CloudTop) : null;
+
     /// <summary>The applied zone's <c>SUNLIGHT_DIFFUSE</c>/<c>SUNLIGHT_AMBIENT</c>, each scaled
     /// by its own authored colour. The authored pair rather than the energies derived from it,
     /// for the reader that needs the light itself: the ground shadow's darkness is the light the
@@ -565,7 +574,7 @@ public sealed class WeatherRig
                 ? ZoneGate.OpenCullMask(rig.Camera.CullMask)
                 : ZoneGate.CullMask(rig.Camera.CullMask, gate);
             if (rig.Deck != null)
-                rig.Deck.Visible = _spec.NoZoneCull || ZoneGate.Draws(_deckZoneId, gate);
+                rig.Deck.Visible = !DeckReplaced && (_spec.NoZoneCull || ZoneGate.Draws(_deckZoneId, gate));
             // One dome per horizon zone, showing only at its own state; a chapter with a single
             // built dome keeps it at every state rather than render no sky at all
             // (docs/org/weather.md).
@@ -876,6 +885,7 @@ public sealed class WeatherRig
         RenderingServer.GlobalShaderParameterSet("csky_sun_dir", toSun);
         RenderingServer.GlobalShaderParameterSet("csky_sun_light",
             new Vector2(fog.SunAmbient, fog.SunDiffuse));
+        RenderingServer.GlobalShaderParameterSet("csky_night", IsNightZone(fog) ? 1f : 0f);
         // The same term with its colours, for the faithful aircraft, which carries no collapse.
         (Vector3 ambientRgb, Vector3 diffuseRgb) = SunVertexLight(fog);
         RenderingServer.GlobalShaderParameterSet("csky_sun_ambient_rgb", ambientRgb);

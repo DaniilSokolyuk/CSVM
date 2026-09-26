@@ -291,6 +291,7 @@ only `Airframe`, and nothing else in `Flight` names `Hangar`.
 - `src/Effects/EmitterRenderer.cs`, the `IEmitterRenderer` seam under `Puffer` and the `MultiMesh` billboard-shader renderer behind it.
 - `src/Effects/FogVolumeClutter.cs`, the authored ambient cloud field: `fogvol.zrd` clutter scattered through its `fvol*` volumes, one MultiMesh per kind.
 - `src/Effects/Precipitation.cs`, weather.json rain/snow: one camera-following MultiMesh of flakes or streaks, self-animating on the GPU.
+- `src/Effects/VolumetricClouds.cs`, enhanced mode's static baked cloud field: volumetric impostors raymarched once, standing in for the deck and the sprite clouds.
 - `src/Effects/WorldWind.cs`, the mission's global wind (static vector plus random-walk gust) and `EffectAmbience`, the seam a `Puffer` reads it through.
 
 ### `src/UI/`, screens, overlays and the inspection labs
