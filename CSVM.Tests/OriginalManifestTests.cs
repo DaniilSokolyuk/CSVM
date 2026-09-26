@@ -187,7 +187,7 @@ public class OriginalManifestTests : IDisposable
 
         Assert.Null(OriginalAvailability.Load(_root, out var reason, out _));
         Assert.Contains("stamped schema=0", reason);
-        Assert.Contains("re-run ExtractAssets.ps1 and ExtractRof.ps1", reason);
+        Assert.Contains("re-extract from the Extract screen", reason);
 
         Stamp(OriginalAssetManifest.StampSchema);
         Assert.NotNull(OriginalAvailability.Load(_root, out reason, out _));

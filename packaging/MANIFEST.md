@@ -1,7 +1,8 @@
 # Release zip manifest (for the assembler, not the recipient)
 
 The release zip holds these pieces. Everything sits at the zip root except `tools\unzbd.exe`;
-the recipient unzips, double-clicks `Extract.cmd`, then `CSVM.exe`.
+the recipient unzips and double-clicks `CSVM.exe`, which extracts the game data from inside the
+engine on first start. The zip carries no script.
 
 `ExportRelease.ps1` assembles it: it exports into `.scratch\export\`, copies the rows below in
 beside the export output, and zips that folder to `.scratch\CSVM-v<version>-win64.zip`, the version
@@ -18,12 +19,7 @@ notices file is assembled from; their Zip path column names them as no zip row a
 | Zip path | Source | Notes |
 |---|---|---|
 | `CSVM.exe` + export payload (`.pck`/`.dll`s etc.) | the Godot release export output | Whatever the export produces at its root, copied verbatim; the exe's file properties carry the version |
-| `Extract.cmd` | `packaging/Extract.cmd` | The double-clickable wrapper: runs `Extract.ps1` beside it with the execution-policy switch applied, forwards a dropped folder, and holds the window open on both outcomes |
-| `Extract.ps1` | `packaging/Extract.ps1` | The thin dispatcher; contains no extraction logic. Passed no path it probes the usual install locations and offers a folder picker |
-| `ExtractAssets.ps1` | repo root `ExtractAssets.ps1` | UNMODIFIED repo script — do not fork a package variant |
-| `ExtractRof.ps1` | repo root `ExtractRof.ps1` | UNMODIFIED repo script — do not fork a package variant |
-| `ExtractRof.MenuLayout.cs` | repo root `ExtractRof.MenuLayout.cs` | The menu-layout decoder `ExtractRof.ps1` `Add-Type`s from beside itself; without it the extraction fails on the recipient's machine |
-| `tools\unzbd.exe` | `Z:\CSVM\tools\mech3ax\target\release\unzbd.exe` | The fork build (branch `cs-anim`), NOT the pinned v0.6.1 binary (Decision 5) |
+| `tools\unzbd.exe` | `Z:\CSVM\tools\mech3ax\target\release\unzbd.exe` | The fork build (branch `cs-anim`), NOT the pinned v0.6.1 binary (Decision 5). The engine runs it as a child process, from the Extract screen or `--extract`; it is never linked |
 | `README.md` | `packaging/README.md` | The one document a downloader reads: the releases page and the zip's SHA-256, the requirements including the renderer floor, the extraction and first flight, the log and save locations, what the other files here are, and where to report a problem. Author-reviewed before any hand-off or release (standing rule: the author owns outward communication) |
 | `LICENSE` | `packaging/LICENSE` | GPL-3, byte-identical to repo root `LICENSE` |
 | `LICENSE-unzbd` | `packaging/LICENSE-unzbd` | EUPL-1.2, byte-identical to `tools/mech3ax/LICENSE` |
@@ -36,9 +32,8 @@ notices file is assembled from; their Zip path column names them as no zip row a
 
 `ExportRelease.ps1 -Linux` also exports the `Linux/X11` preset into `.scratch\export-linux\` and
 packs it inside WSL (Debian) as `.scratch\CSVM-v<version>-linux-x64.tar.gz`, entries at the
-archive root like the zip's. It is the zip's payload minus the PowerShell extractors (`Extract.cmd`,
-`Extract.ps1`, `ExtractAssets.ps1`, `ExtractRof.ps1`, `ExtractRof.MenuLayout.cs`), which SteamOS
-cannot run. Modes are set in the archive, root-owned: `0755` for the two executables and every
+archive root like the zip's. It is the zip's payload with the Linux README and the Linux unzbd in
+place of the Windows ones. Modes are set in the archive, root-owned: `0755` for the two executables and every
 directory, `0644` for everything else, and the script reads the two executables' modes back out of
 the archive before it reports success.
 
@@ -50,7 +45,7 @@ the archive before it reports success.
 | `LICENSE`, `LICENSE-unzbd`, `LICENSE-thirdparty.txt` | as in the zip | ⚠ `LICENSE-thirdparty.txt` is assembled from the Windows artefacts (the `win-x64` runtime pack, the crate tree for `x86_64-pc-windows-msvc`), so it does not yet enumerate what the Linux binaries contain |
 | `BUILD-INFO.txt` | GENERATED, as in the zip | The same commits, with the Linux file names and LF line endings |
 
-Not in the zip, created on the recipient's machine by `Extract.ps1`: `extracted\` (game data —
+Not in the zip, created on the recipient's machine by the engine's extraction: `extracted\` (game data —
 must never ship; the zip contains zero game assets by construction).
 
 Assembly checks before hand-off. The copies are taken from the sources above on every export,

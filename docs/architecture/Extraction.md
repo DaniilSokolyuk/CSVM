@@ -75,8 +75,7 @@ folder lacked, for the report and the stamp.
 
 ## src/Extraction/MenuLayoutDecoder.cs
 `Run` reads an extracted rof tree and writes `menu_layout.json`; `ReadTree`, `Decode` and `ToJson`
-are the pure steps a test drives on fixtures. It stays in the C# 5 subset while `ExtractRof.ps1`
-still `Add-Type`s it. The format and every field order are in
+are the pure steps a test drives on fixtures. The format and every field order are in
 [../formats/menu-layout.md](../formats/menu-layout.md); `UI/Menu/MenuLayout.cs` reads the output
 at runtime.
 
@@ -101,7 +100,7 @@ other line is a warning.
 ## src/Extraction/ZbdProgress.cs
 The types around the runner. `ZbdExtractionOptions` (`Force`, `Unzip`); the player's button uses the
 defaults. `ZbdProgress` is one report per step (index of total, output path, `ZbdStep`, mode, notes,
-detail), and `Lines()` gives the console lines the script printed. `ZbdExtractionResult` holds the
+detail), and `Lines()` gives the console lines `--extract` prints. `ZbdExtractionResult` holds the
 counts (extracted, up to date, skipped, unzipped, both note kinds), failures, unknown archives,
 warnings, the stamp path, `Fatal` when nothing could start, and `Summary(unzip)`.
 
@@ -117,7 +116,7 @@ archives write thousands of lines; cancelling kills the process tree. `Identify`
 Writes `extracted/VERSION.json`: `schema` (always `ExtractionStamp.Schema`), `assets` (`script`,
 `date` UTC, `unzbdVersion`, `unzbdSha256`, optional `unzbdCommit`) from `WriteAssets`, and `rof`
 (`script`, `date`, `movies`) from `WriteRof`. `Merge` keeps every other field, reads an existing file
-as text so a BOM from the PowerShell scripts parses, rewrites an unreadable one, and writes UTF-8
+as text so a BOM from the retired PowerShell extractors parses, rewrites an unreadable one, and writes UTF-8
 without a BOM. `script` is `CSVM`.
 
 ## src/Extraction/ExtractionRun.cs

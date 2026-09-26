@@ -16,7 +16,7 @@
     first line of every log state, so all three agree by construction.
 
     Copying is what keeps MANIFEST.md's "byte-identical to the repo source" rule true by
-    construction: the extractor scripts and licences are taken from their one home in the
+    construction: the READMEs and licences are taken from their one home in the
     repo on every export, never forked into a package variant that can drift.
 
     Two of the zip's files are about the build rather than part of it.
@@ -91,17 +91,12 @@ if (-not $LinuxUnzbd) {
     $LinuxUnzbd = Join-Path $ToolsRoot "tools\mech3ax\target\x86_64-unknown-linux-musl\release\unzbd"
 }
 # The Linux README, shipped as README.md at the tarball root like the zip's own. A separate
-# file because the Windows one describes Extract.cmd, SmartScreen and Direct3D 12.
+# file because the Windows one describes SmartScreen and Direct3D 12.
 $LinuxReadme = Join-Path $RepoRoot "packaging\README-linux.md"
 
 # The zip payload beside the export output, from packaging/MANIFEST.md. Sources are the
 # files' one home in the repo, so a copy is byte-identical to what the manifest names.
 $ReleaseFiles = @(
-    @{ Source = Join-Path $RepoRoot "packaging\Extract.cmd";    Dest = "Extract.cmd" },
-    @{ Source = Join-Path $RepoRoot "packaging\Extract.ps1";    Dest = "Extract.ps1" },
-    @{ Source = Join-Path $RepoRoot "ExtractAssets.ps1";        Dest = "ExtractAssets.ps1" },
-    @{ Source = Join-Path $RepoRoot "ExtractRof.ps1";           Dest = "ExtractRof.ps1" },
-    @{ Source = Join-Path $RepoRoot "CSVM\src\Extraction\MenuLayoutDecoder.cs"; Dest = "ExtractRof.MenuLayout.cs" },
     @{ Source = Join-Path $RepoRoot "packaging\README.md";      Dest = "README.md" },
     @{ Source = Join-Path $RepoRoot "packaging\LICENSE";        Dest = "LICENSE" },
     @{ Source = Join-Path $RepoRoot "packaging\LICENSE-unzbd";  Dest = "LICENSE-unzbd" },
@@ -109,9 +104,8 @@ $ReleaseFiles = @(
     @{ Source = $UnzbdExe;                                      Dest = "tools\unzbd.exe" }
 )
 
-# The tarball payload, packaging/MANIFEST.md's Linux table. It is the zip's list without the
-# PowerShell extractors, which SteamOS cannot run (no PowerShell, read-only system partition):
-# a Linux player extracts from inside the game.
+# The tarball payload, packaging/MANIFEST.md's Linux table: the zip's list with the Linux README and
+# the Linux unzbd. Both platforms extract from inside the game, so neither ships a script.
 $LinuxReleaseFiles = @(
     @{ Source = $LinuxReadme;                                   Dest = "README.md" },
     @{ Source = Join-Path $RepoRoot "packaging\LICENSE";        Dest = "LICENSE" },

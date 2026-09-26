@@ -1,5 +1,3 @@
-// Do not leave C# 5 while ExtractRof.ps1 Add-Types this file: PowerShell 5.1 rejects newer syntax.
-// That rules out interpolation, expression bodies, `?.`, file-scoped namespaces and System.Text.Json.
 // The format is in docs/formats/menu-layout.md.
 
 using System;

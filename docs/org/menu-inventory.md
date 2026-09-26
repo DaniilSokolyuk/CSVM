@@ -592,7 +592,7 @@ screen degrades locally and stays usable. The runtime manifest
 (`CSVM/src/UI/Menu/Original/OriginalAssetManifest.cs`) derives that classification from the decoded
 layout on every start, so this section is the reading and the manifest is the enforcement. Over the
 install's own layout it classifies **99 required** and **63 optional** files, and over a complete
-extraction it reports no absence at all: `ExtractRof.ps1` copies the loose MPGs in, so the two
+extraction it reports no absence at all: the extraction copies the loose MPGs in, so the two
 movies the layout names are on disk with everything else.
 
 ⚠ **The manifest cannot be generated from `LAYOUT.CSV` alone.** The layout names 124 distinct art
@@ -630,7 +630,7 @@ which is why the required count is 94 layout names plus the five the scripts nam
 | `PX_0..10_BLUEPRINT.TGA` | 11 | not classified | assembled at runtime; `IHangarPage.Art` already returns null on a miss |
 | scrapbook art | 238 files | not classified | assembled at runtime; a `Snap_*` row is already skipped when the file is not on disk |
 | paint `.BM` masks | 184 | not classified | assembled at runtime per pattern; 14 pattern folders, `FORTUNE` has all 62 skins, `BLCKSWAN` 5 |
-| `CrimFlag.MPG`, `Final.MPG` | 2 | optional | `LAYOUT.CSV` names both under `extracted/rof/ASSETS/GRAPHICS/MPG/`, where `ExtractRof.ps1` puts the install's loose MPGs; `CrimFlag.MPG` is the top level's and Preferences' backdrop, on an 8.0 s loop ([`../formats/cinemas.md`](../formats/cinemas.md)), and runs behind the five Preferences leaves too, which author no row of their own and show it in every leaf still; a screen whose movie is missing draws whole without it |
+| `CrimFlag.MPG`, `Final.MPG` | 2 | optional | `LAYOUT.CSV` names both under `extracted/rof/ASSETS/GRAPHICS/MPG/`, where the extraction puts the install's loose MPGs; `CrimFlag.MPG` is the top level's and Preferences' backdrop, on an 8.0 s loop ([`../formats/cinemas.md`](../formats/cinemas.md)), and runs behind the five Preferences leaves too, which author no row of their own and show it in every leaf still; a screen whose movie is missing draws whole without it |
 | `MM_BackGround.png`, `MM_SplashBackground.jpg` | 2 | not classified | neither appears in any layout row, and the shipped `MM_BackGround.png` is a placeholder reading "CS BACKGROUND" |
 
 **Not classified** means the manifest carries no entry: the name is assembled at runtime from a
@@ -744,7 +744,7 @@ the main menu's film too: a press arms the plaque it lands on and draws its held
 the release still on it activates anything, so a press released elsewhere fires nothing; the
 pointer's bitmap is set on an enter or a leave and never recomputed from what a new screen put
 under a still pointer; and `CrimFlag.MPG` plays behind the top level and Preferences,
-`ExtractRof.ps1` copying the install's loose MPGs in and every leaf still showing it still running
+the extraction copying the install's loose MPGs in and every leaf still showing it still running
 behind the page. Nothing the film shows of Preferences reads differently on Original today.
 Still unfilmed: every sound; whether any keyboard or pad focus exists at
 all (no take pressed a key outside an edit box, so Original's focus walk stays a remake
@@ -874,7 +874,7 @@ equivalence).
 
 ## The decoded layout
 
-`ExtractRof.ps1` emits `extracted/rof/menu_layout.json`: the 34 sections bound to their scripts,
+The extraction emits `extracted/rof/menu_layout.json`: the 34 sections bound to their scripts,
 both macro mechanisms resolved, every type's field order, the 46 `ScriptToExe` edges, the button
 colour tail and frame counts, the `ResID` → `RESOURCE.H` → string join with the symbol kept beside
 the text, each screen's script-created keys, the art the scripts name outside the layout,

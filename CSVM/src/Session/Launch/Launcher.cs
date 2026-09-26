@@ -651,7 +651,7 @@ public partial class Launcher : Node3D
         {
             Log.Info("core", $"assets: --zip-assets, reading .zip archives, ignoring unpacked folders");
         }
-        // Prefer the unpacked sibling folder from ExtractAssets.ps1 -Unzip when it exists (loose
+        // Prefer the unpacked sibling folder from --extract-unzip when it exists (loose
         // JSON/PNG/WAV: no zip decompression at load). Base (chapter-independent) paths resolve now;
         // the chapter-dependent gamez/texture/mission paths resolve per-session in StartSession.
         _planesGamezPath = SessionPaths.PreferUnzipped(planesGamezPath);

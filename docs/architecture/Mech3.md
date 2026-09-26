@@ -119,7 +119,7 @@ next. Authored side: [../formats/paint.md](../formats/paint.md); decode: [../org
 
 ## src/Mech3/PatternLibrary.cs
 Decodes the original's `.BM` paint patterns from `extracted/rof/ASSETS/GRAPHICS/<PATTERN>/`, which
-`ExtractRof.ps1` produces. `PatternsFor(prefix)` lists the patterns shipping skins for one
+the extraction produces. `PatternsFor(prefix)` lists the patterns shipping skins for one
 aircraft, a pattern being per plane; `Skin()` caches per (pattern, skin) so several aircraft in one
 session share a decode. `.BM` layout: [../formats/rof.md](../formats/rof.md).
 

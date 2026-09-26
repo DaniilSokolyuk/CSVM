@@ -315,7 +315,7 @@ Public License v3, whose text is in LICENSE beside this file, and the extractor
 tools\unzbd.exe is under the EUPL-1.2, whose text is in LICENSE-unzbd.
 
 This archive contains no Crimson Skies code, data or artwork. The game files a
-player extracts with Extract.ps1 stay on their own machine.
+player extracts with CSVM stay on their own machine.
 
 Assembled from these exact payload versions, which ExportRelease.ps1 re-checks
 against what it packages before it will build a zip:

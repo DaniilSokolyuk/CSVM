@@ -34,7 +34,7 @@ backmost layer, which is why it is a tenth the size of the others and the only o
 
 They sit loose in the install under `GOSDATA\ASSETS\GRAPHICS\MPG\`, outside the `.rof` archive that
 holds the rest of the front end's art. The archive carries an `ASSETS/GRAPHICS/MPG` directory entry
-with nothing behind it, so `ExtractRof.ps1` copies the ten files in verbatim and every runtime
+with nothing behind it, so the extraction copies the ten files in verbatim and every runtime
 lookup resolves under `extracted/rof/ASSETS/GRAPHICS/MPG/`, one directory deeper than every bitmap
 the same layout rows name. A tree extracted before that copy step existed is refused by the
 extraction stamp's schema rather than opened on a screen with nothing running behind it

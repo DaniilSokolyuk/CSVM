@@ -31,7 +31,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $files = Get-ChildItem -Path $Extracted -Recurse -Filter 'aiv.zrd.json' | Sort-Object FullName
-if (-not $files) { throw "no aiv.zrd.json under $Extracted -- run ExtractAssets.ps1 first" }
+if (-not $files) { throw "no aiv.zrd.json under $Extracted -- run Extract.ps1 -Unzip first" }
 
 $rows = New-Object System.Collections.ArrayList
 $blockCount = 0

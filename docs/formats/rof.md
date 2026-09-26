@@ -65,7 +65,7 @@ length, so the layout is fully accounted for with no slack.
 
 `crimptch.rof` has the identical structure and carries a single member,
 `ASSETS/SCRIPTS/AIRFRAME.SCRIPT`. It is an override: the engine reads the patch archive after
-the base one, so the patched script wins. `ExtractRof.ps1` unpacks it to `_crimptch/` rather
+the base one, so the patched script wins. The extraction unpacks it to `_crimptch/` rather
 than over the base extraction, so both versions are available to diff.
 
 ## Archive contents
@@ -228,17 +228,16 @@ RGBA and BGRA are indistinguishable on it.
 
 ## Extraction
 
-`ExtractRof.ps1` (repo root) unpacks both archives into `extracted\rof\`, writing every member
+The extraction (`RofExtraction`) unpacks both archives into `extracted\rof\`, writing every member
 at its archive path, and additionally decodes each `.BM` to `<name>.png` (shading map) and
 `<name>_mask.png` (R/G/B = slots 1/2/3). It also emits the string table, see
 [strings.md](strings.md), and the decoded menu layout `menu_layout.json`, see
-[menu-layout.md](menu-layout.md). Run `.\ExtractRof.ps1`; `-Raw` skips the decoding, `-Force`
-re-runs an up-to-date extraction.
+[menu-layout.md](menu-layout.md). Run `.\Extract.ps1`; `-Force` re-runs an up-to-date
+extraction.
 
-The engine carries the same steps in `CSVM/src/Extraction/`: `RofArchive.cs` reads the container,
-`BmTexture.cs` and `PngWriter.cs` write the two PNGs, and `RofExtraction.cs` runs the whole
-non-ZBD half. Its output matches the script's file for file, and its PNGs match pixel for pixel.
-The PNG bytes differ, since the managed writer stores no `sRGB`, `gAMA` or `pHYs` chunk.
+The steps live in `CSVM/src/Extraction/`: `RofArchive.cs` reads the container, `BmTexture.cs`
+and `PngWriter.cs` write the two PNGs, and `RofExtraction.cs` runs the whole non-ZBD half. The
+managed PNG writer stores no `sRGB`, `gAMA` or `pHYs` chunk.
 
 ## Evidence & limits
 

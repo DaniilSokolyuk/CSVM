@@ -20,11 +20,11 @@ public static class SessionPaths
     /// docs/architecture.md.</summary>
     public static bool ForceZipped { get; set; }
 
-    /// <summary>Prefer the unpacked sibling folder from <c>ExtractAssets.ps1 -Unzip</c> when it
-    /// exists (loose JSON/PNG/WAV: no zip decompression at load); else the <c>.zip</c> path
-    /// verbatim. The loaders (`GameZ`/`TextureArchive`/`Zrdr`) read either shape.
-    /// <see cref="ForceZipped"/> takes the zip whenever there IS one, and otherwise falls through:
-    /// a run that asked for zips must still start where only the folder was ever extracted.</summary>
+    /// <summary>Prefer the unpacked sibling folder from <c>--extract-unzip</c> when it
+    /// exists, since loose files skip zip decompression at load. Else the <c>.zip</c> path
+    /// verbatim; the loaders read either shape. <see cref="ForceZipped"/> takes the zip whenever
+    /// there IS one. Otherwise it falls through, so a run asking for zips still starts where only
+    /// the folder was ever extracted.</summary>
     public static string PreferUnzipped(string zipPath)
     {
         if (ForceZipped && File.Exists(zipPath))

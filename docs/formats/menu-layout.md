@@ -6,10 +6,10 @@ and, for a button, the screen it navigates to. It is the composition half of a s
 script of the same name is the behaviour half ([rof.md](rof.md), and
 [campaign-screens.md](campaign-screens.md) for the campaign flow's scripts).
 
-`ExtractRof.ps1` decodes it during extraction and writes `extracted/rof/menu_layout.json`. Runtime
+The extraction decodes it and writes `extracted/rof/menu_layout.json`. Runtime
 reads that file and never parses `LAYOUT.CSV` itself. The decoder is
-`CSVM/src/Extraction/MenuLayoutDecoder.cs`, compiled by the engine and `CSVM.Tests` and
-`Add-Type`d by the script; the runtime reader is `CSVM/src/UI/Menu/MenuLayout.cs`, whose entry in `docs/architecture.md` says
+`CSVM/src/Extraction/MenuLayoutDecoder.cs`, compiled by the engine and exercised by `CSVM.Tests`;
+the runtime reader is `CSVM/src/UI/Menu/MenuLayout.cs`, whose entry in `docs/architecture.md` says
 what it exposes.
 
 ## Contents
@@ -210,7 +210,7 @@ same name mean is a separate question the shipped data still cannot answer;
 
 `ResID` is a symbol, not a number. It joins through `ASSETS/SCRIPTS/RESOURCE.H` (`#define IDS_…
 <id>`) to a numeric id and then to the string table in `BINARIES/langui.dll`, which
-`ExtractRof.ps1` emits as `ui_strings.json` ([strings.md](strings.md)).
+the extraction emits as `ui_strings.json` ([strings.md](strings.md)).
 
 `!` in the field means the script supplies the string at runtime; empty and `0` mean the widget
 carries no string. **Keep the symbol as well as the resolved text** so a missing string is
@@ -348,9 +348,8 @@ invalidate an existing extraction until a reader requires it. Schema 2 is this a
 reader (`CSVM/src/UI/Menu/MenuLayout.cs`) requires it, so a tree extracted before the decode is
 reported as stale at boot rather than read as an empty menu. Schema 3 is the ten `.mpg` files: the
 copy step that puts them in the tree shipped first and moved nothing, and the number moved when the
-front end began playing one. `$StampSchema` in `ExtractAssets.ps1` and `ExtractRof.ps1` and
-`ExtractionStamp.Schema` are one number in three places, which
-`CSVM.Tests/ExtractionStampTests.cs` reads all of. The layout reader itself treats a missing or
+front end began playing one. The number is `ExtractionStamp.Schema`, which the boot check reads
+and every extraction writes. The layout reader itself treats a missing or
 unreadable file as a reason to fall back, never as a layout with no screens.
 
 **Reader-side notes.** The reader keeps values as strings and types them on demand through

@@ -68,10 +68,9 @@ public sealed class AnimProgram
     public int ReaderCount { get; private set; }
     public int ScriptPoolCount { get; private set; }
 
-    /// <summary>Loads the animation program for one mission, from the three zrdr scopes (shared
-    /// / chapter / mission) plus the chapter's <c>cam_anim</c> and the mission's <c>mis_anim</c>
-    /// extractions. Any of them may be missing: a user who has not re-run ExtractAssets.ps1 gets
-    /// the reader-only behaviour this project had before compiled animations landed.</summary>
+    /// <summary>Loads one mission's animation program from the three zrdr scopes (shared,
+    /// chapter, mission) and the <c>cam_anim</c> and <c>mis_anim</c> extractions. Any of them
+    /// may be missing: a tree without the anim archives gets reader-only behaviour.</summary>
     public static AnimProgram Load(string sharedZrdr, string chapterZrdr, string missionZrdr,
         string chapterAnimPath, string missionAnimPath)
     {
@@ -148,9 +147,9 @@ public sealed class AnimProgram
         return program;
     }
 
-    /// <summary>The chapter/mission compiled-archive paths for a session, preferring the
-    /// unpacked sibling directory ExtractAssets.ps1 -Unzip leaves next to each zip (loose
-    /// JSON: no decompression per def), exactly like every other loader in this project.</summary>
+    /// <summary>The chapter/mission compiled-archive paths for a session. Like every other
+    /// loader, it prefers the unpacked sibling directory <c>--extract-unzip</c> leaves next to
+    /// each zip, since loose JSON needs no decompression per def.</summary>
     public static (string Chapter, string Mission) ArchivePaths(string repoRoot, string chapter, string mission)
     {
         static string Prefer(string zipPath)

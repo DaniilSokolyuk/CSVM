@@ -8,7 +8,7 @@ using Xunit;
 
 namespace CSVM.Tests;
 
-/// <summary>The menu-layout decode `ExtractRof.ps1` runs: sectioned CSV, the two macro
+/// <summary>The menu-layout decode the extraction runs: sectioned CSV, the two macro
 /// mechanisms, the per-type field orders, the string join and the script cross-check. The
 /// fixtures under <c>fixtures/menu-layout/</c> are hand-authored from
 /// docs/formats/menu-layout.md, so every field order here is pinned without an extraction.</summary>

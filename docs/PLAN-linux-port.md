@@ -86,7 +86,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 3. ☑ Install discovery and case-insensitive install lookup, remembered path in `app_userdata`
 4. ☑ Headless `--extract=<install>` and its development options
 5. ☐ Extraction UI: Extract button, picker, progress, and the out-of-date-data screen
-6. ☐ Retire the scripts: `Extract.ps1` wrapper, one stamp constant, release payload, docs, bug form
+6. ☑ Retire the scripts: `Extract.ps1` wrapper, one stamp constant, release payload, docs, bug form
 7. ☐ Windows release with in-engine extraction, through the Sandbox release test
 
 ### Wave B, Linux build
@@ -395,7 +395,52 @@ judgement; the picker driven with a controller only>
 **⚠ Traps.** The picker has to be usable with the Deck's controls or touchscreen (Decision 11 keeps
 this the one Deck-aware requirement). Look judgements are the author's.
 
-## A6 ☐ Retire the scripts: `Extract.ps1` wrapper, one stamp constant, release payload, docs, bug form
+## A6 ☑ Retire the scripts: `Extract.ps1` wrapper, one stamp constant, release payload, docs, bug form
+
+**Landed.** The repo has one extraction implementation, `CSVM/src/Extraction/`. Repo-root
+`Extract.ps1 [-Install <p>] [-DataRoot <p>] [-Unzbd <p>] [-Unzip] [-Force] [-NoBuild]` is pure
+ASCII and holds no extraction logic: it builds the solution, runs the Godot binary `--headless`
+with `--extract=<install> --data-root=<root> --unzbd=<tool>` plus `--extract-unzip` /
+`--extract-force`, echoes stdout line by line with real std handles (SHELL-10), and exits with
+the engine's code. The Godot binary, the default install (`CrimsonSkiesGame`) and the default
+unzbd (the fork build) are looked up beside the script, else under `CSVM_DATA_ROOT` like
+`RunGame.ps1`; the data root defaults to the script's own folder and never to `CSVM_DATA_ROOT`,
+so a worktree run cannot write the primary tree. `ExtractAssets.ps1`, `ExtractRof.ps1`,
+`packaging\Extract.ps1` and `packaging\Extract.cmd` are deleted (`ExtractRof.MenuLayout.cs` had
+gone in A1), and `MenuLayoutDecoder.cs` loses its C# 5 rule; the code stays as it is. The stamp
+schema is `ExtractionStamp.Schema` alone: `ExtractionStampTests` keeps only the behind/current
+check, `ExtractionStampWriter` already stamped the constant, and every `ExtractionStamp` message
+names the in-game Extract screen, with `Extract.ps1` (`-Force` where the stamp is stale) for a
+repo checkout. The Windows zip ships no script (`ExportRelease.ps1`'s `$ReleaseFiles`,
+`packaging/MANIFEST.md`); `packaging/README.md` sets up through the in-game screen and keeps only
+the `CSVM.exe` SmartScreen prompt; the notices header says the player extracts "with CSVM".
+`sandbox\PublicRelease.ps1` runs `CSVM.exe --headless -- --extract="<mapped install>"` in place of
+`Extract.cmd` and records `stamped`. The bug form has an OS dropdown (Windows, Linux, Steam Deck,
+Other) and extraction options that name no script. Every live mention of the old scripts in
+`docs/`, the READMEs, `PROJECT_CONTEXT.md`, `.github/`, engine comments outside A5's files and
+the census script now names the engine's extraction, `--extract-unzip` or `Extract.ps1`.
+
+Left for A5 (its files): the messages in `NoGameDataScreen.cs` (and `NoGameDataScreenTests`),
+`HudFont.cs`, `ImpactReticle.cs`, `ObjectivesHud.cs`, `PatternLibrary.cs` (message and doc
+comment), `LiveryResolver.cs`, plus the `NoGameDataScreen` entry in `docs/architecture/UI.md` and
+the `playtest.md` step that expects the screen to name `Extract.cmd`. The stale-stamp message says
+"re-extract from the Extract screen", but the up-to-date rule compares file times only, so a
+schema bump over an unchanged install needs a forced run: A5's stale-data screen has to extract
+with `Force`.
+
+**Verified.** <pending orchestrator run>. `.\Extract.ps1 -DataRoot .scratch\a6-data -Unzbd
+Z:\CSVM\tools\mech3ax\target\release\unzbd.exe` (install from `CSVM_DATA_ROOT`) exited 0: 185
+archives extracted, 847 `.rof` files, 10 of 10 movies, 1,283 string rows, and
+`extracted\VERSION.json` stamped schema 3 with both halves; `Z:\CSVM\extracted` untouched. The
+targeted units (`ExtractionStamp`, `OriginalManifest`, `MenuLayoutDecoder`, `ZbdExtraction`,
+`ExtractionRun`, `RofExtraction`, `NoGameData`) pass, 82 with 1 opt-in skip.
+`rg -i "ExtractAssets|ExtractRof|Extract\.cmd|packaging.Extract\.ps1"` over the tree returns
+this plan, `docs/release-notes-v0.1.0.md` (a shipped release's notes), the old-format stamp
+fixture in `ZbdExtractionTests`, and A5's files above. `ExportRelease.ps1` was not run (a full
+export); its payload list was read. `sandbox\PublicRelease.ps1` was not run: it needs the Windows
+Sandbox, and is A7's release test.
+
+**Original approach (kept for reference).**
 
 **Goal.** The repo has one extraction implementation. `.\Extract.ps1 [-Unzip] [-Force] [-Unzbd <p>]`
 calls the engine; the old scripts are gone; the release carries no scripts.
@@ -414,10 +459,11 @@ Sandbox test, `packaging/README.md` (setup section, SmartScreen note for `Extrac
 in this folder"), `docs/tooling.md`, `docs/formats/extraction.md`, PROJECT_CONTEXT.md. Add an OS
 field to the bug report form.
 
-**Model recommendation.** <TODO: not settled in session>
+**Model recommendation.** Settled by landing.
 
-**Verify.** `rg` for the deleted script names returns only the wrapper and commit history.
-<TODO: exact search> The full `.\RunTests.ps1`.
+**Verify.** `rg -i "ExtractAssets|ExtractRof|Extract\.cmd|packaging.Extract\.ps1"` returns only
+intentional historical mentions (this plan, shipped release notes, an old-format stamp fixture).
+The full `.\RunTests.ps1`.
 
 **⚠ Traps.** None known yet.
 

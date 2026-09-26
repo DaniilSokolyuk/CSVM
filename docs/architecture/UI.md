@@ -895,7 +895,7 @@ the screen's own size whatever is saved. The screens and the sizes are enumerate
 Engine-free, so the rules test without a screen (`CSVM.Tests/DisplaySettingRowsTests.cs`).
 
 ## src/UI/Menu/MenuLayout.cs
-The runtime reader of `extracted/rof/menu_layout.json`, the decoded menu layout `ExtractRof.ps1`
+The runtime reader of `extracted/rof/menu_layout.json`, the decoded menu layout the extraction
 emits, engine-free in the shared namespace. `TryLoad` answers a missing or unreadable file with
 null and a reason, never an empty layout; `Parse` builds the typed model of screens, widgets, the
 file-wide macros, the `ScriptToExe` navigation edges, the script-named external assets and the

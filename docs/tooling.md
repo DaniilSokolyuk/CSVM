@@ -6,8 +6,8 @@ maintained. For *which* archive types extract and how far each is validated, see
 
 ## `extracted/`, the extraction workdir (git-ignored)
 
-Populated by `ExtractAssets.ps1`, mirroring the game's own ZBD folder structure: top-level
-`planes.zip` (unzbd of `planes.zbd`), `zrdr.zip`, `soundsh.zip`/`soundsl.zip`, `interp.json`,
+Populated by the engine's extraction (below), mirroring the game's own ZBD folder structure:
+top-level `planes.zip` (unzbd of `planes.zbd`), `zrdr.zip`, `soundsh.zip`/`soundsl.zip`, `interp.json`,
 `rimage.zip`, plus per-chapter `C1/gamez.zip`, `C1/texture.zip`, `C1/rtexture*.zip`, `C1/zrdr.zip`,
 and per-mission `C1/IA1/zrdr.zip`.
 
@@ -23,14 +23,20 @@ misses**: the top tier holds the same file set at the same dimensions, but hundr
 differ in pixel content, and the tier copies are richer, never worse (see
 [formats/hud.md](formats/hud.md) on the gauge needle). `rimage.zip` is not loaded at all.
 
-**`extracted/rof/`** is produced by the separate `ExtractRof.ps1` and holds the unpacked `.rof` UI
+**`extracted/rof/`** is the extraction's second half and holds the unpacked `.rof` UI
 archives plus `ui_strings.json`. `PatternLibrary` reads the paint patterns out of it (`--rof=`,
 default `extracted/rof`).
 
-## `ExtractAssets.ps1` (repo root), the ZBD bulk extractor
+## The extraction, in the engine
 
-Walks `CrimsonSkiesGame/ZBD` and runs `unzbd cs <mode>` on every ZBD with the right mode for its
-type, writing to the mirrored relative path under `extracted/`, basename kept:
+One implementation, `CSVM/src/Extraction/` ([architecture/Extraction.md](architecture/Extraction.md)),
+reached three ways: the Extract screen a player sees when `extracted/` is missing or stamped under
+another schema, the headless `--extract=<install>` flag ([cli.md](cli.md)), and the repo-root
+wrapper below. No script holds extraction logic.
+
+The ZBD half walks the install's `ZBD` folder and runs `unzbd cs <mode>` on every archive as a
+child process, with the mode for its type, writing to the mirrored relative path under
+`extracted/`, basename kept:
 
 | Source | Mode | Output |
 |---|---|---|
@@ -41,56 +47,36 @@ type, writing to the mirrored relative path under `extracted/`, basename kept:
 | `rimage`, `texture`, `rtexture*` | `textures` | `.zip` |
 | `cam_anim`, `mis_anim` | `anim` | `.zip` |
 
-**Extracts with the fork build** (`tools/mech3ax/target/release/unzbd.exe`); `-Unzbd <path>`
-overrides it, back to the pinned `tools/mech3ax-v0.6.1-.../unzbd.exe` for instance, which needs
-**no code change**, because the loaders read either extraction shape. Idempotent: skips outputs
-newer than their source unless `-Force`. `-Unzip` also expands each `.zip` into a sibling folder,
-which is what makes the viewer read loose files; `-Source`/`-Dest` override the roots.
+An output newer than its source is skipped unless forced. **`messages.json`** comes from a step
+after the walk, since `strings.dll` sits at the install root outside it: `unzbd cs messages`,
+skipped with a note when the DLL is absent, in which case the engine falls back to raw `MSG_*`
+keys.
 
-Every failure-free run stamps `<Dest>/VERSION.json` with the `unzbd --version` line verbatim, the
-exe's SHA-256, the fork HEAD, the date, and a hand-bumped schema integer the engine
-compares at boot (`src/Session/Launch/ExtractionStamp.cs` warns, never blocks), bumped by any reader
-change that invalidates old extractions.
+The `.rof` half covers the UI archives (`GOSDATA/ASSETS/crimson.rof` plus the `crimptch.rof` patch
+overlay), the loose cinemas and the `langui.dll`/`language.dll` string tables, all into
+`extracted/rof/`. It writes each member at its archive path, decodes each `.BM` texture to
+`<name>.png` (the greyscale shading map) and `<name>_mask.png` (**the paint region masks**, R/G/B =
+paint slots 1/2/3), emits `ui_strings.json`, every UI string joined to its `RESOURCE.H` symbol, and
+**`menu_layout.json`**, the decoded `LAYOUT.CSV` screens the runtime reads instead of the
+originals. Formats: [rof](formats/rof.md), [strings](formats/strings.md),
+[menu layout](formats/menu-layout.md).
 
-**`messages.json`** comes from a step after the walk, since `strings.dll` sits at the install root
-outside it: `unzbd cs messages` into `<Dest>\messages.json`, skipped with a note when the DLL is
-absent, in which case the engine falls back to raw `MSG_*` keys.
+A failure-free run stamps `extracted/VERSION.json` with the `unzbd --version` line verbatim, the
+exe's SHA-256, the fork HEAD, the date, and `ExtractionStamp.Schema`, the one schema integer, which
+the engine compares at boot and which any reader change that invalidates old extractions bumps.
 
-## `ExtractRof.ps1` (repo root), the non-ZBD half
+## `Extract.ps1` (repo root), the developer's wrapper
 
-Covers the `.rof` UI archives (`GOSDATA/ASSETS/crimson.rof` plus the `crimptch.rof` patch overlay)
-and the `langui.dll`/`language.dll` string tables, all into `extracted/rof/`. It writes each member
-at its archive path, decodes each `.BM` texture to `<name>.png` (the greyscale
-shading map) and `<name>_mask.png` (**the paint region masks**, R/G/B = paint slots 1/2/3), and
-emits `ui_strings.json`, every UI string joined to its `RESOURCE.H` symbol.
-
-It also emits **`menu_layout.json`**, the decoded `LAYOUT.CSV` screens, widgets, navigation edges,
-script-created widget keys, out-of-layout art, `SCRAPBOOK.CSV` and patch-overlay precedence, which
-runtime reads instead of the originals. Its decoder, **`ExtractRof.MenuLayout.cs`**, is `Add-Type`d
-from disk and compiled by `CSVM.Tests` as well, so it stays inside the C# 5 subset.
-
-`-Raw` skips the decoding, the string table and the menu layout; `-Force` re-runs an up-to-date
-extraction; `-Source`/`-Dest` override the roots. Each run merges its own `rof` field into the
-shared `VERSION.json` one level above `-Dest`, and skips that stamp with a note unless `-Dest`
-follows the canonical `…\extracted\rof` layout. Formats: [rof](formats/rof.md),
-[strings](formats/strings.md), [menu layout](formats/menu-layout.md).
-
-## `packaging/Extract.cmd` and `packaging/Extract.ps1`, the recipient-facing extraction
-
-Both ship in the release zip (`packaging/MANIFEST.md`) and neither is used in the dev tree.
-`Extract.cmd` is the half a recipient double-clicks: it runs `Extract.ps1` beside it with
-`-NoProfile -ExecutionPolicy Bypass`, forwards any argument (so a folder dropped on it is the
-install root) and holds the window open on both outcomes, since a console that closes the instant
-it finishes cannot be told from one that crashed.
-
-`Extract.ps1` takes the install root, or resolves one when it is passed none: it probes
-`Microsoft Games\Crimson Skies` under either Program Files and a `Games\` or bare
-`Crimson Skies\` folder on every fixed drive, reports what it found, and offers the folder picker
-either way so the path is never typed. It then checks `ZBD`, its `.zbd` archives and
-`GOSDATA\ASSETS` exist with a friendly error, and dispatches to the two UNMODIFIED scripts above
-with `.\` paths anchored to `$PSScriptRoot`. **Keep all extraction logic in the two scripts
-only.** Its one post-step unpacks `rimage.zip` into `extracted\rimage\`, because the HUD-font and
-reticle loaders read loose PNGs there.
+`.\Extract.ps1 [-Install <path>] [-DataRoot <path>] [-Unzbd <path>] [-Unzip] [-Force] [-NoBuild]`
+builds the solution, runs Godot `--headless` with `--extract=<install> --data-root=<root>
+--unzbd=<tool>` plus `--extract-unzip` / `--extract-force`, prints the engine's output, and exits
+with its code. The install defaults to `CrimsonSkiesGame`, the tool to the fork build
+(`tools/mech3ax/target/release/unzbd.exe`), both next to the script, else under
+`CSVM_DATA_ROOT` as a worktree needs. `-Unzbd` pointing at the pinned
+`tools/mech3ax-v0.6.1-.../unzbd.exe` rolls back to the old binary with **no code change**, because
+the loaders read either extraction shape. `-Unzip` expands each `.zip` into a sibling folder, which
+is what makes the viewer read loose files. ⚠ The data root defaults to the script's own folder,
+never `CSVM_DATA_ROOT`, so a worktree run cannot overwrite the primary tree's `extracted/`.
 
 ## Launch scripts
 
@@ -291,16 +277,16 @@ keeps it byte-identical.
 **`packaging/README.md` is the whole of what a downloader is told**, written for someone who found
 the zip on the releases page and knows nothing else about the project: where the download comes
 from and how to check its SHA-256 against the release page, the requirements including the renderer
-floor below, the `Extract.cmd` first run, the `logs\` and `user://` locations, what the other files
+floor below, the in-game extraction on first start, the `logs\` and `user://` locations, what the other files
 at the zip root are, and where a report goes. Four things in it restate facts that live in code or
 in this file, and go stale silently when one of them moves: the renderer floor and the
 `[perf] gpu=` line a below-floor machine writes, the log directory and the version on the log's
-first line, the extraction command spelling, and the payload list. ⚠ **The author reviews it before
+first line, the extraction screen's behaviour, and the payload list. ⚠ **The author reviews it before
 any release**, since outward communication is theirs; it is the one payload file that is not
 finished when it is correct.
 
 **`packaging/README-linux.md` is its Linux twin**, shipped as `README.md` at the tarball root. It
-drops the Windows-only material (`Extract.cmd`, SmartScreen, Direct3D 12) and adds the
+drops the Windows-only material (SmartScreen, Direct3D 12) and adds the
 community-tested label, the Vulkan-only requirement, unpacking with the executable bits, where the
 original game's folder comes from (a copied Windows install; the Wine and Proton prefix search is
 untested), the settings folder under `~/.local/share/godot/app_userdata/CSVM`, and an "On Steam
@@ -419,9 +405,9 @@ into Downloads as a browser leaves it, unzipped through the shell's own copy eng
 propagates to the files inside, and then each double-click the README names is done twice: once
 through Explorer, which is where the security prompt appears and is recorded, and once as a plain
 process, which is what "Run anyway" leads to. `CSVM.exe` is started before the extraction for the
-no-game-data screen, `Extract.cmd` is run with its prompt answered by Enter after the mapped install
-is junctioned to a path its probe checks, and the menu and a C1 flight run on the data the machine
-extracted itself. The summary records the mark on the zip and on the extracted files, the extraction's
+screen that offers to extract, the extraction runs as `CSVM.exe --headless -- --extract=<install>`
+on the mapped install (the in-game button needs a click a script may not give, and both run the
+same pipeline), and the menu and a C1 flight run on the data the machine extracted itself. The summary records the mark on the zip and on the extracted files, the extraction's
 time, file count and size, the save folder, and each launch's windows and dialogs.
 
 What the rig had to learn, none of it visible in a failed run:
