@@ -734,8 +734,7 @@ public sealed class CampaignFlightCheckPage : CampaignPage
         art = null;
         if (Flow.DataRoot is { } root)
         {
-            string path = Path.Combine(root, "extracted", "rof", "ASSETS", "GRAPHICS",
-                $"PX_{airframe}_BLUEPRINT.TGA");
+            string path = Extraction.RofTree.Under(root, $"ASSETS/GRAPHICS/PX_{airframe}_BLUEPRINT.TGA");
             if (TgaImage.TryLoad(path) is { } image)
             {
                 art = new HangarArt(image, AirframeTitle(airframe));

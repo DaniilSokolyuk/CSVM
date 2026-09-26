@@ -229,8 +229,8 @@ RGBA and BGRA are indistinguishable on it.
 ## Extraction
 
 The extraction (`RofExtraction`) unpacks both archives into `extracted\rof\`, writing every member
-at its archive path, and additionally decodes each `.BM` to `<name>.png` (shading map) and
-`<name>_mask.png` (R/G/B = slots 1/2/3). It also emits the string table, see
+at its archive path in upper case, and additionally decodes each `.BM` to `<NAME>.PNG` (shading
+map) and `<NAME>_MASK.PNG` (R/G/B = slots 1/2/3). It also emits the string table, see
 [strings.md](strings.md), and the decoded menu layout `menu_layout.json`, see
 [menu-layout.md](menu-layout.md). Run `.\Extract.ps1`; `-Force` re-runs an up-to-date
 extraction.

@@ -9,7 +9,12 @@ them round-trips byte-identically in the fork.** If you only need the practical 
 
 - The engine extracts both halves (`CSVM/src/Extraction/`): the ZBD archives through unzbd, then
   the non-ZBD half (`.rof` UI archives, the DLL string tables, the cinemas) into `extracted/rof/`.
-  Output lands under `extracted/`, mirroring the game's own folder structure. A player runs it
+  Output lands under `extracted/`, mirroring the game's own folder structure. Every game-named
+  path under `extracted/rof/` (archive members, the `.BM` PNGs, the cinemas) is written upper
+  case by `RofTree`, whatever case the install or the data spells it, and every reader maps a
+  name the same way, so a case-sensitive disk finds each file with no directory scan. The files
+  the extraction authors (`menu_layout.json`, `ui_strings.json`, `_crimptch/`) keep their own
+  names. A player runs it
   from the in-game Extract screen, a developer with `Extract.ps1` (repo root) or the headless
   `--extract=<install>` flag ([../tooling.md](../tooling.md), [../cli.md](../cli.md)).
 - The extractor runs the **fork** build (`tools/mech3ax/target/release/unzbd.exe`),
@@ -32,7 +37,7 @@ them round-trips byte-identically in the fork.** If you only need the practical 
 | `cam_anim.zbd` / `mis_anim.zbd` | ✅ **in the fork only** (not in the pinned v0.6.1 binary): `unzbd cs anim` / `rezbd cs anim` work end-to-end since, test.py `--- ALL OK ---`, **all 61 archives of this install byte-identical through the real zip pipeline**. Extracted like every other type, and **consumed by the Godot project** (`CompiledAnim.cs` → `AnimProgram.cs` → `AnimRuntime.cs`) |
 | `GOSDATA/ASSETS/*.rof` | ✅ **not a ZBD, not mech3ax**, decoded and extracted by this project (`RofArchive`). 846 members, all inflating to their exact declared size. Holds the customisation UI and the per-pattern **paint region masks** ([rof.md](rof.md)) |
 | `BINARIES/langui.dll` | ✅ Win32 STRINGTABLE, extracted by this project (`PeStringTable`), 1,247 UI strings including the aircraft names and descriptions ([strings.md](strings.md)) |
-| `GOSDATA/ASSETS/GRAPHICS/MPG/*.mpg` | ✅ **copied verbatim, never converted**, by the extraction (`MovieCopy`). The ten movies are not archive members: the `.rof` carries `ASSETS\GRAPHICS\MPG` as a directory entry with nothing behind it and the files sit loose in the install, so the step copies them and CSVM decodes MPEG-1 at runtime ([cinemas.md](cinemas.md)) |
+| `GOSDATA/ASSETS/GRAPHICS/MPG/*.mpg` | ✅ **copied verbatim, never converted**, by the extraction (`MovieCopy`), under upper-case names. The ten movies are not archive members: the `.rof` carries `ASSETS\GRAPHICS\MPG` as a directory entry with nothing behind it and the files sit loose in the install, so the step copies them and CSVM decodes MPEG-1 at runtime ([cinemas.md](cinemas.md)) |
 
 ## Animation archives
 

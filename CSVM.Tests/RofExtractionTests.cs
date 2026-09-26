@@ -25,10 +25,10 @@ public class RofExtractionTests
         var result = RofExtraction.Run(install.Request(output));
 
         Assert.True(File.Exists(Path.Combine(output, "ASSETS", "GRAPHICS", "FORTUNE", "KES_WING.BM")));
-        Assert.True(File.Exists(Path.Combine(output, "ASSETS", "GRAPHICS", "FORTUNE", "KES_WING.png")));
-        Assert.True(File.Exists(Path.Combine(output, "ASSETS", "GRAPHICS", "FORTUNE", "KES_WING_mask.png")));
+        Assert.True(File.Exists(Path.Combine(output, "ASSETS", "GRAPHICS", "FORTUNE", "KES_WING.PNG")));
+        Assert.True(File.Exists(Path.Combine(output, "ASSETS", "GRAPHICS", "FORTUNE", "KES_WING_MASK.PNG")));
         Assert.True(File.Exists(Path.Combine(output, "_crimptch", "ASSETS", "SCRIPTS", "AIRFRAME.SCRIPT")));
-        Assert.True(File.Exists(Path.Combine(output, "ASSETS", "GRAPHICS", "MPG", "CrimFlag.MPG")));
+        Assert.True(File.Exists(Path.Combine(output, "ASSETS", "GRAPHICS", "MPG", "CRIMFLAG.MPG")));
         Assert.True(File.Exists(Path.Combine(output, "menu_layout.json")));
         Assert.Equal(RofArchiveOutcome.Extracted, result.Archives[0].Outcome);
         Assert.Equal(1, result.Archives[0].DecodedTextures);
@@ -48,7 +48,7 @@ public class RofExtractionTests
 
         RofExtraction.Run(install.Request(output));
 
-        var png = PngImage.TryLoad(Path.Combine(output, "ASSETS", "GRAPHICS", "FORTUNE", "KES_WING.png"))!;
+        var png = PngImage.TryLoad(Path.Combine(output, "ASSETS", "GRAPHICS", "FORTUNE", "KES_WING.PNG"))!;
         var bm = BmTexture.TryDecode(File.ReadAllBytes(Path.Combine(output, "ASSETS", "GRAPHICS", "FORTUNE", "KES_WING.BM")))!;
         Assert.Equal(bm.Width, png.Width);
         Assert.Equal(bm.Shading[3], png.Rgba[4]);
@@ -109,7 +109,7 @@ public class RofExtractionTests
     }
 
     [Fact]
-    public void MoviesKeepTheirSpellingSkipAMatchingLengthAndNameWhatIsMissing()
+    public void MoviesAreCopiedUpperCaseSkipAMatchingLengthAndNameWhatIsMissing()
     {
         string source = TestData.TempDir();
         string dest = Path.Combine(TestData.TempDir(), "MPG");
@@ -120,19 +120,40 @@ public class RofExtractionTests
         var first = MovieCopy.Run(source, dest);
         Assert.Equal(2, first.Copied);
         Assert.Equal(30, first.BytesCopied);
-        Assert.True(File.Exists(Path.Combine(dest, "CHAP0.MPG")));
-        Assert.False(File.Exists(Path.Combine(dest, "notes.txt")));
+        Assert.Equal(new[] { "CHAP0.MPG", "ZIPPER.MPG" }, OnDisk(dest));
         Assert.Equal(8, first.Missing.Count);
         Assert.DoesNotContain("chap0.mpg", first.Missing);
 
         // A target at the source's length is current; a read-only one of another length is replaced.
-        File.WriteAllBytes(Path.Combine(dest, "zipper.mpg"), new byte[3]);
-        File.SetAttributes(Path.Combine(dest, "zipper.mpg"), FileAttributes.ReadOnly);
+        File.WriteAllBytes(Path.Combine(dest, "ZIPPER.MPG"), new byte[3]);
+        File.SetAttributes(Path.Combine(dest, "ZIPPER.MPG"), FileAttributes.ReadOnly);
         var second = MovieCopy.Run(source, dest);
         Assert.Equal(1, second.AlreadyCurrent);
         Assert.Equal(1, second.Copied);
         Assert.Equal(2, second.Present);
-        Assert.Equal(20, new FileInfo(Path.Combine(dest, "zipper.mpg")).Length);
+        Assert.Equal(20, new FileInfo(Path.Combine(dest, "ZIPPER.MPG")).Length);
+    }
+
+    /// <summary>The case rule the readers rely on, read off the names on disk. <c>File.Exists</c>
+    /// cannot check it, since a Windows disk answers without regard to case.</summary>
+    [Fact]
+    public void EveryGameNamedPathIsWrittenUpperCase()
+    {
+        var install = FixtureInstall();
+        string output = Path.Combine(TestData.TempDir(), "rof");
+
+        RofExtraction.Run(install.Request(output));
+
+        var authored = new[] { "menu_layout.json", "ui_strings.json" };
+        var names = Directory.EnumerateFileSystemEntries(output, "*", SearchOption.AllDirectories)
+            .Select(p => Path.GetRelativePath(output, p).Replace('\\', '/'))
+            .Where(p => !authored.Contains(p) && p != RofExtraction.PatchFolder)
+            .Select(p => p.StartsWith(RofExtraction.PatchFolder + "/", StringComparison.Ordinal)
+                ? p[(RofExtraction.PatchFolder.Length + 1)..] : p)
+            .ToList();
+        Assert.Contains("ASSETS/GRAPHICS/AP_BACKGROUND.PNG", names);
+        Assert.Contains("ASSETS/GRAPHICS/MPG/CRIMFLAG.MPG", names);
+        Assert.All(names, n => Assert.Equal(RofTree.Canonical(n), n));
     }
 
     [Fact]
@@ -202,6 +223,11 @@ public class RofExtractionTests
         Assert.NotNull(result.MenuLayout);
     }
 
+    private static string[] OnDisk(string folder) =>
+        Directory.EnumerateFiles(folder).Select(Path.GetFileName).OrderBy(n => n, StringComparer.Ordinal).ToArray()!;
+
+    // A base archive holding one member in mixed case, which the shipped archive never has, so
+    // the extraction's own mapping is what upper-cases it.
     private static FixtureInstallPaths FixtureInstall()
     {
         string root = TestData.TempDir();
@@ -211,6 +237,7 @@ public class RofExtractionTests
             .Dir("SCRIPTS", new RofDir()
                 .File("RESOURCE.H", Encoding.ASCII.GetBytes("#define IDS_KESTREL 16\r\n")))
             .Dir("GRAPHICS", new RofDir()
+                .File("AP_BackGround.png", new byte[] { 1 })
                 .Dir("MPG", new RofDir())
                 .Dir("FORTUNE", new RofDir().File("KES_WING.BM", ExtractionFixtures.Bm(4, 2, i => (byte)i))))));
         byte[] patchRof = ExtractionFixtures.Rof(new RofDir().Dir("ASSETS", new RofDir()

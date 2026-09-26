@@ -1019,7 +1019,7 @@ public sealed partial class ComposedBoardView : Control
                 Path.Combine(_dataRoot, "extracted", "rimage", art.Name.ToLowerInvariant() + ".png"),
             BoardArtLibrary.Loose => art.Name,
             BoardArtLibrary.Movie => SessionPaths.Cinema(_dataRoot, art.Name),
-            _ => Path.Combine(_dataRoot, "extracted", "rof", "ASSETS", "GRAPHICS", art.Name),
+            _ => Extraction.RofTree.Under(_dataRoot, "ASSETS/GRAPHICS/" + art.Name),
         };
         if (_textures.TryGetValue(path, out var cached))
         {

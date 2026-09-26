@@ -54,8 +54,8 @@ keys.
 
 The `.rof` half covers the UI archives (`GOSDATA/ASSETS/crimson.rof` plus the `crimptch.rof` patch
 overlay), the loose cinemas and the `langui.dll`/`language.dll` string tables, all into
-`extracted/rof/`. It writes each member at its archive path, decodes each `.BM` texture to
-`<name>.png` (the greyscale shading map) and `<name>_mask.png` (**the paint region masks**, R/G/B =
+`extracted/rof/`. It writes each member at its archive path in upper case, decodes each `.BM` texture to
+`<NAME>.PNG` (the greyscale shading map) and `<NAME>_MASK.PNG` (**the paint region masks**, R/G/B =
 paint slots 1/2/3), emits `ui_strings.json`, every UI string joined to its `RESOURCE.H` symbol, and
 **`menu_layout.json`**, the decoded `LAYOUT.CSV` screens the runtime reads instead of the
 originals. Formats: [rof](formats/rof.md), [strings](formats/strings.md),

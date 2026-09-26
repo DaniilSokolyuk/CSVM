@@ -180,7 +180,9 @@ public sealed class CampaignScrapbookZoomPage : CampaignPage
             return false;
         }
 
-        var (saved, detail) = ScrapbookExport.ToDesktop(source, _exportFolder);
+        // A shipped scrap keeps the data's spelling on the desktop, not the extraction's upper case.
+        string? name = Scrap() is { IsCapture: false } scrap ? scrap.ZoomFileName : null;
+        var (saved, detail) = ScrapbookExport.ToDesktop(source, _exportFolder, name);
         Flow.SetMessage(saved
             ? Message(705, $"This image has been saved to your desktop as {detail}.", detail)
             : Message(706, $"This asset could not be saved to your desktop.  Reason:  {detail}", detail));
@@ -244,8 +246,7 @@ public sealed class CampaignScrapbookZoomPage : CampaignPage
             return null;
         }
 
-        string path = Path.Combine(
-            root, "extracted", "rof", "ASSETS", "GRAPHICS", "SCRAPBOOK", scrap.ZoomFileName);
+        string path = Extraction.RofTree.Under(root, "ASSETS/GRAPHICS/SCRAPBOOK/" + scrap.ZoomFileName);
         return File.Exists(path) ? path : null;
     }
 

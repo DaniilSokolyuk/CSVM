@@ -32,9 +32,18 @@ field; the value is fully qualified, and the store drops one that is not.
 install's `MPG` folder, `langui.dll`, `language.dll`, the output root, a force flag) and a log
 callback. It unpacks `crimson.rof` into the output root and `crimptch.rof` into `_crimptch/`,
 skipping an archive whose `ASSETS` folder is already newer unless forced. Then it copies the
-cinemas, writes `ui_strings.json` (langui rows first) and runs `MenuLayoutDecoder`. A null or
-absent input is logged and skipped. The result carries each archive's counts and the movie count
-the version stamp records. Finding the install and writing the stamp belong to the caller.
+cinemas, writes `ui_strings.json` (langui rows first) and runs `MenuLayoutDecoder`. Members land
+at `RofTree.Member`. A null or absent input is logged and skipped. The result carries each
+archive's counts and the movie count the stamp records. Finding the install and writing the stamp
+belong to the caller.
+
+## src/Extraction/RofTree.cs
+The one case the rof tree is written in, upper, and the mapping every reader puts a game-data name
+through: `Canonical` for a relative path, `Member` under a rof root, `Under` under a data root,
+`Root` for `extracted/rof`. The writers (`RofExtraction`, `MovieCopy`, `BmTexture`) and the readers
+(`OriginalAvailability`, `OriginalAssetManifest`, `SessionPaths.Cinema`, `ComposedBoardView`, the
+campaign and hangar pages) agree through it, so a case-sensitive disk finds each file with no scan.
+Coverage: `CSVM.Tests/RofExtractionTests.cs` and `OriginalManifestTests.cs`.
 
 ## src/Extraction/RofArchive.cs
 `Walk` lists a `.rof` held in memory as `RofEntry` values, a directory before its contents, paths
@@ -45,7 +54,7 @@ and throws when the payload falls short. An implausible node or an unknown entry
 ## src/Extraction/BmTexture.cs
 `TryDecode` splits a `.BM` into its shading plane and its three paint-slot masks packed as RGB,
 or answers null when the bytes are shorter than the planes the header declares. Rows stay in
-stored order. `WritePngsBeside` writes `<stem>.png` and `<stem>_mask.png` through `PngWriter`.
+stored order. `WritePngsBeside` writes `<stem>.PNG` and `<stem>_MASK.PNG` through `PngWriter`.
 The runtime paint code reads the `.BM` itself (`Mech3/PatternLibrary.cs`), so these PNGs are for
 inspection.
 
@@ -68,8 +77,8 @@ first-row-wins text map `MenuLayoutDecoder` joins widget strings against. The ru
 `Mech3/UiStrings.cs`.
 
 ## src/Extraction/MovieCopy.cs
-`Run` copies every `.mpg` in the install's folder byte for byte under the name the install spells
-it, skipping a target already at the source's length and replacing a read-only leftover.
+`Run` copies every `.mpg` in the install's folder byte for byte under its upper-case name
+(`RofTree`), skipping a target already at the source's length and replacing a read-only leftover.
 `MovieCopyResult` counts copied and current files and names each of the ten `Expected` movies the
 folder lacked, for the report and the stamp.
 

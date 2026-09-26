@@ -1,4 +1,4 @@
-using System.IO;
+using CSVM.Extraction;
 using CSVM.Session.Launch;
 
 namespace CSVM.UI.Menu.Original;
@@ -19,12 +19,13 @@ public static class OriginalAvailability
     /// deeper, which is the base <c>FUN_004a7c70</c> resolves every movie name under and where the
     /// extraction copies the files (<c>docs/formats/cinemas.md</c>).</summary>
     public static string ArtPath(string dataRoot, string name) =>
-        Path.Combine(dataRoot, "extracted", "rof", RelativeArtPath(name).Replace('/', Path.DirectorySeparatorChar));
+        RofTree.Under(dataRoot, RelativeArtPath(name));
 
-    /// <summary>The same place as a path relative to the <c>rof</c> extraction, which is what the
-    /// asset manifest records per entry.</summary>
+    /// <summary>The same place relative to the <c>rof</c> extraction, as the asset manifest records
+    /// it. It is in the case the extraction writes (<see cref="RofTree.Canonical"/>), whatever the
+    /// layout's spelling.</summary>
     public static string RelativeArtPath(string name) =>
-        IsMovie(name) ? "ASSETS/GRAPHICS/MPG/" + name : "ASSETS/GRAPHICS/" + name;
+        RofTree.Canonical(IsMovie(name) ? "ASSETS/GRAPHICS/MPG/" + name : "ASSETS/GRAPHICS/" + name);
 
     /// <summary>Whether a layout art name is one of the movies rather than a bitmap.</summary>
     public static bool IsMovie(string name) =>

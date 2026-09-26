@@ -63,12 +63,13 @@ public sealed class BmTexture
         return new BmTexture(width, height, shading, masks);
     }
 
-    /// <summary>Writes <c>&lt;stem&gt;.png</c> and <c>&lt;stem&gt;_mask.png</c> beside
-    /// <paramref name="bmPath"/>, the stem being the path without its <c>.BM</c>.</summary>
+    /// <summary>Writes <c>&lt;stem&gt;.PNG</c> and <c>&lt;stem&gt;_MASK.PNG</c> beside
+    /// <paramref name="bmPath"/>, the stem being the path without its <c>.BM</c>. The suffixes are
+    /// upper case to keep the rof tree in <see cref="RofTree"/>'s one case.</summary>
     public void WritePngsBeside(string bmPath)
     {
         string stem = bmPath[..^3];
-        PngWriter.WriteRgb(stem + ".png", Width, Height, Shading);
-        PngWriter.WriteRgb(stem + "_mask.png", Width, Height, Masks);
+        PngWriter.WriteRgb(stem + ".PNG", Width, Height, Shading);
+        PngWriter.WriteRgb(stem + "_MASK.PNG", Width, Height, Masks);
     }
 }

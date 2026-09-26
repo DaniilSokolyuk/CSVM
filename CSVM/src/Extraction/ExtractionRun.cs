@@ -308,7 +308,7 @@ public sealed class ExtractionResult
             yield return "  files extracted: " + Number(files);
             if (images > 0)
             {
-                yield return "  .BM decoded:     " + Number(images) + " (each -> .png + _mask.png)";
+                yield return "  .BM decoded:     " + Number(images) + " (each -> .PNG + _MASK.PNG)";
             }
 
             yield return "  movies copied:   " + Number(Rof.Movies.Present) + " of " + Number(MovieCopy.Expected.Count) + " (verbatim, no conversion)";

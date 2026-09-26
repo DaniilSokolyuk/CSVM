@@ -8,9 +8,9 @@ namespace CSVM.Extraction;
 /// <summary>
 /// Copies the install's <c>.mpg</c> cinemas into the extraction byte for byte. They are not
 /// archive members: <c>crimson.rof</c> carries <c>ASSETS/GRAPHICS/MPG</c> as an empty directory
-/// and the files sit loose in the install, see docs/formats/cinemas.md. Names are kept as the
-/// install spells them. The runtime resolves the data's differing spellings case-insensitively,
-/// so a rename here would only move the mismatch.
+/// and the files sit loose in the install, see docs/formats/cinemas.md. Each copy is named in
+/// <see cref="RofTree"/>'s case whatever the install's spelling. The data names four of the ten
+/// in a case their files do not have, and every reader maps a name the same way.
 /// </summary>
 public static class MovieCopy
 {
@@ -23,7 +23,7 @@ public static class MovieCopy
     };
 
     /// <summary>Copies every <c>.mpg</c> in <paramref name="sourceFolder"/> into
-    /// <paramref name="destFolder"/>, skipping a target that already has the source's length. A
+    /// <paramref name="destFolder"/> upper case, skipping a target already at the source's length. A
     /// null or absent source copies nothing and reports every movie missing.</summary>
     public static MovieCopyResult Run(string? sourceFolder, string destFolder)
     {
@@ -44,7 +44,7 @@ public static class MovieCopy
         {
             string name = Path.GetFileName(source);
             found.Add(name);
-            string target = Path.Combine(destFolder, name);
+            string target = RofTree.Member(destFolder, name);
             long length = new FileInfo(source).Length;
 
             // A verbatim copy already at the source's length is the copy this step would make

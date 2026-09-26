@@ -144,6 +144,31 @@ absolute path or null, and `log` is an `Action<string>` receiving one line per s
 counts), `Movies.Present` (the stamp's `movies` field), `StringRows` and the `MenuLayout`
 document. It runs synchronously; the caller owns threading, install lookup and the stamp.
 
+**One case for the rof tree (found on the Deck).** A Linux build started in Built-in with the data
+extracted: the archive's members are upper case (`ASSETS/GRAPHICS/CM_BACKGROUND.PNG`), the install's
+movies lower case (`chap0.mpg`), while `menu_layout.json`, the scripts and our own board art name the
+same files in any case (`AP_BackGround.png`, `assets/graphics/mp_b_radio.png`, `CrimFlag.MPG`). The
+manifest checked each path verbatim, so on a case-sensitive disk it refused 119 of 119 required
+files. `Extraction/RofTree.cs` now fixes one case, upper, for every game-named path under
+`extracted/rof/`: `RofExtraction` writes members through it, `MovieCopy` copies the movies under
+upper-case names and `BmTexture` writes `.PNG`/`_MASK.PNG`. Every reader maps a data name through
+the same helper (`OriginalAvailability.ArtPath`/`RelativeArtPath`, `OriginalAsset.PathUnder`,
+`SessionPaths.Cinema`, `ComposedBoardView`'s UI art, the scrapbook, cabin, flight-check and hangar
+pages, the menu cue folder), so no read scans a directory. EXPORT TO DESKTOP names its copy with
+the scrap's own spelling rather than the upper-case file it copies from. `SessionPaths.Cinema` no longer scans the
+`MPG` folder. The rimage tree is already lower case from unzbd and its readers lower-case their
+names, and `PatternLibrary` scans with case-blind maps, so neither changed. No stamp bump: on
+Windows the disk ignores case, and on Linux an older tree already has upper-case members, so only
+the (optional) movies are missing until a plain re-extract copies them. That re-extract leaves the
+older lower-case `.mpg` copies beside the new ones (106 MB), which can be deleted by hand.
+Verified in WSL on a tarball exported from this tree: the old build on the B11 tree logs
+`menu presentation active=built-in ... refuses 119 of 119 required files`, the new build on the
+same tree `active=original` (two optional movies absent), a fresh `--extract` writes no name with a
+lower-case letter outside the authored files and then logs `active=original` with nothing degraded.
+Tests: `RofExtractionTests.EveryGameNamedPathIsWrittenUpperCase`,
+`MoviesAreCopiedUpperCase...`, `OriginalManifestTests.TheDatasOwnSpellingResolvesToTheNameTheExtractionWrote`,
+each comparing names on disk ordinally, which fail on the old code.
+
 **Verified.** The full battery passes on the merged branch: units 4,886 (3 data skips), engine 383 of 383, 19 golden shots hash-identical.
 
 Output comparison, run by the item agent: `ExtractRof.ps1 -Source <install>\GOSDATA\ASSETS -Dest

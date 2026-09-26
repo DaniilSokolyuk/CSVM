@@ -180,7 +180,9 @@ plays whatever its `CF_MOVIE` row names.
 
 Four of the ten files are named in a case the on-disk names do not have, so a case-sensitive lookup
 fails on `msopen1.mpg`, `chap0.mpg`, `crimflag.mpg` and `final.mpg`. `zipper.mpg` is spelled to
-match, and the script-built chapter names are lower case throughout.
+match, and the script-built chapter names are lower case throughout. The extraction therefore copies
+every movie under its upper-case name and the runtime upper-cases every name it resolves
+(`RofTree`), which holds on a case-sensitive disk.
 
 The executable does hold a `char[9]` array at `0x0061e68c` naming `chap1.mpg` through `chap6.mpg`
 back to back with no terminator between entries, **and nothing reads it**. Its only reference is a

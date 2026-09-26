@@ -245,7 +245,7 @@ public sealed partial class MenuAudioService : Node, IMenuAudio
             return null;
         }
 
-        string path = Path.Combine(_cueDir, file);
+        string path = Extraction.RofTree.Member(_cueDir, file);
         if (!File.Exists(path))
         {
             Log.Debug("sound", $"{what} file={file} silent: not at {path}");

@@ -75,31 +75,16 @@ public static class SessionPaths
     /// directory deeper than the bitmaps the same layout rows name, which is the base the original
     /// resolves every movie name under (<c>docs/formats/cinemas.md</c>).</summary>
     public static string CinemaFolder(string dataRoot) =>
-        Path.Combine(dataRoot, "extracted", "rof", "ASSETS", "GRAPHICS", "MPG");
+        Extraction.RofTree.Under(dataRoot, "ASSETS/GRAPHICS/MPG");
 
     /// <summary>The cinema file a name means, with <c>.mpg</c> supplied when the name carries no
-    /// extension, or the name under <see cref="CinemaFolder"/> verbatim when nothing there matches.
-    /// ⚠ Match without regard to case. Four of the ten are named in the data in a case the files on
-    /// disk do not have, so every caller that names a cinema resolves through here.</summary>
+    /// extension. ⚠ Every caller that names a cinema resolves through here. Four of the ten are
+    /// named in the data in a case the install's files do not have. The extraction writes each in
+    /// <see cref="Extraction.RofTree"/>'s case.</summary>
     public static string Cinema(string dataRoot, string name)
     {
-        string folder = CinemaFolder(dataRoot);
         string want = Path.GetExtension(name).Length == 0 ? name + ".mpg" : name;
-        string fallback = Path.Combine(folder, want);
-        if (name.Length == 0 || !Directory.Exists(folder))
-        {
-            return fallback;
-        }
-
-        foreach (string file in Directory.EnumerateFiles(folder))
-        {
-            if (string.Equals(Path.GetFileName(file), want, StringComparison.OrdinalIgnoreCase))
-            {
-                return file;
-            }
-        }
-
-        return fallback;
+        return Extraction.RofTree.Member(CinemaFolder(dataRoot), want);
     }
 
     /// <summary>The mission's zrdr scope (<c>extracted/&lt;chapter&gt;/&lt;mission&gt;/zrdr.zip</c>)

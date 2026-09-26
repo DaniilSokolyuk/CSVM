@@ -730,12 +730,13 @@ in [`formats/extraction.md`](formats/extraction.md).
 - `src/Extraction/InstallLocator.cs`, the case-insensitive install lookup: the segment walk, the picked-folder check with its mis-pick messages, and the per-platform candidate list.
 - `src/Extraction/RememberedInstall.cs`, the last-used install folder, kept in `user://options.json` to pre-fill the next picker.
 - `src/Extraction/RofExtraction.cs`, the non-ZBD half of an extraction: both UI archives, the `.BM` PNGs, the cinemas, `ui_strings.json` and `menu_layout.json`, from resolved paths.
+- `src/Extraction/RofTree.cs`, the one upper case the rof tree is written in and the name mapping every writer and reader of it shares.
 - `src/Extraction/RofArchive.cs`, the `.rof` UI archive read from memory: the directory tree walked without inflating, each member inflated on demand.
 - `src/Extraction/BmTexture.cs`, one paint-shop `.BM` split into its shading map and its three paint-region masks as RGB.
 - `src/Extraction/PngWriter.cs`, a managed 24-bit RGB PNG encoder, so no image library or engine type is needed to write the `.BM` PNGs.
 - `src/Extraction/PeStringTable.cs`, the Win32 `STRINGTABLE` resources read out of a PE file's bytes, with no Win32 call.
 - `src/Extraction/UiStringTable.cs`, the `ui_strings.json` rows: string-table text joined to its `RESOURCE.H` symbol and split from its `[FONTID]` tag.
-- `src/Extraction/MovieCopy.cs`, the install's `.mpg` cinemas copied verbatim under their own spelling, skipping a copy already at the source's length.
+- `src/Extraction/MovieCopy.cs`, the install's `.mpg` cinemas copied verbatim under upper-case names, skipping a copy already at the source's length.
 - `src/Extraction/MenuLayoutDecoder.cs`, `LAYOUT.CSV`, `SCRAPBOOK.CSV`, `RESOURCE.H` and the GUI scripts decoded into `menu_layout.json`.
 - `src/Extraction/ZbdExtraction.cs`, the ZBD half of extraction: every archive through unzbd, then `messages.json`, the optional unzip and the stamp, off the main thread.
 - `src/Extraction/ZbdPlan.cs`, the ZBD half's pure rules: the archive-name mode map, output naming, the up-to-date and unzip rules, and the stderr notes.

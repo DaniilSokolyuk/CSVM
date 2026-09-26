@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using CSVM.Extraction;
 using CSVM.UI.Menu;
 using CSVM.UI.Menu.Original;
 using Xunit;
@@ -109,7 +110,7 @@ public class OriginalManifestTests : IDisposable
         // deeper than every bitmap the same rows name.
         var movie = manifest.Find("FX_Movie.MPG")!;
         Assert.Equal(OriginalAssetNeed.Optional, movie.Need);
-        Assert.Equal("ASSETS/GRAPHICS/MPG/FX_Movie.MPG", movie.RelativePath);
+        Assert.Equal("ASSETS/GRAPHICS/MPG/FX_MOVIE.MPG", movie.RelativePath);
         Assert.Contains("drawing whole without it", movie.Note);
     }
 
@@ -170,7 +171,7 @@ public class OriginalManifestTests : IDisposable
     {
         Populate();
         File.Delete(Graphics("FX_MP_Small.png"));
-        File.Delete(Path.Combine(_root, "extracted", "rof", "assets", "sounds", "mouseclick.wav"));
+        File.Delete(Path.Combine(_root, "extracted", "rof", "ASSETS", "SOUNDS", "MOUSECLICK.WAV"));
 
         Assert.NotNull(OriginalAvailability.Load(_root, out var reason, out var degraded));
         Assert.Null(reason);
@@ -213,6 +214,40 @@ public class OriginalManifestTests : IDisposable
         Assert.True(manifest.Check(_root).Complete);
         Assert.NotNull(OriginalAvailability.Load(_root, out var reason, out _));
         Assert.Null(reason);
+    }
+
+    /// <summary>A tree the extraction wrote, read by names the layout and the scripts spell in
+    /// their own case. Each resolved path is matched against the names on disk exactly, as a
+    /// case-sensitive filesystem would, since a Windows <c>File.Exists</c> cannot tell.</summary>
+    [Fact]
+    public void TheDatasOwnSpellingResolvesToTheNameTheExtractionWrote()
+    {
+        var member = new byte[] { 1 };
+        string install = TestData.TempDir();
+        string archive = Path.Combine(install, "crimson.rof");
+        File.WriteAllBytes(archive, ExtractionFixtures.Rof(new RofDir().Dir("ASSETS", new RofDir()
+            .Dir("GRAPHICS", new RofDir()
+                .File("AP_BACKGROUND.PNG", member)
+                .File("MP_B_RADIO.PNG", member)
+                .Dir("MPG", new RofDir())))));
+        string movies = Directory.CreateDirectory(Path.Combine(install, "MPG")).FullName;
+        File.WriteAllBytes(Path.Combine(movies, "crimflag.mpg"), new byte[] { 1 });
+        RofExtraction.Run(new RofExtractionRequest(archive, null, movies, null, null, RofTree.Root(_root)));
+        var onDisk = new HashSet<string>(
+            Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories), StringComparer.Ordinal);
+
+        Assert.Contains(OriginalAvailability.ArtPath(_root, "AP_BackGround.png"), onDisk);
+        Assert.Contains(OriginalAvailability.ArtPath(_root, "CrimFlag.MPG"), onDisk);
+        Assert.Contains(SessionPaths.Cinema(_root, "CrimFlag"), onDisk);
+        var manifest = OriginalAssetManifest.Derive(MenuLayout.Parse("""
+            {
+              "schema": 1,
+              "screens": [ { "section": "MainMenu", "widgets": [ { "key": "AP_BACKGROUND", "type": "P", "art": ["AP_BackGround.png"] } ] } ],
+              "externalAssets": [ { "path": "assets/graphics/mp_b_radio.png", "kind": "file", "script": "GLOBALS" } ]
+            }
+            """));
+        Assert.Contains(manifest.Find("AP_BackGround.png")!.PathUnder(_root), onDisk);
+        Assert.Contains(manifest.Find("mp_b_radio.png")!.PathUnder(_root), onDisk);
     }
 
     /// <summary>The install's own layout: the classification the inventory records, and a tree

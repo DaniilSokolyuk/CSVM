@@ -22,9 +22,9 @@ public enum RofArchiveOutcome
 /// <summary>
 /// The non-ZBD half of an extraction, into <c>extracted/rof/</c>. It unpacks both UI archives,
 /// the patch archive into <c>_crimptch/</c>, and decodes each <c>.BM</c> to PNGs. It copies the
-/// cinemas and writes <c>ui_strings.json</c> and <c>menu_layout.json</c>. It takes resolved paths
-/// only; finding the install and writing the version stamp belong to the caller. Each step reports
-/// to the log callback. Layout: docs/formats/extraction.md.
+/// cinemas and writes <c>ui_strings.json</c> and <c>menu_layout.json</c>. Every game-named path is
+/// written in <see cref="RofTree"/>'s case. It takes resolved paths only; finding the install and
+/// writing the version stamp belong to the caller. Layout: docs/formats/extraction.md.
 /// </summary>
 public static class RofExtraction
 {
@@ -90,7 +90,7 @@ public static class RofExtraction
         int images = 0;
         foreach (var entry in RofArchive.Walk(archive))
         {
-            string target = Path.Combine(destination, entry.Path.Replace('/', Path.DirectorySeparatorChar));
+            string target = RofTree.Member(destination, entry.Path);
             if (entry.IsDirectory)
             {
                 Directory.CreateDirectory(target);

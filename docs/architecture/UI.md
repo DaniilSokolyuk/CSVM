@@ -1235,8 +1235,8 @@ a tree stamped below `OriginalAssetManifest.StampSchema` (`ExtractionStamp.Behin
 layout through `MenuLayout`, requires a `[MainMenu]` section in it, and then checks the manifest
 derived from that layout. Returns the loaded layout when Original can run, else null and the one
 reason, which the host appends to its fallback reason; `degraded` is the optional half, for the
-caller to log once. `ArtPath` and `RelativeArtPath` are where a layout art name resolves, the
-presentation's size read going through the first; `IsMovie` puts the movies one directory deeper,
+caller to log once. `ArtPath` and `RelativeArtPath` are where a layout art name resolves, in
+`RofTree`'s upper case, the presentation's size read going through the first; `IsMovie` puts the movies one directory deeper,
 under `MPG`, where the executable resolves them. Coverage: `CSVM.Tests/OriginalManifestTests.cs`.
 
 ## src/UI/Menu/Original/OriginalAssetManifest.cs
