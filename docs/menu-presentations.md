@@ -553,7 +553,9 @@ hub's figures preview, `plane-construction:overweight` on a build past its capac
 `plane-construction:defaults` with the airframe swap's three-button question standing over an
 edited build and
 `plane-paint:decals` standing the nose decal picker open as its five-across grid, `campaign`
-and the shared scratch-store campaign poses, `campaign-delete`), and any other value opens that 
+and the shared scratch-store campaign poses, `campaign-delete`, `connection` on the Multiplayer
+Connection page, and `connection-games` and `connection-games:searching` on the LAN games list
+over an in-process network holding four sample games or none), and any other value opens that 
 presentation's top level. Built-in's values and output stay stable whatever presentation is added.
 
 A new presentation's aids follow the same rules: they select a screen of its own graph, they never

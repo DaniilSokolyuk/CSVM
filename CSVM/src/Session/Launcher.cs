@@ -1821,7 +1821,8 @@ public partial class Launcher : Node3D
             (port, guests, bind) => Net.NetCarrier.Host(port, guests, bind),
             (address, port) => Net.NetCarrier.Join(address, port),
             Net.NetCarrier.PortMap,
-            Net.NetCarrier.PortUnmap);
+            Net.NetCarrier.PortUnmap,
+            Net.NetCarrier.Lan);
         host.Features.Add(_netDoor);
         host.AddSeat(seat);
         string? reason = host.Select(_spec.ForceBuiltInPresentation, _spec.PresentationOverride);

@@ -64,6 +64,15 @@ public enum OriginalScreen
     /// numbers on the notepad, with CONTINUE back to the Instant Action screen.</summary>
     InstantActionWrapup,
 
+    /// <summary>The Multiplayer Connection page: the LAN TCP/IP and Internet ways, the IP Address
+    /// box, Host, Connect and Exit Multiplayer, drawn from the multiplayer scripts' placements.
+    /// </summary>
+    Connection,
+
+    /// <summary>The games list a LAN Connect opens, with the Searching box over it until the
+    /// first answer.</summary>
+    ConnectionGames,
+
     /// <summary>The decoded <c>[@Campaign@]</c> player profile screen: the name box, the roster,
     /// CONTINUE, DELETE PLAYER and CANCEL.</summary>
     CampaignRoster,
@@ -208,6 +217,9 @@ public sealed partial class OriginalShell : IOriginalScreenHost
     /// <summary>The Campaign row's key on the top level.</summary>
     public const string CampaignKey = "MM_B_CAMPAIGN";
 
+    /// <summary>The Multiplayer row's key on the top level, the Connection page's door.</summary>
+    public const string MultiplayerKey = "MM_B_MULTIPLAYER";
+
     /// <summary>The Free Flight door's key on the top level.</summary>
     public const string FreeFlightKey = "FREEFLIGHT";
 
@@ -320,6 +332,8 @@ public sealed partial class OriginalShell : IOriginalScreenHost
     private readonly int[] _focus = new int[Enum.GetValues<OriginalScreen>().Length];
     private readonly Dictionary<string, (int Width, int Height)?> _sizes = new(StringComparer.OrdinalIgnoreCase);
 
+    // The network door, replaceable so a screenshot aid or a suite can stand in its own.
+    private NetPlayFeature? _net;
     private OriginalScreen _screen;
     private int _hover = -1;
     private int _pressed = -1;
@@ -367,7 +381,10 @@ public sealed partial class OriginalShell : IOriginalScreenHost
         Func<CSVM.Utils.ScreenList>? screens = null,
         // The shared rebinding feature the CONTROLS door stands over; null draws that door
         // disabled and leaves the two pages behind it unreachable.
-        ControlsFeature? controls = null)
+        ControlsFeature? controls = null,
+        // The network door the Multiplayer plaque and the cabin's Host Co-op stand over; null
+        // draws the plaque disabled and hides the cabin's button.
+        NetPlayFeature? net = null)
     {
         _layout = layout ?? throw new ArgumentNullException(nameof(layout));
         _free = free ?? throw new ArgumentNullException(nameof(free));
@@ -379,16 +396,18 @@ public sealed partial class OriginalShell : IOriginalScreenHost
         _planes = planes;
         _stock = stock;
         _controls = controls;
+        _net = net;
         _campaignLayout = CampaignLayout.Over(layout);
         InstantAction = new OriginalInstantActionScreen(_instantAction, _setup, planes, layout, measure, this, _stock);
         Options = new OriginalOptionsScreen(layout, this, options, screenSizes, screens, controls);
         Campaign = new OriginalCampaignScreen(
-            campaign, _setup, planes, _campaignLayout, this, profiles, _stock, _flightDevices, dataRoot);
+            campaign, _setup, planes, _campaignLayout, this, profiles, _stock, _flightDevices, dataRoot, () => _net);
         Hangar = hangar != null ? new OriginalHangarScreen(hangar, planes, layout, measure, this) : null;
         Wrapup = new OriginalWrapupScreen(_campaignLayout, measure, this, InstantAction.OpenInstantAction);
+        Connection = new OriginalConnectionScreen(() => _net, this, dataRoot);
         _modules = Hangar != null
-            ? new IOriginalScreenModule[] { InstantAction, Options, Campaign, Hangar, Wrapup }
-            : new IOriginalScreenModule[] { InstantAction, Options, Campaign, Wrapup };
+            ? new IOriginalScreenModule[] { InstantAction, Options, Campaign, Hangar, Wrapup, Connection }
+            : new IOriginalScreenModule[] { InstantAction, Options, Campaign, Wrapup, Connection };
         var plaqueRow = layout.Screen("FlightCheck")?.Widget("FC_B_CHANGEPLANE");
         _plaque = plaqueRow is { Art.Count: > 0 } ? new BoardArt(BoardArtLibrary.Ui, plaqueRow.Art[0], plaqueRow.Frames) : null;
         Inks = ReadInks(layout, plaqueRow);
@@ -483,7 +502,8 @@ public sealed partial class OriginalShell : IOriginalScreenHost
     /// screen.</summary>
     public bool CapturingText =>
         _dialog == null
-        && (TypingCheat || _screen == OriginalScreen.CampaignRoster || (Hangar?.CapturingText ?? false));
+        && (TypingCheat || _screen == OriginalScreen.CampaignRoster || (Hangar?.CapturingText ?? false)
+            || Connection.CapturingText);
 
     /// <summary>The hangar module behind the hangar screens, with its own state and inks, or null
     /// on a shell built without a hangar feature.</summary>
@@ -507,6 +527,10 @@ public sealed partial class OriginalShell : IOriginalScreenHost
     /// <summary>The module behind the Instant Action wrap-up page, holding the final numbers one
     /// ended mission handed over. It stands empty until a session hands one in.</summary>
     public OriginalWrapupScreen Wrapup { get; }
+
+    /// <summary>The module behind the Multiplayer Connection page and its games list. It stands on
+    /// a shell built without a network door too, with the Multiplayer plaque disabled.</summary>
+    public OriginalConnectionScreen Connection { get; }
 
     /// <summary>Which campaign board the screen showing wears, or null when it wears none; what
     /// the presentation picks the board's palette by. The campaign's own screens answer for
@@ -588,6 +612,26 @@ public sealed partial class OriginalShell : IOriginalScreenHost
     /// guest's. The pointer, when present, is in authored pixels.</summary>
     public OriginalStep Step(MenuCommands commands) => StepSeat(0, commands);
 
+    /// <summary>One menu frame of the network door, whatever screen shows: the door is stepped, the
+    /// cabin's co-op offer renewed and the Connection pages kept current. Returns whether the
+    /// picture changed.</summary>
+    public bool StepNet(double dt)
+    {
+        if (_net is not { } net)
+        {
+            return false;
+        }
+
+        string band = CoopDoorText.HostBand(net);
+        net.Step(dt);
+        bool changed = Campaign.OfferCoop() | (CoopDoorText.HostBand(net) != band);
+        return Connection.Tick(dt) || changed;
+    }
+
+    /// <summary>Stands <paramref name="door"/> in for the network door, the screenshot aids' and
+    /// the suites' way to show a door they drive themselves.</summary>
+    internal void StandInNetDoor(NetPlayFeature door) => _net = door ?? throw new ArgumentNullException(nameof(door));
+
     // The module that owns a screen, or null where the shell itself does. Every dispatch site asks
     // once and calls what comes back, so no site knows how many modules there are or which screens
     // each takes.
@@ -622,9 +666,12 @@ public sealed partial class OriginalShell : IOriginalScreenHost
     // rule applies first, else whichever the hangar owns. The name screen and the hub share the
     // hangar name's character set and cap.
     private bool TypeName(MenuCommands commands, List<string> cues) =>
-        _screen == OriginalScreen.CampaignRoster
-            ? Campaign.TypeName(commands, cues)
-            : Hangar?.TypeName(commands, cues) ?? false;
+        _screen switch
+        {
+            OriginalScreen.CampaignRoster => Campaign.TypeName(commands, cues),
+            OriginalScreen.Connection => Connection.TypeAddress(commands),
+            _ => Hangar?.TypeName(commands, cues) ?? false,
+        };
 
     // The per-seat screen's one list for the pointer: its open drop-down, which hangs over the screen.
     private void SeatPlaneLists(List<OriginalList> lists)
@@ -1350,6 +1397,9 @@ public sealed partial class OriginalShell : IOriginalScreenHost
                     case "MM_B_INSTANTACTION":
                         InstantAction.OpenInstantAction();
                         break;
+                    case MultiplayerKey:
+                        Connection.OpenConnection();
+                        break;
                     case "MM_B_PREFERENCES":
                         Open(OriginalScreen.Options);
                         break;
@@ -1450,7 +1500,7 @@ public sealed partial class OriginalShell : IOriginalScreenHost
                     if (main?.Widget(key) is { } widget)
                     {
                         bool enabled = key is "MM_B_QUIT" or "MM_B_PREFERENCES" or "MM_B_INSTANTACTION" or CreditsDoorKey
-                            || (key == CampaignKey && Campaign.CanOpen);
+                            || (key == CampaignKey && Campaign.CanOpen) || (key == MultiplayerKey && _net != null);
                         rows.Add(Button(widget, enabled));
                     }
                 }

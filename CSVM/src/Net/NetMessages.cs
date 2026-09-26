@@ -82,6 +82,39 @@ public enum NetMessageType : ushort
     /// <summary>A start the host decides off where the seats are flying. It carries a landing row
     /// and its seat, the ladder switch's holder, or a guest's auto-land button.</summary>
     PositionalStart = 0x004E,
+
+    /// <summary>A host's word that it is sending a guest away: the session closed, or it is full.
+    /// </summary>
+    SessionClosed = 0x004F,
+}
+
+/// <summary>Where a session a host advertises stands, the games list's Status column.</summary>
+public enum NetSessionStatus : byte
+{
+    /// <summary>The advert named no status, or one this build does not know.</summary>
+    Unknown = 0,
+
+    /// <summary>The host is on its boards and a guest who joins waits there with it.</summary>
+    Waiting = 1,
+
+    /// <summary>The host is flying. A guest may still join and waits for the next launch.</summary>
+    InMission = 2,
+
+    /// <summary>Every seat the session offers is taken.</summary>
+    Full = 3,
+}
+
+/// <summary>Why a host sent a guest a <see cref="SessionClosedMessage"/>.</summary>
+public enum NetCloseReason : byte
+{
+    /// <summary>A reason this build does not know.</summary>
+    Unknown = 0,
+
+    /// <summary>The host closed its session on purpose.</summary>
+    Closed = 1,
+
+    /// <summary>The session had no seat left for this guest.</summary>
+    Full = 2,
 }
 
 /// <summary>What a <see cref="PositionalStartMessage"/> says. Each member names what the seat,
@@ -809,16 +842,18 @@ public readonly record struct HandshakeMessage(ulong Seed, double HostClock, byt
 }
 
 /// <summary>
-/// A host's word about the session it holds open, sent to every peer on connect and again on any
-/// change. A guest's join board reads it before a flight exists. So it names only the session:
-/// its kind, its campaign mission, its player count and its host. Nothing about the world rides
-/// here. A guest reads it off the lobby, never off a session.</summary>
+/// A host's word about its open session, sent to every peer on connect and again on any change,
+/// and inside a LAN discovery reply. A join board reads it before a flight exists. So it
+/// names only the session: its kind, its campaign mission, its player count, its status, its seat
+/// cap and its host. Nothing about the world rides here. A guest reads it off the lobby, never off
+/// a session.</summary>
 public readonly record struct SessionAdvertMessage(
-    NetSessionKind Kind, byte MissionSeq, byte Players, string Host)
+    NetSessionKind Kind, byte MissionSeq, byte Players, string Host,
+    NetSessionStatus Status = NetSessionStatus.Waiting, byte Cap = 0)
     : INetMessage<SessionAdvertMessage>
 {
     /// <summary>The fixed width of the message, header included.</summary>
-    public const int Size = 24;
+    public const int Size = 28;
 
     /// <summary>How many bytes the host's name takes, UTF-8 and zero padded.</summary>
     public const int HostBytes = 16;
@@ -856,11 +891,17 @@ public readonly record struct SessionAdvertMessage(
         byte kind = reader.ReadByte();
         byte seq = reader.ReadByte();
         byte players = reader.ReadByte();
+        byte status = reader.ReadByte();
+        byte cap = reader.ReadByte();
         _ = reader.ReadByte();
+        _ = reader.ReadUInt16();
         var known = kind is (byte)NetSessionKind.Dogfight or (byte)NetSessionKind.CampaignCoop
             ? (NetSessionKind)kind
             : NetSessionKind.Unknown;
-        message = new SessionAdvertMessage(known, seq, players, reader.ReadText(HostBytes));
+        var stands = status is >= (byte)NetSessionStatus.Waiting and <= (byte)NetSessionStatus.Full
+            ? (NetSessionStatus)status
+            : NetSessionStatus.Unknown;
+        message = new SessionAdvertMessage(known, seq, players, reader.ReadText(HostBytes), stands, cap);
         return true;
     }
 
@@ -871,8 +912,53 @@ public readonly record struct SessionAdvertMessage(
         writer.WriteByte((byte)Kind);
         writer.WriteByte(MissionSeq);
         writer.WriteByte(Players);
+        writer.WriteByte((byte)Status);
+        writer.WriteByte(Cap);
         writer.WriteByte(0);
+        writer.WriteUInt16(0);
         writer.WriteText(Host ?? "", HostBytes);
+        return writer.Close();
+    }
+}
+
+/// <summary>
+/// A host's word to a guest that it is being sent away, and why. A host closing its session sends
+/// it to every guest before the socket closes. A host with no seat left sends it to the guest it
+/// refuses. A guest's board can then tell a host that closed from a link that dropped. Like the
+/// advert it stays in the lobby and never reaches a session.</summary>
+public readonly record struct SessionClosedMessage(NetCloseReason Reason) : INetMessage<SessionClosedMessage>
+{
+    /// <summary>The fixed width of the message, header included.</summary>
+    public const int Size = 8;
+
+    /// <inheritdoc/>
+    public static NetMessageType Type => NetMessageType.SessionClosed;
+
+    /// <inheritdoc/>
+    public static NetReliability Reliability => NetReliability.Reliable;
+
+    /// <inheritdoc/>
+    public static bool TryRead(ReadOnlySpan<byte> from, out SessionClosedMessage message)
+    {
+        message = default;
+        var reader = new NetMessageReader(from);
+        if (!reader.Is(Size) || reader.Type != Type)
+            return false;
+
+        byte reason = reader.ReadByte();
+        message = new SessionClosedMessage(reason is (byte)NetCloseReason.Closed or (byte)NetCloseReason.Full
+            ? (NetCloseReason)reason
+            : NetCloseReason.Unknown);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public int Write(Span<byte> into)
+    {
+        var writer = new NetMessageWriter(into, Type);
+        writer.WriteByte((byte)Reason);
+        writer.WriteByte(0);
+        writer.WriteUInt16(0);
         return writer.Close();
     }
 }
@@ -1076,6 +1162,7 @@ public static class NetMessage
         NetMessageType.AiSpawn => AiSpawnMessage.Reliability,
         NetMessageType.SurfaceVehicleState => SurfaceVehicleStateMessage.Reliability,
         NetMessageType.PositionalStart => PositionalStartMessage.Reliability,
+        NetMessageType.SessionClosed => SessionClosedMessage.Reliability,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "no such message type"),
     };
 

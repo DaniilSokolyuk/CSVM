@@ -148,6 +148,21 @@ public sealed class OriginalPresentation : IMenuPresentation
     /// rows of the screen and not a box.</summary>
     public const string CampaignDeleteAid = "campaign-delete";
 
+    /// <summary>The aid value that opens the cabin with its network door open over the aids'
+    /// loopback door. Its colon argument is how many guests are on the wire.</summary>
+    public const string CampaignCoopAid = "campaign-coop";
+
+    /// <summary>The aid value that opens the Multiplayer Connection page.</summary>
+    public const string ConnectionAid = "connection";
+
+    /// <summary>The aid value that opens the games list over a LAN answering with the aids' sample
+    /// games.</summary>
+    public const string ConnectionGamesAid = "connection-games";
+
+    /// <summary>The <see cref="ConnectionGamesAid"/> argument for a LAN that answers nothing, so the
+    /// Searching box stands.</summary>
+    public const string ConnectionSearchingAid = "searching";
+
     /// <summary>The campaign aid values Original shares with Built-in, each over the scratch
     /// profile store: the empty profile screen, the two-player one, the cabin, the table of
     /// contents, the book on the last mission flown, the briefing (with its seconds argument),
@@ -157,7 +172,7 @@ public sealed class OriginalPresentation : IMenuPresentation
     {
         "campaign-empty", "campaign-roster", "campaign-cabin", "campaign-previous", "campaign-scrapbook",
         "campaign-briefing", "campaign-flightcheck", "campaign-ammo", "campaign-planeselection", "campaign-hangar",
-        CampaignDeleteAid,
+        CampaignDeleteAid, CampaignCoopAid,
     };
 
     /// <summary>The cabin's palette: the shared cabin board's, with the mission pull-down's words
@@ -337,7 +352,8 @@ public sealed class OriginalPresentation : IMenuPresentation
                 options: () => OptionsStore.UserOptions().Load(),
                 screenSizes: ResolutionSetting.ScreenSizes,
                 screens: MonitorSetting.Screens,
-                controls: host.Features.TryGet<ControlsFeature>(out var controls) ? controls : null);
+                controls: host.Features.TryGet<ControlsFeature>(out var controls) ? controls : null,
+                net: host.Features.TryGet<NetPlayFeature>(out var net) ? net : null);
             _controlsSeats = host.Features.TryGet<ControlsFeature>(out var rebinds) ? new MenuControlsSeats(rebinds) : null;
             _palette = PaletteFor(_shell.Inks);
             _preferencesPalette = PaletteFor(_shell.PreferencesInks, _shell.Inks);
@@ -471,6 +487,16 @@ public sealed class OriginalPresentation : IMenuPresentation
                     break;
                 case CreditsAid:
                     _shell.Open(OriginalScreen.Credits);
+                    break;
+                case ConnectionAid:
+                    _shell.Connection.OpenConnection();
+                    break;
+                case ConnectionGamesAid:
+                case ConnectionGamesAid + ":" + ConnectionSearchingAid:
+                    _shell.StandInNetDoor(NetDoorAid.Searching(silent: aid.EndsWith(ConnectionSearchingAid, StringComparison.Ordinal)));
+                    _shell.Connection.OpenConnection();
+                    _shell.Connection.SearchLan();
+                    _shell.StepNet(0.0);
                     break;
                 case CreditsAid + ":" + CreditsAboutAid:
                     // The screen opens on ABOUT, its first row, so one accept raises the box.
@@ -636,6 +662,9 @@ public sealed class OriginalPresentation : IMenuPresentation
         var size = _view.GetViewportRect().Size;
         var fit = BoardFit.For(size.X, size.Y);
         changed |= TickBriefing(dt);
+        // The network door is stepped every frame whatever shows. A guest arriving, a search
+        // answer or a hang-up then lands without waiting for a screen to ask.
+        changed |= _shell.StepNet(dt);
         // Text capture is set before the poll: the name screen's letters must be text, not
         // cursor aliases, for the frame that reads them.
         _host.Seats[0].CapturingText = _shell.CapturingText;
@@ -941,6 +970,18 @@ public sealed class OriginalPresentation : IMenuPresentation
                     argument = argument[CampaignCheats.MissionWord.Length..];
                 }
 
+                break;
+            case CampaignCoopAid:
+                // The cabin with its network door open over the aids' loopback door, the same pose
+                // as Built-in's aid of this name. The colon argument is the guests on its wire.
+                _shell.Campaign.ShowCabin(CampaignAidProfiles.Pilot);
+                int.TryParse(argument, System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out int guests);
+                var door = NetDoorAid.Host(guests, out _);
+                _shell.StandInNetDoor(door);
+                NetDoorAid.OpenCoopHost(door, CampaignAidProfiles.MissionsFlown, localPlayers: 1);
+                _shell.StepNet(0.0);
+                argument = string.Empty;
                 break;
             case "campaign-previous":
                 _shell.Campaign.ShowCabin(CampaignAidProfiles.Pilot);

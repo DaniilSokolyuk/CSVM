@@ -205,7 +205,7 @@ score, `0x17` match state, `0x22` hit and `0x27` seat roster. Damage, spawn, the
 director transition, the join handshake and a seat's ask to be spawned again have no
 counterpart, so they are minted at `0x40`, `0x41`, `0x42`, `0x43` and `0x44`, above the ceiling
 above. The host-owned world's four (AI state, AI fire, a guest's hit claim on an AI, and a world
-event) are minted at `0x45` to `0x48`, below, the clock ping at `0x49`, the lobby's session advert at `0x4A`, the zeppelin path at `0x4B`, a generator's AI launch at `0x4C`, the surface-vehicle patrol at `0x4D` and a positional start at `0x4E`. The handshake carries the master seed, the host's clock and the seat the joining peer was
+event) are minted at `0x45` to `0x48`, below, the clock ping at `0x49`, the lobby's session advert at `0x4A`, the zeppelin path at `0x4B`, a generator's AI launch at `0x4C`, the surface-vehicle patrol at `0x4D`, a positional start at `0x4E` and the lobby's session closed at `0x4F`. The handshake carries the master seed, the host's clock and the seat the joining peer was
 given; the original needs none of the three, because it draws from no shared stream and hands
 out no seat. The ask carries a seat and nothing else: the original's client takes its own
 respawn, while here the host owns every placement and answers the ask with a spawn event.
@@ -453,10 +453,40 @@ start can differ between ends by the link delay.
 
 ## The lobby
 
-Before any session binds the carrier, a `Net/NetLobby.cs` stands on it. A host sends one message
-there, to each peer as it connects and again whenever the offer changes. A guest's lobby keeps the
-latest and never passes it to the session, so the session's own vocabulary never sees it.
+Before any session binds the carrier, a `Net/NetLobby.cs` stands on it. A host sends the advert
+there, to each peer as it connects and again whenever the offer changes, and sends session closed
+to every guest before it closes the socket or to a guest it has no seat for. A guest's lobby keeps
+the latest of each and never passes either to the session, so the session's own vocabulary never
+sees them.
 
 | Id | Message | Class | Carries |
 |---|---|---|---|
-| `0x4A` | Session advert | reliable, host to each guest | session kind (Dogfight or campaign co-op), campaign mission sequence or none, player count, host name in 16 bytes (24 bytes) |
+| `0x4A` | Session advert | reliable, host to each guest | session kind (Dogfight 1, campaign co-op 2) at 4, campaign mission sequence or `0xFF` for none at 5, player count at 6, status at 7 (unknown 0, waiting 1, in mission 2, full 3), seat cap at 8, three reserved bytes, host name in 16 bytes UTF-8 zero padded at 12 (28 bytes) |
+| `0x4F` | Session closed | reliable, host to each guest | reason at 4 (unknown 0, closed 1, full 2), three reserved bytes (8 bytes) |
+
+A guest that reads a closed reason tells the player the host closed the game, or that the game was
+full, instead of reading the dropped link as a lost connection. An unknown status or reason reads as
+unknown rather than failing the message, so a newer host's value does not strand an older guest.
+
+### LAN discovery
+
+The games list finds hosts on the local network through `Net/LanDiscovery.cs`, a datagram pair on
+UDP port 47501, the game port plus one. It is outside the carrier: no peer is connected, and no
+message id is spent.
+
+| Offset | Query | Reply |
+|---|---|---|
+| 0 | `CSLD` | `CSLD` |
+| 4 | version, 1 | version, 1 |
+| 5 | kind, 1 | kind, 2 |
+| 6 | two reserved bytes | two reserved bytes |
+| 8 | the asker's token, 32-bit little endian | the token it answers |
+| 12 | 32 zero bytes | game port, 16-bit little endian, then two reserved bytes |
+| 16 | | the host's 28-byte session advert, header included |
+
+Both are 44 bytes. The query is padded to the reply's width so a reply is never larger than the
+query that asked for it, which keeps a responder from amplifying a forged-source flood. A responder
+answers only a datagram that is exactly 44 bytes with the magic, this version and the query kind,
+and answers it to the address it came from. A search broadcasts one query a round with a fresh
+token and keeps only replies carrying it. A game is listed at the reply's source address and the
+port the reply names, and it leaves the list after two rounds without a reply.

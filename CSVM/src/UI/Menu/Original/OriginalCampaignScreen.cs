@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using CSVM.Mech3;
+using CSVM.Net;
 using CSVM.Session;
 
 namespace CSVM.UI.Menu.Original;
@@ -19,10 +20,22 @@ namespace CSVM.UI.Menu.Original;
 /// </summary>
 public sealed class OriginalCampaignScreen : IOriginalScreenModule
 {
+    /// <summary>The cabin's network door, Host Co-op while shut and Close Network while open.</summary>
+    public const string CoopDoorKey = "NET_HOSTCOOP";
+
     // The roster's own list colours, CAMPAIGN.SCRIPT's sub-script VB. The selection bar behind the
     // picked row is 0xff800000, the frame around the row under the pointer 0xffff0000.
     private const byte RosterBarRed = 0x80;
     private const byte RosterFrameRed = 0xff;
+
+    // The cabin's network door stands in the painting's empty top-left corner, clear of the
+    // authored buttons and the seat strip. The host's band is written above it.
+    private const float CoopDoorX = 14f;
+    private const float CoopDoorY = 40f;
+    private const float CoopBandY = 14f;
+    private const float CoopBandSize = 13f;
+    private const float CoopBandWidth = 520f;
+    private const float CoopBandGround = 0.6f;
 
     private readonly CampaignFeature? _campaign;
     private readonly PlayerSetupFeature _setup;
@@ -33,6 +46,7 @@ public sealed class OriginalCampaignScreen : IOriginalScreenModule
     private readonly Func<CSVM.Flight.StockLoadouts?>? _stock;
     private readonly Func<PlayerSeat, IReadOnlyList<int>> _flightDevices;
     private readonly string? _dataRoot;
+    private readonly Func<NetPlayFeature?> _net;
 
     // The pages' host, mirrored to the screen showing and never walked (see the class summary).
     private CampaignFlow? _flow;
@@ -54,7 +68,9 @@ public sealed class OriginalCampaignScreen : IOriginalScreenModule
         Func<CampaignProfileStore>? profiles = null,
         Func<CSVM.Flight.StockLoadouts?>? stock = null,
         Func<PlayerSeat, IReadOnlyList<int>>? flightDevices = null,
-        string? dataRoot = null)
+        string? dataRoot = null,
+        // The network door the cabin's Host Co-op opens; null, or a door answering null, hides it.
+        Func<NetPlayFeature?>? net = null)
     {
         _campaign = campaign;
         _setup = setup ?? throw new ArgumentNullException(nameof(setup));
@@ -65,6 +81,7 @@ public sealed class OriginalCampaignScreen : IOriginalScreenModule
         _stock = stock;
         _flightDevices = flightDevices ?? (_ => Array.Empty<int>());
         _dataRoot = dataRoot;
+        _net = net ?? (() => null);
     }
 
     /// <summary>Whether a campaign is open on this module.</summary>
@@ -127,6 +144,10 @@ public sealed class OriginalCampaignScreen : IOriginalScreenModule
         _flow != null && !_host.DialogOpen && PageFocus >= 0 && _flow.Page.Combo(PageFocus) is { Open: true } combo
             ? combo
             : null;
+
+    // Whether the cabin shows its network door: a pilot is seated and the build has a door.
+    private bool CoopDoorShown =>
+        _host.Screen == OriginalScreen.CampaignCabin && _campaign?.Profile != null && _net() != null;
 
     private CampaignTextEntry? RosterEntry => _flow?.Page is CampaignRosterPage roster ? roster.TextEntry : null;
 
@@ -307,6 +328,7 @@ public sealed class OriginalCampaignScreen : IOriginalScreenModule
     /// through here.</summary>
     public void CloseCampaign()
     {
+        CloseCoopDoor();
         _campaign?.Discard();
         _flow = null;
         _host.CloseDialog();
@@ -327,6 +349,15 @@ public sealed class OriginalCampaignScreen : IOriginalScreenModule
             OriginalWidgets.PageRows(
                 flow.Page, OpenCombo, row => flow.Page.Focusable(row) && RowEnabled(flow.Page, row),
                 _layout, _host.Measure, rows);
+            if (CoopDoorShown)
+            {
+                var door = _net()!;
+                bool open = door.IsCoopHost;
+                var row = _host.PlaqueRow(
+                    CoopDoorKey, open ? CoopDoorText.CloseNetworkButton : CoopDoorText.HostCoopButton, 0,
+                    open || door.Stage is NetDoorStage.Shut or NetDoorStage.Failed, 0);
+                rows.Add(row with { X = CoopDoorX, Y = CoopDoorY });
+            }
         }
     }
 
@@ -391,6 +422,12 @@ public sealed class OriginalCampaignScreen : IOriginalScreenModule
         {
             OriginalWidgets.Highlight(OpenCombo, row.Key);
             PagePress(PageFocus);
+            return null;
+        }
+
+        if (row.Key == CoopDoorKey)
+        {
+            ToggleCoopDoor();
             return null;
         }
 
@@ -535,10 +572,24 @@ public sealed class OriginalCampaignScreen : IOriginalScreenModule
             layers.Lines.AddRange(board.Lines);
         }
 
+        ComposeCoopDoor(rows, focus, layers);
         if (_host.SeatPanel(false) is { } strip)
         {
             layers.Overlays.Add(strip);
         }
+    }
+
+    /// <summary>One frame's co-op upkeep: an open door re-offers the mission the cabin stands on,
+    /// the lobby sending only a change. Returns false, the band carrying any visible change.</summary>
+    internal bool OfferCoop()
+    {
+        if (_net() is { IsCoopHost: true } net && _campaign?.Profile is { } profile)
+        {
+            int seq = _campaign.MissionSeq >= 0 ? _campaign.MissionSeq : _campaign.NextMissionSeq;
+            net.Offer(seq, profile.Name, Math.Max(1, _setup.Seats.Count));
+        }
+
+        return false;
     }
 
     /// <summary>Typed characters and Backspace into the roster's name box, the campaign's own
@@ -985,6 +1036,72 @@ public sealed class OriginalCampaignScreen : IOriginalScreenModule
             No());
     }
 
+    // Host Co-op opens a campaign listen server for the seats the local players leave free and
+    // advertises the cabin's mission; Close Network hangs it up. A door the Connection page opened
+    // is left alone, its button drawn greyed.
+    private void ToggleCoopDoor()
+    {
+        if (_net() is not { } net)
+        {
+            return;
+        }
+
+        if (net.IsCoopHost)
+        {
+            net.Close();
+            return;
+        }
+
+        if (net.Stage is not (NetDoorStage.Shut or NetDoorStage.Failed))
+        {
+            return;
+        }
+
+        net.Close();
+        net.OpenCoopHost(NetSeats.MaxPlayers - Math.Max(1, _setup.Seats.Count));
+        OfferCoop();
+        if (net.Fault.Length > 0)
+        {
+            _host.RaiseDialog($"The network did not open: {net.Fault}", DialogIcon.Warning, Ok());
+        }
+    }
+
+    // Leaving the campaign and flying out of it close the cabin's door and give the router's port
+    // back. A door the Connection page opened is left alone.
+    private void CloseCoopDoor()
+    {
+        if (_net() is { IsCoopHost: true } net)
+        {
+            net.Close();
+        }
+    }
+
+    // The cabin's network door row, and the host's band over a dark ground while it is open.
+    private void ComposeCoopDoor(IReadOnlyList<OriginalRow> rows, int focus, BoardLayers layers)
+    {
+        if (!CoopDoorShown)
+        {
+            return;
+        }
+
+        for (int i = 0; i < rows.Count; i++)
+        {
+            if (rows[i].Key == CoopDoorKey)
+            {
+                bool pressed = !_host.DialogOpen && _host.PressedRow == i;
+                _host.ComposeGenericRow(rows[i], i == focus && !_host.DialogOpen, pressed, i, layers);
+            }
+        }
+
+        string band = CoopDoorText.HostBand(_net()!);
+        if (band.Length > 0)
+        {
+            layers.Fills.Add(new BoardFill(CoopDoorX - 4f, CoopBandY - 3f, CoopBandWidth, CoopBandSize + 8f, 0, 0, 0, CoopBandGround));
+            layers.Lines.Add(new BoardLine(band, CoopDoorX, CoopBandY, CoopBandWidth, CoopBandSize, BoardInk.Row, -1,
+                Colour: new BoardTint(226, 224, 206)));
+        }
+    }
+
     private void ActivateCabin(OriginalRow row, int pageRow)
     {
         if (_campaign?.Profile is not { } profile)
@@ -1074,6 +1191,8 @@ public sealed class OriginalCampaignScreen : IOriginalScreenModule
                     pads.Add(_flightDevices(seat));
                 }
 
+                // No campaign mission carries a wire yet, so flying out leaves the guests behind.
+                CloseCoopDoor();
                 return _campaign.BuildExit(pads);
             default:
                 return null;

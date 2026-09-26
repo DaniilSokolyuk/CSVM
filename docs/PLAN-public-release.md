@@ -768,8 +768,9 @@ design. Its "contacts no server" claim is grepped rather than assumed: `System.N
 `WebSocket`, `UdpClient`, `TcpClient`, `HTTPRequest` and `MultiplayerApi` have no hit anywhere
 under `CSVM/`, scenes included, so no build reaches out on its own. The multiplayer door is the
 one socket, and the page states it rather than grepping it away: `ENetMultiplayerPeer` lives only
-in `CSVM/src/Net/EnetTransport.cs` and Godot's UPnP client only in `CSVM/src/Net/UpnpPortMap.cs`,
-the two exemptions `CSVM.Tests/NetNamespaceDependencyTests.cs` asserts over compiled metadata,
+in `CSVM/src/Net/EnetTransport.cs`, Godot's UDP peer for the LAN search only in
+`CSVM/src/Net/LanDiscoverySocket.cs` and Godot's UPnP client only in `CSVM/src/Net/UpnpPortMap.cs`,
+the three exemptions `CSVM.Tests/NetNamespaceDependencyTests.cs` asserts over compiled metadata,
 and nothing listens until the player hosts.
 
 `ISSUE_TEMPLATE/config.yml` keeps blank issues on deliberately, with the reason in the file:

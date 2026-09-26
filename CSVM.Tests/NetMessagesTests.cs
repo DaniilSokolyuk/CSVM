@@ -596,6 +596,49 @@ public class NetMessagesTests
         Assert.False(SessionAdvertMessage.TryRead(handshake, out _));
     }
 
+    // The games list's status and seat cap ride in the advert's own bytes. A status a later build
+    // adds reads as unknown rather than as a seat this one could take.
+    [Fact]
+    public void ASessionAdvertCarriesItsStatusAndCapInTwentyEightBytes()
+    {
+        Assert.Equal(28, SessionAdvertMessage.Size);
+        Span<byte> buffer = stackalloc byte[SessionAdvertMessage.Size];
+        var sent = new SessionAdvertMessage(NetSessionKind.CampaignCoop, 7, 4, "Zachary", NetSessionStatus.Full, 4);
+        Assert.Equal(SessionAdvertMessage.Size, sent.Write(buffer));
+        Assert.True(SessionAdvertMessage.TryRead(buffer, out var got));
+        Assert.Equal(sent, got);
+
+        buffer[7] = 0x77;
+        Assert.True(SessionAdvertMessage.TryRead(buffer, out var later));
+        Assert.Equal(NetSessionStatus.Unknown, later.Status);
+        Assert.False(SessionAdvertMessage.TryRead(buffer[..(SessionAdvertMessage.Size - 1)], out _));
+    }
+
+    [Fact]
+    public void ACloseNoticeRoundTripsItsReasonReliablyInEightBytes()
+    {
+        Span<byte> buffer = stackalloc byte[SessionClosedMessage.Size];
+        Assert.Equal(8, SessionClosedMessage.Size);
+        foreach (var reason in new[] { NetCloseReason.Closed, NetCloseReason.Full })
+        {
+            Assert.Equal(SessionClosedMessage.Size, new SessionClosedMessage(reason).Write(buffer));
+            Assert.True(SessionClosedMessage.TryRead(buffer, out var got));
+            Assert.Equal(reason, got.Reason);
+        }
+
+        Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.SessionClosed));
+        Assert.Equal(0x4F, (int)NetMessageType.SessionClosed);
+        Assert.False(NetMessage.IsOriginalId(NetMessageType.SessionClosed));
+
+        buffer[4] = 0x55;
+        Assert.True(SessionClosedMessage.TryRead(buffer, out var odd));
+        Assert.Equal(NetCloseReason.Unknown, odd.Reason);
+
+        Span<byte> advert = stackalloc byte[SessionAdvertMessage.Size];
+        new SessionAdvertMessage(NetSessionKind.Dogfight, 0, 1, "h").Write(advert);
+        Assert.False(SessionClosedMessage.TryRead(advert, out _));
+    }
+
     // The original's ping width: the header and two stamps.
     [Fact]
     public void AClockPingRoundTripsBothStampsInTheOriginalsTwelveBytes()

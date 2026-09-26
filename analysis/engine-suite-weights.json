@@ -251,6 +251,8 @@
     "menu-player-setup-seats": 0.222,
     "menu-net-door": 0.14,
     "menu-coop-door": 0.18,
+    "menu-original-connection": 0.4,
+    "lan-discovery": 0.1,
     "menu-screenshot-key": 0.074,
     "menu-zone-layout": 0.068,
     "mesh-light-blink": 1.473,

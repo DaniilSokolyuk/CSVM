@@ -1073,6 +1073,15 @@ board it hands back, the cabin's painting going down as backdrop so the mission 
 screen graph, the rows at the rectangles the board draws them at, the pointer hit-testing, the cues and every dialog raise are this file's, as are `OpenCabin` (every door onto the cabin, which is why RETURN TO CABIN is taken here rather than mirrored off a page), `ShowScrapbook`, where the feature's two cinemas play, and `CheckSeat`: the check and the two screens it opens stand for one player at a time, that seat's own device driving them while seat 0 keeps its pointer alone. It is one `IOriginalScreenModule` and reaches `OriginalShell` only through `IOriginalScreenHost` (`OriginalScreenHost.cs`), which raises its messageboxes, runs a script's frames and plays its films, so `OriginalCampaignTests` drives it over a hand-written host with no shell at all; the shell dispatches through `ModuleFor` and exposes it whole as `Campaign`, which is also how the seat walk and the hangar door's wallet reach campaign state. The scrapbook's pen is the only stroke any module draws, which is why `Compose` carries a strokes layer. Read `src/UI/CampaignFlow.cs` for the pages; the screens and
 their strings: [../org/menu-inventory.md](../org/menu-inventory.md).
 
+## src/UI/Menu/Original/OriginalConnectionScreen.cs
+The original's Multiplayer Connection page and the LAN games list behind its Connect, one
+`IOriginalScreenModule` over `NetPlayFeature`. The multiplayer scripts place their widgets inline,
+so every corner is the scripts' own rather than the layout's. Only LAN TCP/IP, which searches the
+network, and Internet, which joins the typed address, are offered; Build Custom Plane, Host and
+Create Game draw greyed. A join started here is followed on the shared messagebox over the page until it lands or
+fails. Its plaques draw as pictures, since a plaque layer stands over the labels a script colours.
+The geometry and strings: [../org/menu-inventory.md](../org/menu-inventory.md).
+
 ## src/UI/Menu/Original/OriginalPresentation.cs
 The Original presentation node, registered under `PresentationId.Original`: a `CanvasLayer` on the board layer holding one
 `ComposedBoardView`, so every screen scales as the campaign boards do. `Activate` builds the shell and the device

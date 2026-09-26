@@ -65,7 +65,7 @@ own callbacks and economy are [`hangar.md`](hangar.md), the mission-end book
 | Distinct `IDS_*` symbols `LAYOUT.CSV` names | **152**, of which **149** resolve to text |
 | UI sound files | **8** |
 | Original screens in this plan's scope | **28** of the 34 single-player screens (25 built; the 3 remaining Preferences pages stand behind doors drawn disabled) |
-| Layout-stated navigation edges in the original | **46** (31 driven by Original, 2 realised as the wingman slot's row, 3 drawn disabled, 10 out of scope; see [Coverage](#coverage)) |
+| Layout-stated navigation edges in the original | **46** (32 driven by Original, 2 realised as the wingman slot's row, 2 drawn disabled, 10 out of scope; see [Coverage](#coverage)) |
 
 ## Part 1: Built-in as it stands
 
@@ -296,7 +296,9 @@ named in it; `WaveEdit` is the twelfth and has no aid, which is the warning unde
 | `campaign-planeselection[:export]` | plane selection, or its export messagebox | `Campaign` |
 | `campaign-hangar` | the hangar over the profile's wallet | `Campaign` → `Hangar` |
 | `campaign-fly` | walks a real profile to Fly Mission and launches | `Campaign` |
-| `campaign-coop[:guests]` | the cabin with the co-op network door open over a loopback wire holding that many guests (0 by default), its band and remote chips drawn; Built-in only | `Campaign` |
+| `campaign-coop[:guests]` | the cabin with the co-op network door open over a loopback wire holding that many guests (0 by default), its band and remote chips drawn; Original draws the same pose with its CLOSE NETWORK plaque | `Campaign` |
+| `connection` | Original only: the Multiplayer Connection page | out of scope |
+| `connection-games[:searching]` | Original only: the LAN games list over an in-process LAN answering with four sample games, or with none so the Searching box stands | out of scope |
 | `network-coopjoin` | the Network board of a guest joined over the loopback to a campaign host, the session named in its status | `Network` |
 | `network-coopwait` | that guest's waiting board | `Network` |
 | `loadboard[:mission_type]` | the load screen's blackboard, over the menu, writing that mission type's own dialog | out of scope |
@@ -433,11 +435,12 @@ families (pointer clicks on the rows' rectangles, keyboard cursor commands walki
 pad cursor commands walking up and left), once over the hand-authored fixture layout and once over
 the install's own `menu_layout.json` and art. Every `ScriptToExe` edge of an in-scope section must
 have an entry saying how Original realises it, and the entry is checked against the shell. The
-tally over the install: 33 screens (every `OriginalScreen`) reached and left with no open campaign,
-build or dialog behind; 56 journeys by 3 families; 46 edges of which **43 are driven** (the row is
-pressed and the target screen shows), **2 are realised as the wingman slot's row** (`FC_B_CHANGEPLANEW`
-and `FC_B_CHANGEAMMOW` are the pilot's plaques at the wingman's slot, present exactly when the
-mission flies a wingman) and **1 is drawn disabled** (`MM_B_MULTIPLAYER`); 0 dead ends. The wrap-up
+tally over the install: 35 screens (every `OriginalScreen`) reached and left with no open campaign,
+build or dialog behind; 58 journeys by 3 families; 46 edges of which **44 are driven** (the row is
+pressed and the target screen shows, `MM_B_MULTIPLAYER` opening the Connection page) and **2 are
+realised as the wingman slot's row** (`FC_B_CHANGEPLANEW` and `FC_B_CHANGEAMMOW` are the pilot's
+plaques at the wingman's slot, present exactly when the mission flies a wingman); none is drawn
+disabled and there are 0 dead ends. The wrap-up
 page is reached the way a flown mission reaches it, by handing the shell one ended mission's frozen
 numbers, since no row anywhere opens it. The exits are checked too: Quit as a `QuitExit`, ACCEPT CHANGES as a
 `OptionsApplyExit`, FLY on Free Flight and Fly Mission on Instant Action as a `LaunchExit`,
@@ -449,8 +452,9 @@ device mapping behind them is the seats' own tests.
 ### In scope and out of scope
 
 Decision 5 puts everything `LaunchMenu` hosts in scope. Mapping that onto the original's 34
-single-player screens leaves **30 in and 4 out**, before the 22 multiplayer screens, which are all
-out (CSVM's Dogfight is splitscreen on `dogfight_ace` spawns, not the original's network play).
+single-player screens leaves **30 in and 4 out**, before the 22 multiplayer screens. Of those, the
+Connection page and the LAN games list are built as the campaign co-op's way in; the rest (the
+Dogfight lobby and its pages) stay out, CSVM's Dogfight being splitscreen on `dogfight_ace` spawns.
 
 **In scope (30):** MainMenu; Preferences, GameOptions, Audio, Video, ControlsPrefs, Keys; Credits;
 InstantAction, IA_WrapUp; Campaign, PassengerCabin, MomentoSelection, FlightCheck, PlaneSelection,
@@ -470,9 +474,47 @@ four volume levels on the second, the graphics mode, the display mode and the V-
 third. ControlsPrefs and Keys stand
 over the shared `ControlsFeature`, so all four page doors (`PF_B_GAMEOPTIONS`, `PF_B_AUDIO`,
 `PF_B_VIDEO`, `PF_B_CONTROLS`) are live.
-Multiplayer is network play with no local counterpart, so `MM_B_MULTIPLAYER` draws its disabled
-frame and takes no input. `MM_B_CREDITS` is live and opens the credits screen, which is built
+`MM_B_MULTIPLAYER` is live wherever the shell has a network door, and opens the Connection page
+([The multiplayer screens](#the-multiplayer-screens)); a shell built without one draws it disabled.
+`MM_B_CREDITS` is live and opens the credits screen, which is built
 whole: the pane, both buttons, the About box and the right-button line.
+
+### The multiplayer screens
+
+The multiplayer scripts use the `CC` library and place every widget inline, so the corners below
+are the scripts' own, in 800x600 board pixels, and `OriginalConnectionScreen` holds them as
+constants rather than reading a layout.
+
+- **Connection** (`MP_OPTIONSBACKGROUND.JPG`). The script places five `MP_B_RADIO.PNG` radios at
+  x 50, y 98, 134, 171, 207 and 268 (four frames: greyed, normal, rollover, selected), MSN Gaming
+  Zone, LAN IPX, LAN TCP/IP, Internet and Modem-to-Modem, each label (langui 10001 to 10005) 33 px
+  right of its radio and its description (10008 to 10012) at x 83. The IP Address box stands 17 px
+  under the Internet radio, 150 x 18, its label 101 px left of it, and the phone box likewise under
+  Modem-to-Modem. Host (`MP_B_SMALL.PNG`) at (514, 424), Connect (`MP_B_MEDIUM.PNG`) at (610, 424),
+  Exit Multiplayer at (514, 559), Build Custom Plane at (117, 468), and the panel text (10524)
+  centred in x 59 to 388 at y 380. The capture draws every label and description black, a greyed
+  way included, and the live address box as a black outline over the page.
+- **The games list** (`MP_GAMESBACKGROUND.JPG`). The title (10067 over the way's name) at (69, 80);
+  five sort radios, the first two at y 116 and x 145 and 278, the rest at y 118 and x 414, 547 and
+  680, each under "Sort by:" (10068); five header columns from x 53, of widths 145, 100, 166, 145 and 115,
+  their words (10069 to 10073) at y 149; up to twelve rows from y 175 at a 25 px pitch; the Auto
+  refresh checkbox (`MP_B_CHECKBOXLARGE.PNG`, eight frames) at (47, 507) and Create Game, Join Game
+  (`MP_B_LARGE.PNG`) and Exit (`MP_B_SMALL.PNG`) along y 507 at x 394, 529 and 665. The sorted column
+  wears `MP_GAMESALPHA.PNG` cropped to that column at alpha 80, tinted F2D08B. An empty list is
+  covered by the Searching box (`MP_ERRORMESSAGEBACKGROUND.JPG` at (254, 160), "Searching ..." in
+  red, its Cancel at (404, 310)), and asks again every second; a filled one asks every five seconds
+  only while Auto refresh is checked.
+- **What is ours.** Only LAN TCP/IP, which searches, and Internet, which joins the typed address,
+  are on the page, at the script's first two radio places (y 98 and 134) with its pitch, the IP
+  Address box at (184, 151) and the Internet description at y 177. MSN Gaming Zone, LAN IPX and
+  Modem-to-Modem, with the phone box, are left off since the remake has no carrier for them. Host,
+  Create Game and Build Custom Plane draw greyed, since no Dogfight lobby exists. The Mission
+  Environment column names a co-op game's mission, or its shortcode when the name passes 24
+  characters. A join is followed on the shared message box: connecting, waiting on the host, or why
+  it ended. The multiplayer error box's errors (langui 10022, 10025) are raised in the shared box.
+- **The cabin's network door.** Remake-only: a paper plaque in the `FC_B_CHANGEPLANE` convention at
+  (14, 40) reading HOST CO-OP or CLOSE NETWORK, with the host's band over a dark ground at y 14.
+  The original has no co-op campaign, so no script describes it.
 
 ### Screen by screen
 
@@ -481,7 +523,7 @@ behaviour: what a press does, what a rollover changes, what is disabled when.
 
 | Original screen | Built-in counterpart | Layout | Script decoded | Capture | Interaction evidence |
 |---|---|---|---|---|---|
-| MainMenu | Mode | 9 rows | this page | **none** | composition only; script text gives the six buttons and their targets, nothing about rollover, music or the flag movie. **Built as Original's top level** from the two panes and the six `B` rows with their four-frame strips: Campaign, Instant Action, Preferences (the Options screen), Credits and Quit react, Multiplayer draws the disabled frame and takes no input, and the movie's place is black. Quit terminates on the press with no confirm, which is `MAINMENU.SCRIPT`'s own `terminate` on `mm_b_quit` |
+| MainMenu | Mode | 9 rows | this page | **none** | composition only; script text gives the six buttons and their targets, nothing about rollover, music or the flag movie. **Built as Original's top level** from the two panes and the six `B` rows with their four-frame strips: Campaign, Instant Action, Preferences (the Options screen), Credits and Quit react, Multiplayer opens the Connection page over a network door (disabled on a shell built without one), and the movie's place is black. Quit terminates on the press with no confirm, which is `MAINMENU.SCRIPT`'s own `terminate` on `mm_b_quit` |
 | (none: remake-only) | Free Flight, Chapter, Plane | none | none | none | **Original's Free Flight door and screen, of our design under Decision 11.** The door is a text button in the `FC_B_CHANGEPLANE` paper-plaque convention beside the button frame, level with Campaign; the screen is the logo over two text lists (the shared chapter roster and the shared aircraft roster, the eleven stock airframes then the saved custom planes in an eleven-row window) with BACK and FLY plaques and a seat strip under the chapters. Seat 0 alone picks here; each joined seat picks on the per-seat aircraft screen below. Nothing on it is decoded |
 | (none: remake-only) | Dogfight, Chapter, Plane | none | none | none | **Original's Dogfight door and screen, of our design under Decision 11.** The door sits under the Free Flight door in the same plaque convention; the screen is the Free Flight screen's shape over the Dogfight gate (a second seat must join and confirm before FLY stands). The original's Multiplayer is network play and ships no split-screen Dogfight, so nothing here is decoded |
 | (none: remake-only) | the join strip and per-seat picks | none | none | none | **Original's join flow, of our design.** Start on an unclaimed pad joins a seat on either sortie screen, the Instant Action screen or the campaign flight check (the same gesture and pad bookkeeping as Built-in's, through `MenuSeatDevices`); seat 0's mouse, keyboard or pad picks the map and the aircraft and presses FLY, which is its own confirmation; with another pilot joined the per-seat walk's last confirm takes that press, so the sortie launches there rather than back on the sortie screen. On the campaign the walk is the flight check itself, one player's check at a time: that pilot's own device drives their check and the ammo and plane screens it opens, plus the mouse riding seat 0's source, and nothing else of seat 0's. The original has no join gesture |
@@ -624,7 +666,8 @@ which is why the required count is 94 layout names plus the five the scripts nam
 | `AP_`, `VP_`, `CP_`, `KB_` page art | 4 families | optional | the four remaining Preferences pages are out of scope, so no composed screen draws them |
 | `GN_B_ReturnToGame.Png` | 1 | optional | `[Preferences]`' in-flight way back; the menu's page offers `PC_B_ReturnMainMenu.png` instead |
 | `CR_AboutMessageBox.png` | 1 | **required** | the About box's own background, drawn by the credits screen's box |
-| `MessageBox`'s `MP_*` rows, its `MA_B_LEFT`/`MA_B_RIGHT`, and the art of every section outside the 23 | 3 + 27 | optional | no local counterpart for the multiplayer error box, and the About box is the one-button box, so its left and right rows never draw |
+| the Connection page's and the games list's art (`MP_OPTIONSBACKGROUND.JPG`, `MP_GAMESBACKGROUND.JPG`, `MP_ERRORMESSAGEBACKGROUND.JPG`, `MP_GAMESALPHA.PNG`, the `MP_B_` radio, small, medium, large, exit and checkbox strips) | 10 | **required** | script-named, since the multiplayer scripts carry no layout; drawn art may not be classed optional |
+| `MessageBox`'s `MP_*` rows, its `MA_B_LEFT`/`MA_B_RIGHT`, and the art of every section outside the 23 | 3 + 27 | optional | the multiplayer error box's errors are raised in the shared box, and the About box is the one-button box, so its left and right rows never draw |
 | `ui_strings.json` + `RESOURCE.H` | 2 | optional | 152 symbols referenced, 149 resolve; `UiStrings` falls back to an empty table, so the screens draw with no words rather than not at all |
 | `SCRAPBOOK.CSV` | 1 | optional | 461 rows; the book's extent is the file's extent, and without it the book lists nothing |
 | `MOUSECLICK`, `MOUSEOVER`, `ENTERTEXT`, `ENTERTEXT_ERROR` | 4 | optional | a silent menu is usable |
@@ -719,8 +762,7 @@ the pointer changes; a plaque has three states that differ only in lettering col
 rest, orange under the pointer and red while held, the rollover arriving on the frame the hot
 point enters the box; a press fires on the release, never on the button-down (Quit held for 1.4 s
 did nothing until released); Multiplayer is a live plaque like the other five, and no take draws
-any plaque disabled, while Original keeps it in its disabled frame by the user's decision until
-multiplayer is implemented; nothing is drawn at `mm_t_title`; Quit ends the process on the release with
+any plaque disabled, which Original matches over its network door; nothing is drawn at `mm_t_title`; Quit ends the process on the release with
 no confirm, as `MAINMENU.SCRIPT` terminates on `mm_b_quit`; and the top level arrives with no
 plaque lit. The pointer is the active bitmap over a live button, a plaque, an edit box and an
 open dropdown's rows, the passive one over a roster row, a scrap and dead space, with the hotspot

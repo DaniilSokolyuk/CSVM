@@ -14,6 +14,7 @@ public static class NetCarrier
 {
     private static readonly Func<int, UpnpPortMapResult> MapPort = port => UpnpPortMap.Map(port);
     private static readonly Action<int> UnmapPort = port => UpnpPortMap.Unmap(port);
+    private static readonly Func<string, int, ILanSocket> BindLan = (bind, port) => LanDiscoverySocket.Bind(port, bind);
 
     /// <summary>Whether this build selects the Steam carrier.</summary>
     public static bool UsesSteam => SteamTransport.SteamBuild;
@@ -27,6 +28,10 @@ public static class NetCarrier
 
     /// <summary>The way that mapping comes back down, or null when none was asked for.</summary>
     public static Action<int>? PortUnmap => UsesSteam ? null : UnmapPort;
+
+    /// <summary>The LAN search's socket, bound on an address and a port, or null for a carrier
+    /// that finds its games another way. A door handed null offers no search.</summary>
+    public static Func<string, int, ILanSocket>? Lan => UsesSteam ? null : BindLan;
 
     /// <summary>Opens a listen server for <paramref name="maxGuests"/> guests on
     /// <paramref name="port"/> over the selected carrier. <paramref name="bindAddress"/> is the

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using CSVM.Net;
 
 namespace CSVM.UI.Menu.Original;
 
@@ -38,6 +39,9 @@ public sealed partial class OriginalShell
     private const float HintWidth = 420f;
     private const float HintY = 546f;
     private const float MarkSize = 12f;
+
+    // A remote guest's chip spans two pitches, since its tag carries the network mark.
+    private const int RemoteChipPitches = 2;
 
     // The aircraft column's scrollbar, remake chrome on a remake screen: a thin track down the
     // window's right edge with a thumb no shorter than a row, drawn only once the roster outruns
@@ -171,13 +175,14 @@ public sealed partial class OriginalShell
     private BoardPanel? CampaignSeatPanel(bool onPaper = false)
     {
         var seats = _setup.Seats;
-        if (seats.Count < 2)
+        int remote = _net is { IsCoopHost: true } net ? Math.Min(net.Peers, Math.Max(0, NetSeats.MaxPlayers - seats.Count)) : 0;
+        if (seats.Count + remote < 2)
         {
             return null;
         }
 
         int current = StripFocus;
-        float width = seats.Count * SeatStrip.Pitch;
+        float width = (seats.Count + (remote * RemoteChipPitches)) * SeatStrip.Pitch;
         float left = BoardFit.AuthoredWidth - SeatStrip.Inset - width;
         float top = SeatStrip.Inset - SeatStrip.Pad;
         var fills = new List<BoardFill>(2)
@@ -198,6 +203,15 @@ public sealed partial class OriginalShell
 
             lines.Add(new BoardLine(SplitScreen.PlayerTag(i), x, SeatStrip.Inset, SeatStrip.Pitch,
                 SeatStrip.Font, SeatStrip.Ink(i), -1, false, BoardJustify.Center));
+        }
+
+        // A guest at another machine takes a seat and a chip but no pane, and its chip says so.
+        for (int i = 0; i < remote; i++)
+        {
+            int seat = seats.Count + i;
+            float x = left + ((seats.Count + (i * RemoteChipPitches)) * SeatStrip.Pitch);
+            lines.Add(new BoardLine(SplitScreen.PlayerTag(seat) + LaunchMenu.RemoteChipMark, x, SeatStrip.Inset,
+                RemoteChipPitches * SeatStrip.Pitch, SeatStrip.Font, SeatStrip.Ink(seat), -1, false, BoardJustify.Center));
         }
 
         return new BoardPanel(fills, Array.Empty<BoardPicture>(), lines);

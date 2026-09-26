@@ -26,6 +26,43 @@ public class CoopDoorTextTests
     }
 
     [Fact]
+    public void TheGamesListNamesTheHostsGameItsPlayersOfItsCapAndItsMission()
+    {
+        var coop = new SessionAdvertMessage(NetSessionKind.CampaignCoop, 7, 2, "Zachary", NetSessionStatus.Waiting, 4);
+        Assert.Equal("Zachary's campaign", CoopDoorText.GameName(coop));
+        Assert.Equal("Campaign", CoopDoorText.GameName(coop with { Host = "" }));
+        Assert.Equal("2/4", CoopDoorText.PlayerCount(coop));
+        Assert.Equal($"2/{NetPlayFeature.CoopHumans}", CoopDoorText.PlayerCount(coop with { Cap = 0 }));
+        Assert.Equal("Campaign co-op", CoopDoorText.MissionType(coop));
+
+        // A name that fits is written out; one that does not falls back to its shortcode.
+        Assert.Equal("Short", CoopDoorText.Environment(coop, _ => "Short", _ => true));
+        Assert.Equal("C2/M03", CoopDoorText.Environment(coop, _ => "Far Too Long A Name", _ => false));
+        Assert.Equal("C2/M03", CoopDoorText.Shortcode(coop));
+
+        var dogfight = new SessionAdvertMessage(NetSessionKind.Dogfight, SessionAdvertMessage.NoMission, 5, "Lucy");
+        Assert.Equal("Lucy's dogfight", CoopDoorText.GameName(dogfight));
+        Assert.Equal($"5/{NetSeats.MaxPlayers}", CoopDoorText.PlayerCount(dogfight));
+        Assert.Equal("", CoopDoorText.Environment(dogfight, _ => "x", _ => true));
+    }
+
+    [Fact]
+    public void TheThreeStatusesReadAndOnlyAGameWithASeatIsJoinable()
+    {
+        var coop = new SessionAdvertMessage(NetSessionKind.CampaignCoop, 0, 1, "Zachary");
+        Assert.Equal("Waiting", CoopDoorText.Status(coop));
+        Assert.Equal("In mission", CoopDoorText.Status(coop with { Status = NetSessionStatus.InMission }));
+        Assert.Equal("Full", CoopDoorText.Status(coop with { Status = NetSessionStatus.Full }));
+        Assert.True(CoopDoorText.Joinable(coop));
+        Assert.True(CoopDoorText.Joinable(coop with { Status = NetSessionStatus.InMission }));
+
+        // ABLE-TO-FAIL CONTROL: a full game, an unknown status and an unknown kind are not joinable.
+        Assert.False(CoopDoorText.Joinable(coop with { Status = NetSessionStatus.Full }));
+        Assert.False(CoopDoorText.Joinable(coop with { Status = NetSessionStatus.Unknown }));
+        Assert.False(CoopDoorText.Joinable(coop with { Kind = NetSessionKind.Unknown }));
+    }
+
+    [Fact]
     public void TheHostBandNamesTheMappedAddressAndTheGuestsOnlyWhileHostingACampaign()
     {
         var mesh = LoopbackTransport.Mesh(3, Clean, new Random(2));

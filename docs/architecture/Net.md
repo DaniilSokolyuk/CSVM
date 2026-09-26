@@ -94,9 +94,42 @@ clear, so nothing here throws.
 A carrier's first listener, standing between the socket a menu opens and the session that later
 binds it, since a carrier binds only once. It is itself the `INetTransport` the session binds. A
 host's `Advertise` sends a `SessionAdvertMessage` to every peer on connect and on each change; a
-guest keeps the latest arrival in `Advert` and never passes one on. Any other payload is held (up
+guest keeps the latest arrival in `Advert`, and the host's closing word in `Closed`, and never
+passes either on. Any other payload is held (up
 to `HeldPayloads`) until a session binds, then replayed behind the peer announcement, so `Held` is
 how a guest's board learns that the host's session has answered. Read `NetLobbyTests.cs`.
+
+## src/Net/LanDiscovery.cs
+The LAN search's datagram pair, apart from the carrier: `LanDiscovery` writes and reads a query
+and a reply of one fixed width on `Port`, `LanGame` is one answer (the reply's source address, the
+game port it names and the host's advert), and `ILanSocket` is the datagram seam the responder and
+the search are handed. ⚠ The query is padded to the reply's width, so a responder never sends more
+than it was sent and cannot amplify a forged-source flood. Layout:
+[../org/multiplayer-messages.md](../org/multiplayer-messages.md).
+
+## src/Net/LanResponder.cs
+An open door's answer to a search, over a socket bound on `LanDiscovery.Port` only while the door
+hosts. `Poll` answers each well-formed query with the door's advert and game port, to the address
+the query came from, and reads at most `QueriesPerPoll` a frame so a flood costs bounded work.
+Anything that is not a whole query of this version is read and dropped unanswered.
+
+## src/Net/LanSearch.cs
+A guest's search for open doors. `Ask` starts a round with a fresh token sent to the broadcast
+address, `Poll` keeps the replies carrying that token, and `Games` lists what answered the current
+or the last round in first-answer order, so a host that closed leaves on the next round. Replies to
+an older round and foreign datagrams are dropped. Read `LanDiscoveryTests.cs`.
+
+## src/Net/LoopbackLan.cs
+The in-process datagram network the suites and the screenshot aids run the LAN search on, the
+discovery counterpart of `LoopbackTransport`. A send to `Broadcast` reaches every socket on its
+port and any other send reaches one socket; delivery is immediate and lossless. It opens no real
+socket, so no run of it raises a firewall dialog.
+
+## src/Net/LanDiscoverySocket.cs
+The shipped `ILanSocket` over Godot's UDP peer with broadcast sends allowed, polled from the menu
+frame. ⚠ Besides `EnetTransport`, the only type under `CSVM/` that may name a Godot networking
+type, asserted by `NetNamespaceDependencyTests.cs`. A suite binds it on the loopback address,
+since a wildcard bind is what raises a firewall dialog.
 
 ## src/Net/NetMessages.cs
 The vocabulary: `NetMessageType` (one word per message), the death, spawn and match-end enums

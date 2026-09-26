@@ -958,28 +958,6 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   layout is the form in another file. *Cross-refs:* `BL-1014`, `BL-1015`,
   `docs/menu-presentations.md`, `docs/architecture/UI.md`.
 
-- `BL-1021` `[Feature]` `[M]` `[Next: look]` `[Impact: high]` `[Evidence: trace]` **The Original
-  presentation has no multiplayer door, so hosting or joining a networked match is reachable only
-  from Built-in.** *Evidence:* `NetPlayFeature` is a shared `IMenuFeature` and names no
-  presentation, but only `LaunchMenu.cs` draws a board over it (the Mode screen's last row, then
-  five rows for the port, the address, Host, Join and Continue). `OriginalShell` offers no row for
-  it, for the same reason it offers no Dogfight match rules: its Dogfight screen is remake-designed
-  and no authored layout section carries a widget for one. *Fix shape:* a board in the shell's own
-  inks over the same feature, reading `Stage`, `Port`, `Address`, `Peers`, `Link`, `PortMap` and
-  `Fault` and calling `OpenHost`/`OpenJoin`/`Close`; the launch leg needs nothing new, since
-  `BuildLaunch` already rides out on `LaunchExit.Net`. *⚠ Traps:* the feature must keep being
-  stepped every menu frame or a join never lands, which is presentation work, not feature work;
-  the door is remake-only chrome with no shipped art behind it, so the art direction decision the
-  wrap-up page's post-its set is the precedent to follow. The original's own screens are the look
-  reference: `OriginalScreenshots/Multiplayer Connection.png` (the Connection page: MSN Gaming
-  Zone, LAN IPX, LAN TCP/IP, Internet with an IP address field, Modem-to-Modem, a Build Custom
-  Plane panel, Host and Connect), `OriginalScreenshots/Multiplayer Connection Screen.png` (the
-  LAN TCP/IP games list with five sort columns, an auto-refresh toggle, Create Game and Join Game,
-  and a "Searching ..." dialog) and the four `OriginalScreenshots/Multiplayer Lobby *.png` shots
-  (the lobby under `BL-1022`). *Cross-refs:* `BL-951` (the local join
-  board, still open, and the board this one sits beside), `docs/menu-presentations.md`,
-  `docs/architecture/UI.md`.
-
 ## Splitscreen
 
 Our splitscreen mode (2–4 players) has no counterpart in the original, so every rule it authored

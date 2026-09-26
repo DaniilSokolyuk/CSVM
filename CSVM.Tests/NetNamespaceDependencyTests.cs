@@ -11,7 +11,7 @@ namespace CSVM.Tests;
 /// reference <c>System.Net</c>, nor anything under <c>Godot</c> except its plain math structs, in
 /// a signature or in a method body. That is what keeps a session ignorant of what carries it, and
 /// lets the loopback drive a match in a plain unit test. The carriers that must name an engine type to exist are listed by full name below. The
-/// second fact holds Godot's networking types to the one file, and the third holds every Steam
+/// second fact holds Godot's networking types to the carrier files, and the third holds every Steam
 /// name to the Steam carrier.
 /// The scanner throws when the subject filter matches no type, so this cannot pass by scanning
 /// nothing.
@@ -22,6 +22,7 @@ public sealed class NetNamespaceDependencyTests
     private const string Transport = "CSVM.Net.EnetTransport";
     private const string PortMap = "CSVM.Net.UpnpPortMap";
     private const string Steam = "CSVM.Net.SteamTransport";
+    private const string LanSocket = "CSVM.Net.LanDiscoverySocket";
 
     private static readonly string[] EngineMathStructs =
     {
@@ -56,7 +57,7 @@ public sealed class NetNamespaceDependencyTests
             name => name.StartsWith("Godot.ENet", StringComparison.Ordinal)
                 || name.StartsWith("Godot.Multiplayer", StringComparison.Ordinal));
 
-        // Able to fail on its own terms. The one file allowed to do this really does, so an empty
+        // Able to fail on its own terms. Each file allowed to do this really does, so an empty
         // list would mean the scan stopped finding references.
         Assert.NotEmpty(networking.Where(v => Subject(v) == Transport));
         Assert.Empty(networking.Where(v => Subject(v) != Transport));
@@ -68,6 +69,15 @@ public sealed class NetNamespaceDependencyTests
 
         Assert.NotEmpty(upnp.Where(v => Subject(v) == PortMap));
         Assert.Empty(upnp.Where(v => Subject(v) != PortMap));
+
+        var udp = AssemblyDependencyScan.Violations(
+            AssemblyPath(),
+            ns => ns == "CSVM.Net",
+            name => name is "Godot.PacketPeerUdp" or "Godot.UdpServer");
+
+        Assert.Equal(LanSocket, typeof(LanDiscoverySocket).FullName);
+        Assert.NotEmpty(udp.Where(v => Subject(v) == LanSocket));
+        Assert.Empty(udp.Where(v => Subject(v) != LanSocket));
     }
 
     [Fact]
@@ -101,5 +111,5 @@ public sealed class NetNamespaceDependencyTests
 
     private static bool Exempt(string violation) =>
         !violation.Contains("System.Net.", StringComparison.Ordinal)
-        && Subject(violation) is Transport or PortMap or Steam;
+        && Subject(violation) is Transport or PortMap or Steam or LanSocket;
 }

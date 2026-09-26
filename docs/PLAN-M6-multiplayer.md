@@ -204,7 +204,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 ### Wave F, the Original presentation's multiplayer screens
 
-51. ☐ The network doors in the Original presentation: the cabin's Host Co-op button, and the Connection page with LAN discovery and the games list (`BL-1021`)
+51. ☑ The network doors in the Original presentation: the cabin's Host Co-op button, and the Connection page with LAN discovery and the games list (`BL-1021`)
 52. ☐ The Multiplayer Lobby rebuilt in the original's layout, with Dogfight live (`BL-1022`)
 
 ## Dependency and parallelism notes
@@ -2288,7 +2288,67 @@ original's 22 multiplayer GUI scripts in `crimson.rof` have no `LAYOUT.CSV` sect
 these screens use is `MP_`-prefixed in the extraction (`MP_B_CheckBox8States.png` is cited in
 `docs/formats/menu-layout.md`); inventory what exists before drawing any piece as remake chrome.
 
-## F51 ☐ The network doors in the Original presentation: the cabin's Host Co-op button, and the Connection page with LAN discovery and the games list (`BL-1021`)
+## F51 ☑ The network doors in the Original presentation: the cabin's Host Co-op button, and the Connection page with LAN discovery and the games list (`BL-1021`)
+
+**Landed.** The Original presentation has both network doors. The cabin carries a remake-only
+HOST CO-OP plaque (`OriginalCampaignScreen.CoopDoorKey`) in `FC_B_CHANGEPLANE`'s art at (14, 40), which
+opens the co-op host and reads CLOSE NETWORK while open, with the NETWORK OPEN band at y 14 and a
+chip per guest. `MM_B_MULTIPLAYER` is live and opens `OriginalConnectionScreen.cs`, the
+Connection page and the LAN games list in the scripts' inline geometry drawn from the ten `MP_`
+art files (now required, manifest schema 9). The page offers only LAN TCP/IP and Internet, at the
+script's first two radio places; the original's MSN Gaming Zone, LAN IPX and Modem-to-Modem ways and
+the phone box are left off, since the remake will not carry them. Discovery is `Net/LanDiscovery.cs` (a 44-byte query
+and reply on UDP 47501, the query padded to the reply), `LanResponder`, `LanSearch`, the in-process
+`LoopbackLan`, and `LanDiscoverySocket`, the third file allowed a Godot networking type. The advert
+grew to 28 bytes with a status and a seat cap, and `0x4F` `SessionClosedMessage` (reason closed or
+full) lets a guest tell "Host closed the game" and "The game is full" from "Host left the game". The
+co-op cap is `NetPlayFeature.CoopHumans` (4), inherited by the Built-in door. Aids: `connection`,
+`connection-games`, `connection-games:searching`; `campaign-coop` now also poses Original.
+
+**Verified.** The complete battery on the merged tree (F51 over D33, the C24 resolution and
+everything before it) passed: units 4982/0/2, engine 399, goldens 19 hash-identical. The
+`menu-original-flag` golden was re-pinned for the live Multiplayer plaque: every changed pixel lies
+inside that plaque, and reverting only the plaque's enable renders the old hash exactly. The user
+approved the network doors and the two-way Connection page at the look. Owed: a LAN search between
+two machines at the controls.
+
+**Wiring contract.**
+- `NetPlayFeature(openHost, openJoin, map, unmap, lan)`: `lan` is `Func<string, int, ILanSocket>?`
+  (bind address, port), `NetCarrier.Lan` in `Launcher.cs`, null on a Steam build (no search, no
+  responder). `BindAddress` (default `*`) and `SearchAddress` (default broadcast) are what a suite
+  points at `127.0.0.1`.
+- Search surface: `CanSearch`, `Search()` (one round per call), `StopSearch()`, `Searching`,
+  `SearchRounds`, `Games`, `SearchFault`, `JoinGame(LanGame)`. Host side: `Answering`.
+- Faults a guest board reads: `CoopDoorText.HostClosed`, `GameFull`, `HostLeft`.
+- `NetPlayFeature.Step` must run every menu frame. In Original, `OriginalPresentation.Tick` calls
+  `OriginalShell.StepNet` whatever screen shows; the search and the responder are polled there. A
+  closing host lingers `LingerSeconds` so its close notices leave the socket.
+- Message id `0x4F` is taken; `NetWorldEvent` code 6 was not used and stays free.
+
+**Judgement calls (readings closest to the original).**
+- Every multiplayer label is black in the faces' regular weight, as the capture draws it.
+- The two ways keep the script's pitch from its first radio place (y 98 and 134), the IP Address
+  box's 17 px drop under the Internet radio and the ways' own string ids, and the panel below them
+  is left empty rather than stretched. Build Custom Plane is not a network way and stays greyed.
+- Mission Environment is the mission name capped at 24 characters, else its shortcode; a
+  Dogfight's is empty until the lobby names a map.
+- Internet Connect joins the typed address on the default port. The IP field is always live, and
+  typing into it selects Internet. Auto refresh starts off.
+- Host and Create Game stay greyed until the Dogfight lobby exists; a Dogfight join waits in the
+  dialog. Errors use the shared messagebox. The list does not scroll past 12 rows.
+- Flying the mission closes the co-op door.
+
+**Owed.**
+- A glance at the closed-up Connection page, `.scratch/m6/F51/montage-connection-two-ways.png`;
+  the rest of the network doors' look is accepted. Known differences from the original: the panel
+  text reads larger, Create Game is live in the original, and the IP box shows the loopback address
+  rather than `000.000.000.000`.
+- Two machines on one LAN at the controls, the broadcast search finding the host.
+- `InMission` is never advertised, since the door closes on launch; it waits on a door that stays
+  open through the flight.
+- Ready marks on the guest chips wait for C24 or F52.
+
+**Original approach (kept for reference).**
 
 **Goal.** A campaign host opens co-op from the Original cabin, and a guest finds it on the LAN (or
 types the host's address) from the original's Multiplayer Connection screen, joins, and is handed

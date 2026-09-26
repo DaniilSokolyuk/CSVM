@@ -141,8 +141,8 @@
     {
       "name": "menu-original-flag",
       "frame": 120,
-      "hash": "caa062c496db8d8301f347550d9c4803",
-      "exercises": "The Original top level over its decoded layout: the CrimFlag movie decoded from the install's own MPEG-1 as the backmost layer at the row's 250 percent, the logo, button frame and plaques over it, and the build stamp in the corner.",
+      "hash": "600a0201f1619d804f6a809a5e2559a3",
+      "exercises": "The Original top level: the CrimFlag movie decoded from the install's MPEG-1 as the backmost layer at 250 percent, the logo, frame and every plaque live over it, Multiplayer included, and the build stamp.",
       "args": ["--menu", "--presentation=original", "--det", "--mute"]
     }
   ]

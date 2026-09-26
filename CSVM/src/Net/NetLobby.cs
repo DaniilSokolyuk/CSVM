@@ -7,9 +7,9 @@ namespace CSVM.Net;
 /// A carrier's first listener, standing between a socket and the session that later binds it.
 /// A carrier binds once, and the menu reads the host's advert before any session exists. So this
 /// binds the carrier at once and is itself the transport the session binds.
-/// <see cref="Advertise"/> reaches every peer on connect and on each change. An arriving
-/// <see cref="SessionAdvertMessage"/> is kept here and never passed on; any other payload is held
-/// until a listener binds, then replayed behind the roster announcement. No engine type is named.
+/// <see cref="Advertise"/> reaches every peer on connect and on each change. An arriving advert or
+/// close notice is kept here and never passed on. Any other payload is held until a listener
+/// binds, then replayed behind the roster announcement, and no engine type is named.
 /// </summary>
 public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
 {
@@ -36,6 +36,10 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
 
     /// <summary>The last advert a peer sent here, or null while none has arrived.</summary>
     public SessionAdvertMessage? Advert { get; private set; }
+
+    /// <summary>The close notice a host sent here, or null while none has arrived. Kept here like the
+    /// advert, so the notice reaches a guest board whether or not a session has bound.</summary>
+    public SessionClosedMessage? Closed { get; private set; }
 
     /// <summary>The advert this end hands out, or null while it hands out none.</summary>
     public SessionAdvertMessage? Advertising => _advertising;
@@ -131,6 +135,12 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
             return;
         }
 
+        if (SessionClosedMessage.TryRead(payload, out var closed))
+        {
+            Closed = closed;
+            return;
+        }
+
         if (_listener != null)
         {
             _listener.OnPayload(peer, channel, payload);
@@ -144,6 +154,14 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
         }
 
         _held.Add((peer, channel, payload.ToArray()));
+    }
+
+    /// <summary>Tells <paramref name="peer"/> why it is being sent away. The caller still hangs up;
+    /// the notice only lets the guest's board name the reason.</summary>
+    public void Farewell(int peer, NetCloseReason reason)
+    {
+        int length = new SessionClosedMessage(reason).Write(_scratch);
+        _inner.Send(peer, _scratch.AsSpan(0, length), SessionClosedMessage.Reliability);
     }
 
     /// <summary>Closes the carrier underneath, when it is one that can be closed.</summary>

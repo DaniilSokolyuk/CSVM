@@ -94,6 +94,9 @@ public class OriginalManifestTests : IDisposable
             {
                 "FX_Logo.png", "FX_B_Campaign.png", "FX_PF_BackGround.png", "FX_MB_Background.png",
                 "activepointerz.png", "passivepointerz.png", "arial8.tga", "PX_B_ReadyToExport.png", "PX_B_CancelExport.png",
+                "MP_OPTIONSBACKGROUND.JPG", "MP_GAMESBACKGROUND.JPG", "MP_ERRORMESSAGEBACKGROUND.JPG", "MP_GAMESALPHA.PNG",
+                "MP_B_RADIO.PNG", "MP_B_SMALL.PNG", "MP_B_MEDIUM.PNG", "MP_B_LARGE.PNG", "MP_B_EXITMULTIPLAYER.PNG",
+                "MP_B_CHECKBOXLARGE.PNG",
             },
             Names(manifest, OriginalAssetNeed.Required));
         Assert.Equal(
@@ -121,7 +124,7 @@ public class OriginalManifestTests : IDisposable
         var report = OriginalAssetManifest.Derive(MenuLayout.Parse(LayoutJson)).Check(_root);
 
         Assert.True(report.Complete, report.Reason);
-        Assert.Equal(9, report.RequiredCount);
+        Assert.Equal(19, report.RequiredCount);
         Assert.Equal(5, report.OptionalCount);
         Assert.Null(report.Reason);
         Assert.Null(report.Degraded);

@@ -183,7 +183,15 @@ internal static class MenuOriginalCampaignSuites
         ctx.Check(File.ReadAllText(Path.Combine(store.DirFor(Pilot), "profile.json")) == CampaignProfileStore.Serialize(CampaignProfileDef.NewProfile(Pilot))
             && store.LastPlayed == Pilot, $"the store holds exactly a fresh profile and the last-played record");
         ctx.Check(!host.Seats[0].CapturingText, $"and the seat no longer captures text on the cabin");
-        ctx.Check(shell.Rows.Count == 5 && shell.FocusedKey == "NextMission", $"the cabin's five plaques, focus on NEXT MISSION ({shell.FocusedKey})");
+        // The cabin's five authored plaques and the remake's network door beside them, nothing else.
+        string[] cabin =
+        {
+            nameof(BoardButton.NextMission), nameof(BoardButton.PreviousMissions), nameof(BoardButton.PlaneConstruction),
+            nameof(BoardButton.ReturnToMainMenu), nameof(BoardButton.ChangeMemento), OriginalCampaignScreen.CoopDoorKey,
+        };
+        var keys = shell.Rows.Select(row => row.Key).ToList();
+        ctx.Check(keys.Count == cabin.Length && cabin.All(keys.Contains) && shell.FocusedKey == nameof(BoardButton.NextMission),
+            $"the cabin's five plaques and HOST CO-OP, focus on NEXT MISSION ({string.Join(",", keys)}; {shell.FocusedKey})");
         Press(host, seat, Down);
         Press(host, seat, Accept);
         ctx.Check(shell.Screen == OriginalScreen.CampaignPreviousMissions && shell.Rows.Count == 5,

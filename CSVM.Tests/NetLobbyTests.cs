@@ -57,10 +57,11 @@ public class NetLobbyTests
         var mesh = LoopbackTransport.Mesh(2, Clean, new Random(3));
         var guest = new NetLobby(mesh[1]);
         Span<byte> buffer = stackalloc byte[HandshakeMessage.Size];
+        Span<byte> advert = stackalloc byte[SessionAdvertMessage.Size];
         new HandshakeMessage(1, 0.0, 1).Write(buffer);
         mesh[0].Send(1, buffer, NetReliability.Reliable);
-        new SessionAdvertMessage(NetSessionKind.CampaignCoop, 0, 2, "h").Write(buffer);
-        mesh[0].Send(1, buffer, NetReliability.Reliable);
+        new SessionAdvertMessage(NetSessionKind.CampaignCoop, 0, 2, "h").Write(advert);
+        mesh[0].Send(1, advert, NetReliability.Reliable);
         new HandshakeMessage(2, 0.0, 1).Write(buffer);
         mesh[0].Send(1, buffer, NetReliability.Reliable);
         guest.Step(0.016);

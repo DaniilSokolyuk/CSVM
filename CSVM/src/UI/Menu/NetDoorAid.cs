@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using CSVM.Net;
 
@@ -23,6 +24,20 @@ public static class NetDoorAid
     // The mapping lands on a worker thread, so the aid waits a bounded while for it. A shot of
     // a band still asking the router would show a state no player sees for long.
     private const int MappingWaitMs = 2000;
+
+    /// <summary>The games the aid's LAN answers with, each at its own documentation address. They
+    /// are a campaign waiting with room, one full, one in the air, and a Dogfight.</summary>
+    public static IReadOnlyList<LanGame> SampleGames { get; } = new[]
+    {
+        new LanGame("192.0.2.10", NetPlayFeature.DefaultPort, new SessionAdvertMessage(
+            NetSessionKind.CampaignCoop, 2, 2, HostName, NetSessionStatus.Waiting, NetPlayFeature.CoopHumans)),
+        new LanGame("192.0.2.11", NetPlayFeature.DefaultPort, new SessionAdvertMessage(
+            NetSessionKind.CampaignCoop, 14, 4, "Nathan", NetSessionStatus.Full, NetPlayFeature.CoopHumans)),
+        new LanGame("192.0.2.12", NetPlayFeature.DefaultPort, new SessionAdvertMessage(
+            NetSessionKind.CampaignCoop, 30, 3, "Sheila", NetSessionStatus.InMission, NetPlayFeature.CoopHumans)),
+        new LanGame("192.0.2.13", NetPlayFeature.DefaultPort, new SessionAdvertMessage(
+            NetSessionKind.Dogfight, SessionAdvertMessage.NoMission, 5, "Lucy", NetSessionStatus.Waiting, NetSeats.MaxPlayers)),
+    };
 
     /// <summary>A shut door whose host opens onto a loopback wire with <paramref name="guests"/>
     /// peers already on it, and whose router maps any port asked for.</summary>
@@ -53,6 +68,14 @@ public static class NetDoorAid
         }
     }
 
+    /// <summary>A shut door whose LAN search hears <see cref="SampleGames"/>, answered at once
+    /// from documentation addresses. With <paramref name="silent"/> nothing answers, so the
+    /// games list stands on its Searching box.</summary>
+    public static NetPlayFeature Searching(bool silent = false) => new(
+        (port, maxGuests, bind) => throw new InvalidOperationException("the aid's search door hosts nothing"),
+        (address, port) => throw new InvalidOperationException("the aid's search door joins nothing"),
+        lan: (bind, port) => new SampleLan(silent));
+
     /// <summary>A door joined over the loopback to a host advertising a campaign mission at
     /// <paramref name="missionSeq"/> with <paramref name="players"/> players in it. The advert
     /// has already landed when this returns.</summary>
@@ -68,5 +91,45 @@ public static class NetDoorAid
         door.OpenJoin();
         door.Step(0.0);
         return door;
+    }
+
+    // The aid's LAN: every query is answered by each sample game at once, from its own address.
+    private sealed class SampleLan : ILanSocket
+    {
+        private readonly bool _silent;
+        private readonly Queue<(byte[] Bytes, string Address)> _inbox = new();
+
+        public SampleLan(bool silent) => _silent = silent;
+
+        public void Send(string address, int port, ReadOnlySpan<byte> datagram)
+        {
+            if (_silent || !LanDiscovery.TryReadQuery(datagram, out uint token))
+            {
+                return;
+            }
+
+            foreach (var game in SampleGames)
+            {
+                byte[] reply = new byte[LanDiscovery.Size];
+                LanDiscovery.WriteReply(reply, token, game.Port, game.Advert);
+                _inbox.Enqueue((reply, game.Address));
+            }
+        }
+
+        public byte[]? Receive(out string address, out int port)
+        {
+            port = LanDiscovery.Port;
+            if (_inbox.Count == 0)
+            {
+                address = "";
+                return null;
+            }
+
+            var (bytes, from) = _inbox.Dequeue();
+            address = from;
+            return bytes;
+        }
+
+        public void Dispose() => _inbox.Clear();
     }
 }

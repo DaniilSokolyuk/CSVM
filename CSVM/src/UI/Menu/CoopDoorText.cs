@@ -28,6 +28,86 @@ public static class CoopDoorText
     /// it.</summary>
     public const string TogglePress = "L / Y  Network";
 
+    /// <summary>A guest's word when its host closed the session and said so.</summary>
+    public const string HostClosed = "Host closed the game";
+
+    /// <summary>A guest's word when its link to the host dropped without a close notice.</summary>
+    public const string HostLeft = "Host left the game";
+
+    /// <summary>A guest's word when the host had no seat left for it.</summary>
+    public const string GameFull = "The game is full";
+
+    /// <summary>The cabin's door while it is shut.</summary>
+    public const string HostCoopButton = "HOST CO-OP";
+
+    /// <summary>The cabin's door while it is open.</summary>
+    public const string CloseNetworkButton = "CLOSE NETWORK";
+
+    /// <summary>The games list's Game Name: the host's name and what it holds open.</summary>
+    public static string GameName(SessionAdvertMessage advert)
+    {
+        string what = advert.Kind switch
+        {
+            NetSessionKind.CampaignCoop => "campaign",
+            NetSessionKind.Dogfight => "dogfight",
+            _ => "game",
+        };
+        return advert.Host.Length > 0 ? $"{advert.Host}'s {what}" : Capital(what);
+    }
+
+    /// <summary>The games list's # of Players, as "2/4". An advert naming no cap takes its kind's.
+    /// </summary>
+    public static string PlayerCount(SessionAdvertMessage advert)
+    {
+        int cap = advert.Cap > 0
+            ? advert.Cap
+            : advert.Kind == NetSessionKind.CampaignCoop ? NetPlayFeature.CoopHumans : NetSeats.MaxPlayers;
+        return $"{advert.Players.ToString(CultureInfo.InvariantCulture)}/{cap.ToString(CultureInfo.InvariantCulture)}";
+    }
+
+    /// <summary>The games list's Mission Type.</summary>
+    public static string MissionType(SessionAdvertMessage advert) => advert.Kind switch
+    {
+        NetSessionKind.CampaignCoop => "Campaign co-op",
+        NetSessionKind.Dogfight => "Dogfight",
+        _ => "Unknown",
+    };
+
+    /// <summary>The games list's Mission Environment: a campaign mission's long name through
+    /// <paramref name="missionName"/>, or its shortcode, such as "C2/M03", when
+    /// <paramref name="fits"/> says the name overflows the column. A Dogfight names no map yet.
+    /// </summary>
+    public static string Environment(SessionAdvertMessage advert, Func<int, string> missionName, Func<string, bool> fits)
+    {
+        ArgumentNullException.ThrowIfNull(missionName);
+        ArgumentNullException.ThrowIfNull(fits);
+        if (advert.Kind != NetSessionKind.CampaignCoop || !advert.HasMission)
+        {
+            return "";
+        }
+
+        string name = missionName(advert.MissionSeq);
+        return fits(name) ? name : Shortcode(advert);
+    }
+
+    /// <summary>A campaign mission's shortcode, chapter and mission, as "C2/M03".</summary>
+    public static string Shortcode(SessionAdvertMessage advert) =>
+        $"C{advert.Chapter.ToString(CultureInfo.InvariantCulture)}/M{advert.MissionInChapter.ToString("00", CultureInfo.InvariantCulture)}";
+
+    /// <summary>The games list's Status.</summary>
+    public static string Status(SessionAdvertMessage advert) => advert.Status switch
+    {
+        NetSessionStatus.Waiting => "Waiting",
+        NetSessionStatus.InMission => "In mission",
+        NetSessionStatus.Full => "Full",
+        _ => "",
+    };
+
+    /// <summary>Whether a games list row may be picked: a session this build knows, with a seat.
+    /// </summary>
+    public static bool Joinable(SessionAdvertMessage advert) =>
+        advert.Kind != NetSessionKind.Unknown && advert.Status is NetSessionStatus.Waiting or NetSessionStatus.InMission;
+
     /// <summary>What an advert names: the kind of session and, for a campaign, the chapter, the
     /// mission within it and the mission's long name through <paramref name="missionName"/>.
     /// </summary>

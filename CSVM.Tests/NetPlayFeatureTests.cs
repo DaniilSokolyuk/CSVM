@@ -284,6 +284,118 @@ public class NetPlayFeatureTests
         Assert.Equal("", door.Fault);
     }
 
+    [Fact]
+    public void ACoopHostSeatsFourHumansAndTellsTheFifthTheGameIsFull()
+    {
+        var mesh = LoopbackTransport.Mesh(5, Clean, new Random(41));
+        var host = new NetPlayFeature((_, _, _) => mesh[0], (_, _) => mesh[0]);
+        host.OpenCoopHost(NetSeats.MaxPlayers - 1);
+        host.Offer(3, "Zachary", 1);
+        var guests = new List<NetPlayFeature>();
+        for (int i = 1; i < mesh.Count; i++)
+        {
+            int end = i;
+            var guest = new NetPlayFeature((_, _, _) => mesh[end], (_, _) => mesh[end]);
+            guest.OpenJoin();
+            guests.Add(guest);
+        }
+
+        for (int frame = 0; frame < 4; frame++)
+        {
+            host.Step(0.016);
+            guests.ForEach(guest => guest.Step(0.016));
+        }
+
+        Assert.Equal(3, host.Peers);
+        Assert.Equal(NetSessionStatus.Full, host.Advertising!.Value.Status);
+        Assert.Equal(4, host.Advertising!.Value.Players);
+        var refused = guests.FindAll(guest => guest.Stage == NetDoorStage.Failed);
+        Assert.Single(refused);
+        Assert.Equal(CoopDoorText.GameFull, refused[0].Fault);
+        Assert.Equal(3, guests.FindAll(guest => guest.Stage == NetDoorStage.Joined).Count);
+    }
+
+    [Fact]
+    public void AGuestTellsAHostThatClosedFromALinkThatDropped()
+    {
+        var mesh = LoopbackTransport.Mesh(3, Clean, new Random(43));
+        var host = new NetPlayFeature((_, _, _) => mesh[0], (_, _) => mesh[0]);
+        var told = new NetPlayFeature((_, _, _) => mesh[1], (_, _) => mesh[1]);
+        var dropped = new NetPlayFeature((_, _, _) => mesh[2], (_, _) => mesh[2]);
+        host.OpenCoopHost(NetSeats.MaxPlayers - 1);
+        told.OpenJoin();
+        dropped.OpenJoin();
+        host.Step(0.016);
+        told.Step(0.016);
+        dropped.Step(0.016);
+        Assert.Equal(NetDoorStage.Joined, told.Stage);
+        Assert.Equal(NetDoorStage.Joined, dropped.Stage);
+
+        // ABLE-TO-FAIL CONTROL: a link cut with no notice on it reads as the host leaving.
+        mesh[0].Disconnect(mesh[2].LocalPeer);
+        dropped.Step(0.016);
+        Assert.Equal(CoopDoorText.HostLeft, dropped.Fault);
+
+        host.Close();
+        host.Step(0.016);
+        told.Step(0.016);
+        Assert.Equal(NetDoorStage.Failed, told.Stage);
+        Assert.Equal(CoopDoorText.HostClosed, told.Fault);
+    }
+
+    [Fact]
+    public void ASearchHearsAnOpenDoorOnTheLanAndJoinsItWhereItAnswered()
+    {
+        var lan = new LoopbackLan();
+        var mesh = LoopbackTransport.Mesh(2, Clean, new Random(47));
+        var host = new NetPlayFeature((_, _, _) => mesh[0], (_, _) => mesh[0], lan: lan.Bind);
+        var guest = new NetPlayFeature((_, _, _) => mesh[1], (_, _) => mesh[1], lan: lan.Bind)
+        {
+            BindAddress = "127.0.0.2",
+        };
+        Assert.True(guest.CanSearch);
+
+        // A shut door answers nobody.
+        guest.Search();
+        host.Step(0.016);
+        guest.Step(0.016);
+        Assert.Empty(guest.Games);
+
+        host.OpenCoopHost(NetSeats.MaxPlayers - 1);
+        host.Offer(7, "Zachary", 1);
+        Assert.True(host.Answering);
+        guest.Search();
+        host.Step(0.016);
+        guest.Step(0.016);
+        var game = Assert.Single(guest.Games);
+        Assert.Equal("127.0.0.1", game.Address);
+        Assert.Equal(NetPlayFeature.DefaultPort, game.Port);
+        Assert.Equal("Zachary", game.Advert.Host);
+        Assert.Equal(NetSessionKind.CampaignCoop, game.Advert.Kind);
+
+        guest.JoinGame(game);
+        host.Step(0.016);
+        guest.Step(0.016);
+        Assert.Equal(NetDoorStage.Joined, guest.Stage);
+
+        host.Close();
+        Assert.False(host.Answering);
+        guest.StopSearch();
+        Assert.False(guest.Searching);
+        Assert.Empty(guest.Games);
+    }
+
+    [Fact]
+    public void ADoorWithNoLanNeitherSearchesNorAnswers()
+    {
+        var door = Door();
+        Assert.False(door.CanSearch);
+        door.Search();
+        Assert.False(door.Searching);
+        door.OpenCoopHost(3);
+        Assert.False(door.Answering);
+    }
+
     // A door over a one-peer mesh with no router behind it, which is every case that does not
     // care what the carrier does.
     private static NetPlayFeature Door()
