@@ -1348,7 +1348,8 @@ Wire: [../org/multiplayer-messages.md](../org/multiplayer-messages.md). Coverage
 
 ## src/UI/Menu/CoopDoorText.cs
 The words the campaign's network door is drawn in, engine-free and built off the door alone: the
-host's band (`HostBand`, the open port, the router's address and the guest count), the session an
+host's band (`HostBand`, the open port, the router's address and the guest count), what the router
+said about the port (`RouterStatus`, the Network board's clause per outcome), the session an
 advert names (`SessionName`), the join board's status (`JoinedStatus`) and the waiting board's
 (`WaitingStatus`), the games list's cells with a version mark (`Status`), the refusal naming both
 versions (`VersionMismatch`), and the rows and presses those boards show. The mission's long name comes in as

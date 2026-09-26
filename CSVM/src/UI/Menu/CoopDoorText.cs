@@ -200,14 +200,36 @@ public static class CoopDoorText
         }
 
         string port = net.Port.ToString(CultureInfo.InvariantCulture);
-        string where = net.PortMap is { } map
-            ? map.IsMapped
-                ? $"{map.ExternalAddress}:{map.Port.ToString(CultureInfo.InvariantCulture)}"
-                : $"port {port}, this network only"
-            : $"port {port}";
+        string where = net.PortMap switch
+        {
+            { IsMapped: true } map => $"{map.ExternalAddress}:{map.Port.ToString(CultureInfo.InvariantCulture)}",
+            { Outcome: UpnpPortMapOutcome.NoPublicAddress } => $"port {port}, LAN only: no public IPv4",
+            not null => $"port {port}, this network only",
+            null => $"port {port}",
+        };
         int guests = net.Peers;
         string joined = guests == 1 ? "1 guest" : $"{guests.ToString(CultureInfo.InvariantCulture)} guests";
         return $"NETWORK OPEN  {where}  {joined}";
+    }
+
+    /// <summary>What the router said about a host's port, as a sentence for the door's status
+    /// line. Every outcome but a mapping says guests on this network still join.</summary>
+    public static string RouterStatus(UpnpPortMapResult map)
+    {
+        string port = map.Port.ToString(CultureInfo.InvariantCulture);
+        string local = "guests on this network still join";
+        string kind = IgdAddress.Word(IgdAddress.Kind(map.ExternalAddress));
+        return map.Outcome switch
+        {
+            UpnpPortMapOutcome.Mapped => $"Router mapped port {port}, reachable at {map.ExternalAddress}.",
+            UpnpPortMapOutcome.NoPublicAddress =>
+                $"The router answered, but this internet line has no public IPv4 address (the router's own, "
+                + $"{map.ExternalAddress}, is {kind}). {Capital(local)}; guests outside need IPv6 with port {port} "
+                + "opened on the router, or another player hosts.",
+            UpnpPortMapOutcome.NoGateway => $"No UPnP router answered, so port {port} is not mapped; {local}.",
+            UpnpPortMapOutcome.TimedOut => $"The router did not answer in time, so port {port} is not mapped; {local}.",
+            _ => $"The router declined to map port {port}; {local}.",
+        };
     }
 
     /// <summary>A co-op guest's band over the host's boards. It says whose campaign it follows and

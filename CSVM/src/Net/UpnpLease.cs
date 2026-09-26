@@ -8,7 +8,8 @@ namespace CSVM.Net;
 /// Every call may block for the length of a gateway search.</summary>
 public interface IUpnpGateway
 {
-    /// <summary>Searches for the gateway. Succeeds when one answered and is valid.</summary>
+    /// <summary>Searches for the gateway. Succeeds when one answered and is valid; Refused when one
+    /// answered that cannot take a mapping; NoGateway or TimedOut when none answered.</summary>
     UpnpReply Discover();
 
     /// <summary>Asks for UDP <paramref name="port"/> forwarded to this machine for
@@ -18,7 +19,8 @@ public interface IUpnpGateway
     /// <summary>Removes the UDP mapping on <paramref name="port"/>. False when none was removed.</summary>
     bool Delete(int port);
 
-    /// <summary>The gateway's external address, or "" when it will not say.</summary>
+    /// <summary>The external address of the gateway the search found, valid or not, or "" when it
+    /// will not say.</summary>
     string ExternalAddress();
 }
 
@@ -65,7 +67,8 @@ public static class UpnpLease
     /// <summary>Maps <paramref name="port"/> through <paramref name="gateway"/> on
     /// <paramref name="leaseSeconds"/>, clamped into the specification's range. A first mapping
     /// deletes <paramref name="rememberedPort"/> and the port itself before adding; a renewal only
-    /// adds, since re-adding its own mapping refreshes the lease. Never throws.</summary>
+    /// adds, since re-adding its own mapping refreshes the lease. A gateway reporting a private or
+    /// shared external address gets no call past that question. Never throws.</summary>
     public static UpnpPortMapResult Map(IUpnpGateway gateway, int port, string description,
         int rememberedPort = NoPort, bool renewing = false, int leaseSeconds = LeaseSeconds)
     {
@@ -76,9 +79,24 @@ public static class UpnpLease
         }
 
         var found = gateway.Discover();
-        if (!found.Succeeded)
+        if (found.Outcome is not (UpnpPortMapOutcome.Mapped or UpnpPortMapOutcome.Refused))
         {
             return new UpnpPortMapResult(found.Outcome, port, "", found.Detail);
+        }
+
+        // Asked before any add, and of an unusable gateway too. Behind a carrier's NAT the router
+        // still answers, but a mapping there opens nothing the internet can reach.
+        string external = gateway.ExternalAddress();
+        if (IgdAddress.IsUnreachable(external))
+        {
+            string kind = IgdAddress.Word(IgdAddress.Kind(external));
+            return new UpnpPortMapResult(UpnpPortMapOutcome.NoPublicAddress, port, external,
+                $"gateway answered, its external address {external} is {kind}");
+        }
+
+        if (!found.Succeeded)
+        {
+            return new UpnpPortMapResult(found.Outcome, port, external, found.Detail);
         }
 
         if (!renewing)
@@ -105,7 +123,7 @@ public static class UpnpLease
         }
 
         string detail = lease == 0 ? "mapped, permanent lease only" : "mapped";
-        return new UpnpPortMapResult(UpnpPortMapOutcome.Mapped, port, gateway.ExternalAddress(), detail, lease);
+        return new UpnpPortMapResult(UpnpPortMapOutcome.Mapped, port, external, detail, lease);
     }
 
     /// <summary>How long to wait before the next renewal, after <paramref name="latest"/>.

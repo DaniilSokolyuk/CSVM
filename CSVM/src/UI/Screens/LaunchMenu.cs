@@ -4104,11 +4104,7 @@ public sealed partial class LaunchMenu : CanvasLayer
         }
 
         string link = net.Link is { } state ? $", link {state.ToString().ToLowerInvariant()}" : "";
-        string mapped = net.PortMap is { } map
-            ? map.IsMapped
-                ? $". Router mapped port {map.Port.ToString(CultureInfo.InvariantCulture)}, reachable at {map.ExternalAddress}"
-                : $". Router did not map the port ({map.Outcome.ToString().ToLowerInvariant()}); guests on this network still join"
-            : "";
+        string mapped = net.PortMap is { } map ? $". {CoopDoorText.RouterStatus(map)}" : "";
         return net.Stage switch
         {
             NetDoorStage.Hosting =>

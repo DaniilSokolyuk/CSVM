@@ -69,20 +69,30 @@ and are null for a carrier that is reachable without one, which a door shows as 
 
 ## src/Net/UpnpPortMap.cs
 A best-effort port mapping through Godot's UPnP client, so a host behind a router is reachable
-from outside it. `Map` returns one of four outcomes a board can show (mapped, no gateway, refused,
-timed out) with the external address and the lease the router granted, `Unmap` takes it back down,
-and neither throws: a refused mapping costs a host nothing but a line on the board, and a guest on
-the same network still joins. Both calls block for the length of the gateway search, so they belong
-on the door's own thread, never on a frame and never in a transport step. The rules are
+from outside it. `Map` returns one of five outcomes a board can show (mapped, no gateway, refused,
+timed out, no public address) with the external address and lease, `Unmap` takes it back down, and
+neither throws. No gateway means no device answered. Godot calls a gateway invalid when its
+connection check fails without saying why, so for such a device this file asks the description's
+connection services for the external address itself, over Godot's `HttpClient`. Both calls block
+for the gateway search, so they belong on the door's own thread, never on a frame. The rules are
 `UpnpLease.cs`'s; this file is the engine adapter under them and the only one that names `Upnp`.
 
+## src/Net/IgdAddress.cs
+A gateway's external address read without the engine. `Kind` sorts an IPv4 address into public,
+private (10/8, 172.16/12, 192.168/16), shared (100.64/10, a provider's carrier-grade NAT) and
+reserved; the documentation ranges read as public. `Connections`, `ExternalAddressRequest` and
+`ExternalAddressOf` are the device description and SOAP text of a GetExternalIPAddress question,
+which `UpnpPortMap.cs` sends. A malformed answer parses to nothing. Read `IgdAddressTests.cs`.
+
 ## src/Net/UpnpLease.cs
-The router mapping's rules, engine-free behind `IUpnpGateway`. A mapping asks a finite lease of
-`LeaseSeconds` (TUNE, `BL-1043`), so a host that crashes leaves nothing open past it. A gateway
-that answers error 725 gets a permanent one. Before a fresh add it deletes the stale mapping on the
-port and on the port the last run remembered, by exact port only. A renewal only adds again.
-`NextRenewal` says when the door asks next: half the lease after a grant, an eighth after a failed
-renewal, never for a permanent lease. Read `UpnpLeaseTests.cs`.
+The router mapping's rules, engine-free behind `IUpnpGateway`. A gateway that answered, usable or
+not, is asked its external address first; a private, shared or reserved one returns
+`NoPublicAddress` with no delete and no add, since no mapping behind a carrier's NAT is reachable.
+A mapping asks a finite lease of `LeaseSeconds` (TUNE, `BL-1043`), and one that draws error 725
+gets a permanent one. A fresh add first deletes the stale mapping on the port and on the port the
+last run remembered, by exact port only; a renewal only adds again. `NextRenewal` says when the door
+asks next: half the lease after a grant, an eighth after a failed renewal, never for a permanent
+lease. Read `UpnpLeaseTests.cs`.
 
 ## src/Net/UpnpPortMemory.cs
 The one port this machine last mapped, kept in `upnp_port.txt` under the user directory so a run

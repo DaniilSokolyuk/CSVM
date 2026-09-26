@@ -29,7 +29,7 @@ public sealed class UpnpLeaseTests
 
         Assert.True(result.IsMapped);
         Assert.Equal(UpnpLease.LeaseSeconds, result.LeaseSeconds);
-        Assert.Equal($"add {Port} {UpnpLease.LeaseSeconds}", gateway.Calls[^2]);
+        Assert.Equal($"add {Port} {UpnpLease.LeaseSeconds}", gateway.Calls[^1]);
         Assert.InRange(gateway.Leases[0], UpnpLease.MinLeaseSeconds, UpnpLease.MaxLeaseSeconds);
         Assert.Equal(FakeGateway.External, result.ExternalAddress);
     }
@@ -91,7 +91,7 @@ public sealed class UpnpLeaseTests
 
         UpnpLease.Map(gateway, Port, "CSVM", rememberedPort: Port);
 
-        Assert.Equal(new[] { "discover", $"delete {Port}", $"add {Port} {UpnpLease.LeaseSeconds}", "external" }, gateway.Calls);
+        Assert.Equal(new[] { "discover", "external", $"delete {Port}", $"add {Port} {UpnpLease.LeaseSeconds}" }, gateway.Calls);
     }
 
     [Fact]
@@ -102,7 +102,7 @@ public sealed class UpnpLeaseTests
         UpnpLease.Map(gateway, Port, "CSVM", rememberedPort: Earlier);
 
         Assert.Equal(
-            new[] { "discover", $"delete {Earlier}", $"delete {Port}", $"add {Port} {UpnpLease.LeaseSeconds}", "external" },
+            new[] { "discover", "external", $"delete {Earlier}", $"delete {Port}", $"add {Port} {UpnpLease.LeaseSeconds}" },
             gateway.Calls);
     }
 
@@ -113,7 +113,7 @@ public sealed class UpnpLeaseTests
 
         UpnpLease.Map(gateway, Port, "CSVM", rememberedPort: Port, renewing: true);
 
-        Assert.Equal(new[] { "discover", $"add {Port} {UpnpLease.LeaseSeconds}", "external" }, gateway.Calls);
+        Assert.Equal(new[] { "discover", "external", $"add {Port} {UpnpLease.LeaseSeconds}" }, gateway.Calls);
     }
 
     [Fact]
@@ -125,6 +125,49 @@ public sealed class UpnpLeaseTests
 
         Assert.Equal(UpnpPortMapOutcome.NoGateway, result.Outcome);
         Assert.Equal(new[] { "discover" }, gateway.Calls);
+    }
+
+    // The FRITZ!Box on a carrier's NAT: it answers, Godot calls it invalid, and it reports 100.64/10.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_gateway_on_a_shared_address_reports_no_public_address_and_maps_nothing(bool unusable)
+    {
+        var gateway = new FakeGateway { Unusable = unusable, Reports = "100.72.5.9" };
+
+        var result = UpnpLease.Map(gateway, Port, "CSVM", rememberedPort: Earlier);
+
+        Assert.Equal(UpnpPortMapOutcome.NoPublicAddress, result.Outcome);
+        Assert.Equal("100.72.5.9", result.ExternalAddress);
+        Assert.Contains("100.72.5.9", result.Detail, StringComparison.Ordinal);
+        Assert.Contains("carrier-grade NAT", result.Detail, StringComparison.Ordinal);
+        Assert.Equal(new[] { "discover", "external" }, gateway.Calls);
+        Assert.False(result.IsMapped);
+    }
+
+    [Fact]
+    public void A_private_external_address_is_no_public_address_too()
+    {
+        var result = UpnpLease.Map(new FakeGateway { Reports = "192.168.1.1" }, Port, "CSVM");
+
+        Assert.Equal(UpnpPortMapOutcome.NoPublicAddress, result.Outcome);
+        Assert.Contains("private", result.Detail, StringComparison.Ordinal);
+    }
+
+    // ABLE-TO-FAIL CONTROL for the two above: the same gateways on a public address map as before.
+    // One that will not say its address is given the benefit of the doubt.
+    [Fact]
+    public void A_public_or_unsaid_external_address_lets_the_mapping_proceed()
+    {
+        var reporting = new FakeGateway { Reports = "198.51.100.20" };
+        Assert.True(UpnpLease.Map(reporting, Port, "CSVM").IsMapped);
+        Assert.Contains($"add {Port} {UpnpLease.LeaseSeconds}", reporting.Calls);
+
+        Assert.True(UpnpLease.Map(new FakeGateway { Reports = "" }, Port, "CSVM").IsMapped);
+
+        var unusable = UpnpLease.Map(new FakeGateway { Unusable = true, Reports = "198.51.100.20" }, Port, "CSVM");
+        Assert.Equal(UpnpPortMapOutcome.Refused, unusable.Outcome);
+        Assert.Equal("198.51.100.20", unusable.ExternalAddress);
     }
 
     [Fact]
@@ -203,6 +246,11 @@ public sealed class UpnpLeaseTests
 
         public bool Refuse { get; init; }
 
+        // A gateway that answered the search but that the engine will not map through.
+        public bool Unusable { get; init; }
+
+        public string Reports { get; init; } = External;
+
         public List<string> Calls { get; } = new();
 
         public List<int> Leases { get; } = new();
@@ -210,8 +258,8 @@ public sealed class UpnpLeaseTests
         public UpnpReply Discover()
         {
             Calls.Add("discover");
-            return Missing
-                ? new UpnpReply(UpnpPortMapOutcome.NoGateway, "no gateway")
+            return Missing ? new UpnpReply(UpnpPortMapOutcome.NoGateway, "no gateway")
+                : Unusable ? new UpnpReply(UpnpPortMapOutcome.Refused, "unusable")
                 : new UpnpReply(UpnpPortMapOutcome.Mapped, "found");
         }
 
@@ -238,7 +286,7 @@ public sealed class UpnpLeaseTests
         public string ExternalAddress()
         {
             Calls.Add("external");
-            return External;
+            return Reports;
         }
     }
 }

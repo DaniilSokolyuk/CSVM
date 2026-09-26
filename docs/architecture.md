@@ -747,8 +747,9 @@ original's own message set, with ids and guarantees, is in [`org/multiplayer-mes
 - `src/Net/EnetTransport.cs`, the shipped carrier: the seam over Godot's ENet peer, hosting on a port or joining by address, with every roster change and payload reported out of one poll.
 - `src/Net/SteamTransport.cs`, the Steam carrier's place in the seam with no SDK behind it: every way in throws "not built with the Steamworks SDK", and `SteamBuild` is the `CSVM_STEAM` define.
 - `src/Net/NetCarrier.cs`, which carrier a match runs over, chosen once: the door's registration and the command line both open through it, and a build define is the whole of the choice.
-- `src/Net/UpnpPortMap.cs`, a best-effort port mapping through Godot's UPnP client: four outcomes a host can show, never a throw, and never required for a match to be joinable.
-- `src/Net/UpnpLease.cs`, the router mapping's rules behind a gateway seam: a finite lease, the stale mapping cleared by exact port, and when the door renews.
+- `src/Net/UpnpPortMap.cs`, a best-effort port mapping through Godot's UPnP client: five outcomes a host can show, never a throw, and never required for a match to be joinable.
+- `src/Net/UpnpLease.cs`, the router mapping's rules behind a gateway seam: no add behind a non-public external address, a finite lease, the stale mapping cleared by exact port, and when the door renews.
+- `src/Net/IgdAddress.cs`, a gateway's external address read without the engine: its kind (public, private, carrier-shared, reserved) and the description and SOAP text a direct question is made of.
 - `src/Net/UpnpPortMemory.cs`, the one port this machine last mapped, kept in the user directory so the next run can clear what a crash left.
 - `src/Net/NetLobby.cs`, a carrier's first listener before any session binds it: the host's session advert and closing word out, the latest of each in, every other payload held for the session.
 - `src/Net/NetBuildVersion.cs`, the build's MAJOR.MINOR two peers compare before they play, patch ignored and unknown playing only with unknown, and the lobby's `0x56` message that carries it.
