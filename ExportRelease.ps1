@@ -37,11 +37,11 @@
 
 .EXAMPLE
     .\ExportRelease.ps1 -ToolsRoot Z:\CSVM
-    The same from a worktree, taking Godot, unzbd.exe and the mech3ax fork from the main
+    The same from a worktree, taking Godot, unzbd.exe, SDL2 and the mech3ax fork from the main
     checkout's tools\, since tools\ is git-ignored and a worktree has none.
 
 .PARAMETER ToolsRoot
-    The checkout whose tools\ folder holds Godot and the mech3ax fork. Defaults to this
+    The checkout whose tools\ folder holds Godot, SDL2 and the mech3ax fork. Defaults to this
     script's own folder. Only the tools move: the build, the payload and the recorded CSVM
     commit stay this tree's own.
 #>
@@ -65,7 +65,7 @@ $ProjectGodot = Join-Path $ProjectDir "project.godot"
 $Mech3axRepo  = Join-Path $ToolsRoot "tools\mech3ax"
 $ThirdPartyNotices = Join-Path $RepoRoot "packaging\LICENSE-thirdparty.txt"
 $BuildInfo    = Join-Path $ExportDir "BUILD-INFO.txt"
-$Sdl2Dir      = Join-Path $RepoRoot "tools\sdl2"
+$Sdl2Dir      = Join-Path $ToolsRoot "tools\sdl2"
 
 # The zip payload beside the export output, from packaging/MANIFEST.md. Sources are the
 # files' one home in the repo, so a copy is byte-identical to what the manifest names.
@@ -114,7 +114,7 @@ if (-not (Test-Path $UnzbdExe)) {
 # SDL2.dll is the flight-stick reader (docs/tooling.md, "SDL2 for flight sticks"). A dev launch
 # without it only loses sticks, but a release without it ships a build that cannot see them, so
 # the export requires the pinned files. InstallSdl2.ps1 holds the pins and throws naming itself.
-$Sdl2 = & (Join-Path $RepoRoot "InstallSdl2.ps1") -Root $RepoRoot -Verify
+$Sdl2 = & (Join-Path $RepoRoot "InstallSdl2.ps1") -Root $ToolsRoot -Verify
 
 foreach ($file in $ReleaseFiles) {
     if (-not (Test-Path $file.Source)) {
