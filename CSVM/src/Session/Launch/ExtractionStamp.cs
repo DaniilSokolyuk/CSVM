@@ -5,6 +5,22 @@ using CSVM.Utils;
 
 namespace CSVM.Session.Launch;
 
+/// <summary>How an extraction tree's stamp stands against <see cref="ExtractionStamp.Schema"/>.</summary>
+public enum StampStanding
+{
+    /// <summary>No stamp, no schema in it, or it does not read. Warned about, never asked about.</summary>
+    Unstamped,
+
+    /// <summary>Stamped with the schema this build reads.</summary>
+    Current,
+
+    /// <summary>Stamped by an older extraction than this build reads.</summary>
+    Older,
+
+    /// <summary>Stamped by a newer build than this one.</summary>
+    Newer,
+}
+
 /// <summary>
 /// Boot-time check of the extraction tree's provenance stamp, <c>extracted/VERSION.json</c>.
 /// <c>ExtractionStampWriter</c> records which unzbd built the tree, when, and under which schema.
@@ -17,6 +33,22 @@ public static class ExtractionStamp
     /// <summary>The stamp schema this build's loaders expect and the one number every
     /// extraction writes. Bump it whenever a reader change invalidates old extractions.</summary>
     public const int Schema = 3;
+
+    /// <summary>How the tree under <paramref name="dataRoot"/> is stamped against <see cref="Schema"/>,
+    /// with the schema it carries as <paramref name="found"/>. A tree with no stamp, or one that does
+    /// not read, is <see cref="StampStanding.Unstamped"/>. The dev tree holds extractions older than
+    /// the stamp, so only a stamp naming another schema asks for a re-extraction.</summary>
+    public static StampStanding Standing(string dataRoot, out int? found)
+    {
+        found = Stamped(dataRoot);
+        return found switch
+        {
+            null => StampStanding.Unstamped,
+            int f when f < Schema => StampStanding.Older,
+            int f when f > Schema => StampStanding.Newer,
+            _ => StampStanding.Current,
+        };
+    }
 
     /// <summary>Whether the tree under <paramref name="dataRoot"/> is stamped below
     /// <paramref name="need"/>, with the re-extract instruction as <paramref name="reason"/>.
@@ -71,7 +103,7 @@ public static class ExtractionStamp
     }
 
     // The stamp's schema integer, or null when there is no stamp, no schema in it, or it does not
-    // read. Silent: Check above is the one place a stamp problem is reported to the player.
+    // read. Silent: Check above logs a stamp problem, and the extraction screen asks about it.
     private static int? Stamped(string dataRoot)
     {
         var path = Path.Combine(dataRoot, "extracted", "VERSION.json");

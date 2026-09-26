@@ -159,7 +159,7 @@ public static class ExtractionRun
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or Win32Exception or InvalidDataException)
         {
-            result.Failures.Add("ZBD extraction stopped: " + e.Message);
+            result.Failures.Add("extracting the game archives stopped: " + e.Message);
             return false;
         }
 
@@ -173,7 +173,7 @@ public static class ExtractionRun
         result.Warnings.AddRange(zbd.Unknowns.Select(u => "no unzbd mode for " + u + ", skipped"));
         if (!result.Succeeded)
         {
-            result.Failures.Add("the UI resources were not extracted, since the ZBD half failed");
+            result.Failures.Add("the menus and interface files were not extracted, since the game archives failed");
             return false;
         }
 
@@ -185,7 +185,7 @@ public static class ExtractionRun
     private static void RunRof(string install, ExtractionRequest request, ExtractionResult result, Action<ExtractionProgress>? progress, CancellationToken cancel)
     {
         var rofRequest = RofRequest(install, request.RofDir, request.Force);
-        Report(progress, ExtractionPhase.Rof, ZbdShare, new[] { string.Empty, "UI resources:" }, null);
+        Report(progress, ExtractionPhase.Rof, ZbdShare, new[] { string.Empty, "Menus and interface files:" }, null);
         if (rofRequest.BaseArchive == null)
         {
             result.Failures.Add($"no GOSDATA/ASSETS/crimson.rof in {install}; the install is incomplete");
@@ -304,7 +304,7 @@ public sealed class ExtractionResult
             int files = Rof.Archives.Sum(a => a.Files);
             int images = Rof.Archives.Sum(a => a.DecodedTextures);
             int upToDate = Rof.Archives.Count(a => a.Outcome == RofArchiveOutcome.UpToDate);
-            yield return "UI resources:";
+            yield return "Menus and interface files:";
             yield return "  files extracted: " + Number(files);
             if (images > 0)
             {

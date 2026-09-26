@@ -47,7 +47,7 @@ public sealed class HudFont
             out int runCount, out int top, out int height);
         if (normal == null)
         {
-            Log.Info("flight", $"[hudfont] no {NormalFile} in {rimageDir}, HUD text font off (run ExtractRof.ps1)");
+            Log.Info("flight", $"[hudfont] no {NormalFile} in {rimageDir}, HUD text font off (extract the game data again on the Extract screen)");
             return null;
         }
         if (runCount != CodeCount)

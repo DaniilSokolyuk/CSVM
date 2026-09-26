@@ -640,13 +640,30 @@ that readout does. Hidden in flight, so no golden screenshot ever sees it. The n
 `Utils/BuildVersion.cs`.
 
 ## src/UI/Screens/NoGameDataScreen.cs
-The dead end a launch with no extraction under the data root reaches instead of the menu: the
-title, the sentence naming the step that produces the data, the path that was looked in, and Esc
-as the way out. `Missing` is the whole test, an absent or empty `extracted` directory, and it is
-engine-free so the launcher's branch and its unit read one rule; `Instruction` is the single
-sentence the screen and the launcher's own log line share, worded for a release payload
-(`Extract.cmd`) or a repo checkout (the two extractor scripts). Provenance is not asked about
-here: `Session/Launch/ExtractionStamp.cs` owns whether an extraction is stale and stays a warning.
+The screen a launch reaches instead of the menu when `ExtractionFlow.ProblemAt` names a problem:
+no extraction (`Missing`, an absent or empty `extracted` directory), an unfinished run, or a stamp
+naming another schema. Views follow `ExtractionFlow.View`: the install folder field with Choose folder, Extract
+(focused) and Quit, plus Play anyway on stale data; the phase, bar and latest line with Cancel;
+the failures with Try again and Choose another folder. Every press is a focusable button, so a
+pad's d-pad and A drive it; Esc or B cancels a run and quits otherwise. A success hands back once
+to `Launcher`, which re-resolves the data paths and enters the menu in the same process.
+The picker's controller hint label does not wrap, since the dialog grows to its content's minimum.
+
+## src/UI/Screens/ExtractionFlow.cs
+The extraction screen's state, engine-free so a unit drives it with a fake runner. A stamp naming
+another schema, or the `UnfinishedMarker` a run leaves until it succeeds, stops the launch; an
+unstamped tree stays the boot's warning. The field starts with the remembered install while it is
+still one, else the first found candidate, else the remembered path as a hint. Stale or unfinished
+data re-extracts with `Force`, since the incremental rule compares file times, and adds `Unzip`
+when the tree already has unpacked siblings the loaders would prefer. The run goes to a worker;
+progress and its outcome cross only through `Tick`, once a frame. Success remembers the install.
+
+## src/UI/Screens/InstallPicker.cs
+Godot's own `FileDialog` in folder mode over the whole file system, never the native dialog, so
+it stays inside the game window where a controller or touchscreen reaches it. The file-managing
+extras are off because the install is only read. Godot's navigation covers the list; the left
+shoulder goes up a folder and Y takes the folder shown, since focus cannot leave the list without
+Tab. Hidden folders show outside Windows, where Wine and Steam prefixes live under dot folders.
 
 ## src/UI/Labs/MeshLab.cs
 The geometry and shading lab (key M): normal lines, the smoothing-seam wireframe, collider boxes,

@@ -88,7 +88,7 @@ public sealed partial class ObjectivesHud : Node
         var path = Path.Combine(rimageDir, MarkFile);
         if (!File.Exists(path))
         {
-            Log.Warn("ui", $"no {MarkFile} in {rimageDir}, completion marks off (run ExtractRof.ps1)");
+            Log.Warn("ui", $"no {MarkFile} in {rimageDir}, completion marks off (extract the game data again on the Extract screen)");
             return null;
         }
 

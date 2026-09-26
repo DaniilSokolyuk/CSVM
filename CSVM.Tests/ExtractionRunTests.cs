@@ -221,8 +221,13 @@ public class ExtractionRunTests
 
         var stray = SessionSpec.Parse(new[] { "--extract-force", "--extract-unzip", "--unzbd=u.exe" });
         Assert.Null(stray.ExtractInstall);
-        Assert.Equal(3, stray.Warnings.Count);
+        Assert.Equal(2, stray.Warnings.Count);
         Assert.All(stray.Warnings, w => Assert.Contains("without --extract=", w.Message, StringComparison.Ordinal));
+
+        // The extraction screen honours --unzbd=, so a menu launch carrying it is not warned about.
+        var screen = SessionSpec.Parse(new[] { "--menu", "--unzbd=u.exe" });
+        Assert.Equal("u.exe", screen.UnzbdPath);
+        Assert.DoesNotContain(screen.Warnings, w => w.Message.Contains("--unzbd=", StringComparison.Ordinal));
     }
 
     // An install spelled the way no retail copy is, so every lookup has to fold case. It holds one

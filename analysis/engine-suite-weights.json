@@ -173,6 +173,8 @@
     "empty-stage-net": 0.384,
     "engine-damage-phases": 0.05,
     "engine-note": 0.004,
+    "extraction-picker": 0.05,
+    "extraction-screen": 0.05,
     "fade-walk-bound": 0.032,
     "fbfx-flash": 0.074,
     "first-person-condition": 0.008,

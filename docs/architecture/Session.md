@@ -37,7 +37,7 @@ and what outlives a session (camera, sun, audio, music, the perf and hitch instr
 menu as one `MenuHost` built on the first show, the presentation resolution, the only options write (an apply from the in-flight `UI/Screens/PausePreferences.cs` leaf takes that same route, without the presentation reselect a menu-side apply ends on),
 the frame pacing and the window's screen, mode and size at startup and on an Options apply (`Utils/VSyncSetting.cs`, `Utils/MonitorSetting.cs`, `Utils/DisplayModeSetting.cs`, `Utils/ResolutionSetting.cs`), the enhanced presentation's sun shadow and screen-space passes with the `SessionSpec.EnhancedPasses` doors that leave one out,
 and the sink every menu exit takes ([../menu-presentations.md](../menu-presentations.md)); with no
-extraction it shows `UI/Screens/NoGameDataScreen.cs`. `LaunchSession`, `ReturnToMenu`, `RestartSession` and
+extraction or a stale stamp it shows `UI/Screens/NoGameDataScreen.cs` before any sound archive opens, and enters the menu from it in the same process. `LaunchSession`, `ReturnToMenu`, `RestartSession` and
 `BeginLaunch`/`RunOwedLaunch` are every path a session starts or ends on (the load screen stays up past the build while the session's owed build steps run one a frame through `GameSession.StepOwedLoad`, which is what makes it a yield of several frames; a CLI launch has no screen and drains them inside `LaunchSession`), a flight left early comes back to the screen it was launched from (settled by the launch through `MenuReturnDestination.ForLaunch`, not by the exit press), and what the persistent `WorldEnvironment` draws behind all of it is `Utils/WorldBackdrop.cs`'s: black while the menu owns the screen and at the quits that still draw, the sky again at every launch.
 
 ## src/Session/Launch/TuningWarmup.cs
@@ -498,11 +498,11 @@ and calibration: `git show analysis-archive:analysis/bl-165-lens-flare/FINDINGS.
 ## src/Session/Launch/ExtractionStamp.cs
 Reads the provenance stamp the extraction scripts leave at `extracted/VERSION.json` (unzbd version
 line, exe hash, fork commit, schema integer) and compares its schema against this class's own
-`Schema` const, in `Launcher._Ready` right after the base paths settle. At most one warning line per
-boot, each naming the fix, which is to re-run the extraction. Warn rather than block, because a dev
-tree holds valid extractions older than the stamp. `Behind` is the same read for a caller that
-blocks instead of warning: true only when the stamp is present, carries a schema and is under what
-the caller asked for, so an unstamped or unreadable tree still runs. `Schema` also lives in both
+`Schema` const, in `Launcher._Ready` right after the base paths settle, with at most one warning line
+per boot naming the fix. An unstamped tree only warns, since a dev tree holds valid extractions older
+than the stamp. `Standing` (unstamped, current, older, newer) is what stops a menu launch at the
+extraction screen on another schema (`UI/Screens/ExtractionFlow.cs`); `Behind` is the read for a
+caller that blocks, true only for a stamped schema under the one asked for. `Schema` also lives in both
 extraction scripts, and `CSVM.Tests/ExtractionStampTests.cs` refuses a bump that moves fewer than all three.
 
 ## src/Session/Launch/MenuAudioService.cs

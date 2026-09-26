@@ -1506,10 +1506,10 @@ public sealed record SessionSpec
         }
 
         // The development options mean nothing to a session, so a stray one is named rather than
-        // silently dropped.
+        // silently dropped. The unzbd path is not one, since the extraction screen runs that tool.
         if (s.ExtractInstall == null)
         {
-            foreach (var (given, name) in new[] { (s.ExtractForce, "--extract-force"), (s.ExtractUnzip, "--extract-unzip"), (s.UnzbdPath != null, "--unzbd=") })
+            foreach (var (given, name) in new[] { (s.ExtractForce, "--extract-force"), (s.ExtractUnzip, "--extract-unzip") })
             {
                 if (given)
                 {

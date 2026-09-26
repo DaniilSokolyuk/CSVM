@@ -85,7 +85,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 2. ☑ `unzbd` runner: per-archive modes, messages, MPG copy, incremental skip, VERSION.json stamp
 3. ☑ Install discovery and case-insensitive install lookup, remembered path in `app_userdata`
 4. ☑ Headless `--extract=<install>` and its development options
-5. ☐ Extraction UI: Extract button, picker, progress, and the out-of-date-data screen
+5. ☑ Extraction UI: Extract button, picker, progress, and the out-of-date-data screen
 6. ☑ Retire the scripts: `Extract.ps1` wrapper, one stamp constant, release payload, docs, bug form
 7. ☐ Windows release with in-engine extraction, through the Sandbox release test
 
@@ -370,7 +370,35 @@ headless `--damage-test --chapter=C1` mission load from it and the 8-chapter `--
 
 **⚠ Traps.** `docs/cli.md` flag bullets are capped at 600 characters by `CheckDocEntries.ps1`.
 
-## A5 ☐ Extraction UI: Extract button, picker, progress, and the out-of-date-data screen
+## A5 ☑ Extraction UI: Extract button, picker, progress, and the out-of-date-data screen
+
+**Landed.** `CSVM/src/UI/Screens/NoGameDataScreen.cs` is the extraction screen, extended in place.
+The `Launcher` checks the data root before `BuildMusic` (an open sound archive would hold a stale
+tree's files) through `ExtractionFlow.ProblemAt`: no extraction, a run that never finished (the
+`ExtractionFlow.UnfinishedMarker` file a screen run writes first and deletes on success), or a stamp
+naming another schema (`ExtractionStamp.Standing`, new, with `StampStanding`) stops a menu launch at
+the screen; an unstamped or unreadable tree stays warn-only, and a missing one no longer logs the
+stamp warning. The engine-free `CSVM/src/UI/Screens/ExtractionFlow.cs`
+holds the state: the pre-fill (the remembered install while it is still one, else the first
+`InstallLocator.Candidates` entry, else the remembered path), the pick (`InstallLocator.Check`, its
+`Message` shown under the field), and `ExtractionRun.Run` on a worker whose progress and outcome cross
+to the main thread only through `Tick`, called once a frame. Stale or unfinished data runs with `Force: true` and
+adds `Unzip` when the tree already has unpacked siblings the loaders would prefer; missing data runs
+the player defaults. Views: the folder field with Choose folder, Extract (focused) and Quit, plus Play
+anyway on stale data; the phase, bar, latest line and Cancel (Esc or B); the failures with Try again,
+Choose another folder and Quit. Success remembers the install (never in a scripted run), and the
+`Launcher` re-resolves the data paths, builds the music and enters the menu in the same process.
+`CSVM/src/UI/Screens/InstallPicker.cs` is Godot's own `FileDialog` in folder mode, embedded, with the
+left shoulder going up a folder and Y taking the folder shown. The progress and failure views have
+their own body text, and `ExtractionRun`'s failure lines say "the game archives" and "the menus and
+interface files". `--unzbd=` applies to the screen and no longer warns without `--extract`, and
+`--menu=extract-picker[:<folder>]` and `--menu=extract-run[:<install>]` are screenshot aids. The
+five engine messages name the Extract screen. Tests: `CSVM.Tests/ExtractionFlowTests.cs`,
+`NoGameDataScreenTests.cs`, and the engine suites `extraction-screen` and `extraction-picker`.
+
+**Verified.** <pending orchestrator run>
+
+**Original approach (kept for reference).**
 
 **Goal.** A player with no data, or with data stamped under another schema, sees a screen naming the
 problem, with the remembered or guessed install path filled in and Extract as the default. Extract
@@ -387,10 +415,10 @@ controller or touchscreen), a progress view fed by A2, and a stale-data variant 
 Every message naming a script is reworded to name the Extract button. Unstamped trees keep
 warn-only (`ExtractionStamp.cs:26-27`).
 
-**Model recommendation.** <TODO: not settled in session>
+**Model recommendation.** Settled by landing.
 
-**Verify.** <TODO: screenshots of the no-data, stale-data and progress screens for the author's
-judgement; the picker driven with a controller only>
+**Verify.** Screenshots of the no-data, stale-data, progress, failure and picker views for the
+author's judgement, and the picker driven with a controller only, both owed to the author.
 
 **⚠ Traps.** The picker has to be usable with the Deck's controls or touchscreen (Decision 11 keeps
 this the one Deck-aware requirement). Look judgements are the author's.
@@ -586,11 +614,9 @@ extraction; an "On Steam Deck" section (non-Steam game from Desktop mode, no Pro
 first extraction in Desktop mode); `logs/`, the `llvmpipe` software-rendering case; the settings
 folder `~/.local/share/godot/app_userdata/CSVM` (no `config/use_custom_user_dir` in
 `project.godot`, so Godot's default; `$XDG_DATA_HOME` moves it); the payload list and the licences.
-The extraction paragraphs describe A5, which is not built: the screen offered at startup with no
-data, the pre-filled folder, choosing another, the mis-pick message, `extracted` beside the
-executable, the menu opening afterwards, and the re-extraction screen for out-of-date data. They
-are worded after A5's goal and Decisions 5 and 8 rather than after screen text, and A5's landing
-should re-read them. Controllers on the Deck are left to the community testing (B15 and B16 are
+The extraction paragraphs match A5's landed screen: the screen offered at startup with no data,
+the pre-filled folder, choosing another, the mis-pick message, `extracted` beside the executable,
+the menu opening afterwards, and the re-extraction screen for out-of-date data. Controllers on the Deck are left to the community testing (B15 and B16 are
 open). The OpenGL wording is hedged: `project.godot` does not set
 `rendering/rendering_device/fallback_to_opengl3`, so Godot's default decides whether a machine
 without Vulkan switches to the Compatibility renderer, and the README calls that path untested.
