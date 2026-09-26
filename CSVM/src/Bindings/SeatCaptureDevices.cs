@@ -17,17 +17,18 @@ public sealed class SeatCaptureDevices : ICaptureDevices
     private readonly Dictionary<InputContext, SeatDeviceState> _states = new();
 
     /// <summary>Readers for a seat whose pad rows sit where <paramref name="padOf"/> says, over the
-    /// pads <paramref name="pads"/> names. Both are the seat's own: a splitscreen seat holds the pad
-    /// its player joined on, so capturing through another seat's list would read a pad nobody at
-    /// this row is holding.</summary>
-    public SeatCaptureDevices(Func<InputContext, DeviceId> padOf, Func<int[]?> pads)
+    /// pads <paramref name="pads"/> names. Both are the seat's own, since a splitscreen seat holds the
+    /// pad its player joined on. Another seat's list would read a pad nobody at this row is holding.
+    /// <paramref name="sticks"/> is the seat's stick reader, silent for every seat but seat 1.
+    /// </summary>
+    public SeatCaptureDevices(Func<InputContext, DeviceId> padOf, Func<int[]?> pads, IDeviceState? sticks = null)
     {
         ArgumentNullException.ThrowIfNull(padOf);
         ArgumentNullException.ThrowIfNull(pads);
         _padOf = padOf;
         foreach (var context in Enum.GetValues<InputContext>())
         {
-            _states[context] = new SeatDeviceState(padOf(context), pads);
+            _states[context] = new SeatDeviceState(padOf(context), pads, sticks: sticks);
         }
     }
 

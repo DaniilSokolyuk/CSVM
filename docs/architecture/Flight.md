@@ -923,6 +923,21 @@ axis and takes that travel's own 0.1, a port rule and not a decoded one. Pure an
 suite drives it with no window; `FlightController` sums what it returns into the keyboard and pad
 deflections. Decode: [../org/flightModel.md](../org/flightModel.md); the scheme: [../controls.md](../controls.md).
 
+## src/Flight/Airframe/AnalogAxes.cs
+The two analogue shares of a seat's flight command. `Pad` bends pitch and roll through `PadCurve`
+(0.15 deadzone, squared), the curve `FlightController.StickCurve` forwards to. `Stick` reads the
+same actions with the same signs and no curve, since a stick's full-axis binding already deadzones
+and rescales, so a throttle-pair full axis is a rate in proportion to deflection. The controller
+sums both into the keyboard and mouse deflections and clamps each axis. `LeverPosition` reads a
+Throttle (lever) from whichever side it is bound on and still connected, and `StepLever` releases
+the takeover when neither is, so an unplugged stick does not read as half throttle. Engine-free.
+
+## src/Flight/Airframe/StickSplit.cs
+An `IDeviceState` filter that passes a seat's flight-stick identities alone (`SticksOnly`) or
+everything else (`WithoutSticks`), deciding by `StickModel.TryFromDevice`. `FlightController` polls
+one keymap through each, so a pad row and a stick row on the same action resolve apart for
+`AnalogAxes`. The seat's own reader stays the only thing that reads hardware.
+
 ## src/Flight/Camera/MouseCapture.cs
 The mouse a flight seat takes while it flies, under either mouse scheme. A captured pointer reports
 one frozen position, so this scales relative motion into a virtual cursor confined to the pane

@@ -99,7 +99,8 @@ public class DefaultBindingsTests
         }
 
         Assert.Equal(
-            new[] { InputAction.SelectChaseView, InputAction.MenuJoin }, DefaultBindings.Unbound);
+            new[] { InputAction.SelectChaseView, InputAction.MenuJoin, InputAction.ThrottleLever, InputAction.SkipCutscene },
+            DefaultBindings.Unbound);
     }
 
     [Fact]

@@ -42,6 +42,7 @@ public sealed class BuiltInSeat : IMenuInputSource
             Contents = Input.Presets,
             Typed = Input.Typed,
             Erase = Input.Erase,
+            Unbind = Input.Unbind,
         };
     }
 

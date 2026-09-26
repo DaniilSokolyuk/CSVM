@@ -79,6 +79,11 @@ public sealed class OriginalPresentation : IMenuPresentation
     /// ignored, so every tab has a shot of its own.</summary>
     public const string KeysOtherAid = "other";
 
+    /// <summary>The suffix after a KEYS aid's category, <c>keys:movement:sticks</c>. It poses long
+    /// and shared captions on the first rows (<see cref="OriginalOptionsScreen.PoseStickCaptions"/>),
+    /// so the cells' marquee is shot with no stick connected.</summary>
+    public const string KeysSticksAid = "sticks";
+
     /// <summary>The aid value that opens the credits screen behind the top level's fifth row.</summary>
     public const string CreditsAid = "credits";
 
@@ -414,6 +419,9 @@ public sealed class OriginalPresentation : IMenuPresentation
 
         _shell.ReturnToTopLevel();
         StopNarration();
+        // The pause leaf may have registered these player numbers during a flight. Before the aids,
+        // since the Controls and Keys aids register the seats again.
+        _controlsSeats?.Forget();
         // Seated before the aid opens its screen, so a pose that walks the seats finds them.
         DebugJoin(setup);
         string aid = _aid;
@@ -529,7 +537,14 @@ public sealed class OriginalPresentation : IMenuPresentation
                 case string keys when keys.StartsWith(KeysAid + ":", StringComparison.Ordinal):
                     SyncControlsSeats();
                     _shell.Options.OpenKeys();
-                    _shell.Options.ShowKeysTab(KeysTabOf(keys[(KeysAid.Length + 1)..]));
+                    string tab = keys[(KeysAid.Length + 1)..];
+                    bool posed = tab.EndsWith(":" + KeysSticksAid, StringComparison.Ordinal);
+                    _shell.Options.ShowKeysTab(KeysTabOf(posed ? tab[..^(KeysSticksAid.Length + 1)] : tab));
+                    if (posed)
+                    {
+                        _shell.Options.PoseStickCaptions();
+                    }
+
                     break;
                 case CreditsAid:
                     _shell.Open(OriginalScreen.Credits);
@@ -817,6 +832,8 @@ public sealed class OriginalPresentation : IMenuPresentation
         // An edit box's caret blinks on the same step, and repaints for the same reason: the
         // screen has not changed, only the pixels the box draws.
         picture |= _view.AdvanceCaret(dt);
+        // A caption too wide for its cell scrolls on the same step, for the same reason.
+        picture |= _view.AdvanceMarquee(dt);
         // A photograph landing after the wrap-up page woke fills its print, which is a new picture
         // on the board rather than new pixels in one already drawn, so the page is composed again.
         changed |= _shell.Screen == OriginalScreen.InstantActionWrapup && _shell.Wrapup.TakeLanded();

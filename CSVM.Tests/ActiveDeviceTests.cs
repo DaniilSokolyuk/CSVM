@@ -143,6 +143,65 @@ public class ActiveDeviceTests
             ActiveDevice.PromptBinding(mouseAndPad, DeviceSide.Keyboard, readsKeyboard: true));
     }
 
+    [Fact]
+    public void AStickPressPutsThePadSideOnTheStickAndAGamepadPressTakesItOff()
+    {
+        var device = new ActiveDevice();
+        var map = FlightMap();
+        var one = new Fake();
+        one.Buttons.Add((Pad, (int)JoyButton.LeftStick));
+        var two = new Fake();
+        two.Buttons.Add((Pad, (int)JoyButton.LeftStick));
+        two.Buttons.Add((Pad, (int)JoyButton.A));
+
+        // The sticks-alone half holding what the pad half holds: the press came from a stick.
+        Assert.True(device.Observe(map.Resolve(new Fake()), map.Resolve(one), true, map.Resolve(one)));
+        Assert.Equal(DeviceSide.Pad, device.Side);
+        Assert.True(device.OnStick);
+
+        // A second action rising on the pad half alone is a gamepad press, and recomposes the line.
+        Assert.True(device.Observe(map.Resolve(new Fake()), map.Resolve(two), true, map.Resolve(one)));
+        Assert.False(device.OnStick);
+        Assert.False(device.Observe(map.Resolve(new Fake()), map.Resolve(two), true, map.Resolve(one)));
+    }
+
+    [Fact]
+    public void ALeverTheKeyboardHalfCannotSeeReadsCentredAndNeverClaimsThePrompt()
+    {
+        var device = new ActiveDevice();
+        var map = FlightMap();
+        var stick = DeviceId.Joypad("test-stick");
+        map.Add(InputAction.ThrottleLever, new Binding(stick, BindingControl.FullAxis(2, true, 0.02f)));
+        var trigger = new Fake();
+        trigger.Buttons.Add((Pad, (int)JoyButton.LeftStick));
+        Observe(device, map, new Fake(), trigger);
+
+        // The blind half reads the lever at 0.5, PressTravel itself; the pad side then falls quiet.
+        Assert.True(map.Resolve(new Fake()).Value(InputAction.ThrottleLever) >= ActiveDevice.PressTravel);
+        Assert.False(Observe(device, map, new Fake(), new Fake()));
+        Assert.Equal(DeviceSide.Pad, device.Side);
+    }
+
+    [Fact]
+    public void OnTheStickAPromptNamesTheSticksBindingOverTheGamepadsListedFirst()
+    {
+        var stick = DeviceId.Joypad("test-stick");
+        var stickButton = new Binding(stick, BindingControl.Button(27));
+        var bindings = new[] { KeyBinding(Key.A), PadBinding(JoyButton.LeftStick), stickButton };
+        var registered = BindingLabels.StickName;
+        BindingLabels.StickName = d => d == stick ? "R" : null;
+        try
+        {
+            Assert.Equal(stickButton, ActiveDevice.PromptBinding(bindings, DeviceSide.Pad, true, onStick: true));
+            Assert.Equal(PadBinding(JoyButton.LeftStick), ActiveDevice.PromptBinding(bindings, DeviceSide.Pad, true));
+            Assert.Equal(stickButton, ActiveDevice.PromptBinding(new[] { KeyBinding(Key.A), stickButton }, DeviceSide.Pad, true));
+        }
+        finally
+        {
+            BindingLabels.StickName = registered;
+        }
+    }
+
     private static ActionMap FlightMap() => DefaultBindings.MapFor(InputContext.Flight, Pad);
 
     private static bool Observe(ActiveDevice device, ActionMap map, Fake keys, Fake pad) =>

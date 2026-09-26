@@ -140,6 +140,9 @@ public sealed partial class CutsceneController : Node
     private readonly HashSet<Key> _keysDown = new();
     private readonly HashSet<(int Device, JoyButton Button)> _padsDown = new();
     private bool _scriptedHold;
+    // The stick's skip, re-read through its own reader each tick like the keys above; null while
+    // no stick is holding the fast-forward.
+    private Func<bool>? _stickHeld;
     // Is the AI held by the mission start's own park rather than by a playing definition? The lift
     // is the bootstrap definition's reset, so this says which of the two owns the release.
     private bool _startParked;
@@ -620,6 +623,26 @@ public sealed partial class CutsceneController : Node
     /// </summary>
     public void HoldFastForward(bool held) => _scriptedHold = held;
 
+    /// <summary>A stick's skip press, which raises no input event. It gets the same skip a key or
+    /// pad press gets. When that is declined, it holds the fast-forward while <paramref name="held"/>
+    /// reads true. True when it skipped; <paramref name="playerIndex"/> is as for
+    /// <see cref="Skip"/>.</summary>
+    public bool TakeStickPress(int playerIndex, Func<bool> held)
+    {
+        ArgumentNullException.ThrowIfNull(held);
+        if (Skip(playerIndex))
+        {
+            return true;
+        }
+
+        if (Playing && !Skippable)
+        {
+            _stickHeld = held;
+        }
+
+        return false;
+    }
+
     private static bool AuthorsCode(AnimDefinition def)
     {
         foreach (var seq in def.Sequences)
@@ -735,6 +758,7 @@ public sealed partial class CutsceneController : Node
         _keysDown.Clear();
         _padsDown.Clear();
         _scriptedHold = false;
+        _stickHeld = null;
         _fastForwardLogged = false;
     }
 
@@ -756,7 +780,12 @@ public sealed partial class CutsceneController : Node
     {
         _keysDown.RemoveWhere(key => !Input.IsKeyPressed(key));
         _padsDown.RemoveWhere(pad => !Input.IsJoyButtonPressed(pad.Device, pad.Button));
-        bool down = _scriptedHold || _keysDown.Count > 0 || _padsDown.Count > 0;
+        if (_stickHeld != null && !_stickHeld())
+        {
+            _stickHeld = null;
+        }
+
+        bool down = _scriptedHold || _keysDown.Count > 0 || _padsDown.Count > 0 || _stickHeld != null;
         _fastForward.Held = down && !Skippable && !HeldForEnding;
         if (!_fastForward.Held || _fastForwardLogged)
         {

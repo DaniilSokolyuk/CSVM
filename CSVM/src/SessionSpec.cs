@@ -257,7 +257,7 @@ public sealed record SessionSpec
     public string ModeName =>
         Mode == SessionMode.AnimLab ? "anim-lab"
         : DamageTest || EffectsTest || WeaponTest || RunTests ? "test"
-        : DumpMarkers || DumpWeapons || DumpLoadout || DumpConfig || DumpMips || DumpAi || DumpTileGrid ? "dump"
+        : DumpMarkers || DumpWeapons || DumpLoadout || DumpConfig || DumpMips || DumpAi || DumpTileGrid || DumpSticks ? "dump"
         : MovieName != null ? "movie"
         : Mode == SessionMode.Freecam ? "freecam"
         : Mode == SessionMode.Viewer ? "viewer"
@@ -273,7 +273,7 @@ public sealed record SessionSpec
     public bool IsScripted =>
         NoFocus || ScreenshotPath != null || ExportGltfPath != null || RunTests
         || DumpMarkers || DumpWeapons || DumpLoadout || DumpConfig || DumpMips || DumpAi || DumpTileGrid
-        || DamageTest || EffectsTest || WeaponTest;
+        || DumpSticks || DamageTest || EffectsTest || WeaponTest;
 
     /// <summary><b>Resolved.</b> The chapter world is built instead of a single parked plane.</summary>
     public bool WorldMode { get; private set; }
@@ -712,6 +712,16 @@ public sealed record SessionSpec
     /// per-chapter name.</summary>
     public string DumpTileGridPath { get; private set; } = "";
 
+    /// <summary><c>--dump-sticks</c>: log the SDL2 stick roster with each stick's control counts
+    /// and resting reads, then quit. ⚠ Not in <see cref="ScriptedBy"/>: the bundle's
+    /// <c>--no-pads</c> would empty the Godot roster the gap-filler subtracts, and a hardware
+    /// report has nothing to pin.</summary>
+    public bool DumpSticks { get; private set; }
+
+    /// <summary><c>--dump-sticks=&lt;seconds&gt;</c>: after the report, log every stick control that
+    /// moves for that many seconds (1 to 120); 0 for the plain report.</summary>
+    public int DumpSticksWatch { get; private set; }
+
     public bool DamageTest { get; private set; }
     public string DamageTestFilter { get; private set; } = "";
     public float DamageHd { get; private set; }
@@ -819,6 +829,10 @@ public sealed record SessionSpec
     /// Authored rather than window pixels, so a shot lands on the same widget whatever the window.
     /// Null = not asked for.</summary>
     public (float X, float Y, bool Down, bool Right)? DebugPointer { get; private set; }
+    /// <summary><c>--debug-marquee=seconds</c>: hold every scrolling menu caption at that phase of
+    /// its scroll (<see cref="CSVM.UI.Boards.BoardMarquee"/>), so a shot shows a long caption part
+    /// way through. Null = not asked for, and <c>--det</c> then holds the start.</summary>
+    public double? DebugMarquee { get; private set; }
     public bool MarkersOverlay { get; private set; }
     public bool WeaponLab { get; private set; }
     public string? WeaponSelect { get; private set; }
@@ -1045,6 +1059,7 @@ public sealed record SessionSpec
             else if (arg.StartsWith("--debug-wingmen=")) { s.DebugWingmen = int.Parse(arg["--debug-wingmen=".Length..]); }
             else if (arg.StartsWith("--debug-preset=")) { s.DebugPreset = int.Parse(arg["--debug-preset=".Length..]); }
             else if (arg.StartsWith("--debug-pointer=")) { s.DebugPointer = ParseDebugPointer(arg["--debug-pointer=".Length..]); }
+            else if (arg.StartsWith("--debug-marquee=")) { s.DebugMarquee = double.TryParse(arg["--debug-marquee=".Length..], NumberStyles.Float, CultureInfo.InvariantCulture, out double phase) ? Math.Max(0d, phase) : null; }
             else if (arg.StartsWith("--paint=")) { s.PaintNames = arg["--paint=".Length..].Split(',', StringSplitOptions.TrimEntries); }
             else if (arg.StartsWith("--paint-color=")) { s.PaintColorOverride = ParsePaintColors(arg["--paint-color=".Length..]); }
             else if (arg.StartsWith("--paint-decal=")) { s.PaintDecalOverride = ParsePaintDecals(arg["--paint-decal=".Length..]); }
@@ -1410,6 +1425,20 @@ public sealed record SessionSpec
             else if (arg.StartsWith("--dump-mips=")) { s.DumpMips = true; s.DumpMipsFilter = arg["--dump-mips=".Length..]; }
             else if (arg == "--dump-ai") { s.DumpAi = true; }
             else if (arg.StartsWith("--dump-ai=")) { s.DumpAi = true; s.DumpAiChapter = arg["--dump-ai=".Length..]; }
+            else if (arg == "--dump-sticks") { s.DumpSticks = true; }
+            else if (arg.StartsWith("--dump-sticks="))
+            {
+                string want = arg["--dump-sticks=".Length..];
+                s.DumpSticks = true;
+                if (int.TryParse(want, NumberStyles.Integer, CultureInfo.InvariantCulture, out int seconds) && seconds >= 1)
+                {
+                    s.DumpSticksWatch = Math.Min(seconds, 120);
+                }
+                else
+                {
+                    notes.Add(new Note("core", $"--dump-sticks={want} is not a number of seconds, dumping without the watch"));
+                }
+            }
             else if (arg == "--dump-tilegrid") { s.DumpTileGrid = true; s.HasContentArg = true; }
             else if (arg.StartsWith("--dump-tilegrid=")) { s.DumpTileGrid = true; s.DumpTileGridPath = arg["--dump-tilegrid=".Length..]; s.HasContentArg = true; }
             else if (arg.StartsWith("--tex-override=")) { texOverrides.Add(arg["--tex-override=".Length..]); }

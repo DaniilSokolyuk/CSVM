@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using CSVM.Sticks;
 using CSVM.UI.Boards;
 using CSVM.Utils;
 using CSVM.Video;
@@ -7,12 +8,12 @@ using Godot;
 
 namespace CSVM.UI.Screens;
 
-/// <summary>Which presses end a cinema before it has played out. The sets differ per cinema and
-/// the difference is the original's own: <c>CAMPAIGNINTRO.SCRIPT</c> takes Escape, Space, Return
+/// <summary>Which presses end a cinema before it has played out. The sets differ per cinema, and
+/// the difference is the original's own. <c>CAMPAIGNINTRO.SCRIPT</c> takes Escape, Space, Return
 /// and a left mouse press, where <c>FINALCINEMA.SCRIPT</c> takes Escape and the mouse alone.
-/// ⚠ Do not unify them. Space and Return doing nothing on the closing cinema is authored.
-/// A pad button is in every set, since a player holding one has no other press to offer, and
-/// <see cref="CinemaSkips"/> is where a set meets a press.</summary>
+/// ⚠ Do not unify them: Space and Return doing nothing on the closing cinema is authored.
+/// A pad button is in every set (a pad player has no other press), and a stick's skip counts as
+/// one. A set meets a press in <see cref="CinemaSkips"/>.</summary>
 [Flags]
 public enum CinemaSkip
 {
@@ -78,6 +79,7 @@ public sealed partial class CinemaScreen : Node
 
     private readonly CinemaPlayback _cinema;
     private readonly CinemaSkip _skip;
+    private readonly StickSkip _stick = StickSkip.Live();
     private readonly float[] _samples;
     private readonly Vector2[] _frames = new Vector2[Chunk];
 
@@ -165,6 +167,9 @@ public sealed partial class CinemaScreen : Node
         AddChild(_layer);
         OpenDevice();
         Fit();
+
+        // The trigger that skipped the cinema before this one may still be down.
+        _stick.Prime();
     }
 
     /// <inheritdoc/>
@@ -184,6 +189,13 @@ public sealed partial class CinemaScreen : Node
     {
         if (_ended)
         {
+            return;
+        }
+
+        _stick.Poll();
+        if (_stick.Pressed && _skip.Skips(CinemaSkips.StickPress))
+        {
+            Stop();
             return;
         }
 

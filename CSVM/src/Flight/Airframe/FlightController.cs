@@ -10,6 +10,7 @@ using CSVM.Flight.Hud;
 using CSVM.Flight.Modes;
 using CSVM.Flight.Weapons;
 using CSVM.Mech3;
+using CSVM.Sticks;
 using CSVM.Utils;
 using Godot;
 
@@ -576,16 +577,23 @@ public partial class FlightController : Node3D
     // hands input back while the control that confirmed it is still down.
     private readonly FlightReentryLatch _reentryLatch = new();
 
-    // This seat's keymap, and three views of it. One map, three readers, because the keyboard half
-    // and the pad half of an attitude action are processed differently here and then summed: the
-    // keys ramp through StickRamp, the sticks bend through StickCurve. A single OR-ed read cannot
-    // express that, so the halves stay separable while the bindings stay shared.
+    // This seat's keymap, and several views of it. The halves of an attitude action are processed
+    // differently here and then summed. The keys ramp through StickRamp, a pad bends through
+    // StickCurve, a flight stick passes linearly. A single OR-ed read cannot express that, so the
+    // halves stay separable while the bindings stay shared.
     private readonly BindingProfile _bindings;
-    private readonly PlayerActions _actions;      // keyboard, mouse and pad together
+    private readonly PlayerActions _actions;     // keyboard, mouse and pad together
     private readonly PlayerActions _keyActions;   // the keyboard and mouse half alone
-    private readonly PlayerActions _padActions;   // the pad half alone
+    private readonly PlayerActions _padActions;   // the pad half alone, flight sticks included
+    // The pad half's flight axes, split by device. A pad bends through the pad curve and a flight
+    // stick flies linearly (AnalogAxes), so neither reads the other's bindings.
+    private readonly PlayerActions _padAxes;
+    private readonly PlayerActions _stickAxes;
+    private readonly LeverTakeover _leverTakeover = new(); // when a bound throttle lever commands
     private readonly SeatDeviceState _seatState;
     private readonly SeatDeviceState _padMutedState;
+    private readonly StickSplit _padsAlone;
+    private readonly StickSplit _sticksAlone;
     // The pad haptics for this seat, routed to the same devices the bindings above read. A
     // splitscreen pane therefore rumbles its own pilot's controller and no other. The shot total is
     // what turns the carried gunners' running counters into a fired-this-tick edge.
@@ -597,6 +605,7 @@ public partial class FlightController : Node3D
     private Messages? _strings;
 
     private ulong _inputFrame = ulong.MaxValue;  // the rendered frame the three readers above hold
+    private int _stickRevision = -1;             // the StickProfiles revision last merged into _bindings
     private bool _initialTargetDone;             // --target= has had its one chance
     private int _initialTargetWaits;             // …frames it has waited for a non-empty pool
     private FlightModel _model = null!;
@@ -719,7 +728,7 @@ public partial class FlightController : Node3D
 
     public FlightController()
     {
-        _seatState = new SeatDeviceState(DefaultBindings.AnyPad, () => PadDevices);
+        _seatState = new SeatDeviceState(DefaultBindings.AnyPad, () => PadDevices, sticks: StickDeviceState.Live(() => PlayerIndex));
         _padMutedState = new SeatDeviceState(DefaultBindings.AnyPad, () => PadDevices, readsPads: false);
         _bindings = BindingProfile.Defaults(default, true);
         _rumble = new PadRumble(() => PadDevices, _bindings.Device);
@@ -727,6 +736,10 @@ public partial class FlightController : Node3D
         var map = _bindings.Map(InputContext.Flight);
         _keyActions = new PlayerActions(map, true);
         _padActions = new PlayerActions(map, false);
+        _padAxes = new PlayerActions(map, false);
+        _stickAxes = new PlayerActions(map, false);
+        _padsAlone = StickSplit.WithoutSticks(_seatState);
+        _sticksAlone = StickSplit.SticksOnly(_seatState);
     }
 
     /// <summary>Raised once per crash, at <see cref="Crash"/>: (victim <see cref="PlayerIndex"/>,
@@ -2546,16 +2559,8 @@ public partial class FlightController : Node3D
             ? hitBody.GetMeta(SceneBuilder.SurfaceIdMeta).AsInt32()
             : null;
 
-    // Deadzone + squared response for fine control around center.
-    private static float StickCurve(float v)
-    {
-        const float deadzone = 0.15f;
-        float a = Mathf.Abs(v);
-        if (a < deadzone)
-            return 0f;
-        float t = Mathf.Min(1f, (a - deadzone) / (1f - deadzone));
-        return Mathf.Sign(v) * t * t;
-    }
+    // Deadzone + squared response for fine control around center. A flight stick's attitude axes bypass it.
+    private static float StickCurve(float v) => AnalogAxes.PadCurve(v);
 
     // N / gamepad X, the nitro command (the original's MSG_CMD_NITROUS "Use Nitro-Booster").
     // A level read: the command arm engages on pressed-or-held and ignores it otherwise.
@@ -2775,6 +2780,7 @@ public partial class FlightController : Node3D
         _actions.Current.Store(action, read);
         _keyActions.Current.Store(action, read);
         _padActions.Current.Store(action, read);
+        _padAxes.Current.Store(action, read);
     }
 
     // The tick's two halves as a suite supplies them, so the seat's device memory has something to
@@ -2788,7 +2794,9 @@ public partial class FlightController : Node3D
         _actions.Poll(new BothSides(keyboardSide, padSide));
         _keyActions.Poll(keyboardSide);
         _padActions.Poll(padSide);
-        if (_bindings.ObserveDevice(_keyActions.Current, _padActions.Current))
+        _padAxes.Poll(StickSplit.WithoutSticks(padSide));
+        _stickAxes.Poll(StickSplit.SticksOnly(padSide));
+        if (_bindings.ObserveDevice(_keyActions.Current, _padActions.Current, _stickAxes.Current))
             ComposeControlPrompts();
     }
 
@@ -2861,6 +2869,16 @@ public partial class FlightController : Node3D
     // tick's two device sides and the production reads above answer them. Kept beside those reads
     // rather than hoisted for SA1202's sake, the same trade made elsewhere here.
     internal FireInputs SelectorInputsForTest() => ReadSelectorInputs();
+
+    // The other discrete buttons' readings, for the suite that holds a stick button on each row. They
+    // are the targeting row's own read, the tap/hold splitter's, the flyby view's and the throttle's.
+    internal bool TargetControlDownForTest(InputAction action) => TargetControlDown(action);
+
+    internal bool TargetSplitterDownForTest() => TargetSplitterDown();
+
+    internal bool FlybyDownForTest() => FlybyDown();
+
+    internal float? RequestedThrottleForTest() => RequestedThrottle();
 #pragma warning restore SA1202
 
     // This frame's pilot-HUD feed. The pipper's inputs are resolved HERE and only where there is a
@@ -3570,14 +3588,25 @@ public partial class FlightController : Node3D
         // re-read rather than captured. The pad-half reader is never given the keyboard.
         _bindings.ReadsKeyboard = UseKeyboard;
         _keyActions.ReadsKeyboard = UseKeyboard;
+        // A stick plugged or unplugged mid-flight moves seat 1's active profiles; the merge edits the
+        // maps every resolver here reads.
+        if (IsHumanPiloted && PlayerIndex == StickDeviceState.OwningSeat
+            && StickProfiles.MergeIfChanged(_bindings, ref _stickRevision))
+            ComposeControlPrompts();
         _seatState.Refresh();
         _padMutedState.Refresh();
         _actions.Poll(_seatState);
         _keyActions.Poll(_padMutedState);
         _padActions.Poll(_seatState);
+        _padAxes.Poll(_padsAlone);
+        _stickAxes.Poll(_sticksAlone);
         // A prompt names the device the seat last took input from, so a handover recomposes it.
-        if (_bindings.ObserveDevice(_keyActions.Current, _padActions.Current))
+        if (_bindings.ObserveDevice(_keyActions.Current, _padActions.Current, _stickAxes.Current))
+        {
+            if (IsHumanPiloted)
+                LogHandover();
             ComposeControlPrompts();
+        }
     }
 
     // Every control prompt this pane draws, over the bindings of the side the seat is reading. Run
@@ -3586,10 +3615,35 @@ public partial class FlightController : Node3D
     private void ComposeControlPrompts()
     {
         var side = _bindings.Device.Side;
+        bool onStick = _bindings.Device.OnStick;
         _pilotHud.AutoLandPrompt = FlightHud.ComposeAutoLandPrompt(
-            _strings, FlightKeymap.Bindings(InputAction.AutoLand), UseKeyboard, side);
+            _strings, FlightKeymap.Bindings(InputAction.AutoLand), UseKeyboard, side, onStick);
         _pilotHud.RespawnPrompt = FlightHud.ComposeRespawnPrompt(
-            FlightKeymap.Bindings(InputAction.Respawn), UseKeyboard, side);
+            FlightKeymap.Bindings(InputAction.Respawn), UseKeyboard, side, onStick);
+    }
+
+    // Which actions each half held on the tick the prompt side moved. An unwanted handover is
+    // then traced to the control that claimed it.
+    private void LogHandover()
+    {
+        var device = _bindings.Device;
+        string stick = device.OnStick ? " (stick)" : string.Empty;
+        string keys = Held(_keyActions.Current);
+        string pad = Held(_padActions.Current);
+        string sticks = Held(_stickAxes.Current);
+        Log.Info("core", $"prompt device P{PlayerIndex + 1}: {device.Side}{stick} keys=[{keys}] pad=[{pad}] sticks=[{sticks}]");
+
+        static string Held(ActionSnapshot snapshot)
+        {
+            var held = new List<string>();
+            foreach (var action in Enum.GetValues<InputAction>())
+            {
+                if (snapshot.Value(action) >= ActiveDevice.PressTravel)
+                    held.Add(action.ToString());
+            }
+
+            return string.Join(",", held);
+        }
     }
 
     // The largest-magnitude value of the axis across this player's gamepads (0 when
@@ -3748,7 +3802,7 @@ public partial class FlightController : Node3D
         // D-pad Up, the pad's one targeting button (decision 6/7): tap steps the enemy cycle, hold
         // selects the target nearest the crosshair. TapHoldButton owns the timing and the
         // resolve-on-release rule; this reads the pad and acts on the verdict.
-        switch (_targetHold.Step(_padActions.Held(InputAction.TargetNextEnemy), dt))
+        switch (_targetHold.Step(TargetSplitterDown(), dt))
         {
             case TapHold.Hold:
                 sel.NearestCrosshairs(_model.Position, _model.Attitude);
@@ -3864,8 +3918,12 @@ public partial class FlightController : Node3D
         DispatchViewModeKey(1, _keyActions.Held(InputAction.SelectChaseView), () => _cam!.SelectChase());
         DispatchViewModeKey(2, _padActions.Held(InputAction.CycleCockpitViews), () => _cam!.CycleCockpitViews());
         DispatchViewModeKey(3, _padActions.Held(InputAction.SelectChaseView), () => _cam!.SelectChase());
-        DispatchViewModeKey(4, _keyActions.Held(InputAction.FlybyView), () => _cam!.EnterFlyby());
+        DispatchViewModeKey(4, FlybyDown(), () => _cam!.EnterFlyby());
     }
+
+    // The whole seat, since nothing ships on the pad for it: a pad or stick control here is one the
+    // player bound themselves.
+    private bool FlybyDown() => _actions.Held(InputAction.FlybyView);
 
     // Same one-action-per-press rule as DispatchTargetKey, against its own slots.
     private void DispatchViewModeKey(int slot, bool down, System.Action act)
@@ -3876,16 +3934,23 @@ public partial class FlightController : Node3D
     }
 
     /// <summary>Edge-detects one targeting key against its own slot and runs its action once per
-    /// press. Read off the keyboard half alone: the pad's one targeting control is the tap/hold
-    /// splitter above, which holds the same action and would otherwise dispatch twice. Splitscreen-safe
-    /// by construction, since that half is gated on <see cref="UseKeyboard"/>.</summary>
+    /// press.</summary>
     private void DispatchTargetKey(int slot, InputAction action, System.Action act)
     {
-        bool down = _keyActions.Held(action);
+        bool down = TargetControlDown(action);
         if (down && !_targetKeyPrev[slot])
             act();
         _targetKeyPrev[slot] = down;
     }
+
+    // ⚠ The next-enemy row reads the keyboard half alone, since its pad and stick controls reach the
+    // tap/hold splitter, which would otherwise dispatch it twice. Every other row reads the whole
+    // seat, or a stick button bound to it would do nothing.
+    private bool TargetControlDown(InputAction action) =>
+        action == InputAction.TargetNextEnemy ? _keyActions.Held(action) : _actions.Held(action);
+
+    // The next-enemy row's pad and stick half, which the tap/hold splitter reads.
+    private bool TargetSplitterDown() => _padActions.Held(InputAction.TargetNextEnemy);
 
     // Internal rather than private: IFlightInputSource.cs's PilotInputSource calls this to keep
     // the body where it always lived, rather than hoisting it for SA1202's sake. The scripted hold
@@ -4427,12 +4492,10 @@ public partial class FlightController : Node3D
     // other sim-step helpers, rather than hoisting it for SA1202's sake.
     internal FlightInput ReadKeyboard(float dt)
     {
-        // this player's gamepad(s) fly the plane, read through the pad half of the keymap;
-        // arcade-flight standard: stick back (+Y) = nose up, stick right = bank right
-        float padPitch = StickCurve(_padActions.Axis(InputAction.PitchUp, InputAction.PitchDown));
-        float padRoll = -StickCurve(_padActions.Axis(InputAction.RollRight, InputAction.RollLeft));
-        float padYaw = _padActions.Axis(InputAction.YawLeft, InputAction.YawRight);
-        float padThrottle = _padActions.Axis(InputAction.ThrottleUp, InputAction.ThrottleDown);
+        // this player's gamepads and flight sticks fly the plane, each through its own reader.
+        // Arcade-flight standard: stick back (+Y) = nose up, stick right = bank right.
+        var pad = AnalogAxes.Pad(_padAxes.Current);
+        var stick = AnalogAxes.Stick(_stickAxes.Current);
         // The live respawn, read only where the mission does not count (AllowLiveRespawn): this
         // body runs on a flying aircraft alone, since SimStep leaves through its crashed branch,
         // and that branch's own read is what brings a crashed pilot back.
@@ -4445,15 +4508,18 @@ public partial class FlightController : Node3D
         // The commanded lever, as FUN_00487460 writes it. The up and down keys move it at 0.5/s,
         // and a digit puts it on its eighth. It stays there once the key is up. The handler never
         // reads the tank, so a dry engine still takes the command.
-        _throttleSetting = Mathf.Clamp(
-            _throttleSetting
-            + (_keyActions.Axis(InputAction.ThrottleUp, InputAction.ThrottleDown) + padThrottle)
-                * ThrottleRate * dt,
-            0f, 1f);
-        if (ScheduledThrottle(dt) is { } scheduled)
-            _throttleSetting = scheduled;
-        if (RequestedThrottle() is { } requested)
-            _throttleSetting = requested;
+        float rate = _keyActions.Axis(InputAction.ThrottleUp, InputAction.ThrottleDown) + pad.ThrottleRate + stick.ThrottleRate;
+        _throttleSetting = Mathf.Clamp(_throttleSetting + (rate * ThrottleRate * dt), 0f, 1f);
+        float? scheduled = ScheduledThrottle(dt);
+        float? requested = RequestedThrottle();
+        // An absolute lever writes over the rate step and under the schedule and the digits. That is
+        // the rule a live digit beating the schedule already follows. Any of those three hands it back.
+        if (LeverSetting(Mathf.Abs(rate) > LeverTakeover.Epsilon || scheduled != null || requested != null) is { } lever)
+            _throttleSetting = lever;
+        if (scheduled is { } step)
+            _throttleSetting = step;
+        if (requested is { } digit)
+            _throttleSetting = digit;
 
         // ⚠ Slew every tick, not only while a key is down. Stepping it inside the digit test leaves
         // a tapped setting barely moved. A dry tank skips the slew, so the lever holds rather than
@@ -4473,9 +4539,9 @@ public partial class FlightController : Node3D
         var mouse = MouseFlightRead();
         return new FlightInput
         {
-            Pitch = Mathf.Clamp(_keyPitch + padPitch + mouse.Pitch, -1f, 1f),
-            Roll = Mathf.Clamp(_keyRoll + padRoll + mouse.Roll, -1f, 1f),
-            Yaw = Mathf.Clamp(_keyYaw + padYaw + mouse.Yaw, -1f, 1f),
+            Pitch = Mathf.Clamp(_keyPitch + pad.Pitch + stick.Pitch + mouse.Pitch, -1f, 1f),
+            Roll = Mathf.Clamp(_keyRoll + pad.Roll + stick.Roll + mouse.Roll, -1f, 1f),
+            Yaw = Mathf.Clamp(_keyYaw + pad.Yaw + stick.Yaw + mouse.Yaw, -1f, 1f),
             Throttle = _throttle,
         };
     }
@@ -4578,17 +4644,39 @@ public partial class FlightController : Node3D
     private bool FreeLookHeld() => _actions.Held(InputAction.FreeLook);
 
     // Which eighth the digit row is asking for, or null while none of the nine is held. The highest
-    // held wins, so two digits at once open the lever rather than fighting over it.
+    // held wins, so two digits at once open the lever rather than fighting over it. The whole seat
+    // is read, so a stick button bound to an eighth sets it too.
     private float? RequestedThrottle()
     {
         float? requested = null;
         for (int eighths = 0; eighths <= 8; eighths++)
         {
-            if (_keyActions.Held(InputAction.ThrottleSet0 + eighths))
+            if (_actions.Held(InputAction.ThrottleSet0 + eighths))
                 requested = eighths / 8f;
         }
 
         return requested;
+    }
+
+    // What a bound Throttle (lever) commands this tick, or null while the other controls hold the
+    // throttle. A rate under the takeover epsilon is a resting trigger's noise, not a command. While
+    // input is blocked every axis reads centred, so the lever is forgotten rather than read as half.
+    // An unplugged stick's lever reads centred the same way, and is forgotten the same way.
+    private float? LeverSetting(bool otherCommand)
+    {
+        if (CSVM.Pads.InputBlocked)
+        {
+            _leverTakeover.Release();
+            return null;
+        }
+
+        var sticks = PlayerIndex == StickDeviceState.OwningSeat ? StickPump.Roster : null;
+        float? position = AnalogAxes.LeverPosition(
+            _padActions.Map.Bindings(InputAction.ThrottleLever),
+            _padAxes.Value(InputAction.ThrottleLever),
+            _stickAxes.Value(InputAction.ThrottleLever),
+            sticks);
+        return AnalogAxes.StepLever(_leverTakeover, position, otherCommand);
     }
 
     // Which lever the --lever= schedule presses on this step, or null while none is due. A step is
@@ -4608,8 +4696,13 @@ public partial class FlightController : Node3D
 
     // Both levers on one value, for the writers that place an aircraft rather than fly it. The
     // original's spawn and launch writers set +0x124 and +0x128 together. A stale command left
-    // behind would slew a respawned lever away from where it was placed.
-    private void SetLever(float lever) => _throttle = _throttleSetting = lever;
+    // behind would slew a respawned lever away from where it was placed. A bound throttle lever is
+    // released for the same reason; it takes over again when it moves.
+    private void SetLever(float lever)
+    {
+        _throttle = _throttleSetting = lever;
+        _leverTakeover.Release();
+    }
 #pragma warning restore SA1202
 
     // This plane's state entering a contact, as the resolver's per-call half.

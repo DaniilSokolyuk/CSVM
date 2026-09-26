@@ -719,6 +719,9 @@ public partial class Launcher : Node3D
         // the door for the same reason: a run whose result is compared against a committed golden
         // must not depend on the keymap saved at whoever's machine ran it (verification.md, DET-8).
         CSVM.Bindings.LaunchBindings.Configure(_spec.Det || _spec.RunTests);
+        // A scrolling caption would put a capture's pixels on the frame count. The same runs hold
+        // every marquee at its start unless the aid names a phase.
+        CSVM.UI.Boards.BoardMarquee.PinnedSeconds = _spec.DebugMarquee ?? (_spec.Det || _spec.RunTests ? 0d : null);
 
         // After the --det block, so ClearOverrides has dropped a config graphics.mode; ahead of the
         // clutter fade, which needs the mode to follow the pushed fog. ⚠ --det reads no saved
@@ -785,6 +788,15 @@ public partial class Launcher : Node3D
             GetTree().Quit(_probeRunner.DumpAi(_spec) ? 0 : 1);
             return;
         }
+        // --dump-sticks: the SDL2 stick roster with each stick's counts and resting reads; fails
+        // only when no SDL2.dll loads, since zero sticks is a valid answer.
+        string? sdlRepoRoot = _exported ? null : _repoRoot;
+        string? sdlDataRoot = string.IsNullOrEmpty(dataRootEnv) ? null : dataRootEnv;
+        if (_spec.DumpSticks)
+        {
+            GetTree().Quit(Sticks.StickPump.Dump(sdlRepoRoot, sdlDataRoot, _spec.DumpSticksWatch) ? 0 : 1);
+            return;
+        }
 
         // Exercises the wired modules once so Config's tuning registry is complete, then flags
         // any config.json key no tunable matched, data-free, so a typo is caught before flight.
@@ -824,6 +836,12 @@ public partial class Launcher : Node3D
         else
             foreach (int p in padsAtLaunch)
                 Log.Info("core", $"gamepad: device {p} \"{Input.GetJoyName(p)}\" guid={Input.GetJoyGuid(p)} info={Input.GetJoyInfo(p)}");
+        // After the pad roster, which the stick roster subtracts. Once per process, like the pads;
+        // a run under --no-pads (so every test and golden) never loads SDL2 at all.
+        if (Sticks.StickPump.Start(sdlRepoRoot, sdlDataRoot) is { } stickPump)
+        {
+            AddChild(stickPump);
+        }
 
         SetupLighting();
         // GameSession re-applies these same two framings per launch. The decoded world base serves
@@ -2011,11 +2029,14 @@ public partial class Launcher : Node3D
         _closingCinema ??= new ClosingCinema(PlayCinema);
         host.Features.Add(new CampaignFeature(
             strings, PlanePickerRoster.AirframeNode, _chapterCinema, _closingCinema));
-        // The keymap editor writes through C21's per-player store. The write is injected rather
-        // than reached for, so the feature itself stays engine-free and a suite can hold a
-        // different one.
-        host.Features.Add(new ControlsFeature((player, profile) =>
-            CSVM.Bindings.BindingStore.UserBindings().Save(player, profile)));
+        // The keymap editor writes through C21's per-player store, with player 1's stick rows split
+        // off to the profile files. A reset takes them from the stick defaults. Injected so the
+        // feature stays engine-free for a suite.
+        host.Features.Add(new ControlsFeature(
+            (player, profile) => CSVM.Sticks.StickScreens.Save(player, profile, CSVM.Sticks.StickProfiles.Live,
+                (who, keymap) => CSVM.Bindings.BindingStore.UserBindings().Save(who, keymap)),
+            CSVM.Sticks.StickScreens.OpenUserFolder,
+            () => CSVM.Sticks.StickProfiles.Live));
         // The multiplayer door. The carrier and the router arrive as delegates. That is what
         // keeps the feature, and every board over it, clear of the socket and the engine.
         // Which carrier they open is `Net/NetCarrier.cs`'s, never this registration's.

@@ -460,6 +460,34 @@ public class SessionSpecTests
         Assert.False(s.IsScripted);
     }
 
+    /// <summary>The stick report hides its window and logs as a dump, but leaves the bundle off.
+    /// The bundle's <c>--no-pads</c> would empty the Godot roster the gap-filler subtracts.</summary>
+    [Fact]
+    public void DumpSticksIsScriptedButKeepsThePads()
+    {
+        var s = S("--dump-sticks");
+        Assert.True(s.DumpSticks);
+        Assert.True(s.IsScripted);
+        Assert.Equal("dump", s.ModeName);
+        Assert.Equal("", s.ScriptedBy);
+        Assert.False(s.Det);
+        Assert.False(s.PadsDisabled);
+        Assert.Equal(0, s.DumpSticksWatch);
+    }
+
+    [Theory]
+    [InlineData("--dump-sticks=15", 15)]
+    [InlineData("--dump-sticks=500", 120)]
+    [InlineData("--dump-sticks=0", 0)]
+    [InlineData("--dump-sticks=twist", 0)]
+    public void DumpSticksTakesAWatchOfOneToAHundredAndTwentySeconds(string arg, int seconds)
+    {
+        var s = S(arg);
+        Assert.True(s.DumpSticks);
+        Assert.False(s.Det);
+        Assert.Equal(seconds, s.DumpSticksWatch);
+    }
+
     // ---- The --det bundle ----------------------------------------------------------------------
 
     [Theory]

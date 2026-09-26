@@ -45,6 +45,13 @@ internal static class CutsceneFastForwardSuites
     // the whole episode reads a little below the held rate; this is well clear of both.
     private const float MinMeasuredRate = 2f;
 
+    private enum Hold
+    {
+        None,
+        Scripted,
+        Stick,
+    }
+
     [Suite("campaign-cutscene-fast-forward",
         "a held input fast-forwards a cutscene the player may not skip, over CM02's BUILT world: "
         + "the mission's capture raises no hold code, so its episode takes the rate rather than a "
@@ -52,7 +59,7 @@ internal static class CutsceneFastForwardSuites
         + "code in the same order and at the same time on the definition's own clock, flies the "
         + "same pose path through that clock, and only reaches the end sooner in real seconds "
         + "-- with the rate reaching the definitions of that episode alone and every one of them "
-        + "handed back at 1 when it ends")]
+        + "handed back at 1 when it ends; a stick's declined skip press, held, fast-forwards it the same way")]
     internal static void HeldFastForward(TestContext ctx)
     {
         ctx.RequireData(ctx.ZrdrPath, $"zrdr archive");
@@ -87,16 +94,19 @@ internal static class CutsceneFastForwardSuites
         report.AppendLine($"'{call.Anim}' authors callback {call.Code}, closure of {closure.Count} definition(s)");
 
         var posed = First(world.Runtime.FindNodes(PoseNode));
-        var played = Play(ctx, world, call.Anim, closure, posed, held: false, report);
-        var held = Play(ctx, world, call.Anim, closure, posed, held: true, report);
+        var played = Play(ctx, world, call.Anim, closure, posed, Hold.None, report);
+        var held = Play(ctx, world, call.Anim, closure, posed, Hold.Scripted, report);
         Compare(ctx, played, held, report);
+        var stick = Play(ctx, world, call.Anim, closure, posed, Hold.Stick, report);
+        CompareStick(ctx, played, stick);
         CheckScope(ctx, world, call.Anim, report);
     }
 
-    // One played leg. `held` holds the fast-forward the whole way through, which is the player
-    // holding the key from the first frame; the rate's own ramp is what keeps that from a jump.
+    // One played leg. The scripted hold is a key held from the first frame to the last.
+    // The rate's own ramp keeps that from a jump. The stick hold presses a stick's skip on the
+    // episode's first frame and keeps the trigger down.
     private static Leg Play(TestContext ctx, TestWorld world, string anim,
-        IReadOnlyList<AnimDefinition> closure, Node3D? posed, bool held, StringBuilder report)
+        IReadOnlyList<AnimDefinition> closure, Node3D? posed, Hold hold, StringBuilder report)
     {
         var cutscene = new CutsceneController();
         ctx.Host.AddChild(cutscene);
@@ -119,7 +129,12 @@ internal static class CutsceneFastForwardSuites
             int seen = 0;
             for (float now = 0f; now < PlayBudgetS; now += StepDt)
             {
-                cutscene.HoldFastForward(held);
+                cutscene.HoldFastForward(hold == Hold.Scripted);
+                if (hold == Hold.Stick && leg.StickSkipped == null && cutscene.Playing)
+                {
+                    leg.StickSkipped = cutscene.TakeStickPress(0, () => true);
+                }
+
                 clock.BeginFrame(StepDt);
                 world.Runtime.Advance(StepDt);
                 cutscene.Tick();
@@ -156,7 +171,8 @@ internal static class CutsceneFastForwardSuites
             cutscene.Free();
         }
 
-        report.AppendLine($"{(held ? "held" : "1x  ")}: {leg.Beats.Count} code(s) "
+        string label = hold switch { Hold.Scripted => "held", Hold.Stick => "stick", _ => "1x  " };
+        report.AppendLine($"{label}: {leg.Beats.Count} code(s) "
             + $"[{string.Join(",", Codes(leg))}], last at {leg.LastRealS:0.##} s real / "
             + $"{leg.LastDefS:0.##} s definition, episode ended {leg.EndedAtS:0.##} s, "
             + $"peak rate {leg.PeakRate:0.##}, end rate {leg.EndRate:0.##}");
@@ -201,6 +217,20 @@ internal static class CutsceneFastForwardSuites
         ctx.Check(measured >= MinMeasuredRate,
             $"by a factor of {measured:0.##}, which is the held rate less what the ramp costs at the start");
         ComparePose(ctx, played, held, report);
+    }
+
+    // The stick's leg. Its skip press is declined on a scene with no skip armed. The trigger kept
+    // down then fast-forwards the scene as a held key does.
+    private static void CompareStick(TestContext ctx, Leg played, Leg stick)
+    {
+        ctx.Check(stick.StickSkipped == false,
+            $"a stick's skip press on the episode is declined, since no skip is armed ({stick.StickSkipped?.ToString() ?? "never pressed"})");
+        ctx.Check(SameCodes(played, stick),
+            $"and the trigger held after it raises the same codes in the same order ([{string.Join(",", Codes(stick))}])");
+        ctx.Check(Mathf.IsEqualApprox(stick.PeakRate, CutsceneFastForward.Target) && stick.EndRate == 1f,
+            $"at the whole rate while held ({stick.PeakRate:0.##}), handed back at 1 when the episode ends ({stick.EndRate:0.##})");
+        ctx.Check(stick.LastRealS < played.LastRealS,
+            $"so the stick reaches the last code sooner in real seconds ({stick.LastRealS:0.##} s against {played.LastRealS:0.##} s)");
     }
 
     // The pose half: at a given time on the definition's own clock the posed node must be where
@@ -354,6 +384,9 @@ internal static class CutsceneFastForwardSuites
     {
         public readonly List<Beat> Beats = new();
         public readonly List<(float DefS, Vector3 At)> Path = new();
+
+        // What the stick leg's skip press returned; null until it pressed.
+        public bool? StickSkipped;
         public float DefTimeS;
         public float PeakRate = 1f;
         public float EndRate = 1f;

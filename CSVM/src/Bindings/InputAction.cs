@@ -132,4 +132,13 @@ public enum InputAction
     SnapLookMode,
     SmoothLookMode,
     TrackTarget,
+
+    // The absolute throttle, a lever or wheel whose whole travel is the commanded setting. This
+    // port's own action: the original reads no axis at all. Appended because the enum is positional.
+    ThrottleLever,
+
+    // Skipping a cutscene or cinema, or fast-forwarding one the player may not skip. Read from the
+    // sticks alone, since every key and pad button already skips (StickSkip). Appended because the
+    // enum is positional.
+    SkipCutscene,
 }
