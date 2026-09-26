@@ -71,7 +71,7 @@ public sealed class NetPlayFeature : IMenuFeature
     public const double RefuseGraceSeconds = 1.0;
 
     /// <summary>What a LAN search asks at unless a suite points it elsewhere.</summary>
-    public const string BroadcastAddress = "255.255.255.255";
+    public const string BroadcastAddress = LanBroadcast.Limited;
 
     /// <summary>The airframe a co-op guest flies when its own pick is not one the host offers: the
     /// campaign's first aeroplane, which every hangar holds.</summary>
@@ -178,6 +178,11 @@ public sealed class NetPlayFeature : IMenuFeature
     /// <summary>Where a LAN search sends its query: the broadcast address by default. A suite sets
     /// the loopback, since a broadcast on the loopback proves nothing on Windows.</summary>
     public string SearchAddress { get; set; } = BroadcastAddress;
+
+    /// <summary>The IPv4 networks this machine sits on, as address and mask, read each round. A
+    /// search at the broadcast address also asks at each one's directed broadcast. Null asks at
+    /// <see cref="SearchAddress"/> alone.</summary>
+    public Func<IReadOnlyList<(string Address, string Mask)>>? LanNetworks { get; init; }
 
     /// <summary>How many other peers are on the wire: the guests a host has, or 1 once a guest
     /// has reached its host. A guest a campaign host refused as full is not counted.</summary>
@@ -598,7 +603,7 @@ public sealed class NetPlayFeature : IMenuFeature
         {
             try
             {
-                _search = new LanSearch(_lan(BindAddress, 0), SearchAddress, LanDiscovery.Port);
+                _search = new LanSearch(_lan(BindAddress, 0), SearchTargets, LanDiscovery.Port);
             }
             catch (Exception e) when (e is InvalidOperationException or ArgumentException)
             {
@@ -893,6 +898,11 @@ public sealed class NetPlayFeature : IMenuFeature
         OpenResponder();
         MapPort();
     }
+
+    private IReadOnlyList<string> SearchTargets() =>
+        SearchAddress == BroadcastAddress && LanNetworks != null
+            ? LanBroadcast.Targets(LanNetworks())
+            : new[] { SearchAddress };
 
     // A second door on this machine finds the discovery port taken. It still hosts; it only
     // goes unanswered on the LAN, and a guest can still type its address.

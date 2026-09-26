@@ -122,10 +122,18 @@ the query came from, and reads at most `QueriesPerPoll` a frame so a flood costs
 Anything that is not a whole query of this version is read and dropped unanswered.
 
 ## src/Net/LanSearch.cs
-A guest's search for open doors. `Ask` starts a round with a fresh token sent to the broadcast
-address, `Poll` keeps the replies carrying that token, and `Games` lists what answered the current
-or the last round in first-answer order, so a host that closed leaves on the next round. Replies to
-an older round and foreign datagrams are dropped. Read `LanDiscoveryTests.cs`.
+A guest's search for open doors. `Ask` starts a round with a fresh token, sent to every address
+its seam yields that round (`LanBroadcast.Targets` in a shipped door, one address in a suite).
+`Poll` keeps the replies carrying that token, and `Games` lists what answered the current or the
+last round in first-answer order, so a host that closed leaves on the next round. Replies to an
+older round and foreign datagrams are dropped. Read `LanDiscoveryTests.cs`.
+
+## src/Net/LanBroadcast.cs
+Where a search asks each round: `Limited` (255.255.255.255) first, then the directed broadcast
+(address with every host bit set) of each IPv4 network the machine sits on, once each, loopback and
+single-host masks skipped. ⚠ The limited broadcast alone is not enough: Windows sends it out of one
+adapter only, so a machine with several adapters can miss its host's network. The networks come
+from `Utils/LocalNetworks.cs` through `NetPlayFeature.LanNetworks`.
 
 ## src/Net/LoopbackLan.cs
 The in-process datagram network the suites and the screenshot aids run the LAN search on, the

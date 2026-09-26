@@ -1989,6 +1989,7 @@ public partial class Launcher : Node3D
             Net.NetCarrier.Lan)
         {
             Version = Net.NetBuildVersion.Parse(BuildVersion.Current),
+            LanNetworks = LocalNetworks.Ipv4,
         };
         host.Features.Add(_netDoor);
         host.AddSeat(seat);

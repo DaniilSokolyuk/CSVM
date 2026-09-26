@@ -588,8 +588,13 @@ message id is spent.
 Both are 48 bytes. The query is padded to the reply's width so a reply is never larger than the
 query that asked for it, which keeps a responder from amplifying a forged-source flood. A responder
 answers only a datagram that is exactly 48 bytes with the magic, this version and the query kind,
-and answers it to the address it came from. A search broadcasts one query a round with a fresh
-token and keeps only replies carrying it. A game is listed at the reply's source address and the
+and answers it to the address it came from. A search sends one query a round with a fresh token
+and keeps only replies carrying it. The round sends that query to the limited broadcast
+255.255.255.255 and to the directed broadcast (address with every host bit set) of each IPv4
+network the machine sits on, once per address. Windows sends a limited broadcast out of one adapter
+only, so on a machine with several adapters it can miss the host's network, while a directed
+broadcast is routed out of the adapter on that network. The responder binds every interface, so a
+directed broadcast on any of the host's networks reaches it. A game is listed at the reply's source address and the
 port the reply names, and it leaves the list after two rounds without a reply. A game whose build
 version does not play with the searcher's is listed in grey with its version in the Status
 column, and Join Game refuses it with both versions named before any socket opens. The discovery

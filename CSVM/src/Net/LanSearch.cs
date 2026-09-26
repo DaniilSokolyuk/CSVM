@@ -4,8 +4,8 @@ using System.Collections.Generic;
 namespace CSVM.Net;
 
 /// <summary>
-/// A guest's search for open doors on its network. Each <see cref="Ask"/> sends one query under a
-/// fresh token and starts a round; <see cref="Poll"/> reads the answers to that round. A game silent
+/// A guest's search for open doors on its networks. Each <see cref="Ask"/> sends a query under a
+/// fresh token to every address the round asks at, and starts a round; <see cref="Poll"/> reads the answers to that round. A game silent
 /// through both the last round and the current one is dropped. So a host that closed leaves the
 /// list on the next round. Engine-free: the socket is handed in.
 /// </summary>
@@ -20,7 +20,7 @@ public sealed class LanSearch : IDisposable
     public const int MaxGames = 64;
 
     private readonly ILanSocket _socket;
-    private readonly string _address;
+    private readonly Func<IReadOnlyList<string>> _addresses;
     private readonly int _port;
     private readonly Random _random;
     private readonly byte[] _query = new byte[LanDiscovery.Size];
@@ -29,12 +29,20 @@ public sealed class LanSearch : IDisposable
     private int _round;
 
     /// <summary>A search over <paramref name="socket"/>, which it owns from here on. Its queries go
-    /// to <paramref name="address"/> on <paramref name="port"/>: the broadcast address on a real
-    /// network, the loopback in a suite. <paramref name="random"/> draws the tokens.</summary>
+    /// to <paramref name="address"/> on <paramref name="port"/>, the loopback in a suite.
+    /// <paramref name="random"/> draws the tokens.</summary>
     public LanSearch(ILanSocket socket, string address, int port, Random? random = null)
+        : this(socket, Only(address), port, random)
+    {
+    }
+
+    /// <summary>A search whose every round sends one query to each address
+    /// <paramref name="addresses"/> yields, asked afresh each round so an adapter that comes up
+    /// is reached. On a real network that is <see cref="LanBroadcast.Targets"/>.</summary>
+    public LanSearch(ILanSocket socket, Func<IReadOnlyList<string>> addresses, int port, Random? random = null)
     {
         _socket = socket ?? throw new ArgumentNullException(nameof(socket));
-        _address = string.IsNullOrWhiteSpace(address) ? throw new ArgumentException("a search needs an address", nameof(address)) : address;
+        _addresses = addresses ?? throw new ArgumentNullException(nameof(addresses));
         _port = port;
         _random = random ?? new Random();
     }
@@ -58,15 +66,18 @@ public sealed class LanSearch : IDisposable
         }
     }
 
-    /// <summary>Starts a round: drops the games that did not answer the last one and sends a query
-    /// under a fresh token.</summary>
+    /// <summary>Starts a round: drops the games that did not answer the last one. Then it sends
+    /// one query under a fresh token to every address the round asks at.</summary>
     public void Ask()
     {
         _games.RemoveAll(entry => entry.Round < _round);
         _round++;
         _token = (uint)_random.Next(1, int.MaxValue);
         int length = LanDiscovery.WriteQuery(_query, _token);
-        _socket.Send(_address, _port, _query.AsSpan(0, length));
+        foreach (string address in _addresses())
+        {
+            _socket.Send(address, _port, _query.AsSpan(0, length));
+        }
     }
 
     /// <summary>Reads the answers waiting. An answer to an earlier round, or anything that is not
@@ -92,6 +103,17 @@ public sealed class LanSearch : IDisposable
 
     /// <summary>Closes the socket.</summary>
     public void Dispose() => _socket.Dispose();
+
+    private static Func<IReadOnlyList<string>> Only(string address)
+    {
+        if (string.IsNullOrWhiteSpace(address))
+        {
+            throw new ArgumentException("a search needs an address", nameof(address));
+        }
+
+        var one = new[] { address };
+        return () => one;
+    }
 
     private void Heard(LanGame game)
     {

@@ -2506,7 +2506,8 @@ two machines at the controls.
 - `NetPlayFeature(openHost, openJoin, map, unmap, lan)`: `lan` is `Func<string, int, ILanSocket>?`
   (bind address, port), `NetCarrier.Lan` in `Launcher.cs`, null on a Steam build (no search, no
   responder). `BindAddress` (default `*`) and `SearchAddress` (default broadcast) are what a suite
-  points at `127.0.0.1`.
+  points at `127.0.0.1`. `LanNetworks` (`Utils/LocalNetworks.Ipv4` in `Launcher.cs`) adds each
+  network's directed broadcast to a search at the broadcast address.
 - Search surface: `CanSearch`, `Search()` (one round per call), `StopSearch()`, `Searching`,
   `SearchRounds`, `Games`, `SearchFault`, `JoinGame(LanGame)`. Host side: `Answering`.
 - Faults a guest board reads: `CoopDoorText.HostClosed`, `GameFull`, `HostLeft`.
@@ -2537,6 +2538,13 @@ two machines at the controls.
 - `InMission` is never advertised, since the door closes on launch; it waits on a door that stays
   open through the flight.
 - Ready marks on the guest chips wait for C24 or F52.
+
+**Found at the controls.** A guest with several IPv4 adapters (Ethernet, unplugged adapters on
+169.254/16, the WSL switch) never listed a host on its Ethernet network, while a direct-IP join
+worked. Windows sent the limited broadcast out of another adapter; a directed broadcast to
+192.168.178.255 was answered. Each search round now also asks at every up network's directed
+broadcast (`Net/LanBroadcast.cs`, `Utils/LocalNetworks.cs`). The responder already binds every
+interface. The two-machine search is still owed at the controls on the fixed build.
 
 **Original approach (kept for reference).**
 

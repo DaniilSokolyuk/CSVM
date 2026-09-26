@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using CSVM.Net;
+using CSVM.UI.Menu;
 using Xunit;
 
 namespace CSVM.Tests;
@@ -138,5 +140,134 @@ public class LanDiscoveryTests
         var lan = new LoopbackLan();
         using var taken = lan.Bind("127.0.0.1", LanDiscovery.Port);
         Assert.Throws<InvalidOperationException>(() => lan.Bind("*", LanDiscovery.Port));
+    }
+
+    [Fact]
+    public void ADirectedBroadcastSetsEveryHostBitOfTheNetwork()
+    {
+        Assert.Equal("192.168.178.255", LanBroadcast.Directed("192.168.178.26", "255.255.255.0"));
+        Assert.Equal("172.19.239.255", LanBroadcast.Directed("172.19.224.1", "255.255.240.0"));
+        Assert.Equal("169.254.255.255", LanBroadcast.Directed("169.254.123.4", "255.255.0.0"));
+        Assert.Equal("10.255.255.255", LanBroadcast.Directed("10.1.2.3", "255.0.0.0"));
+
+        // ABLE-TO-FAIL CONTROL: what is not a dotted IPv4 quad has no broadcast.
+        Assert.Null(LanBroadcast.Directed("192.168.178", "255.255.255.0"));
+        Assert.Null(LanBroadcast.Directed("192.168.178.256", "255.255.255.0"));
+        Assert.Null(LanBroadcast.Directed("fe80::1", "255.255.255.0"));
+    }
+
+    [Fact]
+    public void TheTargetsAreTheLimitedBroadcastThenEachNetworkOnce()
+    {
+        // The guest machine the search failed on: Ethernet, two unplugged adapters on one
+        // link-local network, the WSL switch, a second Ethernet address and the loopback.
+        var targets = LanBroadcast.Targets(new[]
+        {
+            ("192.168.178.26", "255.255.255.0"),
+            ("169.254.123.4", "255.255.0.0"),
+            ("169.254.183.49", "255.255.0.0"),
+            ("172.19.224.1", "255.255.240.0"),
+            ("192.168.178.40", "255.255.255.0"),
+            ("127.0.0.1", "255.0.0.0"),
+            ("10.8.0.6", "255.255.255.255"),
+            ("not an address", "255.255.255.0"),
+        });
+
+        Assert.Equal(
+            new[] { "255.255.255.255", "192.168.178.255", "169.254.255.255", "172.19.239.255" },
+            targets);
+        Assert.Equal(new[] { LanBroadcast.Limited }, LanBroadcast.Targets(Array.Empty<(string, string)>()));
+    }
+
+    [Fact]
+    public void ASearchAsksAtEveryTargetEachRoundAndSoHearsAHostOnlyADirectedBroadcastReaches()
+    {
+        var guestNetworks = new[] { ("192.168.178.26", "255.255.255.0"), ("172.19.224.1", "255.255.240.0") };
+        var socket = new MultiHomedLan("192.168.178.255");
+        using var search = new LanSearch(socket, () => LanBroadcast.Targets(guestNetworks), LanDiscovery.Port, new Random(5));
+
+        search.Ask();
+        search.Poll();
+        var game = Assert.Single(search.Games);
+        Assert.Equal(MultiHomedLan.Host, game.Address);
+        Assert.Equal(new[] { "255.255.255.255", "192.168.178.255", "172.19.239.255" }, socket.Sent);
+        Assert.All(socket.Sizes, size => Assert.Equal(LanDiscovery.Size, size));
+
+        // The seam is asked afresh each round, so the next round sends to every target again.
+        search.Ask();
+        search.Poll();
+        Assert.Single(search.Games);
+        Assert.Equal(6, socket.Sent.Count);
+
+        // ABLE-TO-FAIL CONTROL: asked at the limited broadcast alone, as before, the same host is
+        // never heard, since that broadcast leaves by another adapter.
+        var alone = new MultiHomedLan("192.168.178.255");
+        using var limited = new LanSearch(alone, LoopbackLan.Broadcast, LanDiscovery.Port, new Random(5));
+        limited.Ask();
+        limited.Poll();
+        Assert.Empty(limited.Games);
+        Assert.Equal(new[] { "255.255.255.255" }, alone.Sent);
+    }
+
+    [Fact]
+    public void ADoorSearchingTheBroadcastAddressAlsoAsksAtItsNetworks()
+    {
+        var socket = new MultiHomedLan("192.168.178.255");
+        var door = new NetPlayFeature(
+            (_, _, _) => throw new InvalidOperationException("no host here"),
+            (_, _) => throw new InvalidOperationException("no join here"),
+            lan: (_, _) => socket)
+        {
+            LanNetworks = () => new[] { ("192.168.178.26", "255.255.255.0") },
+        };
+
+        door.Search();
+        Assert.Equal(new[] { "255.255.255.255", "192.168.178.255" }, socket.Sent);
+
+        // ABLE-TO-FAIL CONTROL: a door a suite pointed elsewhere asks there alone.
+        door.StopSearch();
+        socket.Sent.Clear();
+        door.SearchAddress = "127.0.0.1";
+        door.Search();
+        Assert.Equal(new[] { "127.0.0.1" }, socket.Sent);
+    }
+
+    // A guest on several adapters with the host on one of them. The limited broadcast leaves by
+    // another adapter, so only a query sent to the reachable address is answered.
+    private sealed class MultiHomedLan : ILanSocket
+    {
+        public const string Host = "192.168.178.35";
+
+        private readonly string _reaches;
+        private readonly Queue<byte[]> _inbox = new();
+
+        public MultiHomedLan(string reaches) => _reaches = reaches;
+
+        public List<string> Sent { get; } = new();
+
+        public List<int> Sizes { get; } = new();
+
+        public void Send(string address, int port, ReadOnlySpan<byte> datagram)
+        {
+            Sent.Add(address);
+            Sizes.Add(datagram.Length);
+            if (address == _reaches && LanDiscovery.TryReadQuery(datagram, out uint token))
+            {
+                var reply = new byte[LanDiscovery.Size];
+                LanDiscovery.WriteReply(reply, token, 47500, Coop, Build);
+                _inbox.Enqueue(reply);
+            }
+        }
+
+        public byte[]? Receive(out string address, out int port)
+        {
+            address = Host;
+            port = LanDiscovery.Port;
+            return _inbox.Count == 0 ? null : _inbox.Dequeue();
+        }
+
+        public void Dispose()
+        {
+        }
     }
 }
