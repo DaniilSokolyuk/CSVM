@@ -99,6 +99,123 @@ internal static class NetCoopMissionSuites
             $"no file under the user's profile store was written, added or removed ({before.Count} before, {after.Count} after)");
     }
 
+    [Suite("net-coop-restart",
+        "a co-op mission restarted from the host's pause sheet, host and one guest over a lossy "
+        + "loopback: the guest's sheet offers no Restart while the host's does, and the host's "
+        + "restart relaunches both machines into the same mission through the door, with no second "
+        + "session bound on the carrier and the guest's seat flying in the new field")]
+    internal static void BCoopRestartTakesTheGuestAlong(TestContext ctx)
+    {
+        var mission = Mission(ctx);
+        var stock = StockLoadouts.Load();
+        var mesh = LoopbackTransport.Mesh(2, new LoopbackConditions(0.03, 0.01, 0.25), new Random(2404));
+        var host = Door(mesh[0]);
+        var guest = Door(mesh[1]);
+        guest.PlayerName = GuestName;
+        var ambient = NetCombatSuites.Ambient.Save();
+        Ends? hostEnd = null;
+        Ends? guestEnd = null;
+        try
+        {
+            host.OpenCoopHost(NetPlayFeature.CoopHumans - 1);
+            host.Offer(mission.Seq, "Host", 1);
+            guest.OpenJoin();
+            Pump(SettleSteps, host, guest);
+            Select(host, mission);
+            Pump(SettleSteps, host, guest);
+            guest.PickCoop(NetPlayFeature.StarterAirframe, true);
+            Pump(SettleSteps, host, guest);
+            if (!guest.IsCoopGuest || !host.CoopAllReady)
+            {
+                ctx.Check(false, $"the guest joins the host's campaign door and is Ready ({guest.Stage}, ready {host.CoopAllReady})");
+                return;
+            }
+
+            hostEnd = Launch(ctx, mission, stock, host, HostAmmo, out _);
+            guestEnd = Follow(ctx, mission, stock, guest, default, hostEnd, host);
+            if (!hostEnd.Built || !guestEnd.Built)
+            {
+                ctx.Check(false, $"the first flight builds (host {hostEnd.Built}, guest {guestEnd.Built})");
+                return;
+            }
+
+            ctx.Check(hostEnd.Session.PauseRestart != null && hostEnd.Session.RestartOffered,
+                $"ABLE-TO-FAIL CONTROL: the host's pause sheet offers Restart");
+            ctx.Check(guestEnd.Session.PauseRestart == null && !guestEnd.Session.RestartOffered,
+                $"a guest's pause sheet offers no Restart in a network session");
+            (hostEnd, guestEnd) = Restart(ctx, mission, stock, hostEnd, guestEnd, host, guest);
+        }
+        finally
+        {
+            guestEnd?.Close();
+            hostEnd?.Close();
+            ambient.Restore();
+            guest.Discard();
+            host.Discard();
+        }
+    }
+
+    // The host's restart in the launcher's order: its session freed, the door's relaunch, the new
+    // field on the same carrier. The guest then flies on until the new round reaches it, and
+    // follows the way its menu does.
+    private static (Ends Host, Ends Guest) Restart(TestContext ctx, CampaignMission mission, StockLoadouts stock,
+        Ends hostEnd, Ends guestEnd, NetPlayFeature hostDoor, NetPlayFeature guestDoor)
+    {
+        hostEnd.Close();
+        var launch = Launcher.CoopRelaunch(hostDoor);
+        ctx.Check(!Launcher.CoopGuestFlightOver(guestDoor),
+            $"ABLE-TO-FAIL CONTROL: the guest's flight goes on until the host's new round crosses the link");
+        Ends? next = null;
+        string threw = "";
+        try
+        {
+            next = launch == null ? null : Launch(ctx, mission, stock, hostDoor, launch, HostAmmo, out _);
+        }
+        catch (InvalidOperationException e)
+        {
+            threw = e.Message;
+        }
+
+        ctx.Check(next is { Built: true } && threw.Length == 0,
+            $"the host's restart builds its new flight on the lobby's carrier with no exception (launch {launch != null}, \"{threw}\")");
+        if (next == null)
+        {
+            return (hostEnd, guestEnd);
+        }
+
+        // The host steps first, so its new session's first sends are on the wire while the guest's
+        // old session is still bound. None of them may land in that session.
+        int steps = 0;
+        for (; steps < OpenerSteps && !Launcher.CoopGuestFlightOver(guestDoor); steps++)
+        {
+            next.Session._PhysicsProcess(GameClock.FixedDt);
+            hostDoor.Step(GameClock.FixedDt);
+            guestEnd.Session._PhysicsProcess(GameClock.FixedDt);
+            guestDoor.Step(GameClock.FixedDt);
+        }
+
+        ctx.Check(Launcher.CoopGuestFlightOver(guestDoor) && guestDoor.Stage == NetDoorStage.Joined,
+            $"the host's new round ends the guest's flight after {steps} step(s), its link still up ({guestDoor.Stage})");
+        guestDoor.LeaveCoopMission();
+        guestEnd.Close();
+        guestDoor.Reclaim();
+        var again = Follow(ctx, mission, stock, guestDoor, default, next, hostDoor);
+        ctx.Check(again.Built && guestDoor.CoopFlow?.MissionSeq == mission.Seq,
+            $"the guest follows into the restarted mission (built {again.Built}, seq {guestDoor.CoopFlow?.MissionSeq} of {mission.Seq})");
+        if (!again.Built)
+        {
+            return (next, again);
+        }
+
+        Fly(SettleSteps, new[] { next, again }, new[] { hostDoor, guestDoor });
+        ctx.Check(next.Session.NetSeats.Count == 2 && again.Session.NetSeats.Count == 2
+                  && next.Session.SeatRigs[1].Controller is { Inert: false },
+            $"the guest's seat stands in the restarted field on both machines and flies on the host ({next.Session.NetSeats.Count}, {again.Session.NetSeats.Count} seat(s))");
+        ctx.Check(hostDoor.CoopGuests.All(g => !g.Left) && guestDoor.Stage == NetDoorStage.Joined,
+            $"and the guest was never taken as walking out, nor its door failed ({guestDoor.Stage}, \"{guestDoor.Fault}\")");
+        return (next, again);
+    }
+
     // Three seats: the fits and names reach every machine, Lucy walks out, and the host's loss
     // ends the mission on the guest that stayed.
     private static void FirstFlight(TestContext ctx, CampaignMission mission, StockLoadouts stock,
@@ -368,9 +485,12 @@ internal static class NetCoopMissionSuites
     // The host's launch: the door names the flight and the launcher's helper builds the field and
     // the fits. The fits go out before the session's opener.
     private static Ends Launch(TestContext ctx, CampaignMission mission, StockLoadouts stock,
-        NetPlayFeature door, int[] ammo, out CoopFit[] seatFits)
+        NetPlayFeature door, int[] ammo, out CoopFit[] seatFits) =>
+        Launch(ctx, mission, stock, door, door.BuildLaunch()!, ammo, out seatFits);
+
+    private static Ends Launch(TestContext ctx, CampaignMission mission, StockLoadouts stock,
+        NetPlayFeature door, MenuNetLaunch launch, int[] ammo, out CoopFit[] seatFits)
     {
-        var launch = door.BuildLaunch()!;
         var own = CampaignLoadout.For(CoopFit.Of(ammo, null), stock);
         var planes = new[] { UI.Hangar.PlanePickerRoster.AirframeNode(NetPlayFeature.StarterAirframe) };
         (var roster, seatFits) = Launcher.CoopLaunchField(door, launch.Transport, planes, new[] { own }, stock);

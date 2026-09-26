@@ -1156,10 +1156,18 @@ public partial class Launcher : Node3D
         AddChild(cinema);
     }
 
-    /// <summary>Whether a co-op guest's flight is over. Its host named another board, or the
-    /// link to the host is gone and the door has failed.</summary>
-    internal static bool CoopGuestFlightOver(UI.Menu.NetPlayFeature door) =>
-        !door.IsCoopGuest || door.CoopFlow is not { Screen: Net.NetCoopScreen.InMission };
+    /// <summary>Whether a co-op guest's flight is over. Its host named another board or restarted
+    /// the mission, or the link to the host is gone and the door has failed.</summary>
+    internal static bool CoopGuestFlightOver(UI.Menu.NetPlayFeature door) => door.CoopFlightOver;
+
+    /// <summary>A co-op host's restart, the door's half. The door takes the wire back from the
+    /// flight that ends, then launches again under a new round. That round ends every guest's
+    /// flight and holds the next opener for it. Null when the door will not launch.</summary>
+    internal static UI.Menu.MenuNetLaunch? CoopRelaunch(UI.Menu.NetPlayFeature door)
+    {
+        door.Reclaim();
+        return door.IsCoopHost ? door.BuildLaunch() : null;
+    }
 
     /// <summary>The fit a co-op seat flown elsewhere carries: from <paramref name="launched"/> on
     /// the host that launched it, or the host's word through <paramref name="door"/> on a guest.
@@ -1393,7 +1401,7 @@ public partial class Launcher : Node3D
             return;
         }
         _launchFramesWaited = -1;
-        bool built = LaunchSession();
+        bool built = TryLaunchSession();
         // The screen stays up while the build's own owed steps run, and comes down on the frame
         // they finish. A load screen left up past that would draw over the first frame of the
         // world, and over a --screenshot capture.
@@ -1419,6 +1427,22 @@ public partial class Launcher : Node3D
         // the log carries the fact for both presentations.
         Log.Warn("ui", $"menu: the build failed, back at the top level of {_menuHost?.Selected}");
         BuiltInMenu?.ShowError($"Could not load {_spec.Chapter} / {string.Join(", ", _spec.PlaneNames)}, see the log.");
+    }
+
+    // A build that throws counts as one that failed. The caller's own failure path then takes the
+    // load screen down and returns a menu launch to the menu. An escaped exception would leave the
+    // screen up for good, with a network guest dropped behind it.
+    private bool TryLaunchSession()
+    {
+        try
+        {
+            return LaunchSession();
+        }
+        catch (System.Exception e)
+        {
+            Log.Error("core", $"launch: the session build threw {e.GetType().Name}: {e.Message}\n{e.StackTrace}");
+            return false;
+        }
     }
 
     // Shows the load screen and owes a build from the next frame. Every interactive path in (the
@@ -2499,15 +2523,46 @@ public partial class Launcher : Node3D
     // mission and a pinned one (--seed=/--det) still repeats.
     private void RestartSession()
     {
+        // ⚠ Never rebuild a network flight past its door. A second session on a carrier the first
+        // still holds throws, and the load screen never comes down.
+        if (_netWire != null && (!_coopFlight || !_netIsHost || _netDoor is not { IsCoopHost: true }))
+        {
+            Log.Warn("core", $"restart: this network flight has no co-op door to relaunch through, it flies on");
+            return;
+        }
+
         if (_session != null)
         {
             // Freed at the end of THIS frame, so the build owed for the next one finds it gone.
             _session.QueueFree();
             _session = null;
         }
+
+        if (_netWire != null && !RelaunchCoop(_netDoor!))
+        {
+            return;
+        }
+
         StepSortieSeed();
         Log.Info("core", $"restart: rebuilding {_spec.Chapter} / {_spec.ModeName} from the same settings");
         BeginLaunch();
+    }
+
+    // A co-op host's restart on the co-op retry's own launch path. The door takes the wire back
+    // and launches again, and the new field and fits go out before the opener. Every guest's
+    // flight ends on the new round, and each follows into the new one.
+    private bool RelaunchCoop(NetPlayFeature door)
+    {
+        _netWire = null;
+        if (CoopRelaunch(door) is not { } launch)
+        {
+            Log.Warn("core", $"restart: the co-op door would not launch again, back at the menu");
+            ReturnToMenu(MenuReturnDestination.TopLevel);
+            return false;
+        }
+
+        TakeCoopLaunch(launch, _spec.PlaneNames, _spec.MenuLoadouts);
+        return true;
     }
 
     // Prints the master the next session will draw from. Per session rather than per process

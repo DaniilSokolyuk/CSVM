@@ -533,6 +533,14 @@ public partial class GameSession : Node3D
     /// wrap-up board is holding a machine.</summary>
     internal PauseState? Pause => _pauseState;
 
+    /// <summary>Whether the pause sheet offers Restart. A network guest's sheet does not: the
+    /// flight is its host's, which restarts it for every machine.</summary>
+    internal bool RestartOffered => _net is null or { IsHost: true };
+
+    /// <summary>The Restart the pause board built for this session carries, null where it offers
+    /// none. A suite reads it, and fires it, through this.</summary>
+    internal Action? PauseRestart => _originalPause?.Restart ?? (_pauseBoard as PauseBoard)?.Restart;
+
     /// <summary>This session's own sim clock. Two sessions in one process share one
     /// <see cref="GameClock.Current"/>, so a suite driving both reads each end's here.</summary>
     internal GameClock? SimClock => _clock;
@@ -881,6 +889,9 @@ public partial class GameSession : Node3D
         if (what == (int)NotificationExitTree)
         {
             _flightRoster?.ClearMembership();
+            // ⚠ Release the lobby's carrier here. A relaunch binds the next session on it, and a
+            // carrier still held throws there and leaves the load screen up.
+            _net?.Release();
             // A run that quits inside the session build (the headless probes) never renders a
             // frame, so this is the only place its startup breakdown can still be reported.
             // Idempotent: a session that did render has already emitted and this does nothing.
@@ -2667,9 +2678,10 @@ public partial class GameSession : Node3D
             ? null
             : () => OpenPauseOptions(pauseState.OwnerPlayerIndex);
         Control pauseBoard;
+        Action? restart = RestartOffered ? Rerun : null;
         if (BuildOriginalPauseBoard(pauseState, state.WorldRuntime) is { } sheet)
         {
-            sheet.Restart = Rerun;
+            sheet.Restart = restart;
             sheet.Exit = _exitSession;
             sheet.Preferences = preferences;
             // Read at press time, not captured: the owner is whoever paused THIS time, and only
@@ -2681,7 +2693,7 @@ public partial class GameSession : Node3D
         else
         {
             var builtIn = PauseBoard.Build(pauseState, exitsToMenu: _menuDriven, MenuInputFor);
-            builtIn.Restart = Rerun;
+            builtIn.Restart = restart;
             builtIn.Exit = _exitSession;
             builtIn.Preferences = preferences;
             // Read at press time, not captured: the owner is whoever paused THIS time, and only that

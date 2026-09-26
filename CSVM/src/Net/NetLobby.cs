@@ -28,6 +28,7 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
     private readonly List<int> _bound = new();
     private readonly Dictionary<int, CoopPickMessage> _picks = new();
     private readonly Dictionary<int, CoopFit> _seatFits = new();
+    private readonly List<int> _unpicked = new();
 
     private readonly List<(int Peer, LobbyChatMessage Line)> _chat = new();
 
@@ -35,6 +36,12 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
     private readonly byte[] _scratch = new byte[DogfightRosterMessage.Size];
     private INetTransportListener? _listener;
     private SessionAdvertMessage? _advertising;
+
+    // The co-op flow a guest's session bound under, and whether the host has since opened another
+    // flight. ⚠ Past that point nothing reaches or leaves the bound session. The host's next
+    // opener is held for the next bind, and the old flight says nothing into the new one.
+    private CoopFlowMessage? _boundFlow;
+    private bool _flightOver;
 
     /// <summary>A lobby over <paramref name="inner"/>, which it binds at once. It names this build
     /// to every peer as <paramref name="version"/>.</summary>
@@ -92,6 +99,10 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
 
     /// <summary>Whether a session has bound this lobby.</summary>
     public bool Bound => _listener != null;
+
+    /// <summary>Whether the co-op host opened another flight while a session was bound here. That
+    /// session then hears nothing more, and what arrives is held for the next bind.</summary>
+    public bool FlightOver => _flightOver;
 
     /// <inheritdoc/>
     public int LocalPeer => _inner.LocalPeer;
@@ -157,6 +168,8 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
         }
 
         _listener = listener ?? throw new ArgumentNullException(nameof(listener));
+        _boundFlow = Flow;
+        _flightOver = false;
         _bound.Clear();
         _bound.AddRange(AllPeers);
         foreach (int peer in new List<int>(_bound))
@@ -173,12 +186,29 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
     }
 
     /// <summary>Takes the carrier back from the session that bound it, so the next flight can bind
-    /// it again. What was held for the old session is dropped with it.</summary>
+    /// it again. What was held for the old session is dropped with it. What arrived after the host
+    /// opened another flight is kept, since it is that flight's opener.</summary>
     public void Unbind()
     {
         _listener = null;
         _bound.Clear();
-        _held.Clear();
+        if (!_flightOver)
+        {
+            _held.Clear();
+        }
+
+        _flightOver = false;
+        _boundFlow = null;
+    }
+
+    /// <summary>Unbinds only when <paramref name="listener"/> is the session bound here. A session
+    /// being freed calls this, so a carrier a door already took back is left alone.</summary>
+    public void Release(INetTransportListener listener)
+    {
+        if (_listener != null && ReferenceEquals(_listener, listener))
+        {
+            Unbind();
+        }
     }
 
     /// <summary>Hands over every chat line that arrived since the last call, with the peer that
@@ -200,8 +230,13 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
     public void DropHeld() => _held.Clear();
 
     /// <inheritdoc/>
-    public void Send(int peer, ReadOnlySpan<byte> payload, NetReliability reliability, int channel = 0) =>
-        _inner.Send(peer, payload, reliability, channel);
+    public void Send(int peer, ReadOnlySpan<byte> payload, NetReliability reliability, int channel = 0)
+    {
+        if (!_flightOver)
+        {
+            _inner.Send(peer, payload, reliability, channel);
+        }
+    }
 
     /// <summary>Sends one lobby message to <paramref name="peer"/>, outside any session.</summary>
     /// <typeparam name="T">The message being sent.</typeparam>
@@ -235,10 +270,21 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
         _clashing.Remove(peer);
         _held.RemoveAll(held => held.Peer == peer);
         _picks.Remove(peer);
+        _unpicked.Remove(peer);
         if (_listener != null && _bound.Remove(peer))
         {
             _listener.OnPeerDisconnected(peer);
         }
+    }
+
+    /// <summary>A co-op host's restart: every guest's flight payloads are dropped until that guest
+    /// picks under the new round. What its old session sent meanwhile never reaches the new one.
+    /// </summary>
+    public void AwaitPicks()
+    {
+        _unpicked.Clear();
+        _unpicked.AddRange(AllPeers);
+        _held.Clear();
     }
 
     /// <inheritdoc/>
@@ -272,6 +318,10 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
         {
             Flow = flow;
             Flows++;
+            // A flight under a new round is the host's restart. The ending of a flight names a
+            // board instead, and a bound session still hears that flight's tail.
+            _flightOver |= _listener != null && _boundFlow is { Screen: NetCoopScreen.InMission } under
+                && flow.Screen == NetCoopScreen.InMission && flow.Epoch != under.Epoch;
             return;
         }
 
@@ -280,6 +330,12 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
             // A guest picks only on a board, so whatever it sent before is a flight's that ended.
             _picks[peer] = pick;
             _held.RemoveAll(held => held.Peer == peer);
+            _unpicked.Remove(peer);
+            return;
+        }
+
+        if (_unpicked.Contains(peer))
+        {
             return;
         }
 
@@ -294,7 +350,7 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
             return;
         }
 
-        if (_listener != null)
+        if (_listener != null && !_flightOver)
         {
             if (_bound.Contains(peer))
             {

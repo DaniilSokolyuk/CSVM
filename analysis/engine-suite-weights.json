@@ -281,6 +281,7 @@
     "net-enet-join": 6.63,
     "net-combat-events": 7.0,
     "net-coop-mission": 19.4,
+    "net-coop-restart": 16.7,
     "net-cutscene-remote-owner": 3.0,
     "net-cutscene-skip-episode": 0.1,
     "net-director-follow": 16.0,

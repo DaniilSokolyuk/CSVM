@@ -103,8 +103,12 @@ public sealed class NetPlayFeature : IMenuFeature
     private bool _pickLeft;
 
     // A guest back from a flight while its host still names that flight. Cleared once the host
-    // names any other board, so only a flight launched after that can seat it again.
+    // names any other board or a flight under another round, which a restart is.
     private bool _flownFlow;
+
+    // The round of the co-op flight this guest launched into, null before its first launch. A flow
+    // naming another round is a new flight.
+    private byte? _flightEpoch;
 
     // A Dogfight guest back from a match: the round it launched under, until the host names a new
     // one. Until then, whatever arrives is the old match's tail and never a launch.
@@ -353,6 +357,11 @@ public sealed class NetPlayFeature : IMenuFeature
     public bool CoopLaunchDue =>
         IsCoopGuest && !_released && !_flownFlow && CoopFlow is { Screen: NetCoopScreen.InMission } && _transport!.Held > 0;
 
+    /// <summary>Whether this co-op guest's flight is over. It is when the link is gone, or when the
+    /// host names a board or a flight other than the one this guest launched into.</summary>
+    public bool CoopFlightOver =>
+        !IsCoopGuest || CoopFlow is not { Screen: NetCoopScreen.InMission } flow || (_flightEpoch is { } flown && flow.Epoch != flown);
+
     /// <summary>What this co-op host's boards show, named to every guest on the next step. A new
     /// mission starts a new round of picks, as does a move onto a board other than the briefing
     /// and flight check. Every Ready then clears.</summary>
@@ -398,7 +407,7 @@ public sealed class NetPlayFeature : IMenuFeature
     /// </summary>
     public void LeaveCoopMission()
     {
-        if (!IsCoopGuest || CoopFlow is not { Screen: NetCoopScreen.InMission })
+        if (CoopFlightOver)
         {
             return;
         }
@@ -779,10 +788,23 @@ public sealed class NetPlayFeature : IMenuFeature
         _released = true;
         if (IsCoopHost)
         {
+            // A launch straight out of a flight is a restart, and a new round is how a guest in
+            // that flight learns it is over. Until it answers under that round, what it sends is
+            // the old flight's.
+            if (_coopScreen == NetCoopScreen.InMission)
+            {
+                NextRound();
+                _transport.AwaitPicks();
+            }
+
             // Named before the session's opener is sent, so a guest knows the opener is this
             // flight's and not a stale one.
             ShowCoop(NetCoopScreen.InMission, _coopSeq, _progress, _airframes);
             SendFlows();
+        }
+        else if (CoopFlow is { } flow)
+        {
+            _flightEpoch = flow.Epoch;
         }
 
         return new MenuNetLaunch(_transport, IsHost);
@@ -1094,7 +1116,7 @@ public sealed class NetPlayFeature : IMenuFeature
             return;
         }
 
-        if (flow.Screen != NetCoopScreen.InMission)
+        if (flow.Screen != NetCoopScreen.InMission || (_flightEpoch is { } flown && flow.Epoch != flown))
         {
             _flownFlow = false;
         }

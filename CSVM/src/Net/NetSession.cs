@@ -146,6 +146,10 @@ public sealed class NetSession : INetTransportListener
     public static NetSession Guest(INetTransport transport, IReadOnlyList<string>? airframes = null)
         => new(transport, isHost: false, seed: 0, clock: null, roster: null, airframes);
 
+    /// <summary>Hands a lobby's carrier back when this session still holds it, so the next flight
+    /// can bind it. A bare carrier binds once for its life and is left as it is.</summary>
+    public void Release() => (_transport as NetLobby)?.Release(this);
+
     /// <summary>Routes <typeparamref name="T"/> to <paramref name="handler"/>, replacing any
     /// handler already on that type. The join's two types are this class's own and are refused, so
     /// a later feature cannot unhook the join by registering over it.</summary>
