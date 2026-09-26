@@ -5,12 +5,13 @@ namespace CSVM.Net;
 
 /// <summary>
 /// A carrier's first listener, standing between a socket and the session that later binds it.
-/// A carrier binds once, and the menu reads the host's advert before any session exists. So this
-/// binds the carrier at once and is itself the transport the session binds.
-/// <see cref="Advertise"/> reaches every peer on connect and on each change. A lobby message that
-/// arrives, from the advert to a chat line, is kept here and never passed on. Any other payload is
-/// held until a listener binds, then replayed behind the roster announcement. A bound session sees
-/// only the peers present when it bound, and <see cref="Unbind"/> frees the carrier for the next.
+/// A carrier binds once and the menu reads the advert before any session exists, so this binds it
+/// at once as the session's transport. Its <see cref="Advertise"/> reaches every peer on connect and on
+/// each change, and a lobby message that arrives is kept here and never passed on. Any other payload
+/// is held until a listener binds, then replayed behind the roster announcement. A bound session
+/// sees only the peers present when it bound, and <see cref="Unbind"/> frees the carrier for the
+/// next. A peer whose build version does not play with this one leaves every peer list, and only its
+/// close notice is read.
 /// </summary>
 public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
 {
@@ -20,6 +21,9 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
     public const int HeldPayloads = 64;
 
     private readonly INetTransport _inner;
+    private readonly NetBuildVersion _version;
+    private readonly Dictionary<int, NetBuildVersion> _heard = new();
+    private readonly List<int> _clashing = new();
     private readonly List<(int Peer, int Channel, byte[] Bytes)> _held = new();
     private readonly List<int> _bound = new();
     private readonly Dictionary<int, CoopPickMessage> _picks = new();
@@ -32,15 +36,24 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
     private INetTransportListener? _listener;
     private SessionAdvertMessage? _advertising;
 
-    /// <summary>A lobby over <paramref name="inner"/>, which it binds at once.</summary>
-    public NetLobby(INetTransport inner)
+    /// <summary>A lobby over <paramref name="inner"/>, which it binds at once. It names this build
+    /// to every peer as <paramref name="version"/>.</summary>
+    public NetLobby(INetTransport inner, NetBuildVersion version = default)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
+        _version = version;
         _inner.Bind(this);
     }
 
     /// <summary>The carrier under this lobby, for the link readout a real socket offers.</summary>
     public INetTransport Inner => _inner;
+
+    /// <summary>The build version this end names to its peers.</summary>
+    public NetBuildVersion Version => _version;
+
+    /// <summary>The connected peers whose named version does not play with this one, in the order
+    /// they named it. None of them is on any other peer list.</summary>
+    public IReadOnlyList<int> Clashing => _clashing;
 
     /// <summary>The last advert a peer sent here, or null while none has arrived.</summary>
     public SessionAdvertMessage? Advert { get; private set; }
@@ -86,11 +99,36 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
     /// <summary>The peers a bound session flies with: those present when it bound and still
     /// connected. Every connected peer while nothing is bound. A peer arriving mid-flight waits
     /// here with the advert, since no guest joins a mission in flight.</summary>
-    public IReadOnlyList<int> Peers => _listener != null ? _bound : _inner.Peers;
+    public IReadOnlyList<int> Peers => _listener != null ? _bound : AllPeers;
 
-    /// <summary>Every connected peer, a bound session's or not: the count a host's advert reads.
-    /// </summary>
-    public IReadOnlyList<int> AllPeers => _inner.Peers;
+    /// <summary>Every connected peer, a bound session's or not: the count a host's advert reads. A
+    /// peer on <see cref="Clashing"/> is left out.</summary>
+    public IReadOnlyList<int> AllPeers
+    {
+        get
+        {
+            var peers = _inner.Peers;
+            if (_clashing.Count == 0)
+            {
+                return peers;
+            }
+
+            var playing = new List<int>(peers.Count);
+            for (int i = 0; i < peers.Count; i++)
+            {
+                if (!_clashing.Contains(peers[i]))
+                {
+                    playing.Add(peers[i]);
+                }
+            }
+
+            return playing;
+        }
+    }
+
+    /// <summary>The version <paramref name="peer"/> named on connect. False while it has named
+    /// none.</summary>
+    public bool TryVersionOf(int peer, out NetBuildVersion version) => _heard.TryGetValue(peer, out version);
 
     /// <summary>Hands <paramref name="advert"/> to every peer now and to every peer that connects
     /// later. Sent only when it differs from the last one, so a board may call this every frame.
@@ -120,7 +158,7 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
 
         _listener = listener ?? throw new ArgumentNullException(nameof(listener));
         _bound.Clear();
-        _bound.AddRange(_inner.Peers);
+        _bound.AddRange(AllPeers);
         foreach (int peer in new List<int>(_bound))
         {
             listener.OnPeerConnected(peer);
@@ -183,15 +221,18 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
     /// <inheritdoc/>
     public void OnPeerConnected(int peer)
     {
-        // The advert goes first, so a guest names the session before the join answer lands.
-        // Nothing more: a bound session's field was fixed when it bound, so a newcomer never
-        // reaches it. An unbound lobby announces every peer when a session binds.
+        // The version goes first, then the advert, so a guest names the session before the join
+        // answer lands. Nothing more: a bound session's field was fixed when it bound, so a
+        // newcomer never reaches it. An unbound lobby announces every peer when a session binds.
+        Tell(peer, new BuildVersionMessage(_version));
         SendAdvert(peer);
     }
 
     /// <inheritdoc/>
     public void OnPeerDisconnected(int peer)
     {
+        _heard.Remove(peer);
+        _clashing.Remove(peer);
         _held.RemoveAll(held => held.Peer == peer);
         _picks.Remove(peer);
         if (_listener != null && _bound.Remove(peer))
@@ -203,15 +244,27 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
     /// <inheritdoc/>
     public void OnPayload(int peer, int channel, ReadOnlySpan<byte> payload)
     {
-        if (SessionAdvertMessage.TryRead(payload, out var advert))
+        if (BuildVersionMessage.TryRead(payload, out var named))
         {
-            Advert = advert;
+            Heard(peer, named.Version);
             return;
         }
 
+        // A refused guest reads why it was refused, so a close notice is taken from any peer.
         if (SessionClosedMessage.TryRead(payload, out var closed))
         {
             Closed = closed;
+            return;
+        }
+
+        if (_clashing.Contains(peer))
+        {
+            return;
+        }
+
+        if (SessionAdvertMessage.TryRead(payload, out var advert))
+        {
+            Advert = advert;
             return;
         }
 
@@ -260,9 +313,14 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
         _held.Add((peer, channel, payload.ToArray()));
     }
 
-    /// <summary>Tells <paramref name="peer"/> why it is being sent away. The caller still hangs up;
-    /// the notice only lets the guest's board name the reason.</summary>
-    public void Farewell(int peer, NetCloseReason reason) => Tell(peer, new SessionClosedMessage(reason));
+    /// <summary>Tells <paramref name="peer"/> why it is being sent away, with this end's version and
+    /// the one the peer named. The caller still hangs up; the notice only lets the guest's board
+    /// name the reason.</summary>
+    public void Farewell(int peer, NetCloseReason reason)
+    {
+        _heard.TryGetValue(peer, out var theirs);
+        Tell(peer, new SessionClosedMessage(reason, _version, theirs));
+    }
 
     /// <summary>Closes the carrier underneath, when it is one that can be closed.</summary>
     public void Dispose()
@@ -299,6 +357,25 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
 
         _chat.Add((peer, line));
         return true;
+    }
+
+    // A peer that clashes leaves the peer lists at once, and the bound session with it. What it
+    // sent before is dropped, since none of it was meant for a build of this version.
+    private void Heard(int peer, NetBuildVersion version)
+    {
+        _heard[peer] = version;
+        if (version.PlaysWith(_version) || _clashing.Contains(peer))
+        {
+            return;
+        }
+
+        _clashing.Add(peer);
+        _held.RemoveAll(held => held.Peer == peer);
+        _picks.Remove(peer);
+        if (_listener != null && _bound.Remove(peer))
+        {
+            _listener.OnPeerDisconnected(peer);
+        }
     }
 
     private void SendAdvert(int peer)

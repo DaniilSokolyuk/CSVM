@@ -150,6 +150,12 @@ public sealed class NetPlayFeature : IMenuFeature
     /// <summary>Where the door stands.</summary>
     public NetDoorStage Stage { get; private set; } = NetDoorStage.Shut;
 
+    /// <summary>This build's version as the door names it to every peer and every LAN search. A
+    /// host refuses a guest whose version does not play with it, and a guest refuses such a host.
+    /// Unknown unless the launcher sets it, which is what every suite's pair of doors shares.
+    /// </summary>
+    public NetBuildVersion Version { get; init; }
+
     /// <summary>Which interface a host binds. Every one of them by default, which is what a
     /// player on a network needs. ⚠ A scripted run sets the loopback address instead: a wildcard
     /// bind is what makes Windows put a firewall dialog on somebody's screen.</summary>
@@ -538,7 +544,7 @@ public sealed class NetPlayFeature : IMenuFeature
         EndLinger();
         try
         {
-            _transport = new NetLobby(_openJoin(Address, Port));
+            _transport = new NetLobby(_openJoin(Address, Port), Version);
         }
         catch (Exception e) when (e is InvalidOperationException or ArgumentException)
         {
@@ -553,12 +559,23 @@ public sealed class NetPlayFeature : IMenuFeature
         _joining = 0.0;
     }
 
+    /// <summary>Whether a game the LAN search heard runs a build this one plays with.</summary>
+    public bool PlaysWith(LanGame game) => Version.PlaysWith(game.Version);
+
     /// <summary>Joins a game the LAN search heard, at the address it answered from and the game
-    /// port it named. The search stays open; the page that ran it closes it.</summary>
+    /// port it named. A game of a version this build does not play with is refused before any
+    /// socket opens, with both versions on <see cref="Fault"/>. The search stays open; the page
+    /// that ran it closes it.</summary>
     public void JoinGame(LanGame game)
     {
         if (_transport != null || string.IsNullOrWhiteSpace(game.Address) || game.Port is < 1 or > 65535)
         {
+            return;
+        }
+
+        if (!PlaysWith(game))
+        {
+            Fail(CoopDoorText.VersionMismatch(game.Version, Version));
             return;
         }
 
@@ -632,12 +649,14 @@ public sealed class NetPlayFeature : IMenuFeature
         TakeMapping();
         if (Stage == NetDoorStage.Hosting)
         {
+            RefuseClashing();
             if (_kind == NetSessionKind.CampaignCoop)
             {
-                Admit(dt);
+                Admit();
                 SendFlows();
             }
 
+            HangUpRefused(dt);
             _dogfight?.Step();
             var advert = CurrentAdvert();
             _transport.Advertise(advert);
@@ -648,7 +667,19 @@ public sealed class NetPlayFeature : IMenuFeature
         // A host that says why it is sending this guest away is believed before its link drops.
         if (_transport.Closed is { } closed)
         {
-            Fail(closed.Reason == NetCloseReason.Full ? CoopDoorText.GameFull : CoopDoorText.HostClosed);
+            Fail(closed.Reason switch
+            {
+                NetCloseReason.Full => CoopDoorText.GameFull,
+                NetCloseReason.VersionMismatch => CoopDoorText.VersionMismatch(closed.Host, closed.Guest),
+                _ => CoopDoorText.HostClosed,
+            });
+            return;
+        }
+
+        // A guest refuses a host of another version itself, whether or not the host says so.
+        if (_transport.Clashing.Count > 0 && _transport.TryVersionOf(_transport.Clashing[0], out var theirs))
+        {
+            Fail(CoopDoorText.VersionMismatch(theirs, Version));
             return;
         }
 
@@ -846,7 +877,7 @@ public sealed class NetPlayFeature : IMenuFeature
         EndLinger();
         try
         {
-            _transport = new NetLobby(_openHost(Port, maxGuests, BindAddress));
+            _transport = new NetLobby(_openHost(Port, maxGuests, BindAddress), Version);
         }
         catch (Exception e) when (e is InvalidOperationException or ArgumentException)
         {
@@ -874,7 +905,7 @@ public sealed class NetPlayFeature : IMenuFeature
 
         try
         {
-            _responder = new LanResponder(_lan(BindAddress, LanDiscovery.Port));
+            _responder = new LanResponder(_lan(BindAddress, LanDiscovery.Port), Version);
         }
         catch (Exception e) when (e is InvalidOperationException or ArgumentException)
         {
@@ -899,11 +930,10 @@ public sealed class NetPlayFeature : IMenuFeature
 
     // A campaign host seats guests in arrival order up to the cap. One past it is told the game is
     // full, and is hung up on if it has not left by the end of the grace.
-    private void Admit(double dt)
+    private void Admit()
     {
         var peers = _transport!.AllPeers;
         _admitted.RemoveAll(peer => !Contains(peers, peer));
-        _refused.RemoveAll(refused => !Contains(peers, refused.Peer));
         int seats = Math.Max(0, CoopHumans - _localPlayers);
         for (int i = 0; i < peers.Count; i++)
         {
@@ -922,7 +952,27 @@ public sealed class NetPlayFeature : IMenuFeature
             _transport.Farewell(peer, NetCloseReason.Full);
             _refused.Add((peer, 0.0));
         }
+    }
 
+    // Either kind of door tells a guest of another version so. It is hung up on after the grace a
+    // guest refused as full gets. The lobby has already left it off every peer list.
+    private void RefuseClashing()
+    {
+        foreach (int peer in _transport!.Clashing)
+        {
+            if (!Refused(peer))
+            {
+                _transport.Farewell(peer, NetCloseReason.VersionMismatch);
+                _refused.Add((peer, 0.0));
+            }
+        }
+    }
+
+    // The clashing peers are off AllPeers, so what is still connected is asked of the carrier.
+    private void HangUpRefused(double dt)
+    {
+        var connected = _transport!.Inner.Peers;
+        _refused.RemoveAll(refused => !Contains(connected, refused.Peer));
         for (int i = 0; i < _refused.Count; i++)
         {
             var (peer, waited) = _refused[i];

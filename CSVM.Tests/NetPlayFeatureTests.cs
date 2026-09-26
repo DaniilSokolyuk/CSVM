@@ -372,6 +372,119 @@ public class NetPlayFeatureTests
     }
 
     [Fact]
+    public void AHostRefusesAGuestOfAnotherMinorWithBothVersionsAndSeatsOneAPatchApart()
+    {
+        // The loopback links every end to every other, and a real guest links only to its host.
+        var mesh = LoopbackTransport.Mesh(3, Clean, new Random(53));
+        mesh[1].Disconnect(mesh[2].LocalPeer);
+        var host = new NetPlayFeature((_, _, _) => mesh[0], (_, _) => mesh[0]) { Version = NetBuildVersion.Parse("0.7.0") };
+        var patched = new NetPlayFeature((_, _, _) => mesh[1], (_, _) => mesh[1]) { Version = NetBuildVersion.Parse("0.7.4") };
+        var older = new NetPlayFeature((_, _, _) => mesh[2], (_, _) => mesh[2]) { Version = NetBuildVersion.Parse("0.6.9") };
+        host.OpenCoopHost(NetSeats.MaxPlayers - 1);
+        host.Offer(3, "Zachary", 1);
+        patched.OpenJoin();
+        older.OpenJoin();
+        for (int frame = 0; frame < 4; frame++)
+        {
+            host.Step(0.016);
+            patched.Step(0.016);
+            older.Step(0.016);
+        }
+
+        Assert.Equal(NetDoorStage.Failed, older.Stage);
+        Assert.Equal("Host runs 0.7, you run 0.6", older.Fault);
+        Assert.Equal(1, host.Peers);
+        Assert.Equal(2, host.Advertising!.Value.Players);
+
+        // ABLE-TO-FAIL CONTROL: a guest a patch apart joins the same host.
+        Assert.Equal(NetDoorStage.Joined, patched.Stage);
+        Assert.Equal("", patched.Fault);
+
+        // The refused guest is off the host's carrier once the grace has passed.
+        host.Step(NetPlayFeature.RefuseGraceSeconds + 0.1);
+        host.Step(0.016);
+        Assert.Equal(new[] { mesh[1].LocalPeer }, mesh[0].Peers);
+    }
+
+    [Fact]
+    public void AHostsRefusalNamesBothVersionsAndAGuestRefusesASilentHostOfAnotherVersionItself()
+    {
+        // The host's close notice is what the guest reads when it arrives first.
+        var mesh = LoopbackTransport.Mesh(2, Clean, new Random(59));
+        var host = new NetPlayFeature((_, _, _) => mesh[0], (_, _) => mesh[0]) { Version = new NetBuildVersion(0, 6) };
+        var guest = new NetPlayFeature((_, _, _) => mesh[1], (_, _) => mesh[1]) { Version = new NetBuildVersion(0, 7) };
+        host.OpenDogfightHost(NetSeats.MaxPlayers - 1);
+        guest.OpenJoin();
+        for (int frame = 0; frame < 3; frame++)
+        {
+            host.Step(0.016);
+            guest.Step(0.016);
+        }
+
+        Assert.Equal("Host runs 0.6, you run 0.7", guest.Fault);
+        Assert.Equal(0, host.Peers);
+
+        // A lobby that names its version and never steps a door refuses nobody, so the guest's
+        // own check is the one that fires.
+        var silent = LoopbackTransport.Mesh(2, Clean, new Random(61));
+        using var lobby = new NetLobby(silent[0], new NetBuildVersion(0, 8));
+        var alone = new NetPlayFeature((_, _, _) => silent[1], (_, _) => silent[1]) { Version = new NetBuildVersion(0, 7) };
+        alone.OpenJoin();
+        for (int frame = 0; frame < 3; frame++)
+        {
+            lobby.Step(0.016);
+            alone.Step(0.016);
+        }
+
+        Assert.Null(lobby.Closed);
+        Assert.Equal(NetDoorStage.Failed, alone.Stage);
+        Assert.Equal("Host runs 0.8, you run 0.7", alone.Fault);
+
+        // ABLE-TO-FAIL CONTROL: two doors that never set a version are both unknown and play.
+        var plain = LoopbackTransport.Mesh(2, Clean, new Random(67));
+        var plainHost = new NetPlayFeature((_, _, _) => plain[0], (_, _) => plain[0]);
+        var plainGuest = new NetPlayFeature((_, _, _) => plain[1], (_, _) => plain[1]);
+        plainHost.OpenDogfightHost(NetSeats.MaxPlayers - 1);
+        plainGuest.OpenJoin();
+        for (int frame = 0; frame < 3; frame++)
+        {
+            plainHost.Step(0.016);
+            plainGuest.Step(0.016);
+        }
+
+        Assert.Equal(NetDoorStage.Joined, plainGuest.Stage);
+        Assert.Equal(1, plainHost.Peers);
+    }
+
+    [Fact]
+    public void JoiningAListedGameOfAnotherVersionIsRefusedBeforeAnySocketOpens()
+    {
+        var mesh = LoopbackTransport.Mesh(2, Clean, new Random(71));
+        int opened = 0;
+        var door = new NetPlayFeature(
+            (_, _, _) => mesh[0],
+            (_, _) =>
+            {
+                opened++;
+                return mesh[1];
+            })
+        { Version = new NetBuildVersion(0, 6) };
+        var advert = new SessionAdvertMessage(NetSessionKind.Dogfight, 0, 1, "Oskar");
+
+        door.JoinGame(new LanGame("127.0.0.1", 47500, advert, new NetBuildVersion(0, 7)));
+        Assert.Equal(0, opened);
+        Assert.Equal(NetDoorStage.Failed, door.Stage);
+        Assert.Equal("Host runs 0.7, you run 0.6", door.Fault);
+        Assert.False(door.PlaysWith(new LanGame("127.0.0.1", 47500, advert, new NetBuildVersion(0, 7))));
+
+        // ABLE-TO-FAIL CONTROL: the same game at this build's version opens the join.
+        door.Discard();
+        door.JoinGame(new LanGame("127.0.0.1", 47500, advert, new NetBuildVersion(0, 6)));
+        Assert.Equal(1, opened);
+        Assert.Equal(NetDoorStage.Joining, door.Stage);
+    }
+
+    [Fact]
     public void AGuestTellsAHostThatClosedFromALinkThatDropped()
     {
         var mesh = LoopbackTransport.Mesh(3, Clean, new Random(43));

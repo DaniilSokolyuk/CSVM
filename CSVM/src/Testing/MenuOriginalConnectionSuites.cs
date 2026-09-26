@@ -323,6 +323,96 @@ internal static class MenuOriginalConnectionSuites
         }
     }
 
+    [Suite("menu-original-version",
+        "An Original guest of build 0.6 against a Built-in Dogfight host of 0.7 over the loopback: "
+        + "the games list marks the host's row with its version in the Status column, Join Game "
+        + "raises a box naming both versions and opens no socket, a join typed over Internet "
+        + "TCP/IP is refused on the wire with the same words while the host seats nobody, and a "
+        + "guest a patch apart from the host joins it")]
+    internal static void TheVersionCheck(TestContext ctx)
+    {
+        ctx.RequireData(ctx.ZrdrPath, $"zrdr archive");
+        ctx.RequireData(MenuLayout.PathUnder(ctx.DataRoot), $"decoded menu layout");
+        var layout = OriginalAvailability.Load(ctx.DataRoot, out var why);
+        ctx.Check(layout != null, $"the install's layout passes the availability check ({why ?? "ok"})");
+        if (layout == null)
+        {
+            return;
+        }
+
+        // The loopback links every end to every other, and a real guest links only to its host.
+        var lan = new LoopbackLan();
+        var mesh = LoopbackTransport.Mesh(3, LoopbackConditions.Perfect, new Random(17));
+        mesh[1].Disconnect(mesh[2].LocalPeer);
+        var gate = new ArrivalGate(mesh[0]);
+        var hostDoor = new NetPlayFeature(
+            (_, _, _) => gate,
+            (_, _) => throw new InvalidOperationException("the host does not join"),
+            port => new UpnpPortMapResult(UpnpPortMapOutcome.Mapped, port, NetDoorAid.ExternalAddress, "suite"),
+            _ => { },
+            lan.Bind)
+        { Version = NetBuildVersion.Parse("0.7.0") };
+        int opened = 0;
+        var guestDoor = new NetPlayFeature(
+            (_, _, _) => throw new InvalidOperationException("the guest does not host"),
+            (_, _) =>
+            {
+                opened++;
+                gate.Arrive(mesh[1].LocalPeer);
+                return new Hangup(mesh[1]);
+            },
+            lan: lan.Bind)
+        { Version = NetBuildVersion.Parse("0.6.3") };
+        var patched = new NetPlayFeature(
+            (_, _, _) => throw new InvalidOperationException("the guest does not host"),
+            (_, _) =>
+            {
+                gate.Arrive(mesh[2].LocalPeer);
+                return mesh[2];
+            })
+        { Version = NetBuildVersion.Parse("0.7.9") };
+        foreach (var door in new[] { hostDoor, guestDoor, patched })
+        {
+            door.BindAddress = Loopback;
+            door.SearchAddress = Loopback;
+        }
+
+        var ends = new List<End>();
+        try
+        {
+            var guest = Open(ctx, layout, guestDoor, ends);
+            if (guest == null)
+            {
+                return;
+            }
+
+            hostDoor.OpenHost(NetSeats.MaxPlayers - 1);
+            RefusedFromTheList(ctx, hostDoor, guest, () => opened);
+            RefusedOnTheWire(ctx, hostDoor, guest, () => opened);
+            patched.OpenJoin();
+            for (int frame = 0; frame < 4; frame++)
+            {
+                hostDoor.Step(Dt);
+                patched.Step(Dt);
+            }
+
+            ctx.Check(patched.Stage == NetDoorStage.Joined && hostDoor.Peers == 1,
+                $"ABLE-TO-FAIL CONTROL: a guest a patch apart joins the same host ({patched.Stage}, {patched.Fault}, {hostDoor.Peers} joined)");
+        }
+        finally
+        {
+            foreach (var end in ends)
+            {
+                end.Host.Deactivate();
+            }
+
+            hostDoor.Discard();
+            guestDoor.Discard();
+            patched.Discard();
+            Godot.Input.MouseMode = Godot.Input.MouseModeEnum.Visible;
+        }
+    }
+
     [Suite("lan-discovery",
         "The shipped LAN discovery socket on the loopback: a responder bound on the discovery port "
         + "answers a search sent to 127.0.0.1 by unicast with the advert and game port it was "
@@ -755,6 +845,60 @@ internal static class MenuOriginalConnectionSuites
                   && launch.Chapter == chapter && launch.Seats.Count == 1
                   && launch.Seats[0].PlaneNode == PlanePickerRoster.AirframeNode(2),
             $"the guest launches behind the Built-in host on its map and time in its own pick ({launch?.Chapter}, {launch?.Match}, {launch?.Seats.FirstOrDefault()?.PlaneNode})");
+    }
+
+    // The games list names the host's version in place of its status, and Join Game refuses it
+    // behind a box before any socket opens.
+    private static void RefusedFromTheList(TestContext ctx, NetPlayFeature hostDoor, End guest, Func<int> opened)
+    {
+        var shell = guest.Shell;
+        ClickRow(ctx, guest, OriginalShell.MultiplayerKey);
+        ClickRow(ctx, guest, OriginalConnectionScreen.ConnectKey);
+        for (int frame = 0; frame < 6 && shell.Connection.Listed.Count == 0; frame++)
+        {
+            Frames(hostDoor, guest, 1);
+        }
+
+        if (shell.Connection.Listed.Count != 1)
+        {
+            ctx.Check(false, $"the search lists the host of another version ({shell.Connection.Listed.Count})");
+            return;
+        }
+
+        var cells = shell.Connection.Cells(shell.Connection.Listed[0]);
+        ctx.Check(cells.Count == 5 && cells[2] == "Dogfight" && cells[4] == "Version 0.7",
+            $"the games list marks the row with the host's version ({string.Join(" | ", cells)})");
+        ClickRow(ctx, guest, OriginalConnectionScreen.GameKey(0));
+        ClickRow(ctx, guest, OriginalConnectionScreen.JoinKey);
+        Frames(hostDoor, guest, 2);
+        ctx.Check(shell.Dialog?.Message == "Host runs 0.7, you run 0.6" && shell.Screen == OriginalScreen.ConnectionGames,
+            $"Join Game raises a box naming both versions over the games list ({shell.Dialog?.Message}, {shell.Screen})");
+        ctx.Check(opened() == 0 && guest.Door.Stage == NetDoorStage.Shut && hostDoor.Peers == 0,
+            $"and opens no socket ({opened()} opened, {guest.Door.Stage}, {hostDoor.Peers} joined)");
+        ClickRow(ctx, guest, OriginalShell.DialogOkKey);
+        ClickRow(ctx, guest, OriginalConnectionScreen.GamesExitKey);
+        ctx.Check(shell.Dialog == null && shell.Screen == OriginalScreen.Connection,
+            $"OK takes the box down and Exit goes back to the Connection page ({shell.Dialog?.Message}, {shell.Screen})");
+    }
+
+    // A join typed over Internet TCP/IP reaches the host, which refuses it on the wire and says
+    // why. The guest's box carries the same words as the list's.
+    private static void RefusedOnTheWire(TestContext ctx, NetPlayFeature hostDoor, End guest, Func<int> opened)
+    {
+        var shell = guest.Shell;
+        ClickRow(ctx, guest, OriginalConnectionScreen.InternetKey);
+        ctx.Check(guest.Door.Address == Loopback, $"the address box holds the loopback the host listens on ({guest.Door.Address})");
+        ClickRow(ctx, guest, OriginalConnectionScreen.ConnectKey);
+        Frames(hostDoor, guest, 6);
+        ctx.Check(opened() == 1, $"the typed join opens its socket ({opened()} opened)");
+        ctx.Check(guest.Door.Fault == "Host runs 0.7, you run 0.6" && shell.Dialog?.Message == guest.Door.Fault,
+            $"the host's refusal names both versions on the guest's box ({guest.Door.Fault}, {shell.Dialog?.Message})");
+        ctx.Check(hostDoor.Peers == 0 && hostDoor.Dogfight is { Players.Count: 1 },
+            $"and the host seats nobody ({hostDoor.Peers} joined, {hostDoor.Dogfight?.Players.Count} in the lobby)");
+        ClickRow(ctx, guest, OriginalShell.DialogOkKey);
+        Frames(hostDoor, guest, 2);
+        ctx.Check(shell.Dialog == null && guest.Door.Stage == NetDoorStage.Shut,
+            $"OK takes the box down and hangs up ({shell.Dialog?.Message}, {guest.Door.Stage})");
     }
 
     // Frames of a Built-in host's door stepped by hand, each followed by one guest frame.

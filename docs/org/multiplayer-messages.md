@@ -231,7 +231,7 @@ score, `0x17` match state, `0x22` hit and `0x27` seat roster. Damage, spawn, the
 director transition, the join handshake and a seat's ask to be spawned again have no
 counterpart, so they are minted at `0x40`, `0x41`, `0x42`, `0x43` and `0x44`, above the ceiling
 above. The host-owned world's four (AI state, AI fire, a guest's hit claim on an AI, and a world
-event) are minted at `0x45` to `0x48`, below, the clock ping at `0x49`, the lobby's session advert at `0x4A`, the zeppelin path at `0x4B`, a generator's AI launch at `0x4C`, the surface-vehicle patrol at `0x4D`, a positional start at `0x4E`, the lobby's session closed at `0x4F`, and the lobby's co-op flow, co-op pick and co-op seat fit at `0x50` to `0x52`, and the Dogfight lobby's options, roster and chat at `0x53` to `0x55`. The handshake carries the master seed, the host's clock and the seat the joining peer was
+event) are minted at `0x45` to `0x48`, below, the clock ping at `0x49`, the lobby's session advert at `0x4A`, the zeppelin path at `0x4B`, a generator's AI launch at `0x4C`, the surface-vehicle patrol at `0x4D`, a positional start at `0x4E`, the lobby's session closed at `0x4F`, and the lobby's co-op flow, co-op pick and co-op seat fit at `0x50` to `0x52`, the Dogfight lobby's options, roster and chat at `0x53` to `0x55`, and the lobby's build version at `0x56`. The handshake carries the master seed, the host's clock and the seat the joining peer was
 given; the original needs none of the three, because it draws from no shared stream and hands
 out no seat. The ask carries a seat and nothing else: the original's client takes its own
 respawn, while here the host owns every placement and answers the ask with a spawn event.
@@ -490,11 +490,34 @@ sees them.
 | Id | Message | Class | Carries |
 |---|---|---|---|
 | `0x4A` | Session advert | reliable, host to each guest | session kind (Dogfight 1, campaign co-op 2) at 4, campaign mission sequence or `0xFF` for none at 5, player count at 6, status at 7 (unknown 0, waiting 1, in mission 2, full 3), seat cap at 8, three reserved bytes, host name in 16 bytes UTF-8 zero padded at 12 (28 bytes) |
-| `0x4F` | Session closed | reliable, host to each guest | reason at 4 (unknown 0, closed 1, full 2), three reserved bytes (8 bytes) |
+| `0x4F` | Session closed | reliable, host to each guest | reason at 4 (unknown 0, closed 1, full 2, version mismatch 3), three reserved bytes, the host's build version at 8, the guest's as the host heard it at 12 (16 bytes) |
+| `0x56` | Build version | reliable, each end to each peer on connect | the build version at 4 (8 bytes) |
 
-A guest that reads a closed reason tells the player the host closed the game, or that the game was
-full, instead of reading the dropped link as a lost connection. An unknown status or reason reads as
-unknown rather than failing the message, so a newer host's value does not strand an older guest.
+A guest that reads a closed reason tells the player the host closed the game, that the game was
+full, or which two versions kept them apart, instead of reading the dropped link as a lost
+connection. An unknown status or reason reads as unknown rather than failing the message, so a
+newer host's value does not strand an older guest.
+
+### The build version check
+
+A build version is MAJOR.MINOR of the SemVer string in `project.godot`, as `Net/NetBuildVersion.cs`
+parses it: the major and the minor, 16 bits little endian each. Both words at `0xFFFF` are unknown,
+the version of a build whose string does not parse, and a version with one word at `0xFFFF` fails
+the message. Two builds play together when their majors and minors match, so builds a patch apart
+play and builds a minor apart do not. Unknown plays only with unknown: a build that cannot name its
+version never joins a build that can.
+
+Each lobby sends its build version first on every connect, before the advert. A lobby that hears a
+version that does not play with its own takes that peer off every peer list and drops everything
+it sends except a session closed. A host door then sends that guest session closed with the
+version mismatch reason and both versions, and hangs up after the same grace as a guest refused
+as full. A guest door refuses a host of another version itself, so a host that never says why is
+still refused with both versions named. A peer that sends no build version is not refused. The
+command line's `--net-host` and `--net-join` stand no lobby on the carrier and check nothing.
+
+⚠ The layouts of `0x56`, `0x4F` and the LAN discovery reply do not change. They are how two builds
+of different minors recognise each other, so a change makes an older build read a newer one as
+silent or foreign instead of naming the mismatch.
 
 ### Campaign co-op boards
 
@@ -554,16 +577,20 @@ message id is spent.
 | Offset | Query | Reply |
 |---|---|---|
 | 0 | `CSLD` | `CSLD` |
-| 4 | version, 1 | version, 1 |
+| 4 | version, 2 | version, 2 |
 | 5 | kind, 1 | kind, 2 |
 | 6 | two reserved bytes | two reserved bytes |
 | 8 | the asker's token, 32-bit little endian | the token it answers |
-| 12 | 32 zero bytes | game port, 16-bit little endian, then two reserved bytes |
-| 16 | | the host's 28-byte session advert, header included |
+| 12 | 36 zero bytes | game port, 16-bit little endian, then two reserved bytes |
+| 16 | | the host's build version |
+| 20 | | the host's 28-byte session advert, header included |
 
-Both are 44 bytes. The query is padded to the reply's width so a reply is never larger than the
+Both are 48 bytes. The query is padded to the reply's width so a reply is never larger than the
 query that asked for it, which keeps a responder from amplifying a forged-source flood. A responder
-answers only a datagram that is exactly 44 bytes with the magic, this version and the query kind,
+answers only a datagram that is exactly 48 bytes with the magic, this version and the query kind,
 and answers it to the address it came from. A search broadcasts one query a round with a fresh
 token and keeps only replies carrying it. A game is listed at the reply's source address and the
-port the reply names, and it leaves the list after two rounds without a reply.
+port the reply names, and it leaves the list after two rounds without a reply. A game whose build
+version does not play with the searcher's is listed in grey with its version in the Status
+column, and Join Game refuses it with both versions named before any socket opens. The discovery
+version counts layouts, not builds, so it does not change with the build version.

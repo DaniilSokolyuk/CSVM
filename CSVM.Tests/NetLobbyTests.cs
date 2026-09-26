@@ -45,10 +45,13 @@ public class NetLobbyTests
         var session = new RecordingListener();
         lobby.Bind(session);
 
+        // Each connect is answered with the build version, then the advert.
         host.Connect(7);
-        Assert.Equal(2, host.Sent.Count);
-        Assert.Equal(7, host.Sent[1].Peer);
-        Assert.True(SessionAdvertMessage.TryRead(host.Sent[1].Bytes, out _));
+        Assert.Equal(4, host.Sent.Count);
+        Assert.Equal(7, host.Sent[2].Peer);
+        Assert.True(BuildVersionMessage.TryRead(host.Sent[2].Bytes, out _));
+        Assert.Equal(7, host.Sent[3].Peer);
+        Assert.True(SessionAdvertMessage.TryRead(host.Sent[3].Bytes, out _));
 
         // The field was fixed when the session bound: the newcomer waits in the lobby.
         Assert.Equal(new[] { 3 }, session.Connected);
@@ -60,6 +63,49 @@ public class NetLobbyTests
         // ABLE-TO-FAIL CONTROL: the peer present at the bind is the session's, payloads included.
         host.Deliver(3, Handshake(6));
         Assert.Single(session.Payloads);
+    }
+
+    [Fact]
+    public void APeerNamingAVersionThatDoesNotPlayLeavesEveryPeerListAndIsHeardOnlyToSayWhy()
+    {
+        var host = new RecordingTransport(localPeer: 1);
+        var lobby = new NetLobby(host, new NetBuildVersion(0, 7));
+        host.Connect(3);
+        host.Connect(7);
+        var session = new RecordingListener();
+        lobby.Bind(session);
+
+        // Peer 3 differs only in the patch, which the version does not carry: it stays.
+        host.Deliver(3, Bytes(new BuildVersionMessage(new NetBuildVersion(0, 7))));
+        host.Deliver(7, Handshake(4));
+        host.Deliver(7, Bytes(new BuildVersionMessage(new NetBuildVersion(0, 6))));
+
+        Assert.Equal(new[] { 7 }, lobby.Clashing);
+        Assert.Equal(new[] { 3 }, lobby.Peers);
+        Assert.Equal(new[] { 3 }, lobby.AllPeers);
+        Assert.Equal(new[] { 7 }, session.Disconnected);
+        Assert.True(lobby.TryVersionOf(7, out var theirs));
+        Assert.Equal(new NetBuildVersion(0, 6), theirs);
+
+        // What the clashing peer sends later is dropped, but not its close notice.
+        int before = session.Payloads.Count;
+        host.Deliver(7, Handshake(5));
+        host.Deliver(7, Bytes(new SessionAdvertMessage(NetSessionKind.Dogfight, 0, 1, "Oskar")));
+        Assert.Equal(before, session.Payloads.Count);
+        Assert.Null(lobby.Advert);
+        host.Deliver(7, Bytes(new SessionClosedMessage(NetCloseReason.VersionMismatch, new NetBuildVersion(0, 6), new NetBuildVersion(0, 7))));
+        Assert.Equal(NetCloseReason.VersionMismatch, lobby.Closed!.Value.Reason);
+
+        // The farewell names both ends' versions.
+        lobby.Farewell(7, NetCloseReason.VersionMismatch);
+        Assert.True(SessionClosedMessage.TryRead(host.Sent[^1].Bytes, out var farewell));
+        Assert.Equal(new SessionClosedMessage(NetCloseReason.VersionMismatch, new NetBuildVersion(0, 7), new NetBuildVersion(0, 6)), farewell);
+
+        // ABLE-TO-FAIL CONTROL: the peer whose version plays is still the session's.
+        host.Deliver(3, Handshake(6));
+        Assert.Equal(before + 1, session.Payloads.Count);
+        host.Drop(7);
+        Assert.Empty(lobby.Clashing);
     }
 
     [Fact]

@@ -26,6 +26,19 @@ public class CoopDoorTextTests
     }
 
     [Fact]
+    public void TheGamesListMarksAGameOfAnotherVersionByItsVersionInPlaceOfItsStatus()
+    {
+        var advert = new SessionAdvertMessage(NetSessionKind.Dogfight, 0, 2, "Oskar", NetSessionStatus.Waiting);
+        var own = new NetBuildVersion(0, 7);
+        Assert.Equal("Version 0.6", CoopDoorText.Status(new LanGame("10.0.0.2", 47500, advert, new NetBuildVersion(0, 6)), own));
+        Assert.Equal("Version unknown", CoopDoorText.Status(new LanGame("10.0.0.2", 47500, advert), own));
+        Assert.Equal("Host runs 0.6, you run 0.7", CoopDoorText.VersionMismatch(new NetBuildVersion(0, 6), own));
+
+        // ABLE-TO-FAIL CONTROL: a game of this build's version shows its own status.
+        Assert.Equal("Waiting", CoopDoorText.Status(new LanGame("10.0.0.2", 47500, advert, own), own));
+    }
+
+    [Fact]
     public void TheGamesListNamesTheHostsGameItsPlayersOfItsCapAndItsMission()
     {
         var coop = new SessionAdvertMessage(NetSessionKind.CampaignCoop, 7, 2, "Zachary", NetSessionStatus.Waiting, 4);

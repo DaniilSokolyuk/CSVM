@@ -91,19 +91,26 @@ writes it. A missing or unreadable file recalls no port, and a failed write cost
 clear, so nothing here throws.
 
 ## src/Net/NetLobby.cs
-A carrier's first listener, standing between the socket a menu opens and the session that later
-binds it, since a carrier binds only once. It is itself the `INetTransport` the session binds. A
-host's `Advertise` sends a `SessionAdvertMessage` to every peer on connect and on each change; a
-guest keeps the latest arrival in `Advert`, and the host's closing word in `Closed`, and never
-passes either on. The co-op boards' messages stay here too: a host sends `CoopFlow` per guest and
-keeps each guest's latest `CoopPick`, a guest keeps the latest flow and `SeatFits`. Others are held
-(up to `HeldPayloads`) until a session binds, then replayed behind the peer announcement (`Held`); a
-guest's pick drops what is still held from it, a finished match's tail. Read `NetLobbyTests.cs`.
+A carrier's first listener and itself the `INetTransport` the session later binds, since a
+carrier binds only once. A host's `Advertise` sends a `SessionAdvertMessage` to every peer on
+connect and on each change; a guest keeps the latest in `Advert`, and the host's closing word in
+`Closed`, and passes neither on. Co-op board messages stay here too: a host sends `CoopFlow` per
+guest and keeps each guest's latest `CoopPick`, a guest keeps the latest flow and `SeatFits`.
+Others are held (up to `HeldPayloads`) until a session binds, then replayed behind the peer
+announcement; a guest's pick drops what is still held from it. A peer whose build version does
+not play goes on `Clashing` and off every peer list. Read `NetLobbyTests.cs`.
+
+## src/Net/NetBuildVersion.cs
+MAJOR.MINOR of the build's SemVer string, which two peers compare before they play: builds a patch
+apart play, and `Unknown`, a string that does not parse, plays only with another unknown. The
+caller hands in the string, so a unit parses without an engine. `BuildVersionMessage` (`0x56`) is
+the lobby's first word on connect. ⚠ Its layout is frozen, since an older build must still read a
+newer one's version to name the mismatch. Wire: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
 
 ## src/Net/LanDiscovery.cs
 The LAN search's datagram pair, apart from the carrier: `LanDiscovery` writes and reads a query
 and a reply of one fixed width on `Port`, `LanGame` is one answer (the reply's source address, the
-game port it names and the host's advert), and `ILanSocket` is the datagram seam the responder and
+game port it names, the host's advert and its build version), and `ILanSocket` is the datagram seam the responder and
 the search are handed. ⚠ The query is padded to the reply's width, so a responder never sends more
 than it was sent and cannot amplify a forged-source flood. Layout:
 [../org/multiplayer-messages.md](../org/multiplayer-messages.md).

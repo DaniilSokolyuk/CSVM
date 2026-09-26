@@ -81,12 +81,12 @@ public sealed class LanSearch : IDisposable
                 return;
             }
 
-            if (_round == 0 || !LanDiscovery.TryReadReply(datagram, _token, out int gamePort, out var advert))
+            if (_round == 0 || !LanDiscovery.TryReadReply(datagram, _token, out int gamePort, out var advert, out var version))
             {
                 continue;
             }
 
-            Heard(new LanGame(address, gamePort, advert));
+            Heard(new LanGame(address, gamePort, advert, version));
         }
     }
 

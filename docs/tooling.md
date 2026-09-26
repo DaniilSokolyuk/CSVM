@@ -288,7 +288,10 @@ the author's call that the remake stands in for the original end to end; until t
 stays `0.x`, and afterwards a major bump is reserved for a change that breaks saved profiles or
 replaces a subsystem wholesale. ⚠ A patch release never changes the format of anything written to
 `user://` and never changes the network protocol, so builds that differ only in the patch number
-read each other's profiles and can play in the same session.
+read each other's profiles and can play in the same session. The network half is enforced at the
+join: each lobby sends its major.minor of `BuildVersion` (`Net/NetBuildVersion.cs`), the host
+refuses a mismatched guest through `SessionClosed` with both versions named, and the LAN games list
+greys a game of another major.minor.
 
 The payload is `packaging/MANIFEST.md`'s table, copied from its repo sources on every export, which
 keeps it byte-identical.

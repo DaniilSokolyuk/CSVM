@@ -25,18 +25,28 @@ public static class NetDoorAid
     // a band still asking the router would show a state no player sees for long.
     private const int MappingWaitMs = 2000;
 
+    /// <summary>The build version the aid's search door and its sample games run, fixed so the
+    /// aid reads the same whatever this build's own version is.</summary>
+    public static NetBuildVersion SampleVersion { get; } = new(0, 1);
+
+    /// <summary>The version of the one sample game this build does not play with.</summary>
+    public static NetBuildVersion OtherVersion { get; } = new(0, 2);
+
     /// <summary>The games the aid's LAN answers with, each at its own documentation address. They
-    /// are a campaign waiting with room, one full, one in the air, and a Dogfight.</summary>
+    /// are a campaign waiting with room, one full, one in the air, a Dogfight, and a Dogfight on a
+    /// build of another version.</summary>
     public static IReadOnlyList<LanGame> SampleGames { get; } = new[]
     {
         new LanGame("192.0.2.10", NetPlayFeature.DefaultPort, new SessionAdvertMessage(
-            NetSessionKind.CampaignCoop, 2, 2, HostName, NetSessionStatus.Waiting, NetPlayFeature.CoopHumans)),
+            NetSessionKind.CampaignCoop, 2, 2, HostName, NetSessionStatus.Waiting, NetPlayFeature.CoopHumans), SampleVersion),
         new LanGame("192.0.2.11", NetPlayFeature.DefaultPort, new SessionAdvertMessage(
-            NetSessionKind.CampaignCoop, 14, 4, "Nathan", NetSessionStatus.Full, NetPlayFeature.CoopHumans)),
+            NetSessionKind.CampaignCoop, 14, 4, "Nathan", NetSessionStatus.Full, NetPlayFeature.CoopHumans), SampleVersion),
         new LanGame("192.0.2.12", NetPlayFeature.DefaultPort, new SessionAdvertMessage(
-            NetSessionKind.CampaignCoop, 30, 3, "Sheila", NetSessionStatus.InMission, NetPlayFeature.CoopHumans)),
+            NetSessionKind.CampaignCoop, 30, 3, "Sheila", NetSessionStatus.InMission, NetPlayFeature.CoopHumans), SampleVersion),
         new LanGame("192.0.2.13", NetPlayFeature.DefaultPort, new SessionAdvertMessage(
-            NetSessionKind.Dogfight, 3, 5, "Lucy", NetSessionStatus.Waiting, NetSeats.MaxPlayers)),
+            NetSessionKind.Dogfight, 3, 5, "Lucy", NetSessionStatus.Waiting, NetSeats.MaxPlayers), SampleVersion),
+        new LanGame("192.0.2.14", NetPlayFeature.DefaultPort, new SessionAdvertMessage(
+            NetSessionKind.Dogfight, 5, 2, "Oskar", NetSessionStatus.Waiting, NetSeats.MaxPlayers), OtherVersion),
     };
 
     /// <summary>A shut door whose host opens onto a loopback wire with <paramref name="guests"/>
@@ -188,7 +198,10 @@ public static class NetDoorAid
     public static NetPlayFeature Searching(bool silent = false) => new(
         (port, maxGuests, bind) => throw new InvalidOperationException("the aid's search door hosts nothing"),
         (address, port) => throw new InvalidOperationException("the aid's search door joins nothing"),
-        lan: (bind, port) => new SampleLan(silent));
+        lan: (bind, port) => new SampleLan(silent))
+    {
+        Version = SampleVersion,
+    };
 
     /// <summary>A door joined over the loopback to a host advertising a campaign mission at
     /// <paramref name="missionSeq"/> with <paramref name="players"/> players in it. The advert
@@ -247,7 +260,7 @@ public static class NetDoorAid
             foreach (var game in SampleGames)
             {
                 byte[] reply = new byte[LanDiscovery.Size];
-                LanDiscovery.WriteReply(reply, token, game.Port, game.Advert);
+                LanDiscovery.WriteReply(reply, token, game.Port, game.Advert, game.Version);
                 _inbox.Enqueue((reply, game.Address));
             }
         }

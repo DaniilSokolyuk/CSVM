@@ -213,7 +213,8 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
         Connect();
     }
 
-    /// <summary>A game's five cells as the list writes them.</summary>
+    /// <summary>A game's five cells as the list writes them. A game of another version names that
+    /// version in its Status cell.</summary>
     public IReadOnlyList<string> Cells(LanGame game)
     {
         var advert = game.Advert;
@@ -223,7 +224,7 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
             CoopDoorText.PlayerCount(advert),
             CoopDoorText.MissionType(advert),
             CoopDoorText.Environment(advert, MissionName, name => name.Length <= EnvironmentFit),
-            CoopDoorText.Status(advert),
+            CoopDoorText.Status(game, _net()?.Version ?? NetBuildVersion.Unknown),
         };
     }
 
@@ -634,6 +635,13 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
             return;
         }
 
+        // Refused before any socket opens, and the list stays up behind the box.
+        if (!net.PlaysWith(game))
+        {
+            _host.RaiseDialog(CoopDoorText.VersionMismatch(game.Version, net.Version), DialogIcon.Warning, Ok(null));
+            return;
+        }
+
         if (net.Stage is NetDoorStage.Failed)
         {
             net.Close();
@@ -789,7 +797,7 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
             }
 
             var cells = Cells(game);
-            var ink = CoopDoorText.Joinable(game.Advert) ? White : Unjoinable;
+            var ink = CoopDoorText.Joinable(game.Advert) && _net()?.PlaysWith(game) != false ? White : Unjoinable;
             for (int column = 0; column < cells.Count; column++)
             {
                 layers.Lines.Add(new BoardLine(cells[column], ColumnX(column), y + 5f, ColumnWidths[column], TextFallback,

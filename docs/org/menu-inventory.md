@@ -300,7 +300,7 @@ named in it; `WaveEdit` is the twelfth and has no aid, which is the warning unde
 | `campaign-coop-guest[:board]` | Original only: a co-op guest joined to a loopback host, standing on the board the host names (`cabin` by default, `briefing`, `flightcheck`, `ready`, `planeselection`, `ammo`, `debrief`), the host's rows greyed and the guest band drawn; `ready` is the check after the guest's Ready, `debrief` the host's won result | `Campaign` |
 | `campaign-coop-ready` | Original only: a co-op host's flight check with two guests, the first Ready and the second not, so FLY MISSION is greyed and the strip's chips say Ready | `Campaign` |
 | `connection` | Original only: the Multiplayer Connection page | out of scope |
-| `connection-games[:searching]` | Original only: the LAN games list over an in-process LAN answering with four sample games, or with none so the Searching box stands | out of scope |
+| `connection-games[:searching]` | Original only: the LAN games list over an in-process LAN answering with five sample games, one of another build version, or with none so the Searching box stands | out of scope |
 | `lobby[:host\|guest[:mission\|plane\|ammo\|rockets\|scores]]` | Original only: the Multiplayer Lobby as its host or first guest, over an in-process wire with two guests, Time 5 and Limited Lives set, the first guest Ready and one chat line from each, on the named tab | out of scope |
 | `network-coopjoin` | the Network board of a guest joined over the loopback to a campaign host, the session named in its status | `Network` |
 | `network-coopwait` | that guest's waiting board | `Network` |

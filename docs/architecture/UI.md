@@ -1187,7 +1187,8 @@ The original's Multiplayer Connection page and the LAN games list behind its Con
 so every corner is the scripts' own rather than the layout's. Only LAN TCP/IP, which searches the
 network, and Internet, which joins the typed address, are offered; Build Custom Plane draws greyed,
 and Host and Create Game open `OriginalLobbyScreen` as a Dogfight's host. A join started here is followed on the shared messagebox over the page until it lands or
-fails. Its plaques draw as pictures, since a plaque layer stands over the labels a script colours.
+fails. A game of another build version lists in grey with its version as its status, and Join
+Game refuses it in a box before any socket opens. Plaques draw as pictures, over a script's labels.
 The geometry and strings: [../org/menu-inventory.md](../org/menu-inventory.md).
 
 ## src/UI/Menu/Original/OriginalLobbyScreen.cs
@@ -1318,7 +1319,7 @@ launcher's `Net/NetCarrier.cs`, or a suite's loopback mesh and no router); every
 carrier in a `Net/NetLobby.cs`. `OpenHost`, `OpenCoopHost` (whose `Offer` names the mission) and
 `OpenJoin` open; `Step` carries the link; `Close` unmaps the lease. In co-op `ShowCoop` sends each
 guest the host's boards, `CoopAllReady` holds FLY MISSION until every guest is Ready, `CoopLaunchDue` tells a guest to follow, `TellSeatFits` sends every seat's fit before the opener, and
-`LeaveCoopMission` tells the host at once that a guest walked out. `OpenDogfightHost` opens a Dogfight lobby, and `Dogfight` is the `DogfightLobby` either end stands in, created on a guest when its host's advert names a Dogfight and unshown behind a Built-in host; `DogfightLaunchDue` tells a guest its host has launched, and a guest back from a match waits for the host's next round. Boards: `LaunchMenu.cs`.
+`LeaveCoopMission` tells the host at once that a guest walked out. `OpenDogfightHost` opens a Dogfight lobby, and `Dogfight` is the `DogfightLobby` either end stands in, created on a guest when its host's advert names a Dogfight and unshown behind a Built-in host; `DogfightLaunchDue` tells a guest its host has launched, and a guest back from a match waits for the host's next round. `Version` is the build's `Net/NetBuildVersion.cs`: a host refuses a guest of another version, and a guest such a host, with both versions on `Fault`. Boards: `LaunchMenu.cs`.
 
 ## src/UI/Menu/DogfightLobby.cs
 The Multiplayer Lobby's state over a `Net/NetLobby.cs`, engine-free, one class for both ends.
@@ -1331,7 +1332,8 @@ Wire: [../org/multiplayer-messages.md](../org/multiplayer-messages.md). Coverage
 The words the campaign's network door is drawn in, engine-free and built off the door alone: the
 host's band (`HostBand`, the open port, the router's address and the guest count), the session an
 advert names (`SessionName`), the join board's status (`JoinedStatus`) and the waiting board's
-(`WaitingStatus`), and the rows and presses those boards show. The mission's long name comes in as
+(`WaitingStatus`), the games list's cells with a version mark (`Status`), the refusal naming both
+versions (`VersionMismatch`), and the rows and presses those boards show. The mission's long name comes in as
 a delegate, since only the caller holds the langui table.
 
 ## src/UI/Menu/NetDoorAid.cs
@@ -1340,7 +1342,8 @@ guests already on it and a router stub mapping at a documentation address, and a
 joined to a loopback host advertising a campaign mission. `CoopGuest` stands a guest on a given
 host flow, and `AnswerReady` makes a host's guest Ready. `DogfightDoors` is a Dogfight host and two
 guests on one wire, `PoseDogfight` sets the lobby the `lobby` aid shows, and `PlayedScores` is the
-finished match its Game Scores page lands. No aid opens a socket or asks a router.
+finished match its Game Scores page lands. The games list's sample LAN holds one game of
+`OtherVersion`, which the list marks. No aid opens a socket or asks a router.
 
 ## src/UI/Screens/MenuSeatDevices.cs
 The pad side of the shared player setup, for any presentation, over seat 0's `MenuInput` and the

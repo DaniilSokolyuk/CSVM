@@ -14,12 +14,15 @@ public sealed class LanResponder : IDisposable
     public const int QueriesPerPoll = 16;
 
     private readonly ILanSocket _socket;
+    private readonly NetBuildVersion _version;
     private readonly byte[] _reply = new byte[LanDiscovery.Size];
 
-    /// <summary>A responder over <paramref name="socket"/>, which it owns from here on.</summary>
-    public LanResponder(ILanSocket socket)
+    /// <summary>A responder over <paramref name="socket"/>, which it owns from here on. Each answer
+    /// names this build as <paramref name="version"/>.</summary>
+    public LanResponder(ILanSocket socket, NetBuildVersion version = default)
     {
         _socket = socket ?? throw new ArgumentNullException(nameof(socket));
+        _version = version;
     }
 
     /// <summary>How many queries this responder has answered.</summary>
@@ -42,7 +45,7 @@ public sealed class LanResponder : IDisposable
                 continue;
             }
 
-            int length = LanDiscovery.WriteReply(_reply, token, gamePort, advert);
+            int length = LanDiscovery.WriteReply(_reply, token, gamePort, advert, _version);
             _socket.Send(address, port, _reply.AsSpan(0, length));
             Answered++;
         }

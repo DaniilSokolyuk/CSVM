@@ -108,6 +108,10 @@ public enum NetMessageType : ushort
 
     /// <summary>One line of lobby chat and the name of the pilot who typed it.</summary>
     LobbyChat = 0x0055,
+
+    /// <summary>A lobby's first word to a peer on connect: this build's MAJOR.MINOR version.
+    /// </summary>
+    BuildVersion = 0x0056,
 }
 
 /// <summary>Which board a co-op host stands on, the screen a <see cref="CoopFlowMessage"/> names.
@@ -160,6 +164,10 @@ public enum NetCloseReason : byte
 
     /// <summary>The session had no seat left for this guest.</summary>
     Full = 2,
+
+    /// <summary>The guest's build does not play with the host's: their MAJOR.MINOR versions
+    /// differ.</summary>
+    VersionMismatch = 3,
 }
 
 /// <summary>What a <see cref="PositionalStartMessage"/> says. Each member names what the seat,
@@ -971,14 +979,18 @@ public readonly record struct SessionAdvertMessage(
 }
 
 /// <summary>
-/// A host's word to a guest that it is being sent away, and why. A host closing its session sends
-/// it to every guest before the socket closes. A host with no seat left sends it to the guest it
-/// refuses. A guest's board can then tell a host that closed from a link that dropped. Like the
-/// advert it stays in the lobby and never reaches a session.</summary>
-public readonly record struct SessionClosedMessage(NetCloseReason Reason) : INetMessage<SessionClosedMessage>
+/// A host's word to a guest that it is being sent away, and why, with both build versions. A host
+/// sends it to every guest before closing, and to a guest it has no seat for or whose version
+/// does not play. A guest's board can then tell a host that closed from a link that
+/// dropped. Like the advert it stays in the lobby and never reaches a session.
+/// ⚠ Do not change this layout. A refused guest of another build reads it to say why.
+/// </summary>
+public readonly record struct SessionClosedMessage(
+    NetCloseReason Reason, NetBuildVersion Host = default, NetBuildVersion Guest = default)
+    : INetMessage<SessionClosedMessage>
 {
     /// <summary>The fixed width of the message, header included.</summary>
-    public const int Size = 8;
+    public const int Size = 8 + (2 * NetBuildVersion.WireBytes);
 
     /// <inheritdoc/>
     public static NetMessageType Type => NetMessageType.SessionClosed;
@@ -995,9 +1007,16 @@ public readonly record struct SessionClosedMessage(NetCloseReason Reason) : INet
             return false;
 
         byte reason = reader.ReadByte();
-        message = new SessionClosedMessage(reason is (byte)NetCloseReason.Closed or (byte)NetCloseReason.Full
+        _ = reader.ReadByte();
+        _ = reader.ReadUInt16();
+        if (!NetBuildVersion.TryFromWords(reader.ReadUInt16(), reader.ReadUInt16(), out var host)
+            || !NetBuildVersion.TryFromWords(reader.ReadUInt16(), reader.ReadUInt16(), out var guest))
+            return false;
+
+        var known = reason is >= (byte)NetCloseReason.Closed and <= (byte)NetCloseReason.VersionMismatch
             ? (NetCloseReason)reason
-            : NetCloseReason.Unknown);
+            : NetCloseReason.Unknown;
+        message = new SessionClosedMessage(known, host, guest);
         return true;
     }
 
@@ -1008,6 +1027,8 @@ public readonly record struct SessionClosedMessage(NetCloseReason Reason) : INet
         writer.WriteByte((byte)Reason);
         writer.WriteByte(0);
         writer.WriteUInt16(0);
+        Host.Write(ref writer);
+        Guest.Write(ref writer);
         return writer.Close();
     }
 }
@@ -1218,6 +1239,7 @@ public static class NetMessage
         NetMessageType.DogfightOptions => DogfightOptionsMessage.Reliability,
         NetMessageType.DogfightRoster => DogfightRosterMessage.Reliability,
         NetMessageType.LobbyChat => LobbyChatMessage.Reliability,
+        NetMessageType.BuildVersion => BuildVersionMessage.Reliability,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "no such message type"),
     };
 

@@ -14,6 +14,8 @@ public class LanDiscoveryTests
     private static readonly SessionAdvertMessage Coop =
         new(NetSessionKind.CampaignCoop, 7, 2, "Zachary", NetSessionStatus.Waiting, 4);
 
+    private static readonly NetBuildVersion Build = new(0, 7);
+
     [Fact]
     public void AQueryAndAReplyRoundTripAtTheSameSize()
     {
@@ -23,16 +25,36 @@ public class LanDiscoveryTests
         Assert.Equal(0xC0FFEEu, token);
 
         var reply = new byte[LanDiscovery.Size];
-        Assert.Equal(LanDiscovery.Size, LanDiscovery.WriteReply(reply, token, 47500, Coop));
-        Assert.True(LanDiscovery.TryReadReply(reply, token, out int port, out var advert));
+        Assert.Equal(LanDiscovery.Size, LanDiscovery.WriteReply(reply, token, 47500, Coop, Build));
+        Assert.True(LanDiscovery.TryReadReply(reply, token, out int port, out var advert, out var version));
         Assert.Equal(47500, port);
         Assert.Equal(Coop, advert);
+        Assert.Equal(Build, version);
 
         // ABLE-TO-FAIL CONTROL: a reply is not a query, a query is not a reply, and a reply to
         // another search's token is not this search's.
         Assert.False(LanDiscovery.TryReadQuery(reply, out _));
-        Assert.False(LanDiscovery.TryReadReply(query, token, out _, out _));
-        Assert.False(LanDiscovery.TryReadReply(reply, token + 1, out _, out _));
+        Assert.False(LanDiscovery.TryReadReply(query, token, out _, out _, out _));
+        Assert.False(LanDiscovery.TryReadReply(reply, token + 1, out _, out _, out _));
+    }
+
+    [Fact]
+    public void AReplyCarriesTheBuildVersionAndAnUnknownOneRoundTripsAsUnknown()
+    {
+        // The datagram grew by the version's four bytes, and the query is padded to match.
+        Assert.Equal(48, LanDiscovery.Size);
+        Assert.Equal(2, LanDiscovery.Version);
+
+        var reply = new byte[LanDiscovery.Size];
+        LanDiscovery.WriteReply(reply, 3, 47500, Coop, NetBuildVersion.Unknown);
+        Assert.True(LanDiscovery.TryReadReply(reply, 3, out _, out _, out var unknown));
+        Assert.False(unknown.Known);
+
+        // ABLE-TO-FAIL CONTROL: a different minor reads back as that minor, not as this build's.
+        LanDiscovery.WriteReply(reply, 3, 47500, Coop, new NetBuildVersion(0, 6));
+        Assert.True(LanDiscovery.TryReadReply(reply, 3, out _, out _, out var older));
+        Assert.Equal(new NetBuildVersion(0, 6), older);
+        Assert.NotEqual(Build, older);
     }
 
     [Fact]
@@ -52,15 +74,15 @@ public class LanDiscoveryTests
         Assert.False(LanDiscovery.TryReadQuery(later, out _));
 
         var reply = new byte[LanDiscovery.Size];
-        LanDiscovery.WriteReply(reply, 5, 47500, Coop);
-        Assert.False(LanDiscovery.TryReadReply(reply.AsSpan(0, LanDiscovery.Size - 4), 5, out _, out _));
+        LanDiscovery.WriteReply(reply, 5, 47500, Coop, Build);
+        Assert.False(LanDiscovery.TryReadReply(reply.AsSpan(0, LanDiscovery.Size - 4), 5, out _, out _, out _));
     }
 
     [Fact]
     public void AResponderAnswersEachQueryWithNoMoreBytesThanItWasSentAndDropsTheRest()
     {
         var lan = new LoopbackLan();
-        using var responder = new LanResponder(lan.Bind("10.0.0.2", LanDiscovery.Port));
+        using var responder = new LanResponder(lan.Bind("10.0.0.2", LanDiscovery.Port), Build);
         using var asker = lan.Bind("10.0.0.3", 0);
 
         var query = new byte[LanDiscovery.Size];
@@ -75,9 +97,10 @@ public class LanDiscoveryTests
         Assert.True(answer!.Length <= sent);
         Assert.Equal("10.0.0.2", from);
         Assert.Equal(LanDiscovery.Port, fromPort);
-        Assert.True(LanDiscovery.TryReadReply(answer, 9, out int port, out var advert));
+        Assert.True(LanDiscovery.TryReadReply(answer, 9, out int port, out var advert, out var version));
         Assert.Equal(47500, port);
         Assert.Equal("Zachary", advert.Host);
+        Assert.Equal(Build, version);
         Assert.Null(asker.Receive(out _, out _));
     }
 

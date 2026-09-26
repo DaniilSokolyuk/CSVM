@@ -112,6 +112,17 @@ public static class CoopDoorText
         _ => "",
     };
 
+    /// <summary>The games list's Status for a game heard on the LAN. A game of a version this build
+    /// does not play with reads as that version, such as "Version 0.7", in place of its status.
+    /// </summary>
+    public static string Status(LanGame game, NetBuildVersion own) =>
+        own.PlaysWith(game.Version) ? Status(game.Advert) : $"Version {game.Version}";
+
+    /// <summary>Why a guest and a host of versions that do not play together were kept apart,
+    /// naming both, as "Host runs 0.7, you run 0.6".</summary>
+    public static string VersionMismatch(NetBuildVersion host, NetBuildVersion own) =>
+        $"Host runs {host}, you run {own}";
+
     /// <summary>Whether a games list row may be picked: a session this build knows, with a seat.
     /// </summary>
     public static bool Joinable(SessionAdvertMessage advert) =>

@@ -155,7 +155,7 @@ public sealed class NetMessageFuzzTests
         var payloads = Payloads(new Random(FuzzSeed + 3)).ToList();
         foreach (var payload in payloads)
         {
-            lobby.OnPayload(0, 0, payload);
+            lobby.OnPayload(Sender(payload), 0, payload);
             Assert.True(lobby.Held <= NetLobby.HeldPayloads, $"the lobby holds {lobby.Held} payloads");
         }
 
@@ -170,12 +170,16 @@ public sealed class NetMessageFuzzTests
         int replayed = guest.Received;
         for (int i = 0; i < payloads.Count; i++)
         {
-            lobby.OnPayload(0, 0, payloads[i]);
+            lobby.OnPayload(Sender(payloads[i]), 0, payloads[i]);
             AssertSeatsInRange(guest, $"after payload {i}");
         }
 
         Assert.True(replayed > 0 && guest.Received > replayed, $"the guest session heard {replayed} held and {guest.Received} in all");
         Assert.True(guest.Malformed > 0, "no payload reached a reader and failed it, so the malformed path went unexercised");
+
+        // A build version that does not play silences its sender, so it arrives from a peer of its
+        // own and the host's stream stays heard.
+        static int Sender(byte[] payload) => BuildVersionMessage.TryRead(payload, out _) ? 7 : 0;
     }
 
     // A host with every type routed and relayed, the widest set of listeners one session can

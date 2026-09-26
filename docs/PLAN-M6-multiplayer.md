@@ -194,6 +194,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 31. ☑ Latency and loss soaks, desync instruments and a `--debug-net` readout
 32. ☑ The Steam transport flag: a build-time gate with a stub, so the seam is proven before any SDK arrives
 33. ☑ The router mapping on a finite lease with a stale mapping cleared, and a fuzz of every message reader
+34. ☑ A build-version check when peers connect: MAJOR.MINOR must match, and a mismatch is refused with both versions named
 
 ### Wave E, the rest of the host-owned world
 
@@ -2108,6 +2109,93 @@ that expires mid-match closes the door on every guest outside the router, so the
 must cover a slow gateway search. Godot's client cannot ask a gateway who holds a mapping, so a
 delete by port can remove another program's mapping on that port; delete only the port this run is
 about to map and the one the settings remember, never a range.
+
+## D34 ☑ A build-version check when peers connect: MAJOR.MINOR must match, and a mismatch is refused with both versions named
+
+**Goal.** Two builds that would read each other's messages differently never play together, and
+the player is told why in words that name both versions, on either door.
+
+**Decision (the user's).** "Add it, major.minor." The join compares MAJOR.MINOR of
+`application/config/version` in `project.godot` (SemVer, pre-1.0), read through `BuildVersion`.
+Builds a patch apart play together. A mismatched guest is refused with a readable reason naming
+both versions, "Host runs 0.7, you run 0.6". The LAN games list marks an incompatible game, and
+joining it is refused before connecting. Nothing else about the wire changes.
+
+**Landed.** A lobby-level hello in both directions, a refusal notice that carries both versions,
+and the host's version in the LAN discovery reply. By file:
+- `CSVM/src/Net/NetBuildVersion.cs` (new): `NetBuildVersion`, MAJOR.MINOR parsed off the SemVer
+  string (a leading `v` and any pre-release or build suffix ignored), 16 bits each on the wire,
+  both words at `0xFFFF` for `Unknown`. `PlaysWith` is equality, so unknown plays only with
+  unknown. `BuildVersionMessage`, `0x56`, 8 bytes, reliable. Its layout is frozen.
+- `CSVM/src/Net/NetMessages.cs`: `NetMessageType.BuildVersion = 0x56`,
+  `NetCloseReason.VersionMismatch = 3`, and `SessionClosedMessage` grows from 8 to 16 bytes with
+  the host's version at 8 and the guest's at 12. Its layout is frozen too.
+- `CSVM/src/Net/NetLobby.cs`: takes the build's version, sends `BuildVersionMessage` first on every
+  connect, and keeps what each peer named. A peer whose version does not play goes on `Clashing`,
+  leaves `AllPeers`, `Peers` and a bound session, and has its held payloads and pick dropped;
+  after that only its `SessionClosed` is read. `Farewell` sends both versions.
+- `CSVM/src/Net/LanDiscovery.cs`, `LanResponder.cs`, `LanSearch.cs`: the reply carries the host's
+  version at 16 and the advert moves to 20, so both datagrams are 48 bytes (the query still
+  padded to the reply) and `LanDiscovery.Version` is 2. `LanGame.Version` is what the search heard.
+- `CSVM/src/UI/Menu/NetPlayFeature.cs`: `Version` (init). A host door, of either kind, sends each
+  clashing guest `SessionClosed(VersionMismatch)` and hangs up after `RefuseGraceSeconds`, the same
+  path as a guest refused as full. A guest door fails on the host's notice, or on its own clash
+  when no notice came, with `CoopDoorText.VersionMismatch(host, own)` on `Fault`. `JoinGame`
+  refuses a listed game of another version before any socket opens; `PlaysWith(LanGame)` says so.
+- `CSVM/src/UI/Menu/CoopDoorText.cs`: `Status(LanGame, own)` reads "Version 0.2" in place of the
+  status for a game that does not play, and `VersionMismatch` is the refusal's words.
+- `CSVM/src/UI/Menu/Original/OriginalConnectionScreen.cs`: the games list draws such a row in the
+  unjoinable grey with its version as the Status cell; Join Game on it raises the refusal box over
+  the list and opens nothing. A wire refusal reaches the page's existing failed-join box. The
+  Built-in door's board shows the same `Fault` through its existing "That did not open" status.
+- `CSVM/src/Session/Launcher.cs`: the shipped door's `Version` is
+  `NetBuildVersion.Parse(BuildVersion.Current)`.
+- `CSVM/src/UI/Menu/NetDoorAid.cs`: the aid doors run a fixed `SampleVersion` 0.1, and the
+  `connection-games` sample LAN holds a fifth game, Oskar's dogfight, at `OtherVersion` 0.2.
+- `CSVM/src/Testing/MenuOriginalConnectionSuites.cs`: suite `menu-original-version`, an Original
+  guest of 0.6 against a Built-in host of 0.7: the list's mark, the list refusal with no socket
+  opened, the typed Internet join refused on the wire with the same words while the host seats
+  nobody, and a guest a patch apart joining (the control). Weight 0.2 in
+  `analysis/engine-suite-weights.json`.
+- Units: `NetBuildVersionTests.cs` (new, Quick) for the parse, the compare (patch plays, minor and
+  major refused, unknown only with unknown) and the wire form; `NetMessagesTests`,
+  `LanDiscoveryTests`, `NetLobbyTests`, `NetPlayFeatureTests` (a mismatched guest refused with the
+  reason on both ends while a patch-apart guest joins, a silent host refused by the guest itself,
+  and the list refusal counting no socket open) and `CoopDoorTextTests`. `NetMessageFuzzTests` finds
+  `0x56` by reflection; its lobby fact takes a fuzzed build version from a peer of its own, since a
+  clash silences the sender.
+- Docs: `multiplayer-messages.md` (the `0x56` id, the 16-byte `0x4F`, a build version check
+  section, the 48-byte discovery layout), the `Net.md` entries for `NetLobby`, `LanDiscovery` and
+  `NetBuildVersion` (new), the `UI.md` entries for `NetPlayFeature`, `CoopDoorText`, `NetDoorAid`
+  and `OriginalConnectionScreen`, the index bullet, and the aid's sample count in
+  `menu-presentations.md` and `menu-inventory.md`.
+
+**Judgement calls.**
+- The check runs in the lobby, so it covers every door that stands one on the carrier. The command
+  line's `--net-host` and `--net-join` stand none and are not checked: they are a development path
+  that runs one build against itself.
+- Both ends check. A host's refusal carries both versions so the guest reads them even from a host
+  that only closes, and a guest also refuses a clashing host on its own, so a host that never says
+  why is still refused with the right words.
+- A peer that sends no build version is not refused. Multiplayer ships with the hello from its
+  first release, and a refusal on silence would need a timeout that a slow first packet could trip.
+- The version rides in the LAN reply's fixed prefix rather than in the advert, and the handshake
+  `0x43` and the advert `0x4A` are unchanged. The discovery version rose to 2 because the layout
+  changed; it is documented as counting layouts, not builds.
+- A game of another version stays pickable in the list, since the Status column cannot say why on
+  its own; Join Game then raises the box naming both versions rather than greying the button.
+- A Dogfight host mid-match does not step its door, so a clashing guest arriving then is farewelled
+  only when the match ends. The guest refuses the host by itself at once.
+- The aid doors use a fixed 0.1 rather than the real build version, so the aid shot does not move
+  on a release bump.
+
+**Owed.** Nothing blocking. A screenshot aid for the refusal box over the games list would let the
+box be judged by eye; the suite checks its words.
+
+**Verified.** The complete battery on the merged tree (D34 over the merge of main and everything
+before it) passed: units 5091/0/2, engine 411, goldens 19 hash-identical. The user approved the
+games list's mark at the look. `docs/tooling.md`'s version rule names this check as its network
+half.
 
 # Wave E, the rest of the host-owned world
 

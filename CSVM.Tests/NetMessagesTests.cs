@@ -616,16 +616,31 @@ public class NetMessagesTests
     }
 
     [Fact]
-    public void ACloseNoticeRoundTripsItsReasonReliablyInEightBytes()
+    public void ACloseNoticeRoundTripsItsReasonAndBothVersionsReliablyInSixteenBytes()
     {
         Span<byte> buffer = stackalloc byte[SessionClosedMessage.Size];
-        Assert.Equal(8, SessionClosedMessage.Size);
-        foreach (var reason in new[] { NetCloseReason.Closed, NetCloseReason.Full })
+        Assert.Equal(16, SessionClosedMessage.Size);
+        foreach (var reason in new[] { NetCloseReason.Closed, NetCloseReason.Full, NetCloseReason.VersionMismatch })
         {
             Assert.Equal(SessionClosedMessage.Size, new SessionClosedMessage(reason).Write(buffer));
             Assert.True(SessionClosedMessage.TryRead(buffer, out var got));
             Assert.Equal(reason, got.Reason);
+            Assert.False(got.Host.Known);
+            Assert.False(got.Guest.Known);
         }
+
+        Assert.Equal(3, (int)NetCloseReason.VersionMismatch);
+        var refusal = new SessionClosedMessage(NetCloseReason.VersionMismatch, new NetBuildVersion(0, 7), new NetBuildVersion(0, 6));
+        refusal.Write(buffer);
+        Assert.True(SessionClosedMessage.TryRead(buffer, out var named));
+        Assert.Equal(refusal, named);
+
+        // ABLE-TO-FAIL CONTROL: no writer sends one version word at the unknown value and the
+        // other not. Such a notice is refused rather than read as unknown.
+        buffer[8] = 0xFF;
+        buffer[9] = 0xFF;
+        Assert.False(SessionClosedMessage.TryRead(buffer, out _));
+        new SessionClosedMessage(NetCloseReason.Closed).Write(buffer);
 
         Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.SessionClosed));
         Assert.Equal(0x4F, (int)NetMessageType.SessionClosed);
@@ -766,6 +781,35 @@ public class NetMessagesTests
         Span<byte> options = stackalloc byte[DogfightOptionsMessage.Size];
         default(DogfightOptionsMessage).Write(options);
         Assert.False(LobbyChatMessage.TryRead(options, out _));
+    }
+
+    // A lobby's first word on connect: the build version, reliable, in eight bytes.
+    [Fact]
+    public void ABuildVersionRoundTripsKnownOrUnknownReliablyInEightBytes()
+    {
+        Span<byte> buffer = stackalloc byte[BuildVersionMessage.Size];
+        Assert.Equal(8, BuildVersionMessage.Size);
+        foreach (var sent in new[] { new BuildVersionMessage(new NetBuildVersion(0, 7)), new BuildVersionMessage(NetBuildVersion.Unknown) })
+        {
+            Assert.Equal(BuildVersionMessage.Size, sent.Write(buffer));
+            Assert.True(BuildVersionMessage.TryRead(buffer, out var got));
+            Assert.Equal(sent, got);
+        }
+
+        Assert.Equal(0x56, (int)NetMessageType.BuildVersion);
+        Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.BuildVersion));
+        Assert.False(NetMessage.IsOriginalId(NetMessageType.BuildVersion));
+
+        // ABLE-TO-FAIL CONTROL: a half-unknown version is refused, and a close notice is not a
+        // version.
+        buffer[4] = 0xFF;
+        buffer[5] = 0xFF;
+        buffer[6] = 7;
+        buffer[7] = 0;
+        Assert.False(BuildVersionMessage.TryRead(buffer, out _));
+        Span<byte> closed = stackalloc byte[SessionClosedMessage.Size];
+        new SessionClosedMessage(NetCloseReason.Closed).Write(closed);
+        Assert.False(BuildVersionMessage.TryRead(closed, out _));
     }
 
     [Fact]

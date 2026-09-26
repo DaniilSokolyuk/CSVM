@@ -1986,7 +1986,10 @@ public partial class Launcher : Node3D
             (address, port) => Net.NetCarrier.Join(address, port),
             Net.NetCarrier.PortMap,
             Net.NetCarrier.PortUnmap,
-            Net.NetCarrier.Lan);
+            Net.NetCarrier.Lan)
+        {
+            Version = Net.NetBuildVersion.Parse(BuildVersion.Current),
+        };
         host.Features.Add(_netDoor);
         host.AddSeat(seat);
         string? reason = host.Select(_spec.ForceBuiltInPresentation, _spec.PresentationOverride);

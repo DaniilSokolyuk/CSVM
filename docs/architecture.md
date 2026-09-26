@@ -716,6 +716,7 @@ original's own message set, with ids and guarantees, is in [`org/multiplayer-mes
 - `src/Net/UpnpLease.cs`, the router mapping's rules behind a gateway seam: a finite lease, the stale mapping cleared by exact port, and when the door renews.
 - `src/Net/UpnpPortMemory.cs`, the one port this machine last mapped, kept in the user directory so the next run can clear what a crash left.
 - `src/Net/NetLobby.cs`, a carrier's first listener before any session binds it: the host's session advert and closing word out, the latest of each in, every other payload held for the session.
+- `src/Net/NetBuildVersion.cs`, the build's MAJOR.MINOR two peers compare before they play, patch ignored and unknown playing only with unknown, and the lobby's `0x56` message that carries it.
 - `src/Net/LanDiscovery.cs`, the LAN search's datagram pair outside the carrier: a query and a reply of one width, so a responder never amplifies, and the `ILanSocket` seam.
 - `src/Net/LanResponder.cs`, an open door's answer to a LAN search: each well-formed query answered with the advert and game port, a bounded count per frame.
 - `src/Net/LanSearch.cs`, a guest's broadcast search in rounds under fresh tokens: the games that answered, dropped after a round without an answer.
