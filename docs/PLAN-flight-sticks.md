@@ -581,8 +581,13 @@ hat is accepted on any `DeviceKind.Joypad` id.
   hat as `Hat <n> <Direction>`; D10 owns the "R Axis 3" form.
 
 **Left open.** `AxisPairs.cs` has no `.uid` yet (Godot writes one on the next editor import; the
-orchestrator may want it in the landing commit). `ControlGlyphs` draws no glyph for a full axis and
-falls back to text. No engine suite exercises a full axis, since no device source produces one until
+orchestrator may want it in the landing commit). A stick control's prompt glyph is PromptFont's
+flight stick followed by the button's filled digits or the hat's d-pad arm (the stick named "L"
+mirrored), and a stick axis keeps its words. After a stick press, `ActiveDevice.OnStick` makes the
+flight prompts and the results boards' menu legend name the stick's binding over a gamepad's.
+Absolute rows never count as a press, since a half blind to the lever reads it centred at 0.5.
+Seen at the controls: auto-dock, respawn and the legend draw the stick, with no flicker to the
+keyboard. No engine suite exercises a full axis, since no device source produces one until
 A3; the unit suites carry the rules.
 
 **Verified.** The full `RunTests.ps1` passes on the merged branch; the bindings engine suites
