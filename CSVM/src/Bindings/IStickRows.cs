@@ -10,4 +10,10 @@ public interface IStickRows
     /// <summary>Replaces every stick binding in <paramref name="keymap"/> with the rows of the
     /// profiles active now. Pad, keyboard and mouse rows are left exactly as they are.</summary>
     void MergeInto(BindingProfile keymap);
+
+    /// <summary>A Controls screen's reset of one context. The reset map already holds the shipped
+    /// keyboard, mouse and pad rows, and the staged map's stick rows are copied into it. Each stick
+    /// with default rows then gets those in place of its own (<c>docs/org/input.md</c>, "Resetting a
+    /// Controls screen").</summary>
+    void ResetInto(ActionMap reset, ActionMap staged, InputContext context);
 }

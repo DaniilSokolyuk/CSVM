@@ -76,16 +76,18 @@ one log line.
 Pure selection: connected models plus files give the active file per model. A file applies when its
 model and every companion are connected; more companions win, then user over shipped, then the
 ordinal file name. Also the rows step: `Rows` (one context's stick-only map), `MergeInto` (a
-keymap's stick bindings replaced by the active rows, ignored profiles adding none) and
-`WithoutStickRows` (the copy the keymap file is saved from).
+keymap's stick bindings replaced by the active rows, ignored profiles adding none), `ReplaceRows`
+(named models' rows only, for a reset) and `WithoutStickRows` (the copy the keymap file is saved
+from).
 
 ## src/Sticks/StickProfileSet.cs
 The profiles in force: the loaded files, the connected models, the resolver's choice, and
 `Revision`/`Changed` when that choice moves. It is `Bindings/IStickRows.cs` for seat 1's keymap,
 `Map` for a stick-only action source, `Save` for one profile (copy-on-write), and `SaveFrom` for an
 accepted controls screen (each changed model's rows to the profile the keymap was staged under, or
-a new user profile). The generic default joins the choice for the one model it claims, and a file
-that wins on its name alone logs a warning naming both. `MergeIfChanged` follows the choice into a
+a new user profile). `ResetDefaults` and `ResetInto` are a screen reset's stick rows, from shipped
+files alone. The generic default joins the choice for the one model it claims, and a file that
+wins on its name alone logs a warning naming both. `MergeIfChanged` follows the choice into a
 flying seat's keymap or a menu seat's map. Engine-free; tests run it over `FakeStickNative`.
 
 ## src/Sticks/StickShape.cs

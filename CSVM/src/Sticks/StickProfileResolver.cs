@@ -158,16 +158,34 @@ public static class StickProfileResolver
         };
     }
 
+    /// <summary>Replaces the rows of each model <paramref name="profiles"/> names with that profile's
+    /// rows for one context. Every other binding, another stick's included, is left alone.</summary>
+    public static void ReplaceRows(ActionMap map, IEnumerable<StickProfile> profiles, InputContext context)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        var list = new List<StickProfile>(profiles);
+        var models = new HashSet<StickModel>();
+        foreach (var profile in list)
+        {
+            models.Add(profile.Model);
+        }
+
+        RemoveRows(map, binding => StickModel.TryFromDevice(binding.Device, out var model) && models.Contains(model));
+        AddRows(map, list, context);
+    }
+
     /// <summary>Whether <paramref name="binding"/> is on a stick identity, in any case.</summary>
     public static bool IsStick(Binding binding) => StickModel.TryFromDevice(binding.Device, out _);
 
-    private static void RemoveStickRows(ActionMap map)
+    private static void RemoveStickRows(ActionMap map) => RemoveRows(map, IsStick);
+
+    private static void RemoveRows(ActionMap map, Func<Binding, bool> drop)
     {
         foreach (var action in new List<InputAction>(map.BoundActions))
         {
             foreach (var binding in new List<Binding>(map.Bindings(action)))
             {
-                if (IsStick(binding))
+                if (drop(binding))
                 {
                     map.Unassign(action, binding);
                 }

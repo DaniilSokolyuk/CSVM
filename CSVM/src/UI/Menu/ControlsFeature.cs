@@ -33,6 +33,7 @@ public sealed class ControlsFeature : IMenuFeature
     private readonly HashSet<int> _dirty = new();
     private readonly Action<int, BindingProfile>? _save;
     private readonly Func<string?>? _openProfilesFolder;
+    private readonly Func<IStickRows?>? _stickRows;
 
     private InputContext _context = InputContext.Flight;
     private ControlCapture? _capture;
@@ -44,11 +45,15 @@ public sealed class ControlsFeature : IMenuFeature
     /// <summary>A feature whose saves go through <paramref name="save"/>, or nowhere when that is
     /// null. The write is injected rather than reached for. So the feature stays engine-free and a
     /// test never touches the player's real keymap file. The folder opener returns the stick profile
-    /// folder's path, or null when it could not open it (<paramref name="openProfilesFolder"/>).</summary>
-    public ControlsFeature(Action<int, BindingProfile>? save = null, Func<string?>? openProfilesFolder = null)
+    /// folder's path, or null when it could not open it (<paramref name="openProfilesFolder"/>).
+    /// A reset takes player 1's stick defaults from the stick side. That is null while sticks are off
+    /// (<paramref name="stickRows"/>).</summary>
+    public ControlsFeature(
+        Action<int, BindingProfile>? save = null, Func<string?>? openProfilesFolder = null, Func<IStickRows?>? stickRows = null)
     {
         _save = save;
         _openProfilesFolder = openProfilesFolder;
+        _stickRows = stickRows;
     }
 
     /// <summary>Raised by <see cref="Accept"/> once per seat it committed, after the save, with the
@@ -408,8 +413,7 @@ public sealed class ControlsFeature : IMenuFeature
     /// </summary>
     public void ResetContext()
     {
-        var seat = _seats[_player];
-        Restore(seat.Working[_context], DefaultBindings.MapFor(_context, seat.PadOf(_context)));
+        ResetMap(_seats[_player], _context);
         _slot = 0;
         MarkDirty();
         Status = $"{ContextName(_context)} defaults restored. Accept to keep them.";
@@ -423,7 +427,7 @@ public sealed class ControlsFeature : IMenuFeature
     {
         var seat = _seats[_player];
         foreach (var context in System.Enum.GetValues<InputContext>())
-            Restore(seat.Working[context], DefaultBindings.MapFor(context, seat.PadOf(context)));
+            ResetMap(seat, context);
 
         _slot = 0;
         MarkDirty();
@@ -531,6 +535,18 @@ public sealed class ControlsFeature : IMenuFeature
     }
 
     private void MarkDirty() => _dirty.Add(_player);
+
+    // One context of the seat on screen back to the shipped keyboard, mouse and pad rows. Player 1's
+    // stick rows go to the stick defaults instead. ⚠ The shipped keymap has no stick rows, and an
+    // Accept after a plain restore would save every stick profile empty.
+    private void ResetMap(SeatState seat, InputContext context)
+    {
+        var working = seat.Working[context];
+        var staged = working.Clone();
+        Restore(working, DefaultBindings.MapFor(context, seat.PadOf(context)));
+        if (_player == 1 && _stickRows?.Invoke() is { } sticks)
+            sticks.ResetInto(working, staged, context);
+    }
 
     private void ResetCursor()
     {

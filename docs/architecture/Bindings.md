@@ -240,8 +240,9 @@ from the stick profiles through `StickRows` (`src/Bindings/IStickRows.cs`). Cove
 ## src/Bindings/IStickRows.cs
 The seam seat 1's keymap is completed through: stick rows live in per-model profile files, not in
 `bindings_p1.json`, so `LaunchBindings.Profile` hands player 1's loaded profile to the registered
-`IStickRows`, which replaces its stick bindings with the active profiles' rows. The stick side
-implements it (`src/Sticks/StickProfileSet.cs`), which keeps `Bindings` free of the stick library.
+`IStickRows`, which replaces its stick bindings with the active profiles' rows. `ResetInto` is the
+same seam for a Controls screen reset. The stick side implements it
+(`src/Sticks/StickProfileSet.cs`), which keeps `Bindings` free of the stick library.
 
 ## src/Bindings/PadRumble.cs
 One seat's rumble, routed through `Pads.For` to the pads that seat's own bindings read, so a

@@ -1282,9 +1282,10 @@ The rebinding screen as a shared `IMenuFeature`, engine-free: one seat's keymap,
 row and slot cursors, the capture (given the focused row, so a stick axis binds a whole pair) and
 the pending steal, which names every loser but a full axis's pair partner and waits for
 `ConfirmSteal`. `BeginStickCapture`/`OfferStick` serve the original's Stick column, replacing only
-the same stick model's binding. `UnbindSlot`, `ResetContext`, `OpenProfilesFolder`, the injected
-save (player 1's through `Sticks/StickScreens.cs`) and `Accepted` are the rest; mouse settings are
-staged with the maps. Model: [../org/input.md](../org/input.md).
+the same stick model's binding. `UnbindSlot`, `ResetContext`/`ResetSeat` (player 1's stick rows
+through the injected `IStickRows`), `OpenProfilesFolder`, the injected save (player 1's through
+`Sticks/StickScreens.cs`) and `Accepted` are the rest; mouse settings are staged with the maps.
+Model: [../org/input.md](../org/input.md).
 
 ## src/UI/Menu/PlayerSetupFeature.cs
 Player setup as a shared `IMenuFeature`, device-neutral and engine-free. `Seats` are `PlayerSeat`s

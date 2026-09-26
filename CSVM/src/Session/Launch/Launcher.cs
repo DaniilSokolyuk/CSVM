@@ -1843,11 +1843,13 @@ public partial class Launcher : Node3D
         host.Features.Add(new CampaignFeature(
             strings, PlanePickerRoster.AirframeNode, _chapterCinema, _closingCinema));
         // The keymap editor writes through C21's per-player store, with player 1's stick rows split
-        // off to the profile files. Injected so the feature stays engine-free for a suite.
+        // off to the profile files. A reset takes them from the stick defaults. Injected so the
+        // feature stays engine-free for a suite.
         host.Features.Add(new ControlsFeature(
             (player, profile) => CSVM.Sticks.StickScreens.Save(player, profile, CSVM.Sticks.StickProfiles.Live,
                 (who, keymap) => CSVM.Bindings.BindingStore.UserBindings().Save(who, keymap)),
-            CSVM.Sticks.StickScreens.OpenUserFolder));
+            CSVM.Sticks.StickScreens.OpenUserFolder,
+            () => CSVM.Sticks.StickProfiles.Live));
         host.AddSeat(seat);
         string? reason = host.Select(_spec.ForceBuiltInPresentation, _spec.PresentationOverride);
         string why = reason == null ? "" : $" reason={reason}";

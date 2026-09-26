@@ -121,6 +121,69 @@ public sealed class StickProfileSet : IStickRows
         return true;
     }
 
+    /// <summary>The rows a Controls screen reset gives each connected model, from shipped files alone.
+    /// That is the shipped file the resolver would pick. Failing that, the one stick-shaped model with
+    /// no shipped file gets the generic default. A model with neither, or ignored by its active or
+    /// shipped file, has no entry and keeps its rows. Here a user file does not count as a profile.
+    /// </summary>
+    public IReadOnlyDictionary<StickModel, StickProfile> ResetDefaults()
+    {
+        var shippedFiles = new List<StickProfileFile>();
+        foreach (var file in _files)
+        {
+            if (file.Source == StickProfileSource.Shipped)
+            {
+                shippedFiles.Add(file);
+            }
+        }
+
+        var shipped = StickProfileResolver.Resolve(_present, shippedFiles);
+        var defaults = new Dictionary<StickModel, StickProfile>();
+        var unshipped = new List<StickModel>();
+        foreach (var model in _present)
+        {
+            if (ActiveFor(model) is { Ignore: true })
+            {
+                continue;
+            }
+
+            if (!shipped.TryGetValue(model, out var file))
+            {
+                unshipped.Add(model);
+            }
+            else if (!file.Profile.Ignore)
+            {
+                defaults[model] = file.Profile;
+            }
+        }
+
+        if (_shapeOf is not null && GenericStickDefault.Pick(unshipped, _shapeOf) is { } generic)
+        {
+            defaults[generic] = GenericStickDefault.For(generic, _shapeOf(generic).Axes);
+        }
+
+        return defaults;
+    }
+
+    /// <inheritdoc/>
+    public void ResetInto(ActionMap reset, ActionMap staged, InputContext context)
+    {
+        ArgumentNullException.ThrowIfNull(reset);
+        ArgumentNullException.ThrowIfNull(staged);
+        foreach (var action in DefaultBindings.ActionsIn(context))
+        {
+            foreach (var binding in BindingStore.StoredRow(staged, action))
+            {
+                if (StickProfileResolver.IsStick(binding))
+                {
+                    reset.Add(action, binding);
+                }
+            }
+        }
+
+        StickProfileResolver.ReplaceRows(reset, ResetDefaults().Values, context);
+    }
+
     /// <summary>Saves <paramref name="profile"/> copy-on-write through the store and re-selects; a
     /// shipped file becomes a user copy. The file saved from defaults to the model's active file
     /// when that file is for the same layout.</summary>

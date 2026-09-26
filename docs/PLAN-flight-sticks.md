@@ -1222,6 +1222,17 @@ captures, shows, clears and saves stick bindings. No edit to `OriginalOptionsScr
   status say deadzones are edited per binding in the files. `docs/org/input.md` gained "Saving from
   a Controls screen".
 
+**Reset restores stick defaults.** The shipped keymap has no stick rows, so a reset that only
+restored it would have the next Accept save every stick profile empty. `ControlsFeature.ResetMap`
+(behind `ResetContext` and `ResetSeat`, which both screens call) now hands player 1's reset map
+and the staged map to `IStickRows.ResetInto`, injected as the constructor's third argument
+(`Launcher` passes `StickProfiles.Live`). `StickProfileSet.ResetDefaults` answers each model's
+default from the shipped files alone: the shipped file the resolver picks, else the generic
+default for the one stick-shaped unshipped model, else nothing, and that stick keeps its staged
+rows. It lives on the set because the set alone holds the files by tier, the connected models and
+the shape judge. The rule is in `docs/org/input.md`, "Resetting a Controls screen"; covered by
+`CSVM.Tests/ControlsResetStickTests.cs` and the KEYS page test in `OriginalKeysStickColumnTests`.
+
 **API for D12** (all additive): `ControlsFeature(save, openProfilesFolder)`,
 `ControlsFeature.OpenProfilesFolder()`, and the row-passing capture inside `BeginCapture`. D12's
 own sticks-only capture builds its `ControlCapture` itself, as D10 describes.

@@ -257,5 +257,9 @@ public sealed class LaunchBindingsTests : IDisposable
         public System.Collections.Concurrent.ConcurrentBag<BindingProfile> Seen { get; } = new();
 
         public void MergeInto(BindingProfile keymap) => Seen.Add(keymap);
+
+        public void ResetInto(ActionMap reset, ActionMap staged, InputContext context)
+        {
+        }
     }
 }

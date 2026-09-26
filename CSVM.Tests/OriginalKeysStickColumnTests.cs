@@ -290,13 +290,37 @@ public class OriginalKeysStickColumnTests
             rig.Controls.Bindings(InputContext.Flight, InputAction.ThrottleLever));
     }
 
+    /// <summary>RESET TO DEFAULT puts R back on its shipped profile's rows and leaves L, which ships
+    /// none, on its own.</summary>
+    [Fact]
+    public void ResetToDefaultRestoresTheShippedStickRowsAndLeavesAnUnshippedStick()
+    {
+        string shipped = TestData.TempDir();
+        System.IO.File.WriteAllText(
+            System.IO.Path.Combine(shipped, "231D-0200.json"),
+            """{ "model": "231D/0200", "name": "R", "contexts": { "flight": { "FireGuns": ["button:#0"] } } }""");
+        using var rig = new Rig(shipped);
+        rig.OpenRow(0);
+        var r7 = new Binding(VkbR.Device, BindingControl.Button(7));
+        var l7 = new Binding(VkbL.Device, BindingControl.Button(7));
+        rig.Add(InputAction.FireGuns, r7);
+        rig.Add(InputAction.FireGuns, l7);
+
+        rig.Click(OriginalOptionsScreen.KeysResetKey);
+
+        var fire = rig.Controls.Bindings(InputContext.Flight, InputAction.FireGuns);
+        Assert.Contains(new Binding(VkbR.Device, BindingControl.Button(0)), fire);
+        Assert.DoesNotContain(r7, fire);
+        Assert.Contains(l7, fire);
+    }
+
     // A shell on the KEYS page over one seat. Its flight reader holds scripted keys and pad buttons
     // beside a stick roster of L and R.
     private sealed class Rig : IDisposable
     {
         private readonly StickRoster _roster;
 
-        public Rig()
+        public Rig(string? shippedProfiles = null)
         {
             Native.Plug(1, "VKBsim Gladiator EVO L", VkbL);
             Native.Plug(2, "VKBsim Gladiator EVO R", VkbR);
@@ -305,8 +329,18 @@ public class OriginalKeysStickColumnTests
             var pad = MenuControlsSeats.PadOf(InputContext.Flight);
             Devices = new KeysPadAndSticks(pad, new SeatDeviceState(
                 pad, () => null, sticks: new StickDeviceState(() => 0, () => _roster)));
-            Controls = new ControlsFeature((_, _) => { });
-            Controls.AddSeat(1, OriginalControlsTests.Profile(), new CaptureDevices(Devices), readsKeyboard: true);
+            if (shippedProfiles is not null)
+            {
+                Profiles = new StickProfileSet(
+                    new StickProfileStore(() => StickProfileStore.ReadDirectory(shippedProfiles), TestData.TempDir()),
+                    () => StickProfileSet.ModelsOf(_roster));
+                Profiles.Reload();
+            }
+
+            Controls = new ControlsFeature((_, _) => { }, stickRows: () => Profiles);
+            var profile = OriginalControlsTests.Profile();
+            Profiles?.MergeInto(profile);
+            Controls.AddSeat(1, profile, new CaptureDevices(Devices), readsKeyboard: true);
             var setup = new PlayerSetupFeature();
             setup.SetRoster(OriginalPresentation.Roster(Array.Empty<CSVM.Flight.Hangar.CustomPlaneDef>()));
             setup.Join(new ScriptedMenuSeat());
@@ -314,6 +348,8 @@ public class OriginalKeysStickColumnTests
         }
 
         public FakeStickNative Native { get; } = new();
+
+        public StickProfileSet? Profiles { get; }
 
         public KeysPadAndSticks Devices { get; }
 

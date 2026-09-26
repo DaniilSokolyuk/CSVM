@@ -409,6 +409,22 @@ stick rows. The remake Controls screen's "Open profiles folder" row creates `use
 missing and opens it in the system file browser. A binding's deadzone has no screen control; it is
 edited in these files.
 
+**Resetting a Controls screen.** A reset (the remake screen's reset, the KEYS AND BUTTONS page's
+RESET TO DEFAULT) puts keyboard, mouse and pad rows back to the shipped keymap, and for player 1
+puts each connected stick's rows, in the contexts it resets, back to that stick's default:
+
+1. the rows of the shipped file the rule above would pick with user files left out, companions
+   included, unless that file ignores the model;
+2. otherwise the generic default, when this stick is the only stick-shaped connected model with no
+   shipped file (a model whose only file is a user file counts as having none);
+3. otherwise its rows stay as they were. Two unshipped sticks both on the generic default would
+   both fly roll and pitch, so the exactly-one rule holds here too.
+
+A model whose active or shipped file ignores it keeps no rows and is no generic candidate. Nothing
+is written until Accept, which then saves the restored rows into the stick's active file as for any
+edit; a user file ends up matching the default, and a stick whose rows were already the default
+writes nothing. With sticks off a reset clears stick rows, since there are no profiles to restore.
+
 ### The generic stick default
 
 A stick no profile file covers still flies, under one condition: it is the **only** connected
