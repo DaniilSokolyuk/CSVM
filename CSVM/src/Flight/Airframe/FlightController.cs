@@ -2682,7 +2682,7 @@ public partial class FlightController : Node3D
         _padActions.Poll(padSide);
         _padAxes.Poll(StickSplit.WithoutSticks(padSide));
         _stickAxes.Poll(StickSplit.SticksOnly(padSide));
-        if (_bindings.ObserveDevice(_keyActions.Current, _padActions.Current))
+        if (_bindings.ObserveDevice(_keyActions.Current, _padActions.Current, _stickAxes.Current))
             ComposeControlPrompts();
     }
 
@@ -3449,8 +3449,11 @@ public partial class FlightController : Node3D
         _padAxes.Poll(_padsAlone);
         _stickAxes.Poll(_sticksAlone);
         // A prompt names the device the seat last took input from, so a handover recomposes it.
-        if (_bindings.ObserveDevice(_keyActions.Current, _padActions.Current))
+        if (_bindings.ObserveDevice(_keyActions.Current, _padActions.Current, _stickAxes.Current))
+        {
+            LogHandover();
             ComposeControlPrompts();
+        }
     }
 
     // Every control prompt this pane draws, over the bindings of the side the seat is reading. Run
@@ -3459,10 +3462,35 @@ public partial class FlightController : Node3D
     private void ComposeControlPrompts()
     {
         var side = _bindings.Device.Side;
+        bool onStick = _bindings.Device.OnStick;
         _pilotHud.AutoLandPrompt = FlightHud.ComposeAutoLandPrompt(
-            _strings, FlightKeymap.Bindings(InputAction.AutoLand), UseKeyboard, side);
+            _strings, FlightKeymap.Bindings(InputAction.AutoLand), UseKeyboard, side, onStick);
         _pilotHud.RespawnPrompt = FlightHud.ComposeRespawnPrompt(
-            FlightKeymap.Bindings(InputAction.Respawn), UseKeyboard, side);
+            FlightKeymap.Bindings(InputAction.Respawn), UseKeyboard, side, onStick);
+    }
+
+    // Which actions each half held on the tick the prompt side moved. An unwanted handover is
+    // then traced to the control that claimed it.
+    private void LogHandover()
+    {
+        var device = _bindings.Device;
+        string stick = device.OnStick ? " (stick)" : string.Empty;
+        string keys = Held(_keyActions.Current);
+        string pad = Held(_padActions.Current);
+        string sticks = Held(_stickAxes.Current);
+        Log.Info("core", $"prompt device P{PlayerIndex + 1}: {device.Side}{stick} keys=[{keys}] pad=[{pad}] sticks=[{sticks}]");
+
+        static string Held(ActionSnapshot snapshot)
+        {
+            var held = new List<string>();
+            foreach (var action in Enum.GetValues<InputAction>())
+            {
+                if (snapshot.Value(action) >= ActiveDevice.PressTravel)
+                    held.Add(action.ToString());
+            }
+
+            return string.Join(",", held);
+        }
     }
 
     // The largest-magnitude value of the axis across this player's gamepads (0 when

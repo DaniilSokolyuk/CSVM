@@ -34,21 +34,30 @@ public sealed class ActiveDevice
 
     private int _keyboardActive;   // actions each side held entering this tick, which is what makes
     private int _padActive;        // a press visible: the count rises on one and not on the other
+    private int _stickActive;      // the flight sticks' share of the pad side, and the gamepads'
+    private int _gamepadActive;
 
     /// <summary>The side a prompt names. Keyboard until a press moves it, which is what a seat
     /// nobody plugs a pad into reads for a whole session.</summary>
     public DeviceSide Side { get; private set; }
 
-    /// <summary>Which of an action's bindings a prompt on <paramref name="side"/> names: that side's
-    /// first one, the other side's when this one holds none, and nothing for an unbound action. A key
-    /// beats a mouse button on the keyboard side.
-    /// ⚠ A false <paramref name="readsKeyboard"/> skips the keyboard and the mouse: a pad-only
+    /// <summary>Whether the pad side's last press came from a flight stick rather than a gamepad.
+    /// Both sit on one side, so a prompt needs this to name the stick's binding over a pad's.
+    /// </summary>
+    public bool OnStick { get; private set; }
+
+    /// <summary>The binding a prompt names: the active side's first, else the other side's. A key
+    /// beats a mouse button, and on the pad side a stick's binding beats a gamepad's while
+    /// <paramref name="onStick"/> is set, and loses otherwise.
+    /// ⚠ Without <paramref name="readsKeyboard"/> keys and the mouse are skipped. A pad-only
     /// splitscreen seat must not be told to press a key that does nothing for it.</summary>
-    public static Binding? PromptBinding(IReadOnlyList<Binding> bindings, DeviceSide side, bool readsKeyboard)
+    public static Binding? PromptBinding(
+        IReadOnlyList<Binding> bindings, DeviceSide side, bool readsKeyboard, bool onStick = false)
     {
         Binding? key = null;
         Binding? mouse = null;
-        Binding? pad = null;
+        Binding? stick = null;
+        Binding? gamepad = null;
         for (int i = 0; i < (bindings?.Count ?? 0); i++)
         {
             var binding = bindings![i];
@@ -64,7 +73,10 @@ public sealed class ActiveDevice
                 case ControlKind.Axis:
                 case ControlKind.FullAxis:
                 case ControlKind.Hat:
-                    pad ??= binding;
+                    if (BindingLabels.StickName?.Invoke(binding.Device) != null)
+                        stick ??= binding;
+                    else
+                        gamepad ??= binding;
                     break;
                 default:
                     break;
@@ -72,17 +84,33 @@ public sealed class ActiveDevice
         }
 
         var keyboard = key ?? mouse;
+        var pad = onStick ? stick ?? gamepad : gamepad ?? stick;
         return side == DeviceSide.Pad ? pad ?? keyboard : keyboard ?? pad;
     }
 
     /// <summary>Takes this tick's two resolved halves and answers whether the side moved, which is a
-    /// prompt's cue to recompose. Call it once a tick, after the seat has polled. A false
-    /// <paramref name="readsKeyboard"/> pins the pad, since such a seat reads no key at all.
-    /// </summary>
-    public bool Observe(ActionSnapshot keyboardSide, ActionSnapshot padSide, bool readsKeyboard)
+    /// prompt's cue to recompose. Call it once a tick, after the seat has polled. A seat that
+    /// reads no keyboard is pinned to the pad. The optional sticks-alone half moves
+    /// <see cref="OnStick"/>, and without it the flag stays where it is.</summary>
+    public bool Observe(ActionSnapshot keyboardSide, ActionSnapshot padSide, bool readsKeyboard, ActionSnapshot? stickSide = null)
     {
         int keyboard = readsKeyboard ? ActiveCount(keyboardSide) : 0;
         int pad = ActiveCount(padSide);
+        bool wasOnStick = OnStick;
+        if (stickSide != null)
+        {
+            // An action held on a stick and a gamepad at once counts once on the pad side. The
+            // gamepads' share is therefore floored at zero, not exact.
+            int stick = ActiveCount(stickSide);
+            int gamepad = Math.Max(0, pad - stick);
+            if (stick > _stickActive)
+                OnStick = true;
+            else if (gamepad > _gamepadActive)
+                OnStick = false;
+            _stickActive = stick;
+            _gamepadActive = gamepad;
+        }
+
         var was = Side;
         if (!readsKeyboard)
         {
@@ -97,7 +125,7 @@ public sealed class ActiveDevice
 
         _keyboardActive = keyboard;
         _padActive = pad;
-        return Side != was;
+        return Side != was || (Side == DeviceSide.Pad && OnStick != wasOnStick);
     }
 
     // How many of the seat's actions one side is deflecting past PressTravel. A count rather than a
