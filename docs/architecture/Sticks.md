@@ -1,7 +1,7 @@
 # Sticks
 
-`CSVM/src/Sticks/`, the flight sticks Godot's own SDL3 does not enumerate, read through the pinned
-`SDL2.dll` (`docs/tooling.md`, "SDL2 for flight sticks") beside Godot's pads, never instead of them.
+`CSVM/src/Sticks/`, the flight sticks Godot's own SDL3 does not enumerate, read through SDL2 (the
+pinned `SDL2.dll` on Windows, the system's `libSDL2-2.0.so.0` on Linux) (`docs/tooling.md`, "SDL2 for flight sticks") beside Godot's pads, never instead of them.
 
 One `## src/...` entry per module, body at most 8 lines, 12 for the highest-traffic modules.
 
@@ -25,13 +25,16 @@ The seam that keeps `StickRoster` engine-free; `Sdl2Sticks` is the live implemen
 `CSVM.Tests/FakeStickNative.cs` is the fake.
 
 ## src/Sticks/Sdl2Sticks.cs
-`SDL2.dll` behind `IStickNative`: the load-order candidates (pure), the absolute-path load, the
-hints that reduce SDL2 to its DirectInput backend so it cannot disturb the SDL3 inside Godot, and
-the per-frame `SDL_JoystickUpdate` plus event drain that reports hot-plug. Exports are bound by
-name from the loaded handle, so a wrong DLL fails as one log line, not as a crash.
+The SDL2 runtime behind `IStickNative`: the load-order candidates per platform (pure;
+`ForPlatform`), `SDL2.dll` by absolute path on Windows and the system's `libSDL2-2.0.so.0` on
+Linux, the hints that keep SDL2 from disturbing the SDL3 inside Godot (DirectInput alone on
+Windows), each listing's gamepad flag, and the per-frame `SDL_JoystickUpdate` plus event drain
+that reports hot-plug. Exports are bound by name from the loaded handle, so a wrong library fails
+as one log line, not as a crash.
 
 ## src/Sticks/StickRoster.cs
-The gap-filling roster: every listed device whose model Godot's pad roster lacks, opened, kept
+The gap-filling roster: every listed device whose model Godot's pad roster lacks (and, off Windows,
+that SDL does not map as a gamepad and Valve did not make), opened, kept
 current across plugs and across changes in Godot's roster, and logged on every change. Reads
 (axes -1..1, buttons up to 128, hats as `Bindings.HatDirection`) answer neutral while the gate
 holds, the same `Pads.InputBlocked` pads obey. `ModelAxis`/`ModelButton`/`ModelHat` merge the

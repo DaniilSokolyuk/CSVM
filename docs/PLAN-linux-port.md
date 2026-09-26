@@ -95,7 +95,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 12. ☑ Linux export preset and `.tar.gz` packaging with executable bits
 13. ☑ Linux README with an "On Steam Deck" section
 14. ☐ Pre-release Linux check in WSL: extract, then a headless mission load
-15. ☐ SDL2 stick bridge resolved per platform (after `PLAN-flight-sticks` lands)
+15. ☑ SDL2 stick bridge resolved per platform (after `PLAN-flight-sticks` lands)
 16. ☐ Steam Deck test pass and one release carrying the Windows zip and the Linux tarball
 
 ## Dependency and parallelism notes
@@ -723,7 +723,67 @@ missing (seen able to fail), then passes on a good tarball.
 
 **⚠ Traps.** <TODO: which headless flag loads a mission end-to-end without a GPU>
 
-## B15 ☐ SDL2 stick bridge resolved per platform (after `PLAN-flight-sticks` lands)
+## B15 ☑ SDL2 stick bridge resolved per platform (after `PLAN-flight-sticks` lands)
+
+**Landed.** The bridge never used `DllImport`, so no `SetDllImportResolver` is needed: `Sdl2Sticks`
+loads one library with `NativeLibrary.TryLoad` and binds its exports by name, and the per-platform
+choice is the candidate list. `Sdl2Sticks.ForPlatform(windows, ...)` returns the unchanged four
+rooted `SDL2.dll` candidates on Windows, and off Windows `LinuxCandidates`: `libSDL2-2.0.so.0`
+beside the executable, then the bare soname. `Load` hands a bare name to the system loader and
+treats a rooted one as before, so Windows never consults the system search and its log lines read
+as they did. A system load logs the file the loader chose, read from `/proc/self/maps`. No library
+is one `sticks: off, no libSDL2-2.0.so.0 (tried ...)` warning and a launch without sticks.
+`StickPump` picks the platform with `OperatingSystem.IsWindows()`. The hints are unchanged and set
+on both platforms: `SDL_JOYSTICK_HIDAPI=0` keeps SDL2 off hidraw (the Deck's built-in controls,
+pads Steam drives), `SDL_NO_SIGNAL_HANDLERS=1` keeps SDL's SIGINT/SIGTERM handlers out of Godot,
+and the RawInput, WGI and XInput hints are no-ops off Windows. Device GUIDs need nothing: the
+layout is SDL's on both, only the log prints them, and bindings key on the model. The gap-filler
+gains Linux rules: `StickListing` carries SDL's `SDL_IsGameController` answer (a 24th export,
+present in every SDL2), and a `StickRoster` built with `godotReadsGamepads` (off Windows) also skips
+any listing SDL maps as a gamepad and any Valve device (vendor `28DE`: the Deck's controls, a Steam
+Controller, Steam Input's virtual pad), each with its reason on the `stick skipped:` line. Windows
+keeps the model match alone. The tarball ships no SDL2 (below), so its `BUILD-INFO.txt`
+has no SDL block, as B12 already built it. `docs/tooling.md`'s "What is Windows-specific" list is
+now its "Linux" list; `docs/architecture/Sticks.md`, `docs/cli.md`'s `--dump-sticks`,
+`packaging/README-linux.md`'s requirements and `packaging/MANIFEST.md`'s Linux paragraph say the
+same.
+
+**The tarball ships no SDL2 (the TODO, resolved).** SteamOS provides
+`/usr/lib/libSDL2-2.0.so.0` from sdl2-compat, and every desktop distribution packages SDL2. A copy
+in the tarball would be a libsdl-org source build of our own (there is no Linux binary to pin),
+linked against whichever glibc and X11/Wayland libraries the build machine had, and on SteamOS it
+would replace sdl2-compat's routing through the system SDL3 that Steam configures. The beside-the-exe
+candidate stays, so a player on a system without SDL2 can drop one in. Nothing else ships, so the
+stick-detection check on real hardware that pins the Windows DLL has no Linux counterpart to repeat.
+
+**Open, found while landing.** (1) The Approach's TODO, whether Godot's joypad layer on Linux
+lists a real flight stick, is still unseen, since nobody here has a stick on a Linux machine: if it does, the stick is skipped by model and plays as an ordinary Godot joypad,
+without its stick profile, glyphs or stick column. `--dump-sticks` with the stick connected shows
+which roster holds it. (2) A system SDL2 that is present but cannot load (a missing dependency)
+logs the same "no libSDL2-2.0.so.0" line as an absent one, since `TryLoad` reports no reason.
+
+**Verified.** Units: `StickRosterTests` adds six cases (the Windows list unchanged under
+`ForPlatform`, the Linux list, a Linux load with no library returning null and naming the soname,
+the Linux gap-filler rules against the Windows ones, and a roster that never opens a gamepad or a
+Valve device off Windows); `FakeStickNative.Plug` takes `gamepad:`. The tarball built by
+`ExportRelease.ps1 -Linux -ToolsRoot Z:\CSVM` ran headless in WSL Debian
+(`./CSVM.x86_64 --headless -- --data-root=<scratch> --dump-sticks`, `XDG_*_HOME` pointed at the
+scratch folder). With no SDL2 on the system it logged
+`WARN [core] sticks: off, no libSDL2-2.0.so.0 (tried /tmp/csvm-b15/game/libSDL2-2.0.so.0, libSDL2-2.0.so.0)`
+and exited 1, which is `--dump-sticks`'s verdict for no library. With Debian's
+`libsdl2-2.0-0` 2.32.4 unpacked into the scratch folder and on `LD_LIBRARY_PATH` it logged
+`sticks: SDL 2.32.4 from libSDL2-2.0.so.0 (system: /tmp/csvm-b15/sdlroot/usr/lib/x86_64-linux-gnu/libSDL2-2.0.so.0.3200.4)`,
+`sticks dump: Godot pad roster models=[]` and `sticks dump: 0 stick(s), SDL 2.32.4`, exit 0: all 24
+exports bound and the joystick subsystem started. On Windows the same headless `--dump-sticks`
+against the pinned `SDL2.dll` still logs `sticks: SDL 2.32.10 from Z:\CSVM\tools\sdl2\SDL2.dll` and
+opens the VKB Gladiator EVO R and the Tartarus, with the 24th export bound. The Steam Deck load is
+owed: the Deck did not answer on SSH while this item ran. It is the same headless
+`--dump-sticks` run from a scratch folder, expected to log `sticks: SDL 2.32.56 from
+libSDL2-2.0.so.0 (system: /usr/lib/...)` and a `stick skipped:` line with the Valve reason for the
+Deck's own controls if SDL2 lists them. A real flight stick on Linux is owed to whoever has one.
+<pending orchestrator run>
+
+**Original approach (kept for reference).**
 
 **Goal.** On Linux the stick bridge loads the system `libSDL2-2.0.so.0` or, if absent, runs with no
 sticks and one log line, as the flight-sticks plan specifies for a missing `SDL2.dll`.

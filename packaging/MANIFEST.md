@@ -36,8 +36,10 @@ notices file is assembled from; their Zip path column names them as no zip row a
 `ExportRelease.ps1 -Linux` also exports the `Linux/X11` preset into `.scratch\export-linux\` and
 packs it inside WSL (Debian) as `.scratch\CSVM-v<version>-linux-x64.tar.gz`, entries at the
 archive root like the zip's. It is the zip's payload with the Linux README and the Linux unzbd in
-place of the Windows ones, and without the three SDL2 rows: the Linux build does not load SDL2
-yet (PLAN-linux-port B15). Modes are set in the archive, root-owned: `0755` for the two executables and every
+place of the Windows ones, and without the three SDL2 rows: the Linux build reads flight sticks
+through the system's `libSDL2-2.0.so.0` (on SteamOS, sdl2-compat over SDL3), found through the
+system loader, and runs without sticks when it is absent. The tarball ships no SDL2, so its
+`BUILD-INFO.txt` has no SDL block (`docs/tooling.md`, "SDL2 for flight sticks"). Modes are set in the archive, root-owned: `0755` for the two executables and every
 directory, `0644` for everything else, and the script reads the two executables' modes back out of
 the archive before it reports success.
 

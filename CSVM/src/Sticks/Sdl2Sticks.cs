@@ -8,14 +8,19 @@ using System.Text;
 namespace CSVM.Sticks;
 
 /// <summary>
-/// The live <see cref="IStickNative"/>: <c>SDL2.dll</c> loaded by absolute path, with only its
-/// joystick subsystem started, reduced to the DirectInput backend. Godot's own SDL3 shares the
+/// The live <see cref="IStickNative"/>: the SDL2 runtime with only its joystick subsystem started.
+/// On Windows that is <c>SDL2.dll</c> by absolute path, reduced to the DirectInput backend. On
+/// Linux it is the system's <c>libSDL2-2.0.so.0</c> reading evdev. Godot's own SDL3 shares the
 /// process and reads the pads. This one must not touch a device or registration SDL3 relies on,
-/// which the hints in <see cref="Load"/> ensure. The load order and why nothing goes through
-/// <c>PATH</c> are in <c>docs/tooling.md</c>, "SDL2 for flight sticks".
+/// which the hints in <see cref="Load"/> ensure. The load order per platform is in
+/// <c>docs/tooling.md</c>, "SDL2 for flight sticks".
 /// </summary>
 public sealed class Sdl2Sticks : IStickNative
 {
+    /// <summary>The Linux runtime's soname, the file a distribution's SDL2 package installs (on
+    /// SteamOS, sdl2-compat over SDL3). No Linux build ships one.</summary>
+    public const string LinuxLibrary = "libSDL2-2.0.so.0";
+
     private const uint InitJoystick = 0x200;
     private const uint JoyDeviceAdded = 0x605;
     private const uint JoyDeviceRemoved = 0x606;
@@ -40,6 +45,26 @@ public sealed class Sdl2Sticks : IStickNative
     public string Version { get; }
 
     public string LastError => Text(_api.GetError());
+
+    /// <summary>This platform's candidates: <see cref="Candidates"/> on Windows, otherwise
+    /// <see cref="LinuxCandidates"/>.</summary>
+    public static IReadOnlyList<string> ForPlatform(bool windows, string exeDir, string? repoRoot, string? dataRoot) =>
+        windows ? Candidates(exeDir, repoRoot, dataRoot) : LinuxCandidates(exeDir);
+
+    /// <summary>Linux: a copy beside the executable, then the bare <see cref="LinuxLibrary"/>, which
+    /// the system loader resolves. A bare name is the one candidate <see cref="Load"/> hands to the
+    /// system search, which the Windows list never contains. Pure, so testable.</summary>
+    public static IReadOnlyList<string> LinuxCandidates(string exeDir)
+    {
+        var paths = new List<string>(2);
+        if (!string.IsNullOrEmpty(exeDir))
+        {
+            paths.Add(Path.GetFullPath(Path.Combine(exeDir, LinuxLibrary)));
+        }
+
+        paths.Add(LinuxLibrary);
+        return paths;
+    }
 
     /// <summary>Where <c>SDL2.dll</c> is looked for, in order, duplicates dropped. First beside the
     /// executable, then the editor-hosted repo root's <c>tools/sdl2</c> (null in an exported build).
@@ -71,17 +96,38 @@ public sealed class Sdl2Sticks : IStickNative
         return paths;
     }
 
-    /// <summary>Loads the first candidate that exists and starts the joystick subsystem. Otherwise
-    /// returns null, <paramref name="outcome"/> naming the cause: no file, a failed load, a missing
-    /// export or a failed init. Never throws, since a missing stick library must not stop a launch.</summary>
+    /// <summary>Loads the first candidate that exists, a bare name through the system search, and
+    /// starts the joystick subsystem. Otherwise returns null, <paramref name="outcome"/> naming the
+    /// cause: no library, a failed load, a missing export or a failed init. Never throws, since a
+    /// missing stick library must not stop a launch.</summary>
     public static Sdl2Sticks? Load(IReadOnlyList<string> candidates, out string outcome)
     {
         ArgumentNullException.ThrowIfNull(candidates);
+        string file = candidates.Count > 0 ? Path.GetFileName(candidates[^1]) : "SDL2";
+        string tried = string.Join(", ", candidates);
         string? path = null;
+        IntPtr library = IntPtr.Zero;
         foreach (string candidate in candidates)
         {
+            if (!Path.IsPathRooted(candidate))
+            {
+                if (NativeLibrary.TryLoad(candidate, out library))
+                {
+                    path = Where(candidate);
+                    break;
+                }
+
+                continue;
+            }
+
             if (File.Exists(candidate))
             {
+                if (!NativeLibrary.TryLoad(candidate, out library))
+                {
+                    outcome = $"{file} failed to load from {candidate} (tried {tried})";
+                    return null;
+                }
+
                 path = candidate;
                 break;
             }
@@ -89,13 +135,7 @@ public sealed class Sdl2Sticks : IStickNative
 
         if (path is null)
         {
-            outcome = $"no SDL2.dll (tried {string.Join(", ", candidates)})";
-            return null;
-        }
-
-        if (!NativeLibrary.TryLoad(path, out IntPtr library))
-        {
-            outcome = $"SDL2.dll failed to load from {path} (tried {string.Join(", ", candidates)})";
+            outcome = $"no {file} (tried {tried})";
             return null;
         }
 
@@ -106,16 +146,17 @@ public sealed class Sdl2Sticks : IStickNative
         }
         catch (EntryPointNotFoundException e)
         {
-            outcome = $"SDL2.dll at {path} lacks {e.Message}, not the pinned build";
+            string why = Path.IsPathRooted(path) && file == "SDL2.dll" ? "not the pinned build" : "not an SDL2 this bridge can use";
+            outcome = $"{file} at {path} lacks {e.Message}, {why}";
             return null;
         }
 
         api.GetVersion(out SdlVersion v);
         string version = string.Create(CultureInfo.InvariantCulture, $"{v.Major}.{v.Minor}.{v.Patch}");
 
-        // ⚠ Do not drop any of these. SDL3 reads the pads here: HIDAPI would handshake with them,
-        // RAWINPUT take SDL3's process-wide registration, XInput and WGI list a pad twice.
-        // The sticks enumerate through DirectInput alone.
+        // ⚠ Do not drop any of these. SDL3 reads the pads: HIDAPI would handshake with them (on Linux,
+        // over hidraw), RAWINPUT take SDL3's registration, XInput and WGI list a pad twice.
+        // Windows sticks enumerate through DirectInput alone; Linux ignores the last three.
         api.SetHint("SDL_NO_SIGNAL_HANDLERS", "1");
         api.SetHint("SDL_JOYSTICK_HIDAPI", "0");
         api.SetHint("SDL_JOYSTICK_RAWINPUT", "0");
@@ -176,7 +217,8 @@ public sealed class Sdl2Sticks : IStickNative
             }
 
             var model = new StickModel(_api.GetDeviceVendor(i), _api.GetDeviceProduct(i));
-            listed.Add(new StickListing(instance, Text(_api.NameForIndex(i)), model, GuidText(_api.GetDeviceGuid(i))));
+            bool gamepad = _api.IsGameController(i) != 0;
+            listed.Add(new StickListing(instance, Text(_api.NameForIndex(i)), model, GuidText(_api.GetDeviceGuid(i)), gamepad));
         }
 
         return listed;
@@ -251,6 +293,28 @@ public sealed class Sdl2Sticks : IStickNative
 
     private static string Text(IntPtr utf8) => Marshal.PtrToStringUTF8(utf8) ?? string.Empty;
 
+    // The file the system loader chose for a bare name, read off the process's own mappings, so the
+    // log names it. The bare name alone where /proc is absent, which only costs the log detail.
+    private static string Where(string name)
+    {
+        try
+        {
+            foreach (string line in File.ReadLines("/proc/self/maps"))
+            {
+                int slash = line.IndexOf('/', StringComparison.Ordinal);
+                if (slash >= 0 && Path.GetFileName(line[slash..]).StartsWith(name, StringComparison.Ordinal))
+                {
+                    return $"{name} (system: {line[slash..]})";
+                }
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+        }
+
+        return $"{name} (system)";
+    }
+
     // The byte order SDL_JoystickGetGUIDString prints: the struct's bytes as they sit in memory.
     private static string GuidText(SdlGuid guid)
     {
@@ -304,6 +368,7 @@ public sealed class Sdl2Sticks : IStickNative
         public readonly IndexToUShortFn GetDeviceVendor;
         public readonly IndexToUShortFn GetDeviceProduct;
         public readonly IndexToIntFn GetDeviceInstanceId;
+        public readonly IndexToIntFn IsGameController;
         public readonly IndexToPtrFn JoystickOpen;
         public readonly PtrToVoidFn JoystickClose;
         public readonly PtrToIntFn NumAxes;
@@ -330,6 +395,7 @@ public sealed class Sdl2Sticks : IStickNative
             GetDeviceVendor = Bind<IndexToUShortFn>(library, "SDL_JoystickGetDeviceVendor");
             GetDeviceProduct = Bind<IndexToUShortFn>(library, "SDL_JoystickGetDeviceProduct");
             GetDeviceInstanceId = Bind<IndexToIntFn>(library, "SDL_JoystickGetDeviceInstanceID");
+            IsGameController = Bind<IndexToIntFn>(library, "SDL_IsGameController");
             JoystickOpen = Bind<IndexToPtrFn>(library, "SDL_JoystickOpen");
             JoystickClose = Bind<PtrToVoidFn>(library, "SDL_JoystickClose");
             NumAxes = Bind<PtrToIntFn>(library, "SDL_JoystickNumAxes");

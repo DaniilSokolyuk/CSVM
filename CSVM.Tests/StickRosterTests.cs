@@ -342,4 +342,77 @@ public class StickRosterTests
         Assert.Contains("no SDL2.dll", outcome, StringComparison.Ordinal);
         Assert.Contains(paths[1], outcome, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void WindowsKeepsItsFourRootedCandidatesWhateverTheOtherPlatformsDo()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "csvm-sdl2-windows");
+        string repo = Path.Combine(root, "repo");
+        string exe = Path.Combine(root, "main", "tools", "godot", "build");
+
+        var paths = Sdl2Sticks.ForPlatform(windows: true, exe, repo, Path.Combine(root, "data"));
+
+        Assert.Equal(Sdl2Sticks.Candidates(exe, repo, Path.Combine(root, "data")), paths);
+        Assert.All(paths, p => Assert.True(Path.IsPathRooted(p)));
+        Assert.All(paths, p => Assert.Equal("SDL2.dll", Path.GetFileName(p)));
+    }
+
+    /// <summary>Linux looks beside the executable, then hands the bare soname to the system loader.
+    /// The repo and data roots hold the Windows DLL, so they are not candidates there.</summary>
+    [Fact]
+    public void LinuxLooksBesideTheExeThenAsksTheSystemForTheSoname()
+    {
+        string exe = Path.Combine(Path.GetTempPath(), "csvm-sdl2-linux", "bin");
+
+        var paths = Sdl2Sticks.ForPlatform(windows: false, exe, Path.Combine(exe, "repo"), Path.Combine(exe, "data"));
+
+        Assert.Equal(new[] { Path.Combine(exe, "libSDL2-2.0.so.0"), "libSDL2-2.0.so.0" }, paths);
+        Assert.Equal(new[] { Sdl2Sticks.LinuxLibrary }, Sdl2Sticks.LinuxCandidates(string.Empty));
+    }
+
+    [Fact]
+    public void ALinuxBuildWithNoSystemSdl2RunsWithoutSticksAndNamesTheSoname()
+    {
+        var paths = Sdl2Sticks.LinuxCandidates(Path.Combine(Path.GetTempPath(), "csvm-no-sdl2-here", "bin"));
+
+        Assert.Null(Sdl2Sticks.Load(paths, out string outcome));
+        Assert.StartsWith("no libSDL2-2.0.so.0 (tried ", outcome, StringComparison.Ordinal);
+        Assert.Contains(paths[0], outcome, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void OnLinuxAGamepadAndEveryValveDeviceAreLeftToGodot()
+    {
+        var steamDeck = new StickModel(StickRoster.ValveVendor, 0x1205);
+        var listed = new[]
+        {
+            new StickListing(1, "L", VkbL, "g1"),
+            new StickListing(2, "Xbox", XboxPad, "g2", Gamepad: true),
+            new StickListing(3, "Steam Deck", steamDeck, "g3"),
+            new StickListing(4, "Tartarus", Tartarus, "g4"),
+        };
+
+        var linux = StickRoster.GapFill(listed, Array.Empty<StickModel>(), godotReadsGamepads: true);
+        var windows = StickRoster.GapFill(listed, Array.Empty<StickModel>());
+
+        Assert.Equal(new[] { 1, 4 }, Array.ConvertAll(linux, l => l.Instance));
+        Assert.Equal(new[] { 1, 2, 3, 4 }, Array.ConvertAll(windows, l => l.Instance));
+    }
+
+    /// <summary>The case the Linux rule exists for: Godot reads a pad but reports no model for it.
+    /// The model match alone would then hand the same pad to the stick roster too.</summary>
+    [Fact]
+    public void OnLinuxAGamepadGodotReportsNoModelForIsNeverOpened()
+    {
+        var native = new FakeStickNative();
+        native.Plug(1, "Steam Virtual Gamepad", new StickModel(StickRoster.ValveVendor, 0x11FF), axes: 6, buttons: 11, gamepad: true);
+        native.Plug(2, "Generic X-Box pad", XboxPad, axes: 6, buttons: 11, gamepad: true);
+        native.Plug(3, "VKBsim Gladiator EVO R", VkbR);
+        using var roster = new StickRoster(native, Array.Empty<StickModel>, () => false, godotReadsGamepads: true);
+
+        Assert.True(roster.Update());
+
+        Assert.Equal(new[] { VkbR }, roster.Sticks.Select(s => s.Model));
+        Assert.Equal(new HashSet<int> { 3 }, native.Opened);
+    }
 }

@@ -771,7 +771,7 @@ public partial class Launcher : Node3D
             return;
         }
         // --dump-sticks: the SDL2 stick roster with each stick's counts and resting reads; fails
-        // only when no SDL2.dll loads, since zero sticks is a valid answer.
+        // only when no SDL2 loads, since zero sticks is a valid answer.
         string? sdlRepoRoot = _exported ? null : _repoRoot;
         string? sdlDataRoot = string.IsNullOrEmpty(dataRootEnv) ? null : dataRootEnv;
         if (_spec.DumpSticks)

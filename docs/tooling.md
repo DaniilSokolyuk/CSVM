@@ -525,31 +525,46 @@ beside the exe with the licence as `LICENSE-SDL2.txt`, and records the SDL versi
 hash in `BUILD-INFO.txt`. With `-ToolsRoot <checkout>` a worktree's export takes the SDL2 files
 from that checkout's `tools/sdl2/`, as it does Godot and the mech3ax fork.
 
-**What is Windows-specific.** The bridge is SDL2's joystick API alone, and most of it is already
-portable. `Sdl2Sticks` uses no `DllImport`: it loads one file with `NativeLibrary.TryLoad` and
-binds every export by name with `TryGetExport`, and the 23 functions it calls exist unchanged in
-every SDL2 build. The roster, profiles, bindings, capture, prompts and glyphs never see the library.
-A port to another platform touches these places:
+**Linux.** The bridge is SDL2's joystick API alone. `Sdl2Sticks` uses no `DllImport`: it loads
+one library with `NativeLibrary.TryLoad` and binds every export by name with `TryGetExport`, and
+the 24 functions it calls exist unchanged in every SDL2 build, sdl2-compat included. The roster,
+profiles, bindings, capture, prompts and glyphs never see the library. What differs off Windows:
 
-- **The file name.** `Sdl2Sticks.Candidates` names `SDL2.dll` in all four candidates, and the load
-  failure lines say `SDL2.dll`. Linux's runtime is `libSDL2-2.0.so.0`. Whether a Linux build ships a
-  pinned copy beside the executable or loads the distribution's through the system search (which
-  the "never consulted" rule above forbids on Windows) is a decision the port makes, since
-  libsdl-org publishes no Linux binary to pin.
-- **`InstallSdl2.ps1`** fetches and pins the `win32-x64` zip only.
-- **The hints in `Sdl2Sticks.Load`** switch off HIDAPI, RawInput, WGI and XInput, which leaves
-  DirectInput. They exist so SDL2 cannot take a device or a process-wide registration from the SDL3
-  inside Godot. On Linux SDL2 reads evdev, where a second reader shares the device instead of
-  taking it; `SDL_JOYSTICK_HIDAPI=0` still keeps SDL2 off the pads' hidraw nodes.
+- **The library and where it comes from.** `Sdl2Sticks.ForPlatform` picks the list. Off Windows it
+  is `libSDL2-2.0.so.0` beside the executable, then the bare soname, which `Load` hands to the
+  system loader (`dlopen`'s search: `LD_LIBRARY_PATH`, the loader cache, `/usr/lib`). The system
+  search is what the Windows rule above forbids, and Linux relies on it: libsdl-org publishes no
+  Linux binary to pin, and a distribution's SDL2 is built against that system's libraries. SteamOS
+  ships `/usr/lib/libSDL2-2.0.so.0` from sdl2-compat (SDL2's API over the system SDL3). The tarball
+  ships no SDL2, and its `BUILD-INFO.txt` has no SDL block. No library found is the same one
+  `sticks: off, no libSDL2-2.0.so.0 (tried ...)` line and a launch without sticks as a missing
+  `SDL2.dll`. A library that is present but cannot load (a missing dependency) reads the same,
+  since `TryLoad` reports no reason. A loaded one logs the file the loader chose, read from
+  `/proc/self/maps`: `sticks: SDL 2.32.4 from libSDL2-2.0.so.0 (system: /usr/lib/...)`.
+- **The hints in `Sdl2Sticks.Load`** are set on both platforms. `SDL_JOYSTICK_HIDAPI=0` matters on
+  Linux too: it keeps SDL2 off the hidraw nodes, where it would handshake with the Deck's built-in
+  controls and with pads Steam or Godot's SDL3 are driving. RawInput, WGI and XInput are Windows
+  backends, and their hints do nothing elsewhere. `SDL_NO_SIGNAL_HANDLERS=1` keeps SDL2's SIGINT
+  and SIGTERM handlers out of Godot's process. On Linux SDL2 reads evdev, where a second reader
+  shares a device rather than taking it.
+- **The gap-filler's Linux rules.** Godot's joypad layer on Linux has no DirectInput-style gap for
+  gamepads, so a gamepad is Godot's there, and the model match is not left as the only guard: a
+  pad Godot reports no `vendor_id`/`product_id` for would otherwise be read twice. `StickRoster` is built with
+  `godotReadsGamepads` off Windows and then also skips a listing SDL2 maps as a gamepad
+  (`SDL_IsGameController`) and any device of Valve's vendor id `28DE`: the Deck's built-in
+  controls, a Steam Controller and Steam Input's virtual pad. Each skip logs its reason on a
+  `stick skipped:` line. Windows keeps the model match alone.
 - **Whether the bridge is needed at all.** The bridge exists because Godot's SDL3 enumerates no
-  DirectInput-only stick on Windows. If Godot's SDL3 on Linux lists the stick, `StickRoster` skips
-  it (it fills gaps in Godot's roster only), and the stick reaches the game as an ordinary Godot
-  joypad, without its stick profile, stick glyphs or stick column. Run `--dump-sticks` with the
-  stick connected to see which roster holds it before porting anything.
-- **`ExportRelease.ps1`** ships `SDL2.dll`, `README-SDL.txt` and `LICENSE-SDL2.txt`, and
-  `BUILD-INFO.txt` states the Windows DLL's hash.
-- **`SDL_JOYSTICK_DIRECTINPUT=0`** in the launch scripts is a Windows workaround for Godot's SDL3
-  (BL-033) and has no Linux counterpart.
+  DirectInput-only stick on Windows. If Godot's SDL3 on Linux lists a stick, `StickRoster` skips it
+  by model, and the stick reaches the game as an ordinary Godot joypad, without its stick profile,
+  stick glyphs or stick column. Which roster holds a real stick on Linux is not yet seen: run
+  `--dump-sticks` with it connected, whose first line lists Godot's pad models.
+- **Device GUIDs** are SDL's 16 bytes printed in memory order on both platforms. Their content
+  differs (a Linux GUID carries the bus type, vendor, product and version), and only the log
+  prints them; bindings and profiles key on the model.
+- **Windows only:** `InstallSdl2.ps1`, which pins the `win32-x64` zip; the three SDL2 files
+  `ExportRelease.ps1` ships in the zip, with the DLL's hash in `BUILD-INFO.txt`; and
+  `SDL_JOYSTICK_DIRECTINPUT=0` in the launch scripts, a workaround for Godot's SDL3 (BL-033).
 
 ## The mech3ax fork (`tools/mech3ax/`)
 

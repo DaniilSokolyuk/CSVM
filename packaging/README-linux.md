@@ -44,8 +44,13 @@ project published, rather than something a third party rebuilt or altered.
   Crimson Skies (the original 2000 PC game) creates. "Getting the original game's folder"
   below covers where it can come from.
 - **About 1 GB of free disk space** for the game data you extract.
+- **For a flight stick only:** the system's SDL2 library, `libSDL2-2.0.so.0`. SteamOS and
+  most desktop distributions install it already; elsewhere it is the `SDL2` or
+  `libsdl2-2.0-0` package. Without it CSVM runs as usual and reads no flight stick, and the
+  log says so on its `sticks: off` line. Gamepads, the keyboard and the mouse do not need it.
+  Flight sticks on Linux are untested, so a report from anyone who flies with one is welcome.
 - Nothing else. The .NET runtime this engine needs is inside the download and does not use
-  the system's ICU library, so there is no runtime, framework or library to install.
+  the system's ICU library, so there is no runtime or framework to install.
 
 ## Unpacking
 
