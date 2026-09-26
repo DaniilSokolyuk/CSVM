@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using CSVM.Bindings;
+using CSVM.Sticks;
 using CSVM.UI.Boards;
 
 namespace CSVM.UI.Menu.Original;
@@ -144,8 +145,9 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
     public const int KeysTabCount = 7;
 
     /// <summary>The port's sentence after the page's authored description, naming the clear gesture
-    /// the original page has no word for (<see cref="ClearCell"/>).</summary>
-    public const string KeysClearHint = "Delete or Backspace clears the highlighted control.";
+    /// the original page has no word for (<see cref="ClearCell"/>). ⚠ Keep it short: the authored
+    /// description fills most of the plate's two lines, and a third runs onto CANCEL CHANGES.</summary>
+    public const string KeysClearHint = "Delete clears the control.";
 
     // The Options hub's own section, whose logo every page here keeps standing behind it since none
     // of the five authors one. The hub is the shell's (OriginalShell.PreferencesSection), its name
@@ -300,10 +302,6 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
     private const float KeysStickX = 535f;
     private const float KeysStickWidth = 77f;
     private const float KeysColumnGap = 4f;
-
-    // A face's line runs a little taller than the 16-pixel pitch, so a one-line box is sized in
-    // pitches. One and a half holds a line and refuses a second.
-    private const float KeysCellFitLines = 1.5f;
 
     // The rows under the category heading are indented, which is what the page's own still shows.
     private const float KeysRowIndent = 14f;
@@ -934,9 +932,57 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
         _host.FocusedRow = -1;
     }
 
+    /// <summary>Adds posed controls to the standing tab's first three rows, the screenshot aids'
+    /// door to the cells' marquee. They are a long stick caption, several sticks in one cell and
+    /// several keys in Control B. The sticks are two unnamed models no roster holds. Nothing is staged or saved:
+    /// the live keymap changes in memory for the run.</summary>
+    public void PoseStickCaptions()
+    {
+        if (_controls is not { Players.Count: > 0 } controls)
+        {
+            return;
+        }
+
+        var rows = KeysTabs[_keysTab].Rows;
+        var right = new StickModel(0x231D, 0x0200).Device;
+        var left = new StickModel(0x231D, 0x0201).Device;
+        controls.Follow(controls.Player, profile =>
+        {
+            for (int i = 0; i < rows.Count && i < 3; i++)
+            {
+                var map = profile.Map(rows[i].Context);
+                var action = rows[i].Action;
+                var posed = i switch
+                {
+                    0 => new[] { new Binding(right, BindingControl.FullAxis(5, true, StickCapture.FlightDeadzone)) },
+                    1 => new[]
+                    {
+                        new Binding(right, BindingControl.Button(3)),
+                        new Binding(left, BindingControl.Button(11)),
+                        new Binding(left, BindingControl.Hat(0, HatDirection.Up)),
+                    },
+                    _ => new[]
+                    {
+                        new Binding(DeviceId.Keyboard, BindingControl.Key((int)Godot.Key.Pagedown)),
+                        new Binding(DeviceId.Keyboard, BindingControl.Key((int)Godot.Key.Insert)),
+                    },
+                };
+                foreach (var binding in posed)
+                {
+                    // A row taking no full axis refuses one; a hat stands in for the long caption.
+                    if (!map.Add(action, binding) && binding.Control.Kind == ControlKind.FullAxis)
+                    {
+                        map.Add(action, new Binding(right, BindingControl.Hat(0, HatDirection.Down)));
+                    }
+                }
+            }
+        });
+    }
+
     /// <summary>What the KEYS AND BUTTONS page prints in that row's Control A, Control B and Stick
     /// cells. Stick controls stand in Stick alone (<see cref="KeysStickColumn"/>). Of the rest the
-    /// first stands in A and the others in B, which keeps a third binding from being hidden.</summary>
+    /// first stands in A and every other in B, joined by <see cref="KeysStickColumn.Separator"/>,
+    /// so a third binding is never hidden.</summary>
     public (string A, string B, string Stick) KeysCellText(int row)
     {
         if (_controls is not { } controls || controls.Players.Count == 0
@@ -953,10 +999,8 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
             return (string.Empty, string.Empty, stick);
         }
 
-        string a = BindingLabels.Describe(others[0]);
-        return others.Count == 1
-            ? (a, string.Empty, stick)
-            : (a, BindingLabels.Row(others.GetRange(1, others.Count - 1), 1), stick);
+        return (BindingLabels.Describe(others[0]),
+            KeysStickColumn.Joined(others.GetRange(1, others.Count - 1), BindingLabels.Describe), stick);
     }
 
     // The rest of this class stays in the five pages' own narrative order. A helper stands beside
@@ -2550,9 +2594,9 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
 
 #pragma warning disable SA1202 // Kept beside ActivateKeys, the press it is the other gesture of.
     /// <summary>Clears the control a KEYS page cell shows, answering whether the page changed.
-    /// Control A and Control B drop the binding they print. The Stick cell drops the first stick
-    /// binding, the one its caption names. So each press takes what the cell shows, and a "+n" steps
-    /// down to the next. A full axis leaves its pair's other row as well
+    /// Control A drops the binding it prints. Control B and the Stick cell drop the first binding
+    /// they list, so each press takes the leading caption and the next one moves up. A full axis
+    /// leaves its pair's other row as well
     /// (<see cref="ControlsFeature.UnbindSlot"/>). Nothing happens off a cell or while a steal
     /// awaits its answer.</summary>
     public bool ClearCell(OriginalRow row)
@@ -2854,18 +2898,22 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
             lines.Add(new BoardLine(BindingLabels.Name(tab.Rows[i].Action), page.ActionX + KeysRowIndent, y,
                 page.ActionWidth - KeysRowIndent, KeysRowFont, BoardInk.Row));
             var text = KeysCellText(i);
-            // The two half-panel columns step a long caption down a point at a time rather than
-            // wrapping it onto the row below. The box holds one line of the face and not two.
-            float fit = page.ItemHeight * KeysCellFitLines;
+            // A caption wider than its cell scrolls inside it rather than wrapping onto the row
+            // below, which the 16-pixel pitch has no room for. Control B's clip stops short of the
+            // scrollbar's column, where its authored width would run it under the plate's frame.
             lines.Add(new BoardLine(text.A, page.ControlAX, y, page.ControlAWidth, KeysRowFont, BoardInk.Row)
             {
-                Height = fit,
+                Marquee = true,
             });
             lines.Add(new BoardLine(text.Stick, page.StickX, y, page.StickWidth, KeysRowFont, BoardInk.Row)
             {
-                Height = fit,
+                Marquee = true,
             });
-            lines.Add(new BoardLine(text.B, page.ControlBX, y, page.ControlBWidth, KeysRowFont, BoardInk.Row));
+            float bWidth = Math.Max(1f, Math.Min(page.ControlBWidth, page.BarX - KeysColumnGap - page.ControlBX));
+            lines.Add(new BoardLine(text.B, page.ControlBX, y, bWidth, KeysRowFont, BoardInk.Row)
+            {
+                Marquee = true,
+            });
         }
 
         ComposeKeysRows(rows, focus, layers);

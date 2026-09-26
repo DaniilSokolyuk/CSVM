@@ -200,8 +200,16 @@ plaques and flowed list widgets, each in draw order. The backdrop is its own lay
 sit over the background and stay under the page's pictures, where a selection bar goes. `BoardNote`
 is a widget's entries plus its wrap box (cut at a word where the box has no room for the rest, shrunk
 to a face the whole list fits in, or no box at all where the widget's own list stops nowhere), its
-marks, and `BoardCaret` an edit box's cursor on the line it follows, all placed by a caller that can measure text. A `BoardLine` carrying a `Height` names the box its block is fitted to, the renderer stepping its face down until the block fits, since only the renderer can measure. `PlaqueFrame` and `PlaqueInk` are a plaque's states, and a plaque whose art leaves
+marks, and `BoardCaret` an edit box's cursor on the line it follows, all placed by a caller that can measure text. A `BoardLine` carrying a `Height` names the box its block is fitted to, the renderer stepping its face down until the block fits, since only the renderer can measure; one marked `Marquee` stays on one line and scrolls inside its width when wider. `PlaqueFrame` and `PlaqueInk` are a plaque's states, and a plaque whose art leaves
 part of its frame empty carries its label's own baseline. `BoardArt` names a file and its frame count and the renderer resolves it; one of its libraries is a movie, so a background film reaches the backdrop with no engine type here, and one is an image already in memory (`Held`), a stunt photograph's thumbnail. `BoardCrop` takes a region of the source instead of the whole frame, which is a chart sheet's own window. A `BoardLine` carrying a `Glyph` names the pad button drawn where `GlyphSlot` stands in its text, the renderer owning the gap after the picture since only it can measure one, and a `BoardFill` carrying an `Ink` takes the palette's colour instead of three bytes, which is what a seat chip paints with.
+
+## src/UI/Boards/BoardMarquee.cs
+The scroll of a one-line caption wider than its box, engine-free: `Offset` is how far it has moved
+at a clock reading, resting `HoldSeconds` at the start, scrolling at `PixelsPerSecond` until its end
+shows, resting and scrolling back, and 0 for a caption that fits. Both numbers are TUNE, chosen to
+read calmly on the KEYS AND BUTTONS page. `PinnedSeconds` holds every marquee at one phase: the
+launcher pins the start under `--det` and `--run-tests` and any phase for `--debug-marquee=`, so a
+capture never depends on how many frames ran. The renderer is `ComposedBoardView.cs`.
 
 ## src/UI/Campaign/CampaignBoards.cs
 The fixed chrome of all eight campaign screens, plus the composer that turns a page and a cursor
@@ -238,7 +246,7 @@ texture cache and the only art resolution there is, mission art and screen chrom
 extraction roots, and caches a miss so an absent extraction is probed once per name. A movie resolves
 to a `MovieSurface`, whose one texture the cache holds and the surface rewrites in place, so the
 picture animates with nothing invalidated; a held image gets one texture per image, dropped once a shown board stops drawing it; `AdvanceMovies` runs their clocks off the caller's own step and
-`AdvanceCaret` blinks a text cursor off it, each saying whether to repaint. A line naming a `LanguiFace` draws in that installed Windows face, cached per tag, and keeps the board's own where the machine lacks it; a pitched block honours authored line breaks and indents and justifies as a whole, its lines left-aligned under the widest. Supplies the font metric a flowed
+`AdvanceCaret` blinks a text cursor off it and `AdvanceMarquee` scrolls an overflowing marquee line, each saying whether to repaint; a marquee line is drawn through the text server with whole glyphs clipped to its box, so it keeps its place in the draw order under overlays and the pointer. A line naming a `LanguiFace` draws in that installed Windows face, cached per tag, and keeps the board's own where the machine lacks it; a pitched block honours authored line breaks and indents and justifies as a whole, its lines left-aligned under the widest. Supplies the font metric a flowed
 `BoardNote` and a caret cannot take, `Fitted` shrinking a note's face until its list fits its box rather than losing a row and stepping a `BoardLine` carrying a box height down a point at a time until its wrapped block fits, `Block` being that measurement on its own, the two-line hint band a pad needs, and `ArtSize` for a caller that must clip against a bitmap's own authored width. `PresentMoving` is the one repaint a caller holding the frame loop can still make: its pictures go on a canvas item of the view's own, fitted by the same maths and re-fitted on a resize, rather than through a queued redraw callback the blocked loop would never reach, so a load screen's build can move the bar it draws. A line carrying a glyph is drawn through `ControlLine`, the composition the flight prompts already use, so the picture and the gap around it are measured in one place and a board composer never spaces them itself.
 
 ## src/UI/Screens/CinemaScreen.cs
@@ -1104,9 +1112,10 @@ is held in its region. The screen: [../org/menu-inventory.md](../org/menu-invent
 How the KEYS AND BUTTONS page splits a row's bindings: those on a stick model's identity go to the
 port's Stick column, the rest to the authored Control A and Control B. `SlotOfOther` maps Control A
 and Control B to the first and second non-stick binding, so a stick bound ahead of the keys never
-shifts which binding those cells replace. The Stick cell prints the first stick binding's caption
-and a count of the others, since the column is half a panel wide; an unnamed stick's caption is
-its control alone (`Sticks/StickLabels.cs`'s `Column`). The page placing the column:
+shifts which binding those cells replace. The Stick cell lists every stick binding's caption in the
+row's order, joined by `Separator` (" / ", which Control B shares), the first listed being the one
+the clear gesture drops; a line wider than its cell scrolls (`Boards/BoardMarquee.cs`). An unnamed
+stick's caption is its control alone (`Sticks/StickLabels.cs`'s `Column`). The page placing the column:
 `OriginalOptionsScreen.cs`; the stick-only capture it arms: `ControlsFeature.cs`.
 
 ## src/UI/Menu/Original/OriginalJoinBoard.cs

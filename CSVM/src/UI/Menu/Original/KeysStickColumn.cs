@@ -1,5 +1,6 @@
+using System;
 using System.Collections.Generic;
-using System.Globalization;
+using System.Linq;
 using CSVM.Bindings;
 using CSVM.Sticks;
 
@@ -11,6 +12,10 @@ namespace CSVM.UI.Menu.Original;
 /// stick never shows twice and a capture on A or B never replaces one.</summary>
 internal static class KeysStickColumn
 {
+    /// <summary>What stands between two captions in one cell. A caption itself holds spaces and a
+    /// trailing "-" or "+", so a slash is the mark no caption carries.</summary>
+    public const string Separator = " / ";
+
     /// <summary>Whether <paramref name="binding"/> belongs in the Stick column.</summary>
     public static bool IsStick(Binding binding) => StickModel.TryFromDevice(binding.Device, out _);
 
@@ -65,20 +70,16 @@ internal static class KeysStickColumn
         return bindings.Count;
     }
 
-    /// <summary>The Stick cell's text: the first stick binding's caption and, when more sticks hold
-    /// the row, how many more. The column is half a panel wide, so a second caption would not fit,
-    /// and an unnamed stick prints its control alone (<see cref="StickLabels.Column(Binding)"/>).
-    /// </summary>
-    public static string Text(IReadOnlyList<Binding> sticks)
-    {
-        if (sticks.Count == 0)
-        {
-            return string.Empty;
-        }
+    /// <summary>The Stick cell's text: every stick binding's caption in the row's order, the first
+    /// being the one the clear gesture drops. An unnamed stick prints its control alone
+    /// (<see cref="StickLabels.Column(Binding)"/>). A cell too narrow for it scrolls.</summary>
+    public static string Text(IReadOnlyList<Binding> sticks) => Joined(sticks, StickLabels.Column);
 
-        string first = StickLabels.Column(sticks[0]);
-        return sticks.Count == 1
-            ? first
-            : first + " +" + (sticks.Count - 1).ToString(CultureInfo.InvariantCulture);
+    /// <summary>Several bindings' captions as one cell's line, in their own order.</summary>
+    public static string Joined(IEnumerable<Binding> bindings, Func<Binding, string> caption)
+    {
+        ArgumentNullException.ThrowIfNull(bindings);
+        ArgumentNullException.ThrowIfNull(caption);
+        return string.Join(Separator, bindings.Select(caption));
     }
 }

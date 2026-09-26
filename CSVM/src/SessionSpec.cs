@@ -802,6 +802,10 @@ public sealed record SessionSpec
     /// Authored rather than window pixels, so a shot lands on the same widget whatever the window.
     /// Null = not asked for.</summary>
     public (float X, float Y, bool Down, bool Right)? DebugPointer { get; private set; }
+    /// <summary><c>--debug-marquee=seconds</c>: hold every scrolling menu caption at that phase of
+    /// its scroll (<see cref="CSVM.UI.Boards.BoardMarquee"/>), so a shot shows a long caption part
+    /// way through. Null = not asked for, and <c>--det</c> then holds the start.</summary>
+    public double? DebugMarquee { get; private set; }
     public bool MarkersOverlay { get; private set; }
     public bool WeaponLab { get; private set; }
     public string? WeaponSelect { get; private set; }
@@ -1022,6 +1026,7 @@ public sealed record SessionSpec
             else if (arg.StartsWith("--debug-wingmen=")) { s.DebugWingmen = int.Parse(arg["--debug-wingmen=".Length..]); }
             else if (arg.StartsWith("--debug-preset=")) { s.DebugPreset = int.Parse(arg["--debug-preset=".Length..]); }
             else if (arg.StartsWith("--debug-pointer=")) { s.DebugPointer = ParseDebugPointer(arg["--debug-pointer=".Length..]); }
+            else if (arg.StartsWith("--debug-marquee=")) { s.DebugMarquee = double.TryParse(arg["--debug-marquee=".Length..], NumberStyles.Float, CultureInfo.InvariantCulture, out double phase) ? Math.Max(0d, phase) : null; }
             else if (arg.StartsWith("--paint=")) { s.PaintNames = arg["--paint=".Length..].Split(',', StringSplitOptions.TrimEntries); }
             else if (arg.StartsWith("--paint-color=")) { s.PaintColorOverride = ParsePaintColors(arg["--paint-color=".Length..]); }
             else if (arg.StartsWith("--paint-decal=")) { s.PaintDecalOverride = ParsePaintDecals(arg["--paint-decal=".Length..]); }

@@ -452,6 +452,15 @@ public class SessionSpecMenuTests
         Assert.Null(Cli("--debug-pointer=").DebugPointer);
     }
 
+    [Fact]
+    public void TheDebugMarqueeTakesSecondsInTheInvariantCulture()
+    {
+        Assert.Null(Cli().DebugMarquee);
+        Assert.Equal(2.5, Cli("--debug-marquee=2.5").DebugMarquee);
+        Assert.Equal(0d, Cli("--debug-marquee=-1").DebugMarquee);
+        Assert.Null(Cli("--debug-marquee=soon").DebugMarquee);
+    }
+
     private static InstantActionDef WizardDef(string missionType) => new()
     {
         MissionType = missionType,

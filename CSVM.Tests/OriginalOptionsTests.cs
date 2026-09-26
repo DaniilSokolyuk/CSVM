@@ -953,7 +953,7 @@ public class OriginalOptionsTests
     }
 
     [Fact]
-    public void ARowWithMoreControlsThanColumnsSaysHowManyItIsNotShowing()
+    public void ARowWithMoreControlsThanColumnsListsEveryOneInControlB()
     {
         var controls = Controls(out _, out _);
         var host = Host(controls: controls);
@@ -977,7 +977,7 @@ public class OriginalOptionsTests
 
         var text = host.Module.KeysCellText(0);
         Assert.Equal("M", text.A);
-        Assert.Equal("N, +1 more", text.B);
+        Assert.Equal("N / B", text.B);
     }
 
     [Fact]

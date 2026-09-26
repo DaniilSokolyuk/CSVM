@@ -688,6 +688,9 @@ public partial class Launcher : Node3D
         // the door for the same reason: a run whose result is compared against a committed golden
         // must not depend on the keymap saved at whoever's machine ran it (verification.md, DET-8).
         CSVM.Bindings.LaunchBindings.Configure(_spec.Det || _spec.RunTests);
+        // A scrolling caption would put a capture's pixels on the frame count. The same runs hold
+        // every marquee at its start unless the aid names a phase.
+        CSVM.UI.Boards.BoardMarquee.PinnedSeconds = _spec.DebugMarquee ?? (_spec.Det || _spec.RunTests ? 0d : null);
 
         // After the --det block, so ClearOverrides has dropped a config graphics.mode; ahead of the
         // clutter fade, which needs the mode to follow the pushed fog. ⚠ --det reads no saved

@@ -1309,8 +1309,19 @@ Stick cell drops its first stick binding, the one its caption names, so a cell r
 +1" steps down to the other stick's binding on the next press. A full axis clears both rows of
 its pair (`ControlsFeature.UnbindSlot`). Nothing clears off a cell, while a capture is armed or
 while a steal awaits its answer. The page's description line ends with
-`OriginalOptionsScreen.KeysClearHint`, "Delete or Backspace clears the highlighted control.", while
+`OriginalOptionsScreen.KeysClearHint`, "Delete clears the control." (short enough to keep the plate at two lines), while
 no status line replaces it.
+
+**Scrolling captions.** A binding cell (Control A, Stick, Control B) never wraps and never shrinks
+its face. A caption that fits is drawn as before; a wider one is clipped to its cell and scrolls:
+it rests 1.5 s at its start, moves at 20 authored pixels a second until its end shows, rests 1.5 s
+and scrolls back (`Boards/BoardMarquee.cs`, both numbers TUNE). The renderer clips whole glyphs
+through the text server, so a scrolling cell keeps its place under a dialog and the pointer. A cell
+holding several bindings lists them all, joined by " / ", in place of the old "+1" count; the Stick
+column and Control B clear the first binding they list, one per press. Control B's clip stops short
+of the scrollbar's column. `--det` and `--run-tests` hold every marquee at its start, and
+`--debug-marquee=<seconds>` with `--menu=keys:<category>:sticks` shoots any phase over posed
+captions.
 
 **Verified.** `CSVM.Tests/OriginalKeysStickColumnTests.cs` drives a whole `OriginalShell` over a
 fake L and R: the Stick cell ignores a held key and pad button then binds an R button; an R capture

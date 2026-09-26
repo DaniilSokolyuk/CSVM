@@ -319,6 +319,7 @@ else in `UI`, and nothing names `Labs`.
 - `src/UI/Boards/SliderTrack.cs`, a slider's track as a pointer sees it: the slot, the thumb on it, and the clamped value a press, a drag or a sideways step lands on.
 - `src/UI/Boards/BoardFit.cs`, how the original's fixed 800x600 dialog space lands on any window: one uniform scale, the board centred, the rest letterboxed.
 - `src/UI/Boards/ComposedBoard.cs`, what a composed screen is made of: a backdrop that may be a movie, fills, pictures, strokes, lines, plaques and flowed lists in draw order.
+- `src/UI/Boards/BoardMarquee.cs`, how far a one-line caption too wide for its box has scrolled: rest, scroll, rest, return, and the pin a deterministic run holds it at.
 - `src/UI/Boards/ComposedBoardView.cs`, the Godot half of the boards: a composed board drawn through `BoardFit` at nearest filtering, the art and movie cache, the hint band.
 - `src/UI/Boards/BoardPalette.cs`, the ink a campaign board writes in, one palette per background family.
 - `src/UI/Boards/SeatStrip.cs`, the shape both presentations' player chip strip shares: the face, the corner inset, the cell a chip centres in, and the ink a seat takes.

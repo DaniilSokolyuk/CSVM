@@ -71,7 +71,7 @@ public class OriginalKeysStickColumnTests
         Assert.DoesNotContain(r1, after);
         Assert.Contains(l1, after);
         Assert.Equal(others, after.Where(b => !KeysStickColumn.IsStick(b)));
-        Assert.EndsWith(" +1", rig.Shell.Options.KeysCellText(0).Stick);
+        Assert.Equal("Button 2 / Button 8", rig.Shell.Options.KeysCellText(0).Stick);
     }
 
     /// <summary>A full axis counts once for its pair. R's new axis replaces R's old one on both
@@ -166,19 +166,19 @@ public class OriginalKeysStickColumnTests
         Assert.False(rig.Controls.Capturing);
     }
 
-    /// <summary>The Stick cell clears the binding its caption names, so a "+1" steps down to the
-    /// other stick's binding, and the keys stay.</summary>
+    /// <summary>The Stick cell clears the first binding it lists, so the next press takes the one
+    /// listed after it, and the keys stay.</summary>
     [Fact]
     public void TheClearGestureOnTheStickCellDropsTheFirstStickBinding()
     {
         using var rig = new Rig();
         var action = rig.OpenRow(0);
         var r1 = new Binding(VkbR.Device, BindingControl.Button(1));
-        var l1 = new Binding(VkbL.Device, BindingControl.Button(1));
+        var l1 = new Binding(VkbL.Device, BindingControl.Button(3));
         rig.Add(action, r1);
         rig.Add(action, l1);
         var others = rig.Controls.Bindings(InputContext.Flight, action).Where(b => !KeysStickColumn.IsStick(b)).ToList();
-        Assert.EndsWith(" +1", rig.Shell.Options.KeysCellText(0).Stick);
+        Assert.Equal("Button 2 / Button 4", rig.Shell.Options.KeysCellText(0).Stick);
 
         rig.Shell.Step(new MenuCommands { MoveX = 1 });
         rig.Shell.Step(new MenuCommands { MoveX = 1 });
@@ -189,7 +189,7 @@ public class OriginalKeysStickColumnTests
         Assert.DoesNotContain(r1, after);
         Assert.Contains(l1, after);
         Assert.Equal(others, after.Where(b => !KeysStickColumn.IsStick(b)));
-        Assert.Equal("Button 2", rig.Shell.Options.KeysCellText(0).Stick);
+        Assert.Equal("Button 4", rig.Shell.Options.KeysCellText(0).Stick);
 
         rig.Shell.Step(new MenuCommands { Unbind = true });
         Assert.DoesNotContain(l1, rig.Controls.Bindings(InputContext.Flight, action));
@@ -243,7 +243,41 @@ public class OriginalKeysStickColumnTests
         using var rig = new Rig();
         rig.OpenRow(0);
         Assert.Contains(rig.Shell.Compose().Lines, l => l.Text.Contains(OriginalOptionsScreen.KeysClearHint, StringComparison.Ordinal));
-        Assert.Contains("Delete or Backspace", OriginalOptionsScreen.KeysClearHint, StringComparison.Ordinal);
+        Assert.Contains("Delete", OriginalOptionsScreen.KeysClearHint, StringComparison.Ordinal);
+    }
+
+    /// <summary>Every binding cell is one marquee line, never a box its face shrinks into. A long
+    /// caption then scrolls rather than wrapping onto the row below.</summary>
+    [Fact]
+    public void EveryBindingCellIsAMarqueeLine()
+    {
+        using var rig = new Rig();
+        rig.OpenRow(0);
+        var action = OriginalOptionsScreen.ControlTabs[0].Rows[1].Action;
+        rig.Add(action, new Binding(VkbR.Device, BindingControl.Button(1)));
+        rig.Add(action, new Binding(VkbL.Device, BindingControl.Button(9)));
+        var lines = rig.Shell.Compose().Lines;
+        var cells = lines.Where(l => l.Marquee).ToList();
+
+        Assert.NotEmpty(cells);
+        Assert.All(cells, l => Assert.Equal(0f, l.Height));
+        Assert.Contains(cells, l => l.Text == "Button 2 / Button 10");
+        Assert.DoesNotContain(lines, l => l.Text.Contains(" +1", StringComparison.Ordinal));
+        Assert.Equal(3, cells.Count(l => l.Y == cells[0].Y));
+    }
+
+    /// <summary>The screenshot aid's pose puts a long caption, several sticks and several keys on
+    /// the standing tab's first three rows.</summary>
+    [Fact]
+    public void ThePoseAidStandsLongAndSharedCaptionsOnTheFirstRows()
+    {
+        using var rig = new Rig();
+        rig.OpenRow(0);
+        rig.Shell.Options.PoseStickCaptions();
+
+        Assert.Equal("Axis 6 inverted", rig.Shell.Options.KeysCellText(0).Stick);
+        Assert.Equal("Axis 6 inverted / Button 4 / Button 12 / Hat Up", rig.Shell.Options.KeysCellText(1).Stick);
+        Assert.EndsWith(" / Pagedown / Insert", rig.Shell.Options.KeysCellText(2).B);
     }
 
     [Fact]
