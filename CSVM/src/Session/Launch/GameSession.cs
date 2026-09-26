@@ -421,13 +421,9 @@ public partial class GameSession : Node3D
     private IReadOnlyList<FlightController> AiPlanes =>
         _flightRoster?.AiAircraft ?? Array.Empty<FlightController>();
 
-    // ⚠ Do not spell "does this session build colliders" any other way; this is the one definition
-    // the labs and the C overlay read, so they cannot disagree with what WorldSession built.
+    // ⚠ Do not spell "does this session build colliders" any other way. The labs and the F20
+    // overlay read this one definition, so they cannot disagree with what WorldSession built.
     private bool BuildsCollision => _spec.BuildsCollision;
-
-    // Whether P / . may halt this session. Splitscreen flight says no: the freeze halts the shared
-    // world, so it is not one player's to press.
-    private bool HaltAllowed => !_spec.Fly || _rigs.Count == 1;
 
     /// <summary>Builds one flight/view session from the spec (mode, chapter, plane, spawn, …)
     /// into a fresh <see cref="_worldRoot"/> so Esc-to-menu can tear it all down and a new session
@@ -755,11 +751,12 @@ public partial class GameSession : Node3D
             _cutscene.NoteHeld(@event);
         }
         // P halts the sim and . steps it one frame, in freecam and the static viewer. ⚠ Do not
-        // handle either for flight or the animation lab; both own their own transport.
-        if (!_spec.AnimLab && @event is InputEventKey { Pressed: true, Echo: false } clockKey
-            && _clock != null && HaltAllowed)
+        // handle either for flight or the animation lab. Both own their own transport, and in
+        // flight both keys belong to the rebindable keymap (. is Yaw Right by default).
+        if (!_spec.AnimLab && !_spec.Fly && @event is InputEventKey { Pressed: true, Echo: false } clockKey
+            && _clock != null)
         {
-            if (clockKey.Keycode == Key.P && !_spec.Fly)
+            if (clockKey.Keycode == Key.P)
             {
                 _clock.Halted = !_clock.Halted;
                 Log.Info("core", $"{(_clock.Halted ? "clock: halted (P resumes, . steps one frame, hold . to run)" : "clock: running")}");
@@ -773,7 +770,7 @@ public partial class GameSession : Node3D
                 return;
             }
         }
-        if (!_spec.AnimLab && @event is InputEventKey { Pressed: false } clockKeyUp
+        if (!_spec.AnimLab && !_spec.Fly && @event is InputEventKey { Pressed: false } clockKeyUp
             && clockKeyUp.Keycode == Key.Period)
         {
             _stepHold.Release();
@@ -3506,9 +3503,9 @@ public partial class GameSession : Node3D
             });
         }
 
-        // Collider wireframes (C). Built in the modes that observe a live world: it draws what the
+        // Collider wireframes (F20), built in the modes that observe a live world. It draws what the
         // collision build produced, and says so loudly when the mode built none rather than
-        // rendering an empty overlay that reads as "nothing here is solid".
+        // rendering an empty overlay.
         if ((_spec.Freecam || _spec.AnimLab || _spec.Fly) && _plane != null)
         {
             var planeColliders = new List<(Node3D, PlaneCollider)>();
@@ -3533,21 +3530,21 @@ public partial class GameSession : Node3D
                     ? EffectCatalogue.ResolvedSurfaceIds(state.CrashProgram)
                     : null,
             });
-            Log.Info("world", $"collider overlay ready (C){(BuildsCollision ? "" : ", but this mode built NO collision; relaunch with --collision")}");
+            Log.Info("world", $"collider overlay ready (F20){(BuildsCollision ? "" : ", but this mode built NO collision; relaunch with --collision")}");
 
-            // Colour-by-class overlay (H): same mode set as the collider overlay, since it reads
+            // Colour-by-class overlay (F21): same mode set as the collider overlay, since it reads
             // the same live world, a findable-targets view, not a collision one.
             _worldRoot!.AddChild(new UI.Overlays.ClassOverlay(_plane, state.Gamez, state.WorldRuntime)
             {
                 DebugShow = _spec.ShowClassOverlay,
             });
-            Log.Info("world", $"class overlay ready (H)");
+            Log.Info("world", $"class overlay ready (F21)");
         }
         else if (_spec.ForceCollision && _spec.WorldMode)
         {
-            // The static viewer builds the bodies but binds no overlay: C there cycles the mesh
-            // lab's cull override, and silently rebinding a lab key would be worse than saying so.
-            Log.Info("world", $"--collision built the world's colliders, but the C overlay is not bound in this mode (C is the mesh lab's cull cycler), use --freecam to see them");
+            // The static viewer builds the bodies but no overlay, so it says so rather than leaving
+            // F20 to do nothing.
+            Log.Info("world", $"--collision built the world's colliders, but the F20 collider overlay is not built in this mode, use --freecam to see them");
         }
 
         // Map-edge tile grid (--debug-tilegrid, flag-only). Gated on the extender rather than a

@@ -404,8 +404,8 @@ else in `UI`, and nothing names `Labs`.
 
 - `src/UI/Overlays/MissionMap.cs`, the one chart drawer every screen showing a mission's map shares: the sheet at its crop, the reveal's pins, and an icon placed by world position.
 - `src/UI/Overlays/ObjectivesHud.cs`, the campaign mission's objectives readout, drawn on the pause screen alone, one instance per rig.
-- `src/UI/Overlays/ColliderOverlay.cs`, the collider wireframes (C): every built collision shape drawn, coloured by the surface id it resolves to.
-- `src/UI/Overlays/ClassOverlay.cs`, the colour-by-class overlay (H): every drawn mesh tinted destructible, facade, clutter or scenery, a findable-targets view.
+- `src/UI/Overlays/ColliderOverlay.cs`, the collider wireframes (F20): every built collision shape drawn, coloured by the surface id it resolves to.
+- `src/UI/Overlays/ClassOverlay.cs`, the colour-by-class overlay (F21): every drawn mesh tinted destructible, facade, clutter or scenery, a findable-targets view.
 - `src/UI/Overlays/AiNetsOverlay.cs`, the AI patrol-net overlay (F13): the chapter's nets as coloured graphs with labels, plus a live leash per AI aircraft.
 - `src/UI/Overlays/TileGridOverlay.cs`, the map-edge tile-grid overlay (`--debug-tilegrid`): every ground tile tinted by repetition band, so one band is one block.
 - `src/UI/Overlays/NodeLabels.cs`, floating `cs_name` labels over scene nodes (`--debug-names`, no key): meshes or all, anchored on mesh centres and de-cluttered.

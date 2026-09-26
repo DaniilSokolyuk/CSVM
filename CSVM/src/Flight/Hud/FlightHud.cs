@@ -588,7 +588,7 @@ public sealed class FlightHud
         if (state.StuntStatusLine is { } stuntStatus)
             _textLines.Add(stuntStatus);
         if (state.Halted)
-            _textLines.Add("⏸ PAUSED (. steps one frame)");   // the board's own menu says the rest
+            _textLines.Add("⏸ PAUSED");   // the board's own menu says the rest
         return _textLines;
     }
 

@@ -1065,7 +1065,7 @@ public partial class FlightController : Node3D
         _model = model;
         _viewCamera = camera;
         _cam = camera != null
-            ? new CameraController(camera, camParams, KeyDown, PinnedView, PinnedViewMode, cockpitCameraOffset)
+            ? new CameraController(camera, camParams, _actions.Held, PinnedView, PinnedViewMode, cockpitCameraOffset)
             : null;
         // C22: the idle branch of the shared head-look law, set once here, since Head lives for
         // the controller's whole life and _model (captured by the closure) is reassigned by every
@@ -2246,8 +2246,8 @@ public partial class FlightController : Node3D
         else
         {
             PollViewModeKeys();
-            // Numpad +/- (BL-433): only here, never while orbiting, since the weapon lab's held
-            // orbit reads the same two keys for its own dolly (OrbitInput above).
+            // The zoom pair (BL-433), never while orbiting: the weapon lab's held orbit reads the
+            // same two actions for its dolly (OrbitInput).
             _cam.UpdateZoom(simDt);
             // Default to the external FOV global; the FirstPerson arm below overrides it, so a
             // look-behind while SELECTED Cockpit/Nose gets the first-person FOV back on release.
@@ -2268,7 +2268,7 @@ public partial class FlightController : Node3D
                 // Rigid at cockpit_camera (wobble inherited), the mode's own FOV, aimed by the
                 // head. Look-back stays IN the cockpit, the head snapped to dead astern while held,
                 // as the original does. This arm therefore sits above the look-behind cut below.
-                _cam.StepHead(simDt, _cam.BackActive(_padActions.Held(InputAction.LookBack))
+                _cam.StepHead(simDt, _cam.BackActive()
                     ? new HeadLookInput(0f, -1f, 0f, 0f, false, ForceSnap: true)
                     : HeadLookRead(), HeadLook.FirstPersonElevationFloor);
                 _cam.FirstPersonView(_renderPose);
@@ -2276,10 +2276,7 @@ public partial class FlightController : Node3D
                 firstPersonPose = true;
                 logged = _cam.ViewMode == PilotViewMode.Nose ? CameraView.Nose : CameraView.Cockpit;
             }
-            // E42: this player's right-stick click looks back, the pad twin of holding
-            // numpad 0, read here, not in CameraController, same "no pad devices in the camera"
-            // rule OrbitInput/PadLookInput follow.
-            else if (_cam.BackActive(_padActions.Held(InputAction.LookBack)))
+            else if (_cam.BackActive())
             {
                 _cam.BackView(_renderPose);
                 logged = CameraView.Back;
@@ -4819,9 +4816,8 @@ public partial class FlightController : Node3D
     // The weapon lab's orbit camera, mixed from this player's keyboard and pads. Read here rather
     // than in CameraController so the camera never learns about pad devices, window focus or the
     // stick response curve.
-    // ⚠ Deliberately not a named-action read: these are lab controls, like the panel keys, and the
-    // numpad +/- zoom pair is bound to nothing a player may rebind. The two key pairs also SUM
-    // rather than OR, so W and Up together swing at double rate, which an action read cannot say.
+    // ⚠ The swing is not a named-action read, since these are lab controls. Its key pairs SUM
+    // rather than OR, so W and Up swing at double rate. The dolly is the player's zoom pair.
     private (float Yaw, float Pitch, float Zoom) OrbitInput()
     {
         float padYaw = StickCurve(PadAxis(JoyAxis.LeftX));
@@ -4830,7 +4826,7 @@ public partial class FlightController : Node3D
                       - PadAxis(JoyAxis.TriggerLeft);         // RT out, LT in
         return (KeyAxis(Key.D, Key.A) + KeyAxis(Key.Right, Key.Left) + padYaw,
                 KeyAxis(Key.W, Key.S) + KeyAxis(Key.Up, Key.Down) + padPitch,
-                KeyAxis(Key.KpSubtract, Key.KpAdd) + padZoom); // Kp- out, Kp+ in, RT out, LT in
+                _keyActions.Axis(InputAction.ZoomOut, InputAction.ZoomIn) + padZoom); // RT out, LT in
     }
 
     // The pad look-around stick: this player's right stick, curved the same way OrbitInput's is.
