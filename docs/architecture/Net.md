@@ -41,14 +41,14 @@ payload at or below the newest on its channel is discarded. `Lost` (per channel 
 channel, which no sequence stream rides. Read `LoopbackTransportTests.cs`.
 
 ## src/Net/EnetTransport.cs
-The shipped carrier: the seam over Godot's ENet peer, UDP under ENet's own three delivery classes,
-and the one type under `CSVM/` allowed to name a Godot networking type. `Host` opens a listen
-server, `Join` reports success as the host joining the roster, and both ends address each other by
-the id ENet assigns, the host being 1. Every roster change and payload comes out of `Step`, the
-single poll it makes, so "nothing arrives between steps" holds here as on the loopback.
-`ChannelCount` is `NetChannels.Count`, asked for by both ends, since ENet fixes
-it at the handshake and refuses a send past it. `INetLink` is where a board and a launcher read
-the socket, and a socket with no listener holds what lands and replays it on `Bind`.
+The shipped carrier over Godot's ENet peer, and the one type under `CSVM/` allowed to name a Godot
+networking type. `Host` opens a listen server, `Join` reports success as the host (peer 1) joining
+the roster. Every roster change and payload comes out of `Step`, so "nothing arrives between steps"
+holds as on the loopback. A service thread polls ENet whenever the main thread has not stepped for
+`ServiceGapSeconds`, up to `Keepalive.CeilingSeconds`, so a blocking mission load (5 to 8 s against
+ENet's 5 s timeout floor) keeps sending acknowledgements. `ChannelCount` is `NetChannels.Count`.
+`INetLink` is where a board reads the socket, and a socket with no listener holds what lands and
+replays it on `Bind`.
 
 ## src/Net/SteamTransport.cs
 The Steam carrier's place in the seam with nothing behind it: the Steamworks SDK cannot be

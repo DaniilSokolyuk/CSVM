@@ -21,6 +21,10 @@ internal static class EnetTransportSuites
     private const int FirstPort = 47100;
     private const int PortsToTry = 20;
 
+    // The stall suite's own walk. Engine suites run in parallel shards, and a busy port costs an
+    // engine error line that the battery counts against the shard.
+    private const int StallFirstPort = 47130;
+
     // How long a wait for the other end may take before the check that wanted it reports what it
     // saw instead. Loopback delivery is sub-millisecond; this is the give-up, not the budget.
     private const double WaitSeconds = 3.0;
@@ -29,12 +33,31 @@ internal static class EnetTransportSuites
     // send would have landed, short enough to cost the suite nothing.
     private const double QuietSeconds = 0.2;
 
+    // The stall suite's ENet timeout. Short, so a stall four times as long costs two seconds
+    // rather than the forty a shipped timeout would need.
+    private const int ShortTimeoutMs = 500;
+
+    // How long one end goes unstepped, four timeouts' worth.
+    private const double StallSeconds = 2.0;
+
+    // How often the stepped end sends into a stall, so ENet always has a reliable send awaiting
+    // an acknowledgement.
+    private const double SendEverySeconds = 0.05;
+
+    // The give-up for a drop that must happen, three timeouts' worth.
+    private const double DropWithinSeconds = 1.5;
+
+    // The service thread's ceiling in the hung-game check, well inside its stall.
+    private const double HungCeilingSeconds = 1.0;
+
     // What this run cannot show, said where the report carries it. A loopback socket delivers in
     // send order, so no sequenced payload here is stale on arrival.
     private const string StaleNote =
         "a stale sequenced payload cannot be provoked over a loopback socket, which never reorders; "
         + "the discard rule stays asserted on the loopback carrier, and this run asserts the ENet "
         + "delivery class the payload is sent under";
+
+    private static readonly EnetTransport.Keepalive Short = new(32, ShortTimeoutMs, ShortTimeoutMs, 300.0);
 
     [Suite("enet-transport",
         "the shipped ENet carrier hosts and joins itself over 127.0.0.1 inside one process: the "
@@ -98,7 +121,134 @@ internal static class EnetTransportSuites
         }
     }
 
+    [Suite("enet-load-stall",
+        "an ENet end whose main thread stops stepping, as a blocking mission load does, keeps its "
+        + "link: a stall four times the timeout on either end drops nothing, and every reliable "
+        + "payload sent into it lands in order afterwards, and the unreliable state channel carries at "
+        + "once. Without the service thread the same stall "
+        + "drops the link, a frozen end is still dropped within the timeout, and so is one stalled "
+        + "past the ceiling")]
+    internal static void LoadStallKeepsTheLink(TestContext ctx)
+    {
+        ctx.Note($"the stall is driven by not stepping one end for {StallSeconds:0.0}s of wall time against a {ShortTimeoutMs} ms ENet timeout, over 127.0.0.1, whose round trip is near zero; the shipped keepalive keeps Godot's 5 to 30 s timeouts");
+        using (var pair = Pair.Open(ctx, Short))
+        {
+            if (pair == null)
+            {
+                return;
+            }
+
+            StallSurvives(ctx, pair, stallHost: false);
+            StallSurvives(ctx, pair, stallHost: true);
+
+            // A process that dies takes its service thread with it, and ENet's own timeout is the
+            // only thing left to notice.
+            pair.Guest.Freeze();
+            double dropped = Stall(pair.Host, pair.Guest, pair.AtHost, pair.GuestPeer, StallSeconds, out _);
+            ctx.Check(!pair.Host.Peers.Contains(pair.GuestPeer) && dropped <= DropWithinSeconds,
+                $"a frozen guest, a crashed one, is still dropped by the host within the timeout (after {dropped:0.00}s, roster {Ids(pair.Host.Peers)})");
+            ctx.Note($"frozen guest dropped after {dropped:0.00}s");
+        }
+
+        using (var control = Pair.Open(ctx, Short with { Service = false }))
+        {
+            if (control == null)
+            {
+                return;
+            }
+
+            double dropped = Stall(control.Host, control.Guest, control.AtHost, control.GuestPeer, StallSeconds, out _);
+            ctx.Check(!control.Host.Peers.Contains(control.GuestPeer) && dropped < StallSeconds,
+                $"control: without the service thread the same stall drops the guest (after {dropped:0.00}s of {StallSeconds:0.0}s, roster {Ids(control.Host.Peers)})");
+            ctx.Note($"control: the unserviced stall dropped the guest after {dropped:0.00}s");
+        }
+
+        using (var hung = Pair.Open(ctx, Short with { CeilingSeconds = HungCeilingSeconds }))
+        {
+            if (hung == null)
+            {
+                return;
+            }
+
+            double dropped = Stall(hung.Host, hung.Guest, hung.AtHost, hung.GuestPeer, StallSeconds * 2.0, out _);
+            ctx.Check(!hung.Host.Peers.Contains(hung.GuestPeer) && dropped >= HungCeilingSeconds
+                      && dropped <= HungCeilingSeconds + DropWithinSeconds,
+                $"a guest stalled past the {HungCeilingSeconds:0.0}s ceiling, a hung game, is dropped after the ceiling and the timeout (after {dropped:0.00}s)");
+            ctx.Note($"hung guest dropped after {dropped:0.00}s");
+        }
+    }
+
     private static string Ids(IEnumerable<int> peers) => string.Join(", ", peers);
+
+    // One end stalls while the other steps and sends reliably into the stall. That is a host that
+    // finished its load talking to a guest still in its own.
+    private static void StallSurvives(TestContext ctx, Pair pair, bool stallHost)
+    {
+        var (stepped, stalled, atStepped, atStalled) = stallHost
+            ? (pair.Guest, pair.Host, pair.AtGuest, pair.AtHost)
+            : (pair.Host, pair.Guest, pair.AtHost, pair.AtGuest);
+        int toStalled = stallHost ? 1 : pair.GuestPeer;
+        int toStepped = stallHost ? pair.GuestPeer : 1;
+        string who = stallHost ? "host" : "guest";
+        atStalled.Payloads.Clear();
+        Stall(stepped, stalled, atStepped, toStalled, StallSeconds, out int sent);
+        Pump(pair.Host, pair.Guest, () => atStalled.Payloads.Count >= sent);
+
+        ctx.Check(stepped.Peers.Contains(toStalled) && stalled.Peers.Contains(toStepped),
+            $"a {who} that stopped stepping for {StallSeconds:0.0}s is still on both rosters ({Ids(pair.Host.Peers)} and {Ids(pair.Guest.Peers)})");
+        ctx.Check(stepped.LinkState == EnetLinkState.Up && stalled.LinkState == EnetLinkState.Up,
+            $"and both links still read up ({stepped.LinkState} and {stalled.LinkState})");
+        var tags = atStalled.Payloads.Select(p => BitConverter.ToInt32(p.Bytes, 0)).ToList();
+        ctx.Check(sent > 0 && tags.SequenceEqual(Enumerable.Range(0, sent)),
+            $"and the {sent} reliable payload(s) sent into the {who}'s stall all land afterwards, in order ({tags.Count} landed)");
+
+        // The state channel right after the stall. ENet thins unreliable sends when round trips
+        // jump, and a stall is one long round trip.
+        const int Burst = 20;
+        atStalled.Payloads.Clear();
+        for (int i = 0; i < Burst; i++)
+        {
+            stepped.Send(toStalled, BitConverter.GetBytes(i), NetReliability.UnreliableSequenced, channel: 1);
+            Pump(pair.Host, pair.Guest, () => atStalled.Payloads.Count > i);
+            if (atStalled.Payloads.Count <= i)
+            {
+                break;
+            }
+        }
+
+        ctx.Check(atStalled.Payloads.Count == Burst,
+            $"and the state channel carries at once after the {who}'s stall ({atStalled.Payloads.Count} of {Burst} unreliable payloads landed before the first loss)");
+    }
+
+    // Steps one end alone for the span, sending the other a reliable payload every tick. Answers
+    // how long the stepped end kept the stalled one on its roster.
+    private static double Stall(EnetTransport stepped, EnetTransport stalled, Recorder atStepped, int toStalled,
+        double seconds, out int sent)
+    {
+        sent = 0;
+        int before = atStepped.Disconnected.Count;
+        var watch = Stopwatch.StartNew();
+        double nextSend = 0.0;
+        while (watch.Elapsed.TotalSeconds < seconds)
+        {
+            if (watch.Elapsed.TotalSeconds >= nextSend)
+            {
+                stepped.Send(toStalled, BitConverter.GetBytes(sent), NetReliability.Reliable);
+                sent++;
+                nextSend += SendEverySeconds;
+            }
+
+            stepped.Step(0.001);
+            if (atStepped.Disconnected.Count > before)
+            {
+                return watch.Elapsed.TotalSeconds;
+            }
+
+            Thread.Sleep(2);
+        }
+
+        return watch.Elapsed.TotalSeconds;
+    }
 
     private static byte[] Payload(byte tag, int length)
     {
@@ -113,15 +263,16 @@ internal static class EnetTransportSuites
 
     // The first port of the walk that binds, or null with the last error. A busy port is the
     // expected miss here, so it costs a try rather than the suite.
-    private static EnetTransport? OpenHost(out int port, out string why)
+    private static EnetTransport? OpenHost(out int port, out string why, EnetTransport.Keepalive? keepalive = null,
+        int firstPort = FirstPort)
     {
         why = "no port tried";
         for (int i = 0; i < PortsToTry; i++)
         {
-            port = FirstPort + i;
+            port = firstPort + i;
             try
             {
-                return EnetTransport.Host(port, maxPeers: 4, bindAddress: Loopback);
+                return EnetTransport.Host(port, maxPeers: 4, bindAddress: Loopback, keepalive);
             }
             catch (InvalidOperationException e)
             {
@@ -275,6 +426,56 @@ internal static class EnetTransportSuites
         public required int Channel { get; init; }
 
         public required byte[] Bytes { get; init; }
+    }
+
+    // A host and a guest joined over the loopback address, on one keepalive, closed together.
+    private sealed class Pair : IDisposable
+    {
+        private Pair(EnetTransport host, EnetTransport guest)
+        {
+            Host = host;
+            Guest = guest;
+            host.Bind(AtHost);
+            guest.Bind(AtGuest);
+        }
+
+        public EnetTransport Host { get; }
+
+        public EnetTransport Guest { get; }
+
+        public Recorder AtHost { get; } = new();
+
+        public Recorder AtGuest { get; } = new();
+
+        public int GuestPeer => Guest.LocalPeer;
+
+        // Null, with the reason checked as a failure, when the socket will not open or join.
+        public static Pair? Open(TestContext ctx, EnetTransport.Keepalive keepalive)
+        {
+            var host = OpenHost(out int port, out string why, keepalive, StallFirstPort);
+            if (host == null)
+            {
+                ctx.Check(false, $"ENet cannot host on {Loopback} in this process: {why}");
+                return null;
+            }
+
+            var pair = new Pair(host, EnetTransport.Join(Loopback, port, keepalive));
+            Pump(host, pair.Guest, () => pair.AtHost.Connected.Count > 0 && pair.AtGuest.Connected.Count > 0);
+            if (pair.Host.Peers.Count == 0 || pair.Guest.Peers.Count == 0)
+            {
+                ctx.Check(false, $"the guest never joined the host on {Loopback}:{port}");
+                pair.Dispose();
+                return null;
+            }
+
+            return pair;
+        }
+
+        public void Dispose()
+        {
+            Guest.Dispose();
+            Host.Dispose();
+        }
     }
 
     private sealed class Recorder : INetTransportListener
