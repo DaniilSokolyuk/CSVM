@@ -31,9 +31,12 @@ internal static class MenuOriginalCoopFlowSuites
         + "follows the host into the briefing and the flight check, where its pick carries its plane "
         + "and ammunition and the host's FLY MISSION waits until the guest's Ready arrives, a host "
         + "back in the cabin clears the Ready, the host's launch names the flight InMission and the "
-        + "guest launches into nothing it did not see open, the host's debrief is the guest's with "
-        + "the host's cash, RETURN TO CABIN takes both back, REPLAY MISSION goes back through the "
-        + "briefing, the check and Ready, and the guest's own saves are untouched")]
+        + "guest launches into nothing it did not see open, the guest's plane and ammunition outlive "
+        + "the host's Restart and the host builds the guest's seat on them, the host's debrief is the "
+        + "guest's with the host's cash, RETURN TO CABIN takes both back, after a lost mission REPLAY "
+        + "MISSION goes back through the briefing, the check and Ready with the guest still on its "
+        + "pick, a plane change puts the guest on the new plane's default ammunition, and the guest's "
+        + "own saves are untouched")]
     internal static void TheCoopFlow(TestContext ctx)
     {
         ctx.RequireData(ctx.ZrdrPath, $"zrdr archive");
@@ -90,8 +93,9 @@ internal static class MenuOriginalCoopFlowSuites
             FollowTheBoards(ctx, host, guest);
             ReadyGatesTheLaunch(ctx, host, guest);
             Launch(ctx, host, guest, exits);
+            var remembered = PickOutlivesARestart(ctx, host, guest);
             ShareTheDebrief(ctx, host, guest);
-            RetryGoesBackThroughSelection(ctx, host, guest);
+            RetryGoesBackThroughSelection(ctx, host, guest, exits, remembered);
         }
         finally
         {
@@ -212,6 +216,75 @@ internal static class MenuOriginalCoopFlowSuites
             $"the guest hears the flight but no session opener reached it here, so it waits ({guest.Door.CoopFlow?.Screen})");
     }
 
+    // The host's pause-sheet Restart in the launcher's order, with the guest in the flight. The
+    // guest's campaign is rebuilt around its return, and it answers the new round on what it flew.
+    private static (byte Airframe, CoopFit Fit) PickOutlivesARestart(TestContext ctx, End host, End guest)
+    {
+        byte picked = guest.Door.CoopPickAirframe;
+        var fit = guest.Door.CoopPickFit;
+        ctx.Check(picked != NetPlayFeature.StarterAirframe && fit.AmmoAt(0) == 3,
+            $"ABLE-TO-FAIL CONTROL: the pick the guest flew is not a fresh join's starter and stock fit ({picked}, {fit.AmmoAt(0)})");
+        var guestWire = guest.Door.BuildLaunch();
+        var relaunch = CSVM.Session.Launch.Launcher.CoopRelaunch(host.Door);
+        ctx.Check(guestWire != null && relaunch != null, $"the guest flies and the host's Restart relaunches its door");
+        if (guestWire == null || relaunch == null)
+        {
+            return (picked, fit);
+        }
+
+        GuestFliesItsPick(ctx, host, relaunch, (picked, fit), "the restart's field builds the guest on the pick it flew");
+        for (int i = 0; i < 20 && !CSVM.Session.Launch.Launcher.CoopGuestFlightOver(guest.Door); i++)
+        {
+            StepInFlight(host, guest, relaunch, guestWire);
+        }
+
+        ctx.Check(CSVM.Session.Launch.Launcher.CoopGuestFlightOver(guest.Door), $"the host's new round ends the guest's flight");
+        GuestReturns(ctx, host, guest, relaunch, (picked, fit), "after the restart");
+        ctx.Check(((NetLobby)relaunch.Transport).Picks.Values.All(pick => pick.Epoch == host.Door.CoopEpoch),
+            $"and it answers under the restart's round, which the host waits for");
+        GuestFliesItsPick(ctx, host, relaunch, (picked, fit), "so the host builds the guest on that pick again");
+        return (picked, fit);
+    }
+
+    // A flight's end on the guest's side: its launcher takes the wire back and reopens the menu on
+    // the host's boards, which rebuilds its campaign. The pick it flew must survive that.
+    private static void GuestReturns(
+        TestContext ctx, End host, End guest, MenuNetLaunch hostWire, (byte Airframe, CoopFit Fit) pick, string when)
+    {
+        guest.Door.Reclaim();
+        guest.Host.Show(new CoopGuestReturn(null));
+        for (int i = 0; i < 4; i++)
+        {
+            // A host still in flight has its wire stepped by the session, and one on its boards by its menu.
+            if (host.Door.Released)
+            {
+                hostWire.Transport.Step(Dt);
+                host.Door.Step(Dt);
+            }
+            else
+            {
+                host.Host.Tick(Dt);
+            }
+
+            guest.Host.Tick(Dt);
+        }
+
+        var campaign = guest.Host.Features.Get<CampaignFeature>();
+        ctx.Check(campaign.IsGuest && campaign.GuestAirframe == pick.Airframe && campaign.GuestCoopFit == pick.Fit,
+            $"{when}, the guest's reopened campaign stands on the plane and ammunition it picked ({campaign.GuestAirframe}, ammo {campaign.GuestCoopFit.AmmoAt(0)})");
+        ctx.Check(host.Door.CoopGuests.Count == 1 && host.Door.CoopGuests[0].Airframe == pick.Airframe && host.Door.CoopGuests[0].Fit == pick.Fit,
+            $"{when}, the host hears the same pick ({(host.Door.CoopGuests.Count == 1 ? host.Door.CoopGuests[0].Fit.AmmoAt(0) : -9)})");
+    }
+
+    // One frame of a flight with no session: each released wire is stepped as its session would.
+    private static void StepInFlight(End host, End guest, MenuNetLaunch hostWire, MenuNetLaunch guestWire)
+    {
+        hostWire.Transport.Step(Dt);
+        host.Door.Step(Dt);
+        guestWire.Transport.Step(Dt);
+        guest.Door.Step(Dt);
+    }
+
     // The host comes back to its debrief; the guest follows it and RETURN TO CABIN takes both home.
     private static void ShareTheDebrief(TestContext ctx, End host, End guest)
     {
@@ -236,12 +309,39 @@ internal static class MenuOriginalCoopFlowSuites
             $"the host's RETURN TO CABIN takes both back ({host.Shell.Screen}, {guest.Shell.Screen})");
     }
 
-    // Retry is the book's REPLAY MISSION: both ends go to the briefing under a new round. The host
-    // flies again only once the guest has picked and answered Ready on its check once more.
-    private static void RetryGoesBackThroughSelection(TestContext ctx, End host, End guest)
+    // Retry is the book's REPLAY MISSION after a lost mission both ends flew: both go to the
+    // briefing under a new round. The host flies again only once the guest has answered Ready on its
+    // check once more, and the guest answers on the pick it flew.
+    private static void RetryGoesBackThroughSelection(
+        TestContext ctx, End host, End guest, List<MenuExit> exits, (byte Airframe, CoopFit Fit) remembered)
     {
+        ClickRow(ctx, host, nameof(BoardButton.NextMission));
+        Pump(host, guest, frames: 3);
+        ClickRow(ctx, host, nameof(BoardButton.GoToFlightCheck));
+        Pump(host, guest, frames: 3);
+        ClickRow(ctx, guest, nameof(BoardButton.FlyMission));
+        Pump(host, guest, frames: 4);
+        ClickRow(ctx, host, nameof(BoardButton.FlyMission));
+        var guestWire = guest.Door.BuildLaunch();
+        if (exits.LastOrDefault() is not CampaignMissionExit { Net: { } hostWire } || exits.Count != 2 || guestWire == null)
+        {
+            ctx.Check(false, $"both ends fly the mission the retry follows ({exits.Count} launch(es), guest {guestWire != null})");
+            return;
+        }
+
+        StepInFlight(host, guest, hostWire, guestWire);
+        ctx.Check(host.Door.Reclaim(), $"the host takes its wire back after the lost mission");
         int seq = Math.Max(0, CampaignAidProfiles.MissionsFlown - 1);
         host.Host.Show(new DebriefReturn(CampaignAidProfiles.Pilot, seq, MissionWon: false));
+        for (int i = 0; i < 20 && !CSVM.Session.Launch.Launcher.CoopGuestFlightOver(guest.Door); i++)
+        {
+            host.Host.Tick(Dt);
+            guestWire.Transport.Step(Dt);
+            guest.Door.Step(Dt);
+        }
+
+        ctx.Check(CSVM.Session.Launch.Launcher.CoopGuestFlightOver(guest.Door), $"the host's lost debrief ends the guest's flight");
+        GuestReturns(ctx, host, guest, hostWire, remembered, "after the lost mission");
         Pump(host, guest, frames: 4);
         byte debriefRound = host.Door.CoopEpoch;
         // A guest that flew nothing here holds no time, and its book then offers no REPLAY row at all.
@@ -261,8 +361,31 @@ internal static class MenuOriginalCoopFlowSuites
         Pump(host, guest, frames: 4);
         ctx.Check(host.Door.CoopAllReady && Row(host.Shell, nameof(BoardButton.FlyMission)) is { Enabled: true },
             $"and the guest's Ready makes it live, so the retry went back through selection and Ready");
+        GuestFliesItsPick(ctx, host, hostWire, remembered, "the retry's launch builds the guest on the pick it kept");
+
+        // CHANGE PLANE's commit onto the starter, which this guest has not fitted.
+        var campaign = guest.Host.Features.Get<CampaignFeature>();
+        var planes = campaign.Profile?.Planes;
+        int starter = planes?.FindIndex(plane => plane.Airframe == NetPlayFeature.StarterAirframe) ?? -1;
+        campaign.CommitPlanes(starter, null);
+        Pump(host, guest, frames: 4);
+        var fresh = new OwnedPlane();
+        var stock = CoopFit.Of(fresh.Ammo, fresh.Ordnance);
+        ctx.Check(starter >= 0 && campaign.GuestAirframe == NetPlayFeature.StarterAirframe && campaign.GuestCoopFit == stock,
+            $"changing the plane puts the guest on the new plane's default ammunition ({campaign.GuestAirframe}, ammo {campaign.GuestCoopFit.AmmoAt(0)})");
+        GuestFliesItsPick(ctx, host, hostWire, ((byte)NetPlayFeature.StarterAirframe, stock), "and the host builds the new plane on it");
         host.Seat.Enqueue(new MenuCommands { Back = true });
         Pump(host, guest, frames: 4);
+    }
+
+    // The host's launch field for the guest's seat, over the host's wire.
+    private static void GuestFliesItsPick(TestContext ctx, End host, MenuNetLaunch launch, (byte Airframe, CoopFit Fit) pick, string what)
+    {
+        var own = new[] { UI.Hangar.PlanePickerRoster.AirframeNode(NetPlayFeature.StarterAirframe) };
+        var (roster, seatFits) = CSVM.Session.Launch.Launcher.CoopLaunchField(
+            host.Door, launch.Transport, own, Array.Empty<Flight.Weapons.LoadoutChoice?>(), Flight.Weapons.StockLoadouts.Load());
+        ctx.Check(roster.Length == 2 && roster[1].PlaneNode == UI.Hangar.PlanePickerRoster.AirframeNode(pick.Airframe) && seatFits[1] == pick.Fit,
+            $"{what} ({(roster.Length == 2 ? roster[1].PlaneNode : "-")}, ammo {(seatFits.Length == 2 ? seatFits[1].AmmoAt(0) : -9)})");
     }
 
     private static End? Open(TestContext ctx, MenuLayout layout, NetPlayFeature door, CampaignProfileStore profiles, List<MenuExit> exits)

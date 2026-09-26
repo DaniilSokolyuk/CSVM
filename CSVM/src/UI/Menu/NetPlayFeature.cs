@@ -329,14 +329,16 @@ public sealed class NetPlayFeature : IMenuFeature
     /// </summary>
     public int CoopFlows => _transport?.Flows ?? 0;
 
-    /// <summary>The airframe this co-op guest picked from its host's hangar.</summary>
+    /// <summary>The airframe this co-op guest picked from its host's hangar. It lasts the joined
+    /// session across flights, and a new join starts on the starter.</summary>
     public byte CoopPickAirframe => _pickAirframe;
 
     /// <summary>Whether this co-op guest means to be Ready, sent or not yet sent. A new round of
     /// picks clears it.</summary>
     public bool CoopPickReady => _pickReady;
 
-    /// <summary>The fit this co-op guest's pick carries to its host.</summary>
+    /// <summary>The fit this co-op guest's pick carries to its host. It lasts as long as
+    /// <see cref="CoopPickAirframe"/>, and a new join starts on the stock fit.</summary>
     public CoopFit CoopPickFit => _pickFit;
 
     /// <summary>The name this end's player goes by, sent with a co-op guest's pick so the host's

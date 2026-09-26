@@ -286,22 +286,28 @@ public sealed class CampaignFeature : IMenuFeature
         Roster = store.List();
     }
 
-    /// <summary>Opens a co-op guest's campaign, a profile in memory named for the host. It stands as
-    /// far through the story as the host's <paramref name="progress"/>. It owns one stock aeroplane
-    /// per airframe in <paramref name="airframes"/> (a bit per airframe id). There is no store, so nothing
-    /// a guest does here is ever saved. Opening again drops whatever campaign was open.</summary>
-    public void OpenGuest(string hostName, int progress, ushort airframes, StockLoadouts? stock = null, string? dataRoot = null)
+    /// <summary>Opens a co-op guest's campaign, a profile in memory named for the host, as far
+    /// through the story as <paramref name="progress"/>. It owns one stock aeroplane per airframe in
+    /// <paramref name="airframes"/> (a bit per airframe id). It stands on <paramref name="airframe"/>
+    /// fitted with <paramref name="fit"/> where the host still offers that airframe, else on the
+    /// starter's stock fit. Nothing is saved. Opening again drops whatever campaign was open.</summary>
+    public void OpenGuest(
+        string hostName, int progress, ushort airframes, StockLoadouts? stock = null, string? dataRoot = null,
+        int airframe = -1, Net.CoopFit fit = default)
     {
         Discard();
         IsGuest = true;
         Stock = stock;
         DataRoot = dataRoot;
-        Profile = GuestProfile(hostName ?? "", progress, airframes, StarterAirframeOf(airframes));
+        bool offered = airframe is >= 0 and < 16 && (airframes & (1 << airframe)) != 0;
+        Profile = offered
+            ? GuestProfile(hostName ?? "", progress, airframes, airframe, fit)
+            : GuestProfile(hostName ?? "", progress, airframes, StarterAirframeOf(airframes), default);
     }
 
     /// <summary>Follows the co-op host's hangar and story position on a guest's campaign. A hangar
-    /// that changed rebuilds the guest's aeroplanes, keeping the picked airframe where the host
-    /// still offers it. False on a campaign that is not a guest's.</summary>
+    /// that changed rebuilds the guest's aeroplanes, keeping the picked airframe and its fit where
+    /// the host still offers it. False on a campaign that is not a guest's.</summary>
     public bool FollowHost(int progress, ushort airframes)
     {
         if (!IsGuest || Profile is not { } profile)
@@ -315,10 +321,12 @@ public sealed class CampaignFeature : IMenuFeature
             return true;
         }
 
-        int picked = profile.Planes.Count > 0 ? profile.Planes[Math.Clamp(profile.SelectedPlane, 0, profile.Planes.Count - 1)].Airframe : -1;
-        int keep = picked >= 0 && (airframes & (1 << picked)) != 0 ? picked : StarterAirframeOf(airframes);
+        int picked = GuestAirframe;
+        bool kept = picked >= 0 && (airframes & (1 << picked)) != 0;
         var results = new List<MissionResult>(profile.MissionResults);
-        Profile = GuestProfile(profile.Name, progress, airframes, keep);
+        Profile = kept
+            ? GuestProfile(profile.Name, progress, airframes, picked, GuestCoopFit)
+            : GuestProfile(profile.Name, progress, airframes, StarterAirframeOf(airframes), default);
         Profile.MissionResults.AddRange(results);
         return true;
     }
@@ -765,6 +773,30 @@ public sealed class CampaignFeature : IMenuFeature
         return (ushort)mask;
     }
 
+    // Writes a fit's stored values onto a record. A stock fit leaves the record at rest, and so does
+    // an unset gun slot, since the ammo screen has no "unset" value to show.
+    private static void Refit(OwnedPlane plane, Net.CoopFit fit)
+    {
+        if (fit.IsStock)
+        {
+            return;
+        }
+
+        for (int slot = 0; slot < plane.Ammo.Length && slot < Net.CoopFit.GunSlots; slot++)
+        {
+            int stored = fit.AmmoAt(slot);
+            if (stored >= 0)
+            {
+                plane.Ammo[slot] = stored;
+            }
+        }
+
+        for (int cell = 0; cell < plane.Ordnance.Length && cell < Net.CoopFit.Cells; cell++)
+        {
+            plane.Ordnance[cell] = fit.OrdnanceAt(cell);
+        }
+    }
+
     // Which refusal a rejected name earns: too long has its own string (langui 212), anything else
     // is the character rule (707). Both are the original's, and both fall back to their own words.
     private string NameRefusal(string name)
@@ -800,9 +832,10 @@ public sealed class CampaignFeature : IMenuFeature
         return null;
     }
 
-    // One stock aeroplane per offered airframe, in airframe order, each named for its airframe.
-    // Never Special: an award record resolves to the award's build, and a guest flies stock only.
-    private CampaignProfileDef GuestProfile(string hostName, int progress, ushort airframes, int picked)
+    // One stock aeroplane per offered airframe, in airframe order, each named for its airframe, with
+    // the picked one carrying its fit. Never Special, since an award record resolves to the award's
+    // build and a guest flies stock only. Every other airframe opens on its own stock fit.
+    private CampaignProfileDef GuestProfile(string hostName, int progress, ushort airframes, int picked, Net.CoopFit fit)
     {
         var profile = new CampaignProfileDef { Name = hostName, MissionsCompleted = Math.Max(0, progress) };
         int offered = airframes == 0 ? 1 << GuestStarterAirframe : airframes;
@@ -813,12 +846,14 @@ public sealed class CampaignFeature : IMenuFeature
                 continue;
             }
 
+            var plane = new OwnedPlane { Name = Strings.Text(3000 + a, $"Airframe {a}"), Airframe = a };
             if (a == picked)
             {
                 profile.SelectedPlane = profile.Planes.Count;
+                Refit(plane, fit);
             }
 
-            profile.Planes.Add(new OwnedPlane { Name = Strings.Text(3000 + a, $"Airframe {a}"), Airframe = a });
+            profile.Planes.Add(plane);
         }
 
         profile.WingmanPlane = profile.SelectedPlane;

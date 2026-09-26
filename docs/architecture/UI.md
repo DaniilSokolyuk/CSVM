@@ -942,7 +942,7 @@ arithmetic and which tab reads which block: [../org/hangar.md](../org/hangar.md)
 The campaign as a shared engine-free feature: the state and operations both presentations read and
 write, with neither one's screen shell in it. `Open` opens a campaign over a `CampaignProfileStore`;
 `OpenGuest` opens a co-op guest's with no profile, on the host's mission and stock hangar, writing
-nothing, and `GuestCoopFit` is its ammo pick as the wire carries it. The roster operations create, seat, delete and record the last-played player in the
+nothing and standing on the pick the network door kept, and `GuestCoopFit` is its ammo pick as the wire carries it. The roster operations create, seat, delete and record the last-played player in the
 original's own words; the mission operations settle which `cm_sequence` entry the screens after the
 cabin are about, with its briefing, wingman flag, per-slot change-plane rules and story aircraft;
 the writes save the loadout, planes, memento (refused unless held), an exported build and the

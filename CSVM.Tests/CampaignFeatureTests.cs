@@ -517,6 +517,41 @@ public class CampaignFeatureTests
     }
 
     [Fact]
+    public void AGuestReopensOnItsRememberedPickUntilItChangesPlane()
+    {
+        var (feature, _, _) = Open();
+        ushort hangar = (1 << 5) | (1 << 7);
+        var fit = CSVM.Net.CoopFit.Of(new[] { 3, 2, 0, 0 }, new[] { 4, 0, 0, 0, 0, 0, 0, 4 });
+        var fresh = new OwnedPlane();
+        var stock = CSVM.Net.CoopFit.Of(fresh.Ammo, fresh.Ordnance);
+
+        // ABLE-TO-FAIL CONTROL: a fresh join opens on the starter at its stock fit.
+        feature.OpenGuest("Zachary", 4, hangar);
+        Assert.Equal(5, feature.GuestAirframe);
+        Assert.Equal(stock, feature.GuestCoopFit);
+
+        feature.OpenGuest("Zachary", 4, hangar, airframe: 7, fit: fit);
+        Assert.Equal(7, feature.GuestAirframe);
+        Assert.Equal(fit, feature.GuestCoopFit);
+        Assert.Equal(new[] { 0, 0, 0, 0 }, feature.Profile!.Planes[0].Ammo);
+
+        // The host buying another airframe rebuilds the hangar and keeps the pick's fit.
+        feature.FollowHost(5, (ushort)(hangar | (1 << 2)));
+        Assert.Equal(7, feature.GuestAirframe);
+        Assert.Equal(fit, feature.GuestCoopFit);
+
+        // Changing the plane is what puts the guest on the new plane's default fit.
+        feature.CommitPlanes(feature.Profile!.Planes.FindIndex(p => p.Airframe == 5), null);
+        Assert.Equal(5, feature.GuestAirframe);
+        Assert.Equal(stock, feature.GuestCoopFit);
+
+        // A remembered airframe the host no longer offers opens on the starter's stock fit.
+        feature.OpenGuest("Zachary", 4, 1 << 5, airframe: 7, fit: fit);
+        Assert.Equal(5, feature.GuestAirframe);
+        Assert.Equal(stock, feature.GuestCoopFit);
+    }
+
+    [Fact]
     public void AHostOffersEveryAirframeItsHangarHoldsAndAlwaysTheStarter()
     {
         var profile = CampaignProfileDef.NewProfile(Pilot);

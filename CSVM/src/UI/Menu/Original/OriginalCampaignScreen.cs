@@ -295,7 +295,11 @@ public sealed class OriginalCampaignScreen : IOriginalScreenModule
         // The guest's own last pilot names it to the host. Read only, since a guest's saves are
         // never touched.
         net.PlayerName = _profiles?.Invoke().LastPlayedPilotName ?? string.Empty;
-        _campaign.OpenGuest(net.Advert?.Host ?? string.Empty, flow.Progress, flow.Airframes, _stock?.Invoke(), _dataRoot);
+
+        // The door's pick is the guest's memory for the joined session, and a fresh join clears it.
+        // Reopening from it is what carries the plane and its fit across flights and retries.
+        _campaign.OpenGuest(net.Advert?.Host ?? string.Empty, flow.Progress, flow.Airframes, _stock?.Invoke(), _dataRoot,
+            net.CoopPickAirframe, net.CoopPickFit);
         _flow = new CampaignFlow(_campaign, _layout);
         _host.CloseDialog();
         _briefingReturn = OriginalScreen.CampaignCabin;
