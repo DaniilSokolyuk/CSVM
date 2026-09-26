@@ -8,8 +8,8 @@ script of the same name is the behaviour half ([rof.md](rof.md), and
 
 `ExtractRof.ps1` decodes it during extraction and writes `extracted/rof/menu_layout.json`. Runtime
 reads that file and never parses `LAYOUT.CSV` itself. The decoder is
-`ExtractRof.MenuLayout.cs` beside the script, compiled by both the extractor and `CSVM.Tests`; the
-runtime reader is `CSVM/src/UI/Menu/MenuLayout.cs`, whose entry in `docs/architecture.md` says
+`CSVM/src/Extraction/MenuLayoutDecoder.cs`, compiled by the engine and `CSVM.Tests` and
+`Add-Type`d by the script; the runtime reader is `CSVM/src/UI/Menu/MenuLayout.cs`, whose entry in `docs/architecture.md` says
 what it exposes.
 
 ## Contents

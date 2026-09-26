@@ -80,7 +80,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 ### Wave A, in-engine extraction (Windows release)
 
-1. ☐ Extraction decoders move into `CSVM/src/Extraction/`, engine-side and platform-neutral
+1. ☑ Extraction decoders move into `CSVM/src/Extraction/`, engine-side and platform-neutral
 2. ☐ `unzbd` runner: per-archive modes, messages, MPG copy, incremental skip, VERSION.json stamp
 3. ☑ Install discovery and case-insensitive install lookup, remembered path in `app_userdata`
 4. ☐ Headless `--extract=<install>` and its development options
@@ -115,7 +115,46 @@ messages in `ExtractionStamp.cs` / `NoGameDataScreen.cs`; B11, B12 and B14 all e
 
 # Wave A, in-engine extraction (Windows release)
 
-## A1 ☐ Extraction decoders move into `CSVM/src/Extraction/`, engine-side and platform-neutral
+## A1 ☑ Extraction decoders move into `CSVM/src/Extraction/`, engine-side and platform-neutral
+
+**Landed.** `CSVM.Extraction` holds everything `ExtractRof.ps1` does except the `VERSION.json`
+stamp, one module per format: `RofArchive` (the `.rof` walk and inflate), `BmTexture` and
+`PngWriter` (the shading and `_mask` PNGs), `PeStringTable` (the `STRINGTABLE` reader),
+`UiStringTable` (the `RESOURCE.H` join, the `[FONTID]` split and `ui_strings.json`, langui rows
+first), `MovieCopy` (the verbatim `.mpg` copy, idempotent on length, with the missing-movie
+report) and `MenuLayoutDecoder` (moved by `git mv` from `ExtractRof.MenuLayout.cs`, API
+unchanged, still C# 5 because `ExtractRof.ps1` `Add-Type`s it until A6). `RofExtraction.Run`
+joins them; see the wiring contract below. `CSVM.Tests` no longer links a root file and tests the
+engine code directly (`ExtractionDecoderTests`, `RofExtractionTests`, `MenuLayoutDecoderTests`),
+including a metadata check that nothing under `CSVM.Extraction` references a `Godot.` type.
+`ExtractRof.ps1` loads the decoder from `CSVM\src\Extraction\MenuLayoutDecoder.cs`, falling back to
+`ExtractRof.MenuLayout.cs` beside itself; `ExportRelease.ps1` ships the moved file under that old
+name, so the release layout is unchanged.
+
+The PNG writer is a managed encoder over `ZLibStream` (`PngWriter.cs`). `CSVM.Tests` references
+the engine assembly but runs without a Godot runtime, so `Godot.Image` cannot be constructed
+there; the engine already had a managed PNG decoder (`Mech3/PngImage.cs`), which the tests use to
+read the writer's output back.
+
+Wiring contract for A2, A4 and A5: `RofExtraction.Run(new RofExtractionRequest(baseRof, patchRof,
+mpgFolder, languiDll, languageDll, outputRoot, Force: bool), log)` where each input is an
+absolute path or null, and `log` is an `Action<string>` receiving one line per step. It returns a
+`RofExtractionResult`: per-archive `RofArchiveResult` (`Absent`, `UpToDate` or `Extracted`, with
+counts), `Movies.Present` (the stamp's `movies` field), `StringRows` and the `MenuLayout`
+document. It runs synchronously; the caller owns threading, install lookup and the stamp.
+
+**Verified.** <pending orchestrator run>
+
+Output comparison, run by the item agent: `ExtractRof.ps1 -Source <install>\GOSDATA\ASSETS -Dest
+.scratch\old\rof` against `RofExtraction.Run` into `.scratch\new\rof` (the opt-in test
+`RofExtractionTests.ExtractTheInstallIntoTheNamedFolder` with `CSVM_ROF_EXTRACT_TO` set). Both
+trees hold the same 1,227 files; the 368 decoded PNGs are pixel-identical (decoded through GDI+
+in a scratch script, with a mask-versus-shading control showing the comparison sees a
+difference); the other 857 files are byte-identical; `menu_layout.json` is byte-identical and
+`ui_strings.json` semantically equal (1,283 rows, the old file with a BOM and the new one
+without). The runtime reader `UiStrings.TryLoad` reads with a UTF-8 decoder that accepts both.
+
+**Original approach (kept for reference).**
 
 **Goal.** The `.rof` reader, the `.BM` decoder (shading map and paint masks to PNG), the Win32
 STRINGTABLE reader and the menu-layout decoder are ordinary C# in the engine project, producing the
@@ -134,15 +173,13 @@ is `ExtractRof.ps1:371-416`; the `ui_strings.json` and `menu_layout.json` writes
 `CSVM/src/Extraction/`, one module per format. Replace `SaveBgr` with a PNG writer.
 `CSVM.Tests` stops linking `..\ExtractRof.MenuLayout.cs` and tests the engine code directly. Compare
 the new output against a tree extracted by the current scripts before deleting anything.
-<TODO: choose the PNG writer. Godot's `Image.SavePng` works in the engine but ties the decoder to
-Godot types, which `CSVM.Tests` may not be able to run; a small managed encoder over `ZLibStream`
-keeps it engine-free. Check how `CSVM.Tests` handles Godot types today before choosing.>
+The PNG writer is a small managed encoder over `ZLibStream` (resolved; see **Landed**).
 
-**Model recommendation.** <TODO: not settled in session>
+**Model recommendation.** Opus, as run.
 
 **Verify.** Byte- or pixel-identical output against the current `ExtractRof.ps1` tree for every
 decoded `.BM`, `ui_strings.json` and `menu_layout.json` (JSON compared semantically if key order
-changes). <TODO: exact comparison command>
+changes). The comparison command is under **Verified** above.
 
 **⚠ Traps.** `ui_strings.json` is written today with PowerShell 5.1's `-Encoding UTF8`, which adds a
 BOM, and `ExtractionStamp.cs:55` reads text for that reason; a new writer without a BOM is fine for

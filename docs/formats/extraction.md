@@ -9,7 +9,8 @@ them round-trips byte-identically in the fork.** If you only need the practical 
 
 - `ExtractAssets.ps1` (repo root) extracts the ZBD half; `ExtractRof.ps1` extracts the non-ZBD
   half (`.rof` UI archives + the DLL string tables). Output lands under `extracted/`, mirroring
-  the game's own folder structure.
+  the game's own folder structure. The engine's `CSVM/src/Extraction/RofExtraction.cs` performs
+  the non-ZBD half's steps too, writing the same `extracted/rof/` tree with no `System.Drawing`.
 - The extractor runs the **fork** build (`tools/mech3ax/target/release/unzbd.exe`),
   not the pinned v0.6.1 binary. `-Unzbd <path>` rolls back to v0.6.1 with **no code change**,
   because the Godot loaders read either output shape (see "Two extraction shapes" below).

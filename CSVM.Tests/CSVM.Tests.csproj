@@ -25,12 +25,4 @@
   <ItemGroup>
     <None Include="fixtures\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-
-  <ItemGroup>
-    <!-- The menu-layout decoder is owned by ExtractRof.ps1, which Add-Types the same file at
-         extraction time. Compiling it here (rather than copying it) is what keeps the shipped
-         decode and the fixture tests one implementation. It therefore stays inside the C# 5
-         subset PowerShell 5.1's Add-Type accepts. -->
-    <Compile Include="..\ExtractRof.MenuLayout.cs" Link="ExtractRof.MenuLayout.cs" />
-  </ItemGroup>
 </Project>

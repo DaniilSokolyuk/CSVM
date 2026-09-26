@@ -235,6 +235,11 @@ at its archive path, and additionally decodes each `.BM` to `<name>.png` (shadin
 [menu-layout.md](menu-layout.md). Run `.\ExtractRof.ps1`; `-Raw` skips the decoding, `-Force`
 re-runs an up-to-date extraction.
 
+The engine carries the same steps in `CSVM/src/Extraction/`: `RofArchive.cs` reads the container,
+`BmTexture.cs` and `PngWriter.cs` write the two PNGs, and `RofExtraction.cs` runs the whole
+non-ZBD half. Its output matches the script's file for file, and its PNGs match pixel for pixel.
+The PNG bytes differ, since the managed writer stores no `sRGB`, `gAMA` or `pHYs` chunk.
+
 ## Evidence & limits
 
 This page states current format facts. Claim-specific evidence and limits remain beside the claims they support.

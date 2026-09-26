@@ -59,7 +59,7 @@ $ReleaseFiles = @(
     @{ Source = Join-Path $RepoRoot "packaging\Extract.ps1";    Dest = "Extract.ps1" },
     @{ Source = Join-Path $RepoRoot "ExtractAssets.ps1";        Dest = "ExtractAssets.ps1" },
     @{ Source = Join-Path $RepoRoot "ExtractRof.ps1";           Dest = "ExtractRof.ps1" },
-    @{ Source = Join-Path $RepoRoot "ExtractRof.MenuLayout.cs"; Dest = "ExtractRof.MenuLayout.cs" },
+    @{ Source = Join-Path $RepoRoot "CSVM\src\Extraction\MenuLayoutDecoder.cs"; Dest = "ExtractRof.MenuLayout.cs" },
     @{ Source = Join-Path $RepoRoot "packaging\README.md";      Dest = "README.md" },
     @{ Source = Join-Path $RepoRoot "packaging\LICENSE";        Dest = "LICENSE" },
     @{ Source = Join-Path $RepoRoot "packaging\LICENSE-unzbd";  Dest = "LICENSE-unzbd" },

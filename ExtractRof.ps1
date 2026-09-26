@@ -317,7 +317,9 @@ public static class CsRof
 
 # The menu-layout decoder is a file rather than a here-string because CSVM.Tests compiles the
 # same source and drives it against hand-authored fixtures; two copies would drift.
-Add-Type -Path (Join-Path $RepoRoot "ExtractRof.MenuLayout.cs")
+$menuLayoutCs = Join-Path $RepoRoot "CSVM\src\Extraction\MenuLayoutDecoder.cs"
+if (-not (Test-Path -LiteralPath $menuLayoutCs)) { $menuLayoutCs = Join-Path $RepoRoot "ExtractRof.MenuLayout.cs" }
+Add-Type -Path $menuLayoutCs
 
 # ---------------------------------------------------------------------------
 
