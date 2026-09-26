@@ -185,7 +185,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 ### Wave E, shipped profiles
 
-13. ☐ The user binds VKB solo-R and HOSAS in-game; commit the files as shipped profiles
+13. ◐ The user binds VKB solo-R and HOSAS in-game; commit the files as shipped profiles
 
 ## Dependency and parallelism notes
 
@@ -1423,7 +1423,15 @@ row is bound on either screen; E13's shipped profiles should carry it.
 
 # Wave E, shipped profiles
 
-## E13 ☐ The user binds VKB solo-R and HOSAS in-game; commit the files as shipped profiles
+## E13 ◐ The user binds VKB solo-R and HOSAS in-game; commit the files as shipped profiles
+
+**Solo R landed.** `CSVM/data/stick_profiles/231D-0200.json` is the user's own R file, bound on
+the screens and flown. In the file's 0-based numbers: X roll, Y pitch, twist yaw (read through the
+axis 5 flip), Z the lever inverted, `#0` guns, `#2` rockets, the mini-stick (axes 3 and 4) as
+look-around, `#5` to `#8` for targeting in flight and for menu navigation, `#0` accepting and
+skipping cutscenes, `#2` backing out. It names no companions, so it also applies to R when L
+is plugged in with no HOSAS file; L then takes the generic default and both sticks fly roll and
+pitch until the HOSAS pair ships. **Left open:** the HOSAS pair.
 
 **Goal.** Two shipped example profiles: VKB solo R (R flies pitch, roll, yaw on twist, throttle and
 weapons alone) and VKB HOSAS (an R file naming L as a companion, and an L file naming R, with L's Y

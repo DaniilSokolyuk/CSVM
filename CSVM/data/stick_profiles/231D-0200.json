@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "model": "231D/0200",
+  "name": "R",
+  "companions": [],
+  "ignore": false,
+  "contexts": {
+    "flight": {
+      "PitchUp": [
+        "fullaxis:1+@0.02"
+      ],
+      "RollRight": [
+        "fullaxis:0+@0.02"
+      ],
+      "YawRight": [
+        "fullaxis:5+@0.02"
+      ],
+      "ThrottleLever": [
+        "fullaxis:2-@0.02"
+      ],
+      "FireGuns": [
+        "button:#0"
+      ],
+      "FireRockets": [
+        "button:#2"
+      ],
+      "SelectGunGroup": [
+        "button:#11"
+      ],
+      "SelectOrdnance": [
+        "button:#13"
+      ],
+      "Nitro": [
+        "button:#4"
+      ],
+      "AutoLand": [
+        "button:#27"
+      ],
+      "Pause": [
+        "button:#28"
+      ],
+      "TargetNextEnemy": [
+        "button:#5"
+      ],
+      "TargetNextAlly": [
+        "button:#8"
+      ],
+      "TargetNextNonAircraft": [
+        "button:#6"
+      ],
+      "TargetNearest": [
+        "button:#7"
+      ],
+      "TargetClear": [
+        "button:#9"
+      ],
+      "CycleCockpitViews": [
+        "button:#26"
+      ],
+      "LookAimUp": [
+        "axis:#4+@0.05"
+      ],
+      "LookAimDown": [
+        "axis:#4-@0.05"
+      ],
+      "LookAimLeft": [
+        "axis:#3-@0.05"
+      ],
+      "LookAimRight": [
+        "axis:#3+@0.05"
+      ]
+    },
+    "menu": {
+      "MenuUp": [
+        "button:#5"
+      ],
+      "MenuDown": [
+        "button:#7"
+      ],
+      "MenuLeft": [
+        "button:#8"
+      ],
+      "MenuRight": [
+        "button:#6"
+      ],
+      "MenuAccept": [
+        "button:#0"
+      ],
+      "MenuBack": [
+        "button:#2"
+      ],
+      "SkipCutscene": [
+        "button:#0"
+      ]
+    },
+    "camera": {}
+  }
+}
