@@ -8,7 +8,7 @@ pointer; any live prose linking this file by path is unlinked in the same commit
 This plan makes CSVM playable on Linux, with the Steam Deck (SteamOS, copied install folder) as the
 reference device, and supported at a best-effort level: a published `.tar.gz` labelled
 community-tested. It gets there in two steps. Wave A moves asset extraction out of the PowerShell
-scripts and into the engine on both platforms, and ships that in a Windows release first. Wave B adds
+scripts and into the engine on both platforms, proven on Windows by a local test. Wave B adds
 the Linux export, a Linux `unzbd` built in WSL, the `.tar.gz`, a pre-release Linux check, and the
 per-platform SDL2 load once `PLAN-flight-sticks` has landed.
 
@@ -48,7 +48,7 @@ logic. A second implementation for one platform is the drift this plan exists to
 | 6 | Where the Linux `unzbd` is built | **In the author's WSL Debian**, rustup with the `x86_64-unknown-linux-musl` target, called from `ExportRelease.ps1`. |
 | 7 | `--extract` options | **`--data-root=`, `--extract-force`, `--extract-unzip`, `--unzbd=<path>`; `-Raw` dropped.** The in-game button always runs player defaults (zips only, incremental). |
 | 8 | Missing or out-of-date data | **A screen that asks first**, remembered install path pre-filled, Extract as the default. Path stored in `app_userdata`. A newer-than-expected stamp gets the same screen with reversed wording. Unstamped dev trees keep warn-only. |
-| 9 | Release order | **Windows first** with in-engine extraction; Linux follows after the Deck test passes and flight-sticks has landed. |
+| 9 | Release order | **One release with both downloads**, after the Deck test passes and flight-sticks has landed. The Windows build is proven by the author's local test instead of a release of its own: the player base is small and mostly holds data already stamped under the current schema, which the new build accepts without asking. |
 | 10 | Where the Linux run is checked | **Before each release only** (B14). Portable logic is covered by `CSVM.Tests` in the landing gate. |
 | 11 | Steam Deck-specific work | **None.** The Deck test turns findings into backlog issues; the README gets an "On Steam Deck" section. |
 | 12 | The Linux build aborts without `libicu`, which .NET needs for culture data | **`InvariantGlobalization` on both platforms**, set in the engine csproj: no native locale dependency in either build, and the engine suites run in the mode that ships. The unit host keeps ICU, because its culture-safety tests build `de-DE`. |
@@ -79,7 +79,7 @@ logic. A second implementation for one platform is the drift this plan exists to
 
 Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Keep this in sync as items land.**
 
-### Wave A, in-engine extraction (Windows release)
+### Wave A, in-engine extraction (Windows)
 
 1. ☑ Extraction decoders move into `CSVM/src/Extraction/`, engine-side and platform-neutral
 2. ☑ `unzbd` runner: per-archive modes, messages, MPG copy, incremental skip, VERSION.json stamp
@@ -87,7 +87,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 4. ☑ Headless `--extract=<install>` and its development options
 5. ☑ Extraction UI: Extract button, picker, progress, and the out-of-date-data screen
 6. ☑ Retire the scripts: `Extract.ps1` wrapper, one stamp constant, release payload, docs, bug form
-7. ☐ Windows release with in-engine extraction, through the Sandbox release test
+7. ☐ Windows build with in-engine extraction, tested locally by the author and in the Sandbox
 
 ### Wave B, Linux build
 
@@ -96,7 +96,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 13. ☑ Linux README with an "On Steam Deck" section
 14. ☐ Pre-release Linux check in WSL: extract, then a headless mission load
 15. ☐ SDL2 stick bridge resolved per platform (after `PLAN-flight-sticks` lands)
-16. ☐ Steam Deck test pass and the first Linux release
+16. ☐ Steam Deck test pass and one release carrying the Windows zip and the Linux tarball
 
 ## Dependency and parallelism notes
 
@@ -104,7 +104,7 @@ A1 blocks A2, A4 and A5 (they call the decoders). A3 is independent of A1 and A2
 parallel with them. A4 needs A1 to A3. A5 needs A3 and A4's entry point. A6 needs A4 (the wrapper
 calls it) and A5 (the engine messages point at the button). A7 closes Wave A.
 
-Wave B starts after A7 ships (Decision 9). B11 and B12 can run in parallel; B13 needs B12's layout;
+Wave B does not wait for A7; both waves meet in B16's one release (Decision 9). B11 and B12 can run in parallel; B13 needs B12's layout;
 B14 needs B11 and B12. B15 is blocked on `PLAN-flight-sticks` landing on main and touches only that
 plan's SDL2 bridge. B16 needs every other item.
 
@@ -114,7 +114,7 @@ messages in `ExtractionStamp.cs` / `NoGameDataScreen.cs`; B11, B12 and B14 all e
 
 ---
 
-# Wave A, in-engine extraction (Windows release)
+# Wave A, in-engine extraction (Windows)
 
 ## A1 ☑ Extraction decoders move into `CSVM/src/Extraction/`, engine-side and platform-neutral
 
@@ -495,20 +495,24 @@ The full `.\RunTests.ps1`.
 
 **⚠ Traps.** None known yet.
 
-## A7 ☐ Windows release with in-engine extraction, through the Sandbox release test
+## A7 ☐ Windows build with in-engine extraction, tested locally by the author and in the Sandbox
 
-**Goal.** A Windows release ships in which a clean machine extracts and flies with no script.
+**Goal.** An exported Windows zip, built by `ExportRelease.ps1` and not published, in which a clean
+machine extracts and flies with no script. It ships in B16's release (Decision 9).
 
 **Evidence (confidence: lead-only).** Decision 9: the new extraction path is proven on Windows
-before Linux ships.
+before the release that carries it. A6 switched `sandbox\PublicRelease.ps1` to
+`CSVM.exe --headless --extract`, which is how the Sandbox test extracts without synthetic input.
 
-**Approach.** The usual release path through `ExportRelease.ps1` and `PublishRelease.ps1`, with the
-Sandbox release test driving the in-game Extract flow instead of `Extract.cmd`.
+**Approach.** Rerun `packaging\BuildThirdPartyNotices.ps1` for the bundled .NET, export the zip, run
+the Sandbox release test on it, then the author unpacks it locally and goes through the in-game
+Extract flow (a fresh folder with no data) and a flight.
 
-**Model recommendation.** <TODO: not settled in session>
+**Model recommendation.** Orchestrator for the export and the Sandbox run; the in-game flow is the
+author's.
 
-**Verify.** The Sandbox release test passes on the published zip. <TODO: how the Sandbox test drives
-the in-game button without synthetic input, or whether it uses `--extract` instead>
+**Verify.** The Sandbox release test passes on the exported zip, and the author's local run extracts
+from the screen and flies.
 
 **⚠ Traps.** Agents never drive the keyboard or mouse or put a game window in the foreground; the
 in-game flow is the author's to click through.
@@ -681,10 +685,11 @@ gap-filler finds nothing to fill and the Linux work may reduce to the missing-li
 **⚠ Traps.** Blocked on `PLAN-flight-sticks` landing on main; the author asked that the plan not be
 changed while it is in testing.
 
-## B16 ☐ Steam Deck test pass and the first Linux release
+## B16 ☐ Steam Deck test pass and one release carrying the Windows zip and the Linux tarball
 
 **Goal.** The author installs the tarball on the Deck with a copied install folder, extracts, flies,
-and publishes the Linux release; whatever looks wrong becomes backlog issues.
+and publishes one release with both downloads (Decision 9, through `PublishRelease.ps1 -Linux` as
+B12 recommends); whatever looks wrong becomes backlog issues.
 
 **Evidence (confidence: lead-only).** Decisions 1, 5b, 9 and 11. Expected areas to look at:
 16:10 UI layout at 1280×800, frame rate on the Deck GPU, a controller appearing twice (Steam Input's
