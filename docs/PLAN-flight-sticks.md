@@ -472,7 +472,7 @@ roster reads nothing, `Devices()` dedupes identical units, and `SeatDeviceState`
 beside `AnyPad`, muted with `readsPads: false`, and silent without a stick reader.
 
 **Verified.** The full `RunTests.ps1` passes on the merged branch with the 19 goldens
-hash-identical. No stick has flown at the controls yet.
+hash-identical. The user's VKB sticks fly at the controls, solo and as a pair.
 
 **Axis polarity quirks.** Both VKB grips (R `231D/0200`, L `231D/0201`) read their twist on axis 5
 negative twisted right through SDL2, so uncorrected, a Turn Right captured by twisting right reads
@@ -985,9 +985,8 @@ other case gets nothing, and the controls screen says the device needs binding.
 buttons and 1 hat under SDL2 and would otherwise qualify as the one unprofiled stick once the VKBs
 carry profiles. `--dump-sticks` at rest reads axis 2 as 1.00 on L and -0.57 on R, and the user
 confirmed axis 2 is a throttle on both, so a "every axis near centre" test would reject both VKBs.
-That twist is axis 5 under SDL2 rests on DirectInput's usual X, Y, Z, Rx, Ry, Rz, slider order and
-is not yet measured: ask the user to twist R during a `--dump-sticks`-style probe that reports
-movement before building on it.
+Twist is axis 5 under SDL2, measured with a probe while the user twisted L (right reads negative).
+Both VKBs report it inverted, so `StickQuirks` flips axis 5 on 231D/0200 and 231D/0201 at read time.
 
 **Approach.** Evaluate on connect and on roster change; the default lives in memory until the
 player edits it, at which point it becomes a user profile for that model. <TODO: the "near centre"
@@ -1036,7 +1035,7 @@ engine suites listed under C8 and the full `RunTests.ps1` on the merged branch p
 controls the main and campaign menus navigate by stick. The pause menus read no stick until
 `MenuInput.ForSessionSeat` loaded seat 1's keymap for every in-session board; `StickMenuSeatTests`
 pins the pause seat, and the full `RunTests.ps1` passes with it (5061 units, 382 engine suites,
-19 goldens identical). Pause-menu navigation by stick is owed at the controls again.
+19 goldens identical). At the controls the pause menus navigate by stick too.
 
 **Left open.** None beyond D10/D11's screen work.
 
@@ -1162,7 +1161,8 @@ bindings-launch-load,bindings-prompt-device,menu-controls-seats,menu-original-co
 engine suites pass, engine errors clean. `RunTests.ps1 -SkipEngine -SkipGoldens` with the
 blocked-read rule: units 5003 passed, 0 failed, 2 skipped (data-absent cinema tests).
 `CheckCommentCaps.ps1` and `CheckDocEntries.ps1` clean. The full `RunTests.ps1` passes on the
-merged branch with the 19 goldens hash-identical. No stick has been captured at the controls yet.
+merged branch with the 19 goldens hash-identical. At the controls the user captured a full
+layout on both sticks, and the shipped VKB profiles are those captures.
 
 **Original approach (kept for reference).**
 
@@ -1382,7 +1382,8 @@ shown as a screenshot and asked, never settled by an instrument.
 **Verified.** The unit and engine checks listed under Verify pass, and the full `RunTests.ps1` on
 the merged branch passes (units 5072 passed, 2 skipped for missing data; 382 engine suites, errors
 clean; 19 goldens identical). No engine suite drives a live `CinemaScreen` or `BootCard` with a
-fake stick, so that polling glue rests on the unit tests. The stick skip is owed at the controls.
+fake stick, so that polling glue rests on the unit tests. At the controls the stick skips and
+fast-forwards cutscenes.
 
 **Goal.** A player flying on sticks alone can skip or fast-forward everything a pad button skips
 or fast-forwards: an in-world cutscene (skip when armed, fast-forward while held when not), the
