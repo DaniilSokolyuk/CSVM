@@ -51,6 +51,7 @@ logic. A second implementation for one platform is the drift this plan exists to
 | 9 | Release order | **Windows first** with in-engine extraction; Linux follows after the Deck test passes and flight-sticks has landed. |
 | 10 | Where the Linux run is checked | **Before each release only** (B14). Portable logic is covered by `CSVM.Tests` in the landing gate. |
 | 11 | Steam Deck-specific work | **None.** The Deck test turns findings into backlog issues; the README gets an "On Steam Deck" section. |
+| 12 | The Linux build aborts without `libicu`, which .NET needs for culture data | **`InvariantGlobalization` on both platforms**, set in the engine csproj: no native locale dependency in either build, and the engine suites run in the mode that ships. The unit host keeps ICU, because its culture-safety tests build `de-DE`. |
 | - | Settled by default, not asked | `unzbd` stays a separate process, never linked (the EUPL/GPL separation `packaging/README.md` states); the stamp schema becomes one engine constant; SDL2 resolved per platform after flight-sticks lands; the bug report form gains an OS field. |
 
 ## Ground rules

@@ -7,6 +7,8 @@
     <!-- The engine project builds under Godot.NET.Sdk; only its managed output is referenced
          here, so the test host never needs the Godot editor or its export presets. -->
     <EnableDynamicLoading>false</EnableDynamicLoading>
+    <!-- No InvariantGlobalization here, unlike the engine: the culture-safety units build de-DE
+         to prove every format is invariant, which only a host with ICU can construct. -->
   </PropertyGroup>
 
   <ItemGroup>
