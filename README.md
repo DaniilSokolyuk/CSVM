@@ -40,7 +40,7 @@ there is no runtime or framework to install.
 [`packaging/README.md`](packaging/README.md) is the long form of those four steps and ships in
 the zip as the `README.md` beside `CSVM.exe`: the SHA-256 to check the download against, the
 Windows SmartScreen warning an unsigned download raises, where your logs and saved games live,
-and what to read when a mission does not start.
+and what to read when the game vanishes after it starts.
 
 ## Reporting a problem, and contributing
 

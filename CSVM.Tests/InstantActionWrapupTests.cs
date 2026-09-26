@@ -1,4 +1,5 @@
-using CSVM.Session;
+using CSVM.Session.InstantAction;
+using CSVM.UI.Screens;
 using Xunit;
 
 namespace CSVM.Tests;
@@ -6,10 +7,11 @@ namespace CSVM.Tests;
 /// <summary>
 /// The Instant Action wrap-up board's two pure formulas (docs/formats/instant-action.md "What the
 /// four numbers count"): the decoded
-/// <c>IDS_IAWU_TIME</c>/<c>IDS_IAWU_PERCENTAGE</c> formats. Both are static and engine-free, the
-/// same reason <see cref="InstantActionEndTests"/> covers the rest of <see cref="InstantActionRuntime"/>
-/// off-engine, the board itself (a Godot <c>Control</c>) is exercised in-engine instead
-/// (<c>instant-action-wrapup</c> suite).
+/// <c>IDS_IAWU_TIME</c>/<c>IDS_IAWU_PERCENTAGE</c> formats. Both are static and engine-free, so
+/// they are pinned off-engine as <see cref="InstantActionEndTests"/> pins the rest of
+/// <see cref="InstantActionRuntime"/>. The time format is a static on the board, called here
+/// without building one. The board itself, a Godot <c>Control</c>, is exercised in-engine by the
+/// <c>instant-action-wrapup</c> suite.
 /// </summary>
 public class InstantActionWrapupTests
 {
@@ -21,7 +23,7 @@ public class InstantActionWrapupTests
     [InlineData(3661f, "61:01")]       // no hour rollover, the decode is plain minutes:seconds
     public void FormatElapsedTruncatesToMinutesSeconds(float elapsedSeconds, string expected)
     {
-        Assert.Equal(expected, InstantActionRuntime.FormatElapsed(elapsedSeconds));
+        Assert.Equal(expected, IaWrapupBoard.FormatElapsed(elapsedSeconds));
     }
 
     [Theory]

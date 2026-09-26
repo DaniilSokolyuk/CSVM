@@ -1,5 +1,5 @@
 using System;
-using CSVM.Session;
+using CSVM.Session.World;
 using Xunit;
 
 namespace CSVM.Tests;

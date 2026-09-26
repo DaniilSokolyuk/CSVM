@@ -1,12 +1,12 @@
-using CSVM.Effects;
 using Godot;
 
 namespace CSVM.Mech3.Anim;
 
 /// <summary>One live particle emitter, as much of it as <see cref="EmitterDirector"/> needs. The
 /// director owns lifetime; how particles reach the GPU is the implementation's business. This exists
-/// because <see cref="Puffer"/> is <c>sealed</c>: a test double cannot BE one, so the director's
-/// collaborator has to be an interface for emitter lifetime to be assertable at all.</summary>
+/// because <c>Effects.Puffer</c> is <c>sealed</c>, so a test double cannot BE one. Emitter
+/// lifetime is assertable only with an interface as the director's collaborator. The animation
+/// layer owns this seam and <c>Effects.PufferEmitterFactory</c> implements it.</summary>
 public interface IEmitter
 {
     int LiveCount { get; }

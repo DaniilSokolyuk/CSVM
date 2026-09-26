@@ -2,9 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
-using CSVM.Flight;
+using CSVM.Flight.Ai;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Camera;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
-using CSVM.Session;
+using CSVM.Session.Campaign;
+using CSVM.Session.Objectives;
+using CSVM.Session.Roster;
 using CSVM.Utils;
 using Godot;
 
@@ -104,7 +109,7 @@ internal static class CampaignRosterSuites
     private const int PlainSteadyHand = 0;
     private const int FriendDeadEye = 1;
 
-    // What Normal adds to a hostile pilot's every rating (Flight.Difficulty): the low tier's k.
+    // What Normal adds to a hostile pilot's every rating (Flight.Hangar.Difficulty): the low tier's k.
     private const int DifficultyStep = -2;
     private const string SteadyHandKey = "steady_hand_chance";
 
@@ -124,8 +129,9 @@ internal static class CampaignRosterSuites
 
     [Suite("campaign-roster",
         "the campaign roster spawner (D34, BL-362/BL-364) over C1/M04's shipped aiv roster in "
-        + "its built world: every enabled non-player block gets a rig, while disabled blocks "
-        + "remain generator templates; the decoded fork puts an escort "
+        + "its built world: every enabled non-player block gets a rig except the netless jet the "
+        + "original builds dead, while disabled blocks remain generator templates; the decoded "
+        + "fork puts an escort "
         + "on the netless wingman_1 (leader: the player rig) and on wingman_2/3 (leaders: the "
         + "devastator blocks) and a patrol net on every netted block with no block carrying "
         + "both, the deactivated blocks are inert, the four taxiPath vehicles are placed frozen, "
@@ -217,17 +223,31 @@ internal static class CampaignRosterSuites
                 report.AppendLine($"build summary suffix: '{what}'");
 
                 var roster = director.Roster;
+                var vehicleDefs = VehicleDefs.Load(ctx.ZrdrPath);
                 int expectedRoster = 0;
+                int builtDead = 0;
                 foreach (var (name, fields) in blocks)
                 {
-                    if (!name.Equals(CampaignRosterPlan.PlayerBlock,
-                            StringComparison.OrdinalIgnoreCase) && AiSkills.RosterEnabled(fields))
+                    if (name.Equals(CampaignRosterPlan.PlayerBlock, StringComparison.OrdinalIgnoreCase)
+                        || !AiSkills.RosterEnabled(fields))
                     {
-                        expectedRoster++;
+                        continue;
                     }
+                    // The original builds a netless block dead unless its def is a mode wingman.
+                    string blockMode = vehicleDefs.DefForBlock(name) is { } blockDef
+                        ? vehicleDefs.ModeOf(blockDef) ?? VehicleDefs.JetMode
+                        : VehicleDefs.JetMode;
+                    if (AiSkills.RosterNetIds(fields).Count == 0
+                        && !blockMode.Equals(VehicleDefs.WingmanMode, StringComparison.OrdinalIgnoreCase))
+                    {
+                        builtDead++;
+                        continue;
+                    }
+                    expectedRoster++;
                 }
+                ctx.Same(1, builtDead, $"one enabled block (blakepeace_2_2) is the netless jet the original builds dead");
                 ctx.Same(expectedRoster, roster.Count,
-                    $"every enabled non-player roster block has a rig");
+                    $"every other enabled non-player roster block has a rig");
                 CheckFork(ctx, roster, player, report);
                 CheckPaths(ctx, director, report);
                 CheckVolumes(ctx, roster, skills, report);
@@ -1276,6 +1296,8 @@ internal static class CampaignRosterSuites
         {
             ctx.Check(parked.Inert && !parked.InPlay, $"blakebloodhawk_8 (deactivated 1) is inert and out of play");
         }
+        ctx.Check(!roster.ContainsKey("blakepeace_2_2"),
+            $"blakepeace_2_2 (an empty netids list on a jet) is not spawned: the original builds it dead");
         ctx.Check(escorts == 3, $"the three wingman blocks are the mission's three escorts: {escorts}");
         ctx.Check(inert == 9, $"the nine deactivated blocks are inert: {inert}");
     }

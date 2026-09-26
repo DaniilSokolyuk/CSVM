@@ -1,9 +1,14 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using CSVM.Flight;
+using CSVM.Flight.Ai;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Camera;
+using CSVM.Flight.Hud;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
-using CSVM.Session;
+using CSVM.Session.Roster;
+using CSVM.Tooling;
 using Godot;
 
 namespace CSVM.Testing;
@@ -83,7 +88,7 @@ internal static class DamageSuites
                 var pool = new Node3D { Name = $"pool{slot}" };
                 pool.SetMeta(AnimRuntime.PoolSlotMeta, slot);
                 stage.AddChild(pool);
-                int built = Session.WorldEffectsFactory.BuildEffectStage(world.Gamez,
+                int built = Session.World.WorldEffectsFactory.BuildEffectStage(world.Gamez,
                     world.Session.Builder.Scene, pool, new[] { "planeflakes" });
                 ctx.Check(built == 1, $"slot {slot} staged its planeflakes copy");
                 foreach (var child in pool.GetChildren())
@@ -96,7 +101,7 @@ internal static class DamageSuites
             }
 
             var runtime = new AnimRuntime(
-                Session.WorldEffectsFactory.NewCrashTemplateStage())
+                Session.World.WorldEffectsFactory.NewCrashTemplateStage())
             {
                 AutoStart = false,
                 ManualAdvance = true,
@@ -169,7 +174,7 @@ internal static class DamageSuites
                 var pool = new Node3D { Name = $"pool{slot}" };
                 pool.SetMeta(AnimRuntime.PoolSlotMeta, slot);
                 stage.AddChild(pool);
-                Session.WorldEffectsFactory.BuildEffectStage(world.Gamez,
+                Session.World.WorldEffectsFactory.BuildEffectStage(world.Gamez,
                     world.Session.Builder.Scene, pool, new[] { "planeflakes" });
                 foreach (var child in pool.GetChildren())
                 {
@@ -180,7 +185,7 @@ internal static class DamageSuites
                 }
             }
 
-            var runtime = new AnimRuntime(Session.WorldEffectsFactory.NewCrashTemplateStage())
+            var runtime = new AnimRuntime(Session.World.WorldEffectsFactory.NewCrashTemplateStage())
             {
                 AutoStart = false,
                 ManualAdvance = true,
@@ -559,7 +564,7 @@ internal static class DamageSuites
                 ctx.Host.AddChild(live);
                 var spec = SessionSpec.Parse(System.Array.Empty<string>());
                 var liveries = new LiveryResolver(spec, Path.Combine(ctx.DataRoot, "extracted", "rof"));
-                var factory = new Session.WorldEffectsFactory(spec, ctx.Host, () => Vector3.Zero);
+                var factory = new Session.World.WorldEffectsFactory(spec, ctx.Host, () => Vector3.Zero);
                 var inputs = new AircraftAssemblyResources
                 {
                     PlanesGamez = planesGamez,
@@ -599,7 +604,7 @@ internal static class DamageSuites
                 {
                     string n = def.AnimName ?? def.Name ?? "";
                     starts[n] = starts.TryGetValue(n, out var c) ? c + 1 : 1;
-                    if (Session.EffectCatalogue.AiDamageStageAnims.Contains(n, System.StringComparer.OrdinalIgnoreCase))
+                    if (Flight.Airframe.EffectCatalogue.AiDamageStageAnims.Contains(n, System.StringComparer.OrdinalIgnoreCase))
                         anchors.Add(anchor);
                 };
                 rig.OnInstanceFinished += (def, _) =>

@@ -543,7 +543,7 @@ colour and "Mission LOST!" reads above "Time Expired"; the second is skipped on 
 won, and the whole arm is single-player only. That site is
 [../formats/objectives.md](../formats/objectives.md), `MISSION_TIMER`.
 
-`Flight/HudMessages.cs` carries all of this, with the 18 px pitch and the font's own 10 px cell
+`Flight/Hud/HudMessages.cs` carries all of this, with the 18 px pitch and the font's own 10 px cell
 taken onto `HudMetrics`' 1440p reference by the factor of three between 480 and 1440 lines. Its
 three colours are the remake's HUD palette standing in for the undecodable globals, marked TUNE.
 
@@ -776,7 +776,7 @@ overflow, fraction-keyed reversible staging, and spawn-time scaling. Folding zon
 scalar instances and monotonic `DamageStage` are correct for what they cover. The registry keeps
 the static destructibles only; vehicles keep their own damage component.
 
-**(a) Aircraft: `Flight/PlaneDamage.cs` is the vehicle ledger and grows the summary pair.** It
+**(a) Aircraft: `Flight/Airframe/PlaneDamage.cs` is the vehicle ledger and grows the summary pair.** It
 already holds the per-part half of this page's model (four zones nose/tail/left/right, each an
 (armour, health) pair, armour first with 1:1 overflow, confirmed by CAP-19). What it lacks is the
 decoded whole-vehicle summary: after a part-scoped spend, whole-vehicle current health and armour
@@ -892,7 +892,7 @@ method as the rest of this page. This section partially corrects "Taking a hit" 
   the player parts' 80/80. Since 2026-08-16 an AI spawn reads its own def and gets the authored
   pair (`PlaneStats.LoadForAi`), so this sum-over-parts stand-in is the **player** path alone.
 
-What this landed as: `Flight/PlaneDamage.cs` carries the whole pair, the resolver redirect, the
+What this landed as: `Flight/Airframe/PlaneDamage.cs` carries the whole pair, the resolver redirect, the
 verbatim spend and the wrapper loop; the `air-to-air` suite pins the one-bearing kill (80 rounds
 of `wep_00`) and the rocket kill (a Fury falls to 5 head-on `wep_06` rockets against the
 reported 9-rocket sponge); `PlaneDamageTests` pins the arithmetic including the overflow kill

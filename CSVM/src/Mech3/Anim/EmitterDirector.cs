@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using CSVM.Effects;
 using CSVM.Mech3;
 using CSVM.Utils;
 using Godot;

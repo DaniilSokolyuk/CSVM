@@ -2,11 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
-using CSVM.Flight;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Camera;
+using CSVM.Flight.Modes;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
-using CSVM.UI;
+using CSVM.UI.Boards;
 using CSVM.UI.Menu;
 using CSVM.UI.Menu.Original;
+using CSVM.UI.Screens;
 using CSVM.Utils;
 using Godot;
 

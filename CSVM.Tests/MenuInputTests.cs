@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
-using CSVM.UI;
+using CSVM.UI.Campaign;
 using CSVM.UI.Menu;
+using CSVM.UI.Screens;
 using CSVM.Utils;
 using Godot;
 using Xunit;

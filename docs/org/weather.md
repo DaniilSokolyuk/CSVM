@@ -12,8 +12,8 @@ the addresses are given so any claim can be re-checked at source.
 per-zone `ZONE<n>` blocks, the precipitation block, the per-chapter zone-naming split, is
 [`formats/weather.md`](../formats/weather.md); the fog volumes' own file is
 [`formats/fogvol.md`](../formats/fogvol.md) and the `zone_id` field the gate reads is
-[`formats/gamez.md`](../formats/gamez.md). Our implementation is `CSVM/src/Flight/Weather.cs`
-(the reader and the state machine), `CSVM/src/Session/WeatherRig.cs` (the per-frame rig: fog
+[`formats/gamez.md`](../formats/gamez.md). Our implementation is `CSVM/src/Flight/Airframe/Weather.cs`
+(the reader and the state machine), `CSVM/src/Session/World/WeatherRig.cs` (the per-frame rig: fog
 apply, whiteout, deck, dome, band flicker), `CSVM/src/Mech3/ZoneGate.cs` (the visibility gate) and
 `CSVM/src/Mech3/FogVolumes.cs` (the volumes and their whiteout). This page is the original's
 runtime: what the engine does with those keys.

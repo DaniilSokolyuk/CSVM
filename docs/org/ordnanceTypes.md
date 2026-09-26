@@ -1140,7 +1140,7 @@ most powerful weapons in the table rather than a defensive screen. The layer axi
 the aircraft's world matrix (`+0x198`–`+0x1a0`), the **backward** axis: the launch-side dispatch
 above negates that same row to spawn an ordinary weapon forward and takes it as-is for the `REAR`
 smoker, so the cone opens behind the layer, where the smoke is laid. Our side reads it as the
-negated `FlightController.NoseDirection`. On our side the mechanism is `Flight/SmokeScreens.cs`
+negated `FlightController.NoseDirection`. On our side the mechanism is `Flight/Airframe/SmokeScreens.cs`
 (`SmokeScreens.Lay` for the fire path, `SimStep` from the session, `SmokeScreenRule` for the
 aircraft-free tests, `SmokeScreenTunables.Load` for the three keys).
 

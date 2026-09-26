@@ -166,11 +166,45 @@ function Get-LongSentences {
 # (staged or not, since git commit -a takes both), and every line of an untracked file. A comment
 # block is in scope when one of its lines is among them, so a one-line fix in a file with old debt
 # is never blocked on the rest of the file.
+#
+# During a merge, a line counts only when it is new against BOTH parents. Against HEAD alone,
+# everything the other branch brought in reads as added, and the merge is charged the other side's
+# old debt across every file it touched; the lines the merge author actually wrote, the conflict
+# resolutions, differ from both parents and stay in scope.
 function Get-ChangedLines {
     param([string]$Root)
+    $map = Get-AddedRanges -Root $Root -Against 'HEAD'
+    $mergeHead = & git -C $Root rev-parse -q --verify MERGE_HEAD 2>$null
+    if ($mergeHead) {
+        $theirs = Get-AddedRanges -Root $Root -Against $mergeHead
+        foreach ($f in @($map.Keys)) {
+            $kept = @()
+            if ($theirs.ContainsKey($f)) {
+                foreach ($a in $map[$f]) {
+                    foreach ($b in $theirs[$f]) {
+                        $lo = [Math]::Max($a[0], $b[0])
+                        $hi = [Math]::Min($a[1], $b[1])
+                        if ($lo -le $hi) { $kept += ,@($lo, $hi) }
+                    }
+                }
+            }
+            $map[$f] = $kept
+        }
+    }
+    $untracked = & git -C $Root ls-files --others --exclude-standard -- CSVM/src CSVM.Tests 2>$null
+    foreach ($p in @($untracked)) {
+        if ($p -notmatch '\.cs$') { continue }
+        $map[(Join-Path $Root ($p -replace '/', '\'))] = @(,@(1, [int]::MaxValue))
+    }
+    $map
+}
+
+# The working tree's added line ranges against one commit, per file.
+function Get-AddedRanges {
+    param([string]$Root, [string]$Against)
     $map = @{}
     $file = $null
-    $diff = & git -C $Root diff HEAD -U0 -- CSVM/src CSVM.Tests 2>$null
+    $diff = & git -C $Root diff $Against -U0 -- CSVM/src CSVM.Tests 2>$null
     foreach ($row in @($diff)) {
         if ($row -match '^\+\+\+ b/(.*\.cs)$') {
             $file = (Join-Path $Root ($Matches[1] -replace '/', '\'))
@@ -180,14 +214,10 @@ function Get-ChangedLines {
         if ($row -match '^\+\+\+ ') { $file = $null; continue }
         if ($file -and $row -match '^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@') {
             $start = [int]$Matches[1]
-            $count = if ($Matches[2] -ne '') { [int]$Matches[2] } else { 1 }
+            # An unmatched group is $null, not '': testing -ne '' read a one-line hunk as zero lines.
+            $count = if ($Matches[2]) { [int]$Matches[2] } else { 1 }
             if ($count -gt 0) { $map[$file] += ,@($start, ($start + $count - 1)) }
         }
-    }
-    $untracked = & git -C $Root ls-files --others --exclude-standard -- CSVM/src CSVM.Tests 2>$null
-    foreach ($p in @($untracked)) {
-        if ($p -notmatch '\.cs$') { continue }
-        $map[(Join-Path $Root ($p -replace '/', '\'))] = @(,@(1, [int]::MaxValue))
     }
     $map
 }

@@ -1,6 +1,7 @@
 using System.IO;
 using System.Linq;
-using CSVM.Flight;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Weapons;
 using CSVM.Testing;
 using Godot;
 using Xunit;

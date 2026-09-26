@@ -39,16 +39,53 @@ public static class DisplayWords
     public static readonly IReadOnlyList<string> VSyncChoices = new[] { VSyncOn, VSyncOff, "60", "120", "144" };
 }
 
-/// <summary>The process-wide options: the requested graphics mode, the rocket carve, the difficulty setting, the nearest-after-a-kill targeting setting, the opening view, the
-/// automatic head turn, the four display settings (the monitor, the window size, the display mode
-/// and the V-Sync choice) and the four volume levels. A missing field means "never set"; the
-/// caller, not this def, decides what that falls back to.
+/// <summary>The difficulty words <see cref="OptionsDef.Difficulty"/> and <c>--difficulty=</c>
+/// carry: the campaign selector's three tier labels in lower case. Kept as strings below the
+/// flight layer, which owns the tier each word resolves to. The Instant Action names for the same
+/// tiers are a command line's alone, so a file reads back only these three.</summary>
+public static class DifficultyWords
+{
+    /// <summary>The low tier, campaign "Normal".</summary>
+    public const string Normal = "normal";
+
+    /// <summary>The middle tier, campaign "Hard".</summary>
+    public const string Hard = "hard";
+
+    /// <summary>The high tier, campaign "Hardest".</summary>
+    public const string Hardest = "hardest";
+
+    /// <summary>Every difficulty word, lowest tier first.</summary>
+    public static readonly IReadOnlyList<string> All = new[] { Normal, Hard, Hardest };
+}
+
+/// <summary>The selectable view words <see cref="OptionsDef.DefaultView"/> and <c>--view=</c>
+/// carry. Kept as strings below the flight layer, which owns the view mode each word resolves to.
+/// A numpad digit or <c>back</c> names a momentary look rather than a selection, so neither is a
+/// word here.</summary>
+public static class ViewWords
+{
+    /// <summary>The following third-person camera.</summary>
+    public const string Chase = "chase";
+
+    /// <summary>First person with the cockpit interior drawn.</summary>
+    public const string Cockpit = "cockpit";
+
+    /// <summary>First person with the cockpit interior hidden.</summary>
+    public const string Nose = "nose";
+
+    /// <summary>Every selectable view word.</summary>
+    public static readonly IReadOnlyList<string> All = new[] { Chase, Cockpit, Nose };
+}
+
+/// <summary>Every process-wide option the game saves, one property each, and each said in its own
+/// summary below. A missing field means "never set"; the caller, not this def, decides what that
+/// falls back to.
 /// ⚠ A display field added here is read through a <c>SavedWord(bool det)</c> reader and nowhere
-/// else, and that reader returns null under <c>--det</c>: a golden shot is a deterministic run
-/// against the player's own options directory, so a saved size or mode that escaped the drop would
-/// move every golden in the repo. The <c>display-det-guard</c> suite compares this def against the
-/// readers by reflection and fails on a field that has none. The four levels take the same drop
-/// through <see cref="AudioMix.SavedLevels"/>, which is their one reader.</summary>
+/// else, and that reader returns null under <c>--det</c>. Otherwise a saved size or mode would
+/// move every golden, a golden shot being a deterministic run against the player's own options
+/// directory. The <c>display-det-guard</c> suite compares this def against the readers by
+/// reflection and fails on a field that has none. The four volume levels take the same drop through
+/// <see cref="AudioMix.SavedLevels"/>, which is their one reader.</summary>
 public sealed class OptionsDef
 {
     /// <summary>A menu presentation word an older build saved. Loaded and saved back so such a
@@ -59,17 +96,18 @@ public sealed class OptionsDef
     public string? GraphicsMode { get; set; }
 
     /// <summary>Whether a rocket warhead's ground burst carves the terrain
-    /// (<see cref="Flight.CraterGate"/>), the Enhanced Graphics page's Rocket Craters row.
-    /// ⚠ Nullable because null is "never set", which reads as OFF: the original carves nothing in
-    /// play, so the row is remake-only chrome nobody gets without asking for it.</summary>
+    /// (<c>CraterGate</c>). ⚠ No screen offers this. The carve is remake-only chrome
+    /// the menu does not advertise. This key, hand-set in the file, is one of its two doors and
+    /// <c>--craters</c> the other. Nullable because null is "never set", which reads as OFF, the
+    /// original carving nothing in play.</summary>
     public bool? RocketCraters { get; set; }
 
-    /// <summary>The difficulty word (<see cref="Flight.Difficulty.Word"/>): the campaign
+    /// <summary>The difficulty word (<see cref="DifficultyWords"/>): the campaign
     /// selector's tier the launch reads when no flag names one.</summary>
     public string? Difficulty { get; set; }
 
     /// <summary>Whether a target that dies is replaced by the nearest live member of the current
-    /// cycle instead of by the cycle's head (<see cref="Flight.TargetSelection.NearestAfterKill"/>).
+    /// cycle instead of by the cycle's head (<c>TargetSelection.NearestAfterKill</c>).
     /// ⚠ Nullable because null is "never set", which the consumer reads as off, the decoded rule.
     /// A plain <c>bool</c> would make a saved off indistinguishable from an absent field.</summary>
     public bool? NearestAfterKill { get; set; }
@@ -81,15 +119,15 @@ public sealed class OptionsDef
     /// </summary>
     public bool? Rumble { get; set; }
 
-    /// <summary>The view a flight opens in (<see cref="Flight.PilotView.Name"/>), the original's
+    /// <summary>The view a flight opens in (<see cref="ViewWords"/>), the original's
     /// own Default View setting. Kept as a word rather than the enum for the reason the difficulty
     /// is: the file carries a spelling, and the mode it resolves to belongs to the flight.
     /// ⚠ A <c>--view=</c> on the command line outranks this, so a scripted capture that names a
     /// view is not silently overruled by whatever is saved at this machine's controls.</summary>
     public string? DefaultView { get; set; }
 
-    /// <summary>Whether the pilot's head turns with the aircraft in the cockpit
-    /// (<see cref="Flight.FlightController.AutoHeadTurn"/>), the original's Auto Head Turn box.
+    /// <summary>Whether the pilot's head turns with the aircraft in the cockpit, the original's
+    /// Auto Head Turn box.
     /// ⚠ Nullable because null is "never set", which leaves the <c>headLook.autohead</c> config
     /// key deciding: the row exposes the existing key rather than replacing its default.</summary>
     public bool? AutoHeadTurn { get; set; }
@@ -133,7 +171,7 @@ public sealed class OptionsDef
 
 /// <summary>
 /// JSON persistence for <see cref="OptionsDef"/>: one file, <c>user://options.json</c>, independent
-/// of any campaign profile (<see cref="Session.CampaignProfileStore"/> is per-profile; this store is
+/// of any campaign profile (<c>CampaignProfileStore</c> is per-profile; this store is
 /// process-wide). Plain System.IO over an absolute directory, like the profile and plane stores, so
 /// it unit-tests without an engine; a missing or malformed file reads as an empty
 /// <see cref="OptionsDef"/> rather than throwing. Unlike those stores, <see cref="Save"/> writes
@@ -179,25 +217,13 @@ public sealed class OptionsStore
         GraphicsMode.EnhancedWord,
     };
 
-    // The three campaign words alone, spelt as Flight.Difficulty.Word spells them. Parse's wider
-    // vocabulary (Instant Action's names, bare digits) is a command line's convenience, not a
-    // value this file should ever carry: a file reads back only what the options screens write.
-    private static readonly HashSet<string> ValidDifficulties = new(StringComparer.Ordinal)
-    {
-        Flight.Difficulty.Word(Flight.Difficulty.Normal),
-        Flight.Difficulty.Word(Flight.Difficulty.Hard),
-        Flight.Difficulty.Word(Flight.Difficulty.Hardest),
-    };
+    // The three campaign words alone. The command line's wider vocabulary (Instant Action's names,
+    // bare digits) is a convenience this file never carries. A file reads back only what the
+    // options screens write.
+    private static readonly HashSet<string> ValidDifficulties = new(DifficultyWords.All, StringComparer.Ordinal);
 
-    // The three selectable views, spelt as Flight.PilotView.Name spells them and so as --view=
-    // takes them. Parse's other arguments (a numpad digit, "back") name a momentary look rather
-    // than a selection, so they are not words this file may carry.
-    private static readonly HashSet<string> ValidDefaultViews = new(StringComparer.Ordinal)
-    {
-        Flight.PilotView.Name(Flight.PilotViewMode.Chase),
-        Flight.PilotView.Name(Flight.PilotViewMode.Cockpit),
-        Flight.PilotView.Name(Flight.PilotViewMode.Nose),
-    };
+    // The three selectable views, spelt as --view= takes them.
+    private static readonly HashSet<string> ValidDefaultViews = new(ViewWords.All, StringComparer.Ordinal);
 
     // The two display vocabularies, DisplayWords' own lists as sets. Held here rather than there
     // for the same reason the three above are held here at all: the words a file may carry are

@@ -1,4 +1,4 @@
-using CSVM.UI;
+using CSVM.UI.Boards;
 using Godot;
 using Xunit;
 

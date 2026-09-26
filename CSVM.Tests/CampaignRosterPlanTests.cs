@@ -2,9 +2,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using CSVM;
-using CSVM.Flight;
+using CSVM.Flight.Ai;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
-using CSVM.Session;
+using CSVM.Session.Campaign;
 using Godot;
 using Xunit;
 

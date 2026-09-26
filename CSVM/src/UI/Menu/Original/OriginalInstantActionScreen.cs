@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using CSVM.Flight;
+using CSVM.Flight.Hangar;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
+using CSVM.UI.Boards;
+using CSVM.UI.Hangar;
 
 namespace CSVM.UI.Menu.Original;
 

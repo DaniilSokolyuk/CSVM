@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using CSVM.Flight;
+using CSVM.Flight.Modes;
 
 namespace CSVM.UI.Menu;
 
@@ -75,13 +75,13 @@ public sealed record CabinReturn(string Profile) : MenuReturnDestination;
 /// the story position just flown, and whether that mission was won. The result travels with the
 /// destination because nothing on the far side can recover it: a lost replay of a mission the
 /// profile has already completed leaves the profile exactly as it found it, and the closing film is
-/// gated on the result (<c>Session/ClosingCinema.cs</c>).</summary>
+/// gated on the result (<c>Session/Campaign/ClosingCinema.cs</c>).</summary>
 public sealed record DebriefReturn(string Profile, int MissionSeq, bool MissionWon) : MenuReturnDestination;
 
 /// <summary>A co-op guest back from its host's mission, onto the host's boards again. It carries
 /// the guest's own attempt for the host's debrief, or null when it flew nothing. A guest
 /// whose link to the host has ended lands on the Connection page instead, which says why.</summary>
-public sealed record CoopGuestReturn(CSVM.Session.MissionAttempt? Attempt) : MenuReturnDestination;
+public sealed record CoopGuestReturn(CSVM.Session.Campaign.MissionAttempt? Attempt) : MenuReturnDestination;
 
 /// <summary>Back into the Multiplayer Lobby a Dogfight was launched from, on its Game Scores page. It
 /// carries the match's final lines, best first, because the session that counted them is freed

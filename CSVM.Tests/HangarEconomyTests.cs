@@ -1,5 +1,5 @@
 using System.Linq;
-using CSVM.Flight;
+using CSVM.Flight.Hangar;
 using Xunit;
 
 namespace CSVM.Tests;

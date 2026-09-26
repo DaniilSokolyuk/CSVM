@@ -269,8 +269,8 @@ it.
 ## What CSVM does today
 
 The placement and the silhouette are implemented, in original graphics mode only
-(`Flight/GroundShadowLaw.cs` for the rule, `Flight/GroundShadowPass.cs` for the drawing and
-`Flight/GroundShadowSilhouette.cs` for the raster; `docs/architecture/Flight.md`). What it takes
+(`Flight/Airframe/GroundShadowLaw.cs` for the rule, `Flight/Airframe/GroundShadowPass.cs` for the drawing and
+`Flight/Airframe/GroundShadowSilhouette.cs` for the raster; `docs/architecture/Flight.md`). What it takes
 from this page and where it departs:
 
 - **Godot shadow mapping cannot be the mechanism.** The original never casts a shadow map; it draws
@@ -284,7 +284,7 @@ from this page and where it departs:
   up to four panes over one world, so the three exemptions (the skew, the growth and the exemption
   from the distance fade) are read per pane: an aeroplane draws the player shape in the pane whose
   pilot is flying it and an ordinary shadow in every other pane. That costs such an aeroplane a
-  second quad, the two kept apart by the per-player visual layers (`UI/SplitScreen.cs`), and it
+  second quad, the two kept apart by the per-player visual layers (`UI/Boards/SplitScreen.cs`), and it
   chooses the silhouette node per pane with them, the `geometry` child for the pane's own pilot and
   the whole model root elsewhere.
 - The silhouette is rasterised per frame from the aircraft's own triangles, off the node this page

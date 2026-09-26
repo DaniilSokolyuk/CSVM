@@ -10,7 +10,7 @@ namespace CSVM.Video;
 /// drift away from the sound however long the file runs.
 /// The two streams carry their own container start times, whose difference is taken here rather
 /// than by the caller. Nothing touches the engine, so the whole sync runs in a plain unit test; the
-/// half that owns the device and the texture is <c>CSVM.UI.CinemaScreen</c>.
+/// half that owns the device and the texture is <c>CSVM.UI.Screens.CinemaScreen</c>.
 /// </summary>
 public sealed class CinemaPlayback
 {

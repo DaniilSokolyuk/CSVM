@@ -1,7 +1,6 @@
 using System.IO;
-using CSVM.Flight;
+using CSVM.Flight.Airframe;
 using CSVM.Mech3;
-using CSVM.Session;
 using Xunit;
 
 namespace CSVM.Tests;

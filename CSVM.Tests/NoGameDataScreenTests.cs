@@ -1,5 +1,5 @@
 using System.IO;
-using CSVM.UI;
+using CSVM.UI.Screens;
 using Xunit;
 
 namespace CSVM.Tests;

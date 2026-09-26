@@ -157,7 +157,7 @@ public static class NetDoorAid
             names.Add(player.Name);
         }
 
-        var match = new CSVM.Flight.VersusMatch(3, killTarget: 0, timeLimit: 300f);
+        var match = new CSVM.Flight.Modes.VersusMatch(3, killTarget: 0, timeLimit: 300f);
         match.RegisterKill(1, 0);
         match.RegisterKill(1, 2);
         match.RegisterKill(0, 1);

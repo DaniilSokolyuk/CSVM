@@ -1,5 +1,5 @@
 using System.Linq;
-using CSVM.Flight;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
 using Xunit;
 

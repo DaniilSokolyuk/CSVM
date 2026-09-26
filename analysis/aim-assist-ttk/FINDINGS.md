@@ -51,7 +51,7 @@ The executable decode in [`docs/org/aim-assist.md`](../../docs/org/aim-assist.md
 | Near-parallel interpolation | Native implementation | Godot lerp/snap stability fallback | Benign engine accommodation |
 | Structure population | Curated mission target structures | `DestructibleRegistry` approximation | Not exact; mainly relevant to ground targets |
 
-Code inspected: [`AimAssist.cs`](../../CSVM/src/Flight/AimAssist.cs), the assisted fire path in [`FlightController.cs`](../../CSVM/src/Flight/FlightController.cs), and the candidate collection in [`Projectile.cs`](../../CSVM/src/Flight/Projectile.cs).
+Code inspected: [`AimAssist.cs`](../../CSVM/src/Flight/Weapons/AimAssist.cs), the assisted fire path in [`FlightController.cs`](../../CSVM/src/Flight/Airframe/FlightController.cs), and the candidate collection in [`Projectile.cs`](../../CSVM/src/Flight/Weapons/Projectile.cs).
 
 ## Gun cadence and theoretical TTK
 
@@ -82,7 +82,7 @@ Aircraft also receive the decoded independent +/-5% per-spawn variation. Actual 
 
 The original roster spawn multiplies enemy armour and health by `0.875`, `1.0`, or `1.25`. In Instant Action, the Novice/Veteran/Ace wave skill is specifically this pool multiplier; it is not the pilot rating.
 
-CSVM exposes and stores `InstantActionWave.EnemySkill`, but the spawn record carries no difficulty or health-scale field. [`InstantActionDirector.cs`](../../CSVM/src/Session/InstantActionDirector.cs) chooses pilot statistics, while [`AiFlightAssembler.cs`](../../CSVM/src/Session/AiFlightAssembler.cs) applies the faithful +/-5% aircraft jitter to the unscaled airframe pools. The selected wave skill therefore does not change enemy durability.
+CSVM exposes and stores `InstantActionWave.EnemySkill`, but the spawn record carries no difficulty or health-scale field. [`InstantActionDirector.cs`](../../CSVM/src/Session/InstantAction/InstantActionDirector.cs) chooses pilot statistics, while [`AiFlightAssembler.cs`](../../CSVM/src/Session/Roster/AiFlightAssembler.cs) applies the faithful +/-5% aircraft jitter to the unscaled airframe pools. The selected wave skill therefore does not change enemy durability.
 
 This explains a longer CSVM kill time when the comparison is against original Novice. Against original Veteran, this omission does not change the base pool; against original Ace, CSVM is easier.
 
@@ -90,7 +90,7 @@ This explains a longer CSVM kill time when the comparison is against original No
 
 The original applies roster slot 7 `init_health` when greater than zero and slot 66 `armor` when greater than or equal to zero, then applies difficulty. The format and executable path are documented in [`docs/formats/ai-rosters.md`](../../docs/formats/ai-rosters.md) and [`docs/org/vehicleDamage.md`](../../docs/org/vehicleDamage.md).
 
-CSVM's [`RosterSpawnPlan`](../../CSVM/src/Session/CampaignRoster.cs) has neither value. `CampaignRosterPlan.Build` does not read them, `SpawnFor` cannot forward them, and the assembler seeds the airframe defaults instead.
+CSVM's [`RosterSpawnPlan`](../../CSVM/src/Session/Campaign/CampaignRoster.cs) has neither value. `CampaignRosterPlan.Build` does not read them, `SpawnFor` cannot forward them, and the assembler seeds the airframe defaults instead.
 
 A census of all 414 extracted roster blocks found, among 251 enabled non-player-team blocks:
 
@@ -110,7 +110,7 @@ Positive roster overrides can have the opposite effect: dropping an authored bos
 
 ## The hit reaction, and why it is not a cause
 
-The most relevant control-flow question was [`AiModeMachine.NotifyDamage`](../../CSVM/src/Flight/AiModeMachine.cs). A full read of the damage path settles it in the original's favour:
+The most relevant control-flow question was [`AiModeMachine.NotifyDamage`](../../CSVM/src/Flight/Ai/AiModeMachine.cs). A full read of the damage path settles it in the original's favour:
 
 - CSVM rolls `steady_hand_chance` after a hit, and so does the original (`FUN_004b1160`, called at `0x004b9f1e`).
 - On failure the original sets the evade flag at `+0xBA` (`0x004b9f65`) **and** calls the maneuver picker `FUN_004201a0` (`0x004b9ff8`), whose last act is `mode = 1`, the maneuver executor (`0x004208f7`). CSVM does the same.
@@ -124,7 +124,7 @@ The absorbed damage amount is logged but does not affect CSVM's roll. A design-l
 
 ## Other unverified or minor divergences
 
-- [`PlaneCollider.cs`](../../CSVM/src/Flight/PlaneCollider.cs) creates aircraft hitboxes from model triangles using several constants explicitly marked `TUNE` (wing band, tail split, minimum thickness, volume split, and part limits). These are the projectile hit volumes. Original geometric hit resolution is still untraced, so hit-rate parity is not established.
+- [`PlaneCollider.cs`](../../CSVM/src/Flight/Airframe/PlaneCollider.cs) creates aircraft hitboxes from model triangles using several constants explicitly marked `TUNE` (wing band, tail split, minimum thickness, volume split, and part limits). These are the projectile hit volumes. Original geometric hit resolution is still untraced, so hit-rate parity is not established.
 - The exact-square-root intercept and Godot interpolation safeguards are CSVM implementation differences, but both improve numerical stability and are very unlikely to increase TTK.
 - CSVM extends assist to multiple local human panes. This is intentional split-screen support and cannot explain weaker guns.
 - Ground/structure candidate population is an approximation. That can change which object wins when several ground targets overlap the cone, but it does not explain a lone aircraft taking more gunfire.

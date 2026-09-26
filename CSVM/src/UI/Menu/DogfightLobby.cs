@@ -192,7 +192,7 @@ public sealed class DogfightLobby
     /// <summary>The Game Scores lines for a match's standings, best first. Each seat is named from
     /// <paramref name="names"/>, the list as it stood at the launch, or by its player tag past it.
     /// </summary>
-    public static DogfightScore[] ScoresOf(IEnumerable<CSVM.Flight.VersusStanding> standings, IReadOnlyList<string> names)
+    public static DogfightScore[] ScoresOf(IEnumerable<CSVM.Flight.Modes.VersusStanding> standings, IReadOnlyList<string> names)
     {
         ArgumentNullException.ThrowIfNull(standings);
         ArgumentNullException.ThrowIfNull(names);

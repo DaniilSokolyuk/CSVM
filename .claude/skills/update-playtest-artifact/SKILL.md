@@ -1,17 +1,19 @@
 ---
 name: update-playtest-artifact
-description: Regenerate and republish the CSVM playtest Artifact (owed captures + actionable flights, with a friend-facing HowTo) from the current playtest.md. Use after playtest.md changes, or when the user asks to refresh/update/regenerate the playtest table or artifact.
+description: Regenerate and republish the CSVM playtest Artifact (owed captures + actionable flights, with a friend-facing HowTo) from the current playtest.md and the open `playtest`/`capture` GitHub issues. Use after playtest.md or the tracker changes, or when the user asks to refresh/update/regenerate the playtest table or artifact.
 ---
 
-Keep the published playtest Artifact in sync with `playtest.md`. The artifact is a static page with
-`CAP_DATA`/`PT_DATA` arrays baked in at publish time — it does not read `playtest.md` live, so it
-goes stale the moment an item is added, closed, or edited. This skill's only job is: reparse,
-reinject, republish **to the same URL**.
+Keep the published playtest Artifact in sync with `playtest.md` and the open `playtest`- and
+`capture`-labelled GitHub issues on `Laeresh/CSVM` (`docs/agents/issue-tracker.md`). The artifact
+is a static page with `CAP_DATA`/`PT_DATA` arrays baked in at publish time — it does not read
+either source live, so it goes stale the moment an item is added, closed, or edited. This skill's
+only job is: reparse, reinject, republish **to the same URL**.
 
-This skill is scoped to regenerating the artifact. It does not edit `playtest.md`, and it does not
-decide which items belong in it — every open `CAP-nn` row and `PT-nn` item in the file goes in, full
-stop. It also does not touch the artifact's preamble/HowTo copy (see step 0) — that is
-friend-facing prose authored once, not derived from `playtest.md`.
+This skill is scoped to regenerating the artifact. It does not edit `playtest.md` or any issue,
+and it does not decide which items belong in it — every open `CAP-nn` row and `PT-nn` item in the
+file, and every open `capture` and `playtest` issue, goes in, full stop. It also does not touch
+the artifact's preamble/HowTo copy (see step 0) — that is friend-facing prose authored once, not
+derived from `playtest.md`.
 
 ## 0. What NOT to regenerate
 
@@ -29,11 +31,22 @@ python .claude/skills/update-playtest-artifact/build.py <scratchpad>/playtest-ta
 ```
 
 It resolves `playtest.md` and `template.html` from its own location, so it works from any working
-directory and from a worktree. It prints the CAP row/theme and PT item/profile counts to stderr, and
-**exits non-zero** if the parsed counts do not match the raw `| \`CAP-` / `- \`PT-` counts in the
-file — so a green run *is* the sanity check. Unparsed item heads, unknown tags and missing bold
-titles are named on stderr. On a failure, fix the parser (or the file) rather than falling back to a
-hand parse.
+directory and from a worktree. It prints the CAP row/theme and PT item/profile counts to stderr,
+with the issue-derived counts beside them, and **exits non-zero** if the parsed counts do not
+match the raw `| \`CAP-` / `- \`PT-` counts in the file or if `gh issue list` fails — so a green
+run *is* the sanity check. Unparsed item heads, unknown tags and missing bold titles are named on
+stderr. On a failure, fix the parser (or the file) rather than falling back to a hand parse. When
+`gh` is unavailable and the user wants the file-only page anyway, `--no-issues` before the output
+path builds from `playtest.md` alone; say in the report that the issues were left out.
+
+**The GitHub issues** land as one more CAP theme and one more profile, both named `GitHub
+issues`, last in their orders. A `capture` issue is a CAP row: id `#N`, capture = the title,
+detail = the body's "what must be in frame" section (else its lead paragraph), unblocks = its
+"Unblocks" section (else the `BL-`/`#N` references in the body). A `playtest` issue is a PT item
+with tag `Issue`: title verbatim, context = the lead paragraph, look-for = the bullets under "What
+to look for", blocks = the "What it blocks" section, and its launch line (the first `RunGame.ps1`
+code span or block) in the notes. The profile's command is the first launch line found, since
+each issue carries its own.
 
 ⚠ `build.py` reads and writes explicit UTF-8 and contains the `·`/`—` separators `playtest.md`
 itself uses. Edit it with Read/Edit/Write, never through a PowerShell `Get-Content`/`Set-Content`
@@ -176,6 +189,7 @@ Read `.claude/skills/update-playtest-artifact/artifact.json` for the stored `url
 
 ## 6. Report
 
-State the CAP row count + theme count, the PT item count + profile count, the artifact URL, and
+State the CAP row count + theme count, the PT item count + profile count, how many of each came
+from GitHub issues, the artifact URL, and
 whether `artifact.json` changed (first-run publish) — if it did, mention it's worth committing so
 the next session/skill run picks up the same URL. Don't commit it yourself unless asked.

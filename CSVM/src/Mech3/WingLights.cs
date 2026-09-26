@@ -8,7 +8,7 @@ namespace CSVM.Mech3;
 /// glow texture, blink colour and period, and point-light range, each constant below names its
 /// own <c>wing_light.json</c> source.
 /// PlaneBuilder hides and re-skins the flares (additive tint, one-sided as authored, no
-/// billboard); <see cref="Flight.WingLightBlinker"/> flashes them and emits a matching
+/// billboard); <c>Flight.Airframe.WingLightBlinker</c> flashes them and emits a matching
 /// OmniLight3D per side.
 /// </summary>
 public static class WingLights

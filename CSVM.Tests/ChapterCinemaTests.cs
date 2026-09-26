@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
-using CSVM.Session;
-using CSVM.UI;
+using CSVM.Session.Campaign;
+using CSVM.UI.Screens;
 using Xunit;
 
 namespace CSVM.Tests;

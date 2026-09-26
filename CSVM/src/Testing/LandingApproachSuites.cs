@@ -3,9 +3,15 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using CSVM.Effects;
-using CSVM.Flight;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Camera;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
-using CSVM.Session;
+using CSVM.Session.Campaign;
+using CSVM.Session.Objectives;
+using CSVM.Session.Roster;
+using CSVM.Session.World;
+using CSVM.Tooling;
 using CSVM.Utils;
 using Godot;
 
@@ -304,6 +310,24 @@ internal static class LandingApproachSuites
     internal static void CampaignCoopApproachRow(TestContext ctx) =>
         DriveMission(ctx, FirstSeq, "test-campaign-coop-approach-row", DriveCoopApproachRow);
 
+    /// <summary>Drives the same auto row with two humans in the same airframe, the guest pressing.
+    /// The docking hook the episode extends is the landing pilot's own. The airframe the fork's
+    /// arms resolve by name follows the episode owner, not the seat staged when the rigs were
+    /// bound.</summary>
+    // The hook extended on the scripted player's aeroplane while the guest docked beside it with
+    // none. Both airframes carry the same node names, and only seat 0's was in the table.
+    [Suite("campaign-coop-hookup-seat",
+        "the first story mission's auto row flown by two humans in the same airframe, the guest "
+        + "pressing: the node table carries the scripted player's airframe until a row is flown, "
+        + "the guest's episode puts the guest's own airframe there in its place so the "
+        + "extend-hook fork's arms cannot resolve the other seat's aeroplane, and the episode "
+        + "ends with the guest's own docking hook extended at the mount offset the fork authors "
+        + "for that airframe while the scripted player's hook is still retracted and their "
+        + "aeroplane unmoved. The fork and the branch that swings the arms each play once rather "
+        + "than once per seat, and every callback the landing raises is raised a single time")]
+    internal static void CampaignCoopHookupSeat(TestContext ctx) =>
+        DriveMission(ctx, FirstSeq, "test-campaign-coop-hookup-seat", DriveCoopHookupSeat);
+
     /// <summary>Drives the hookup on three airframes and reads what it did to each: the flown
     /// aircraft's own subtree is in the runtime's node table, so the definition's per-airframe
     /// branches are decidable, and the episode ends with that airframe's docking hook extended, its
@@ -518,6 +542,209 @@ internal static class LandingApproachSuites
 
         WithCoopTrigger(ctx, world, director, armed, (trigger, cutscene, humans, graph) =>
             RunCoopAutoLand(ctx, world, graph, script, trigger, cutscene, humans, auto, report));
+    }
+
+    private static void DriveCoopHookupSeat(TestContext ctx, TestWorld world, CampaignDirector director,
+        ObjectiveScript script, string missionZrdr, StringBuilder report)
+    {
+        string chapterZrdr = SessionPaths.ChapterZrdr(ctx.DataRoot, world.Chapter);
+        var armed = LandingApproaches.Resolve(
+            chapterZrdr, world.Gamez, name => world.Runtime.Handles(name));
+        if (AutoFor(armed) is not { } auto)
+        {
+            ctx.Check(false, $"the chapter's landings.zrd carries an auto row to fly");
+            return;
+        }
+
+        var stage = world.Session.Aircraft;
+        report.AppendLine($"aircraft stage: {(stage != null ? $"base {stage.PointerBase}" : "none")}");
+        ctx.Check(stage != null,
+            $"the mission stages the aircraft archive, which is the frame the hookup poses in");
+        if (stage == null)
+        {
+            return;
+        }
+
+        WithCoopTrigger(ctx, world, director, armed, (trigger, cutscene, humans, graph) =>
+            RunCoopHookupSeat(ctx, world, graph, script, trigger, cutscene, humans, auto, report),
+            aircraft: stage);
+    }
+
+    // Two humans in the same airframe, so which aeroplane the fork's arm resolves is the whole
+    // question. Both carry the same `player_<airframe>` node name, and the table holds one of them.
+    private static void RunCoopHookupSeat(
+        TestContext ctx, TestWorld world, ObjectiveGraph graph, ObjectiveScript script,
+        LandingApproachRuntime trigger, CutsceneController cutscene, IReadOnlyList<PlayerRig> humans,
+        LandingApproach auto, StringBuilder report)
+    {
+        if (MountBranch(world, PlaneNode) is not { } branch)
+        {
+            ctx.Check(false, $"'{ExtendHookAnim}' authors a branch for '{PlaneNode}'");
+            return;
+        }
+
+        if (humans[0].Controller?.PlaneModel is not { } scripted
+            || humans[1].Controller?.PlaneModel is not { } landing)
+        {
+            ctx.Check(false, $"both seats built a '{PlaneNode}' model to tell apart");
+            return;
+        }
+
+        string hookAnim = branch.HookAnim ?? "";
+        var scriptedHook = hookAnim.Length > 0 ? NamedIn(world, hookAnim, scripted) : null;
+        var landingHook = hookAnim.Length > 0 ? NamedIn(world, hookAnim, landing) : null;
+        var scriptedAt = scripted.Position;
+        report.AppendLine($"mount offset {branch.Offset}, hook '{hookAnim}', " +
+            $"P1 group {(scriptedHook != null ? "built" : "absent")}, " +
+            $"P2 group {(landingHook != null ? "built" : "absent")}, P1 airframe at {scriptedAt}");
+        ctx.Check(scriptedHook != null && landingHook != null,
+            $"both seats carry their own '{hookAnim}' hook group, so either could be the one that swings");
+
+        for (float t = 0f; t < IntroSettleS; t += StepDt)
+        {
+            world.Runtime.Advance(StepDt);
+            cutscene.Tick();
+        }
+
+        ArmRow(ctx, world, graph, script, auto, report);
+        var frame = world.Runtime.FindNodes(auto.Node)[0].GlobalTransform;
+        var inside = frame * Lerp(auto, AxisFraction);
+        var aim = frame * auto.Apex;
+        var away = inside + (Vector3.Up * CoopAwayM);
+        Park(ctx, humans[0], away, away + Vector3.Forward);
+        Park(ctx, humans[1], inside, aim);
+
+        // The staging a mission that has flown no row leaves is the scripted player's. That is the
+        // aeroplane every intro poses, and the one a single-seat session never leaves.
+        report.AppendLine($"before the press, '{PlaneNode}' resolves to " +
+            $"{Resolved(world, PlaneNode, scripted, landing)}");
+        ctx.Check(Reaches(world, PlaneNode, scripted),
+            $"the node table carries the scripted player's airframe before any row is flown");
+
+        var plays = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        void Count(AnimDefinition def, Node3D? anchor)
+        {
+            if (def.AnimName is { Length: > 0 } name)
+            {
+                plays[name] = plays.TryGetValue(name, out int n) ? n + 1 : 1;
+            }
+        }
+
+        // The codes the episode raises, read in front of the host. A landing's own callbacks belong
+        // to the one landing, and a second seat in the world must not double any of them.
+        var codes = new List<int>();
+        var host = world.Runtime.CallbackHost;
+        world.Runtime.CallbackHost = (code, anim, root) =>
+        {
+            codes.Add(code);
+            return cutscene.Host(code, anim, root);
+        };
+        world.Runtime.OnInstanceStarted += Count;
+        var started = new List<string>();
+        try
+        {
+            humans[1].Controller!.AutoLand = true;
+            for (int i = 0; i < RestartFrames && !cutscene.Playing; i++)
+            {
+                Step(world, trigger, cutscene, graph, 1);
+            }
+
+            report.AppendLine($"guest pressed: started='{trigger.LastStarted ?? "(none)"}' by " +
+                $"P{(trigger.LastStartedBy ?? -1) + 1}, episode owner=" +
+                $"P{(cutscene.EpisodeOwner?.Index ?? -1) + 1}");
+            ctx.Check(cutscene.Playing, $"the guest's press starts '{auto.Anim}' under the host");
+            ctx.Check(ReferenceEquals(cutscene.EpisodeOwner, humans[1]),
+                $"and the episode belongs to the guest who flew it");
+
+            // The claim the whole leg rests on, read while the episode is live. The arms resolve
+            // the airframe by name, and that one name has to reach the landing pilot's aeroplane.
+            report.AppendLine($"with the episode live, '{PlaneNode}' resolves to " +
+                $"{Resolved(world, PlaneNode, scripted, landing)}");
+            ctx.Check(Reaches(world, PlaneNode, landing),
+                $"the episode puts the landing pilot's own airframe in the node table, which is what the fork's arms read");
+            ctx.Check(!Reaches(world, PlaneNode, scripted),
+                $"…and takes the other seat's out of it, so no arm of the fork can resolve the aeroplane that is not landing");
+
+            for (float t = 0f; t < PlayBudgetS && cutscene.Playing; t += StepDt)
+            {
+                Step(world, trigger, cutscene, graph, 1);
+            }
+
+            foreach (string name in plays.Keys)
+            {
+                started.Add(name);
+            }
+
+            report.AppendLine($"episode over: playing={cutscene.Playing}, " +
+                $"{plays.Count} definition(s) started");
+            ctx.Check(!cutscene.Playing, $"and the episode completes within budget");
+            report.AppendLine($"after the episode: P2 mount {landing.Position} hook " +
+                $"visible={landingHook?.Visible}; P1 mount {scripted.Position} hook " +
+                $"visible={scriptedHook?.Visible}");
+            ctx.Check(landingHook is { Visible: true },
+                $"the hookup extends the landing pilot's own docking hook");
+            ctx.Check(Near(landing.Position, branch.Offset),
+                $"and hangs their airframe at the offset '{ExtendHookAnim}' authors for it, {branch.Offset}");
+            ctx.Check(scriptedHook is not { Visible: true },
+                $"while the other seat's hook is still retracted, which is the defect this covers");
+            ctx.Check(Near(scripted.Position, scriptedAt),
+                $"and their aeroplane is where it was, never hung on the trapeze in the landing pilot's place");
+            report.AppendLine($"hook legs: '{ExtendHookAnim}' x{Played(plays, ExtendHookAnim)}, " +
+                $"'{hookAnim}' x{Played(plays, hookAnim)}; codes [{string.Join(", ", codes)}]");
+            ctx.Same(1, Played(plays, ExtendHookAnim),
+                $"'{ExtendHookAnim}' plays once for the one landing, not once per seat");
+            ctx.Same(1, Played(plays, hookAnim),
+                $"…and '{hookAnim}', the branch whose motions swing the arms, a single time");
+            // The row ends the mission rather than handing flight back, so its last code is the
+            // completion one. Every code it raises is raised once, because a landing's callbacks
+            // belong to the landing and a second seat is not a second landing.
+            var doubled = codes.FindAll(c => codes.FindAll(x => x == c).Count > 1);
+            ctx.Same(1, codes.FindAll(c => c == CompleteCode).Count,
+                $"and the landing's own completion callback fires once");
+            ctx.Same(0, doubled.Count,
+                $"…with no callback of this landing raised twice ({string.Join(", ", doubled)})");
+        }
+        finally
+        {
+            world.Runtime.CallbackHost = host;
+            world.Runtime.OnInstanceStarted -= Count;
+            // ⚠ Both rigs are freed when this leg returns, and a motion still running on either
+            // one's nodes would tick into a disposed object.
+            foreach (string anim in started)
+            {
+                world.Runtime.Stop(anim);
+            }
+        }
+    }
+
+    private static int Played(IReadOnlyDictionary<string, int> plays, string anim) =>
+        plays.TryGetValue(anim, out int n) ? n : 0;
+
+    // Does the runtime's node table reach this model under that name? The fork's arms ask exactly
+    // this, so the reading is the resolver's own answer rather than the model's parentage.
+    private static bool Reaches(TestWorld world, string nodeName, Node3D model)
+    {
+        foreach (var found in world.Runtime.FindNodes(nodeName))
+        {
+            if (ReferenceEquals(found, model))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string Resolved(TestWorld world, string nodeName, Node3D scripted, Node3D landing)
+    {
+        var who = new List<string>();
+        foreach (var found in world.Runtime.FindNodes(nodeName))
+        {
+            who.Add(ReferenceEquals(found, scripted) ? "P1"
+                : ReferenceEquals(found, landing) ? "P2" : "another node");
+        }
+
+        return who.Count > 0 ? string.Join(", ", who) : "nothing";
     }
 
     // Two humans over one auto row: the prompt is drawn in the pane of whoever is inside the sphere,
@@ -1969,11 +2196,13 @@ internal static class LandingApproachSuites
         TestWorld world,
         CampaignDirector director,
         IReadOnlyList<LandingApproach> armed,
-        Action<LandingApproachRuntime, CutsceneController, IReadOnlyList<PlayerRig>, ObjectiveGraph> body)
+        Action<LandingApproachRuntime, CutsceneController, IReadOnlyList<PlayerRig>, ObjectiveGraph> body,
+        string planeNode = PlaneNode,
+        AircraftStage? aircraft = null)
     {
         var cutscene = new CutsceneController();
         ctx.Host.AddChild(cutscene);
-        cutscene.BindWorld(world.Runtime, null);
+        cutscene.BindWorld(world.Runtime, aircraft);
         cutscene.HostDefinitions(ClosureOf(world, armed));
         world.Runtime.CallbackHost = cutscene.Host;
         var trigger = new LandingApproachRuntime();
@@ -1988,7 +2217,7 @@ internal static class LandingApproachSuites
             var rigs = new List<PlayerRig>();
             for (int i = 0; i < CoopHumans; i++)
             {
-                var craft = BuildRig(ctx, world, pool);
+                var craft = BuildRig(ctx, world, pool, planeNode);
                 craft.Name = $"CoopApproachPlayer{i + 1}";
                 craft.PlayerIndex = FlightRoster.ShooterIdBase - CoopHumans + i;
                 built.Add(craft);

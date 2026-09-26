@@ -2,8 +2,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using CSVM.Mech3;
-using CSVM.UI;
+using CSVM.UI.Boards;
 using CSVM.UI.Menu;
+using CSVM.UI.Screens;
 
 namespace CSVM.Testing;
 
@@ -55,7 +56,7 @@ internal static class LoadSheetSuites
 
         // The screen hangs the seated profile's own picture, so every sheet below is composed over
         // one that chose a picture rather than over the name a fresh profile is seeded with.
-        string memento = Session.CampaignMementos.BitmapFor(SeatedProfile(ctx));
+        string memento = Session.Campaign.CampaignMementos.BitmapFor(SeatedProfile(ctx));
         var report = new StringBuilder();
         var sheets = new List<(CampaignMission Mission, LoadSheet Sheet)>();
         foreach (var mission in missions)
@@ -290,9 +291,9 @@ internal static class LoadSheetSuites
         TestContext ctx, List<(CampaignMission Mission, LoadSheet Sheet)> sheets, string memento,
         StringBuilder report)
     {
-        string seeded = Session.CampaignMementos.BitmapFor(null);
+        string seeded = Session.Campaign.CampaignMementos.BitmapFor(null);
         ctx.Check(
-            memento == Session.CampaignMementos.Bitmap(ChosenMemento) && memento != seeded,
+            memento == Session.Campaign.CampaignMementos.Bitmap(ChosenMemento) && memento != seeded,
             $"the seated profile hangs {memento} where a session with no profile hangs {seeded}");
         if (sheets.Count == 0)
         {
@@ -317,11 +318,11 @@ internal static class LoadSheetSuites
     // A profile that has chosen a picture, written and read back through a store of its own under
     // the scratch root: the file round trip the launcher's own read makes, over nobody's real
     // profile.
-    private static Session.CampaignProfileDef SeatedProfile(TestContext ctx)
+    private static Session.Campaign.CampaignProfileDef SeatedProfile(TestContext ctx)
     {
-        var store = new Session.CampaignProfileStore(
+        var store = new Session.Campaign.CampaignProfileStore(
             Path.Combine(ctx.ScratchDir, "load-sheet-memento"));
-        var def = Session.CampaignProfileDef.NewProfile("Load Sheet");
+        var def = Session.Campaign.CampaignProfileDef.NewProfile("Load Sheet");
         def.Memento = ChosenMemento;
         store.Save(def);
         return store.Load(def.Name) ?? def;

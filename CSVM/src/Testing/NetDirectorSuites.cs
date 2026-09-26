@@ -5,6 +5,9 @@ using System.Text;
 using CSVM.Mech3;
 using CSVM.Net;
 using CSVM.Session;
+using CSVM.Session.Campaign;
+using CSVM.Session.Objectives;
+using CSVM.Session.World;
 using Godot;
 
 namespace CSVM.Testing;

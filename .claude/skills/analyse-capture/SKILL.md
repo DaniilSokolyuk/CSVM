@@ -1,13 +1,17 @@
 ---
 name: analyse-capture
-description: Analyse an owed capture (CAP-nn) — find its videos and screenshots, watch them, and answer the backlog items it was filmed to unblock. Use when the user names a CAP-NN, hands over new footage of the original game, or asks what a capture shows.
+description: Analyse an owed capture (CAP-nn, or a `capture` GitHub issue) — find its videos and screenshots, watch them, and answer the backlog items it was filmed to unblock. Use when the user names a CAP-NN or a capture issue, hands over new footage of the original game, or asks what a capture shows.
 ---
 
-Turn one `CAP-nn` recording of **the original game** into evidence a `backlog.md` item can close on.
+Turn one recording of **the original game** into evidence a backlog item can close on. The
+capture is a `CAP-nn` row in `playtest.md`, or a `capture`-labelled GitHub issue on
+`Laeresh/CSVM` (`docs/agents/issue-tracker.md`); the items it unblocks are `backlog.md` entries or
+`backlog` issues.
 
 The capture exists because a question could not be answered from extracted data or from our own
 build — so the whole value is in reading the footage honestly. This skill is **watch-and-describe**;
-it edits `backlog.md`/`playtest.md` only at the end, and never commits unless asked.
+it edits `backlog.md`/`playtest.md` or comments on the issues only at the end, and never commits
+unless asked.
 
 ⚠ **Never answer from the filename or from the backlog's expectation of what the clip shows.**
 Every claim must cite a timestamp or a frame number you actually produced. If the footage does not
@@ -33,21 +37,26 @@ can review and merge the branch themselves — never merge or push it yourself.
 
 ## 1. Resolve the capture
 
-Argument may be `CAP-16`, a bare `16`, or a phrase like "the crash one".
+Argument may be `CAP-16`, `#14`, "issue 14", a bare `16`, or a phrase like "the crash one".
 
-Read the `CAP-nn` row in [`playtest.md`](playtest.md) §0 — it gives the capture's **purpose**, what
-must be in frame, and the `BL-NNN`s it unblocks. Then read each of those backlog entries in full,
-including the enclosing section heading. They carry the traps, the competing hypotheses, and the
-specific thing to look for; going to the footage without them produces a description instead of an
-answer.
+Read the `CAP-nn` row in [`playtest.md`](playtest.md) §0, or the issue's thread with
+`gh issue view N --comments` — it gives the capture's **purpose**, what must be in frame, and the
+`BL-NNN`s or `#N`s it unblocks. Then read each of those backlog entries in full (an entry with its
+enclosing section heading, an issue with its comments). They carry the traps, the competing
+hypotheses, and the specific thing to look for; going to the footage without them produces a
+description instead of an answer.
 
-A missing `CAP-nn` means the item closed and its ID retired (IDs are never reused) — say so rather
-than guessing at a neighbour. A phrase means **ask which**, never guess.
+A missing `CAP-nn` means the item closed and its ID retired (IDs are never reused), and a closed
+issue is closed — say so rather than guessing at a neighbour. A bare number tries `playtest.md`
+first and the tracker second; a phrase means **ask which**, never guess. Search the tracker with
+`gh issue list --state open --label capture --search "<phrase>" --json number,title`.
 
 ## 2. Find the media — the naming is not regular
 
 Search `OriginalScreenshots/` and `OriginalScreenshots/Videos/`, plus `playtest/<ID>/` for anything
-already staged. Four traps, all of them live in the current file set:
+already staged (an issue's folder is `playtest/issue-N/`, since `#` is not a path character; a
+capture filed as an issue may also carry its media as attachments in the thread, which
+`gh issue view N --comments` prints as URLs). Four traps, all of them live in the current file set:
 
 - **The separator varies.** `CAP-14 Graze and CAP 15 wing to red.mp4` writes one ID hyphenated and
   the other spaced. Match `CAP[-_ ]?0*<n>` case-insensitively, not `CAP-<n>`.
@@ -124,18 +133,22 @@ haven't a preference. Do not stack up questions you could answer by looking hard
 
 ## 5. Record the finding
 
-Write to the entry that owns the question, in its own voice:
+Write to the entry that owns the question, in its own voice. For a `backlog.md` entry that is an
+edit to its text; for an issue it is a comment (`gh issue comment N --body-file <file>`), never a
+silent body edit, since the thread is the record:
 
-- **Answers a `BL-NNN`** → update the entry with what the footage shows and where, then
+- **Answers a `BL-NNN` or `#N`** → update the entry with what the footage shows and where, then
   offer `/close-backlog-item` rather than closing it here.
-- **Refines it** → edit the entry so the next reader gets the sharper question, and note which
+- **Refines it** → edit or comment so the next reader gets the sharper question, and note which
   hypothesis the footage rules out.
-- **Settles nothing** → say so on the entry and in `playtest.md`'s row, with what a usable re-record
-  needs. Do not silently leave the row looking discharged.
-- **Discharges the capture** → the `CAP-nn` row goes only when every `BL-NNN` in its Unblocks column
-  is served. If it still owes another item, leave the row and note what's done. When an ID does
-  retire, it is never reused — take new IDs from `New-ItemId.ps1 -Kind CAP`, never by scanning
-  `playtest.md` for a free one.
+- **Settles nothing** → say so on the entry and on the capture (`playtest.md`'s row, or a comment
+  on the capture issue), with what a usable re-record needs. Do not silently leave the capture
+  looking discharged.
+- **Discharges the capture** → a `CAP-nn` row goes, or a `capture` issue is closed
+  (`gh issue close N --comment "..."` naming what it settled), only when every item in its
+  Unblocks column is served. If it still owes another item, leave it and note what's done. A new
+  capture is filed as a `capture` issue (`gh issue create --label capture --body-file <file>`),
+  never as a new `CAP-nn`; `New-ItemId.ps1` only guards the ids that predate the tracker.
 - Findings that change what we believe about the original are recorded in the closing commit's
   message, per `/close-backlog-item` §4.
 
@@ -146,15 +159,17 @@ confirm it — re-read `docs/verification.md`'s METHOD section before declaring 
 
 ## 6. Report
 
-Before reporting, re-read the capture's `CAP-nn` row in `playtest.md` §0 and check it against what
-you actually found. If the row still carries prose describing the shot as owed, unanalysed, or
-open — and Section 5 discharged it or moved every open question onto the `BL-NNN` entries — that
-prose is stale and must be updated or removed so the row doesn't contradict the backlog it points
-to. Do not silently leave a discharged row reading as if the capture is still needed.
+Before reporting, re-read the capture's `CAP-nn` row in `playtest.md` §0, or the capture issue's
+thread, and check it against what you actually found. If it still carries prose describing the
+shot as owed, unanalysed, or open — and Section 5 discharged it or moved every open question onto
+the backlog items — that prose is stale and must be updated (a row edit, or a comment on the
+issue) so the capture doesn't contradict the backlog it points to. Do not silently leave a
+discharged capture reading as if it is still needed.
 
-Give the user: which files were analysed, the finding per `BL-NNN` in plain prose with its evidence
-cited by timestamp or frame, what remains open, and the files touched. Quote real observations and
-real command output — never a summary of what a run "should" produce.
+Give the user: which files were analysed, the finding per `BL-NNN` or `#N` in plain prose with
+its evidence cited by timestamp or frame, what remains open, and the files touched or comments
+posted. Quote real observations and real command output — never a summary of what a run "should"
+produce.
 
 Then stop. **Do not commit** unless asked; offer it in one line. If you entered a worktree, leave it
 in place (`keep`) — mention its path and branch so the user can review and merge it.

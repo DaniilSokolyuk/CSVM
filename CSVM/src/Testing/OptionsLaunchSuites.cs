@@ -1,6 +1,7 @@
 using System.IO;
-using CSVM.Flight;
-using CSVM.Session;
+using CSVM.Flight.Camera;
+using CSVM.Flight.Hangar;
+using CSVM.Session.Roster;
 using CSVM.Utils;
 
 namespace CSVM.Testing;

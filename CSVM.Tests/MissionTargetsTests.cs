@@ -1,5 +1,5 @@
 using System.IO;
-using CSVM.Flight;
+using CSVM.Flight.Weapons;
 using Xunit;
 
 namespace CSVM.Tests;

@@ -3,9 +3,16 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using CSVM.Flight;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Camera;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
 using CSVM.Net;
 using CSVM.Session;
+using CSVM.Session.Campaign;
+using CSVM.Session.Launch;
+using CSVM.Session.Roster;
+using CSVM.Session.World;
 using CSVM.Utils;
 using Godot;
 

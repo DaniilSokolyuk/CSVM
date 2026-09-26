@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 using CSVM.Mech3;
-using CSVM.Session;
+using CSVM.Session.World;
 using Xunit;
 
 namespace CSVM.Tests;

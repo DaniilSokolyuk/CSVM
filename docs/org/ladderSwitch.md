@@ -3,8 +3,8 @@
 Read out of the retail executable with Ghidra (static analysis of the shipped x86 build,
 `crimson.exe`, `language x86:LE:32:default`), settling `BL-526`, the CM07 rope ladder that never
 deployed. Every claim names the function or address it came from; no decompiler output is
-reproduced. The port is `src/Session/LadderSwitch.cs` (the rule and the state machine) and
-`src/Session/LadderSwitchRuntime.cs` (the world binding).
+reproduced. The port is `src/Session/Campaign/LadderSwitch.cs` (the rule and the state machine) and
+`src/Session/Campaign/LadderSwitchRuntime.cs` (the world binding).
 
 **Where the neighbours live.** The two authored definitions the switch starts, `drop_ladder` and
 `retract_ladder` in `C1/M02/zrdr/ladder.zrd`, and the pickup sensor table `pickups.zrd` are

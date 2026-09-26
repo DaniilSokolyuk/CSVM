@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using CSVM.Flight;
+using CSVM.Flight.Airframe;
 using Godot;
 using Xunit;
 
@@ -110,7 +110,7 @@ public class AircraftContactResolverTests
 
     /// <summary>A plane grinding along the ground cannot collect endless free contacts: the decoded
     /// pair costs at least the authored floor on EVERY contact the sweep resolves (the cadence is
-    /// the sweep's, <see cref="SweepCadence"/>, never a gate on the spend), so a bounded ledger runs
+    /// the sweep's, <see cref="Flight.Weapons.SweepCadence"/>, never a gate on the spend), so a bounded ledger runs
     /// out and the decoded health rule ends the slide. This is what the removed stop-speed rule
     /// guarded, proven on the decoded response instead.</summary>
     [Fact]

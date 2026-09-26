@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
-using CSVM.Flight;
+using CSVM.Flight.Modes;
+using CSVM.UI.Boards;
+using CSVM.UI.Campaign;
+using CSVM.UI.Screens;
 
 namespace CSVM.UI.Menu.Original;
 

@@ -1,7 +1,8 @@
 using System.Collections.Generic;
 using System.IO;
 using CSVM;
-using CSVM.Flight;
+using CSVM.Flight.Ai;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
 using Godot;
 using Xunit;

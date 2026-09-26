@@ -316,6 +316,10 @@ public sealed class AircraftStage
     /// bit and then poses that airframe's own hook, wing fold and mount offset. Idempotent per
     /// model; the rows naming a freed airframe go when the next stage retires them, never on their
     /// own. Decode: docs/formats/anim-definitions/cutscenes.md.</summary>
+    // ⚠ Exactly ONE airframe is the flown one, so the airframe this replaces comes out of the
+    // table before the new one goes in. A swap frees the outgoing aeroplane, which the retirement
+    // sweep covers; a co-op episode changing hands replaces a LIVE one. Two aeroplanes under one
+    // airframe name leave the symbol table's claim on the seat that is not flying the episode.
     public void StageFlown(AnimRuntime runtime, Node3D? planeModel)
     {
         ArgumentNullException.ThrowIfNull(runtime);
@@ -324,12 +328,15 @@ public sealed class AircraftStage
             return;
         }
 
+        int retired = Flown is { } previous && GodotObject.IsInstanceValid(previous)
+            ? runtime.UnstageRebased(previous)
+            : 0;
         Flown = planeModel;
         runtime.IndexRebasedStage(planeModel, PointerBase);
         // The archive parks the hook GROUP off, not its arms; what parks those is the airframe's
         // own retract RESET_STATE, which the rebased index deliberately does not run.
         int parked = runtime.ParkDockingHook(planeModel);
-        Log.Info("world", $"aircraft stage: flown '{AnimRuntime.NameOf(planeModel)}' indexed at base {PointerBase}, hook parked by {parked} definition(s)");
+        Log.Info("world", $"aircraft stage: flown '{AnimRuntime.NameOf(planeModel)}' indexed at base {PointerBase}, {retired} row(s) of the airframe it replaces retired, hook parked by {parked} definition(s)");
     }
 
     // Every built node's stamped archive index shifted into the chapter's cross-archive block. The

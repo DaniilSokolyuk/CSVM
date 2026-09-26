@@ -6,7 +6,7 @@ the original authored, over that screen's own painted background, with the origi
 plaques. This page holds the one decision every one of them inherits, which library each coordinate
 came from, and what is deliberately not reproduced yet.
 
-The code is `CSVM/src/UI/BoardFit.cs` (the mapping), `ComposedBoard.cs` (what a board is made of),
+The code is `CSVM/src/UI/Boards/BoardFit.cs` (the mapping), `ComposedBoard.cs` (what a board is made of),
 `CampaignBoards.cs` (the fixed chrome and the composer), `CampaignLayout.cs` (the boards' read of
 the decoded layout) and `ComposedBoardView.cs` (the renderer). The decodes the coordinates come
 from are [`formats/menu-layout.md`](../formats/menu-layout.md),

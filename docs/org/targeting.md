@@ -255,8 +255,8 @@ field ON the entity, so an aeroplane whose `aiv` block authors slot 37 is offere
 aeroplane, with the flag set: the block's slot-20 name on line 2, its slots 38 and 39 as the two
 halves of line 1, Objective sorting it ahead of every Enemy Target, and the aeroplane's own presence
 deciding whether it is selectable at all, so it appears at its wake and leaves at its death. CSVM
-stamps the three slots onto the spawned `FlightController` (`Session/AiFlightAssembler.cs`), which is
-also what carries a marker to a block a bay launches; `Session/ObjectiveSites.cs` collects world
+stamps the three slots onto the spawned `FlightController` (`Session/Roster/AiFlightAssembler.cs`), which is
+also what carries a marker to a block a bay launches; `Session/Objectives/ObjectiveSites.cs` collects world
 sites only, and `CampaignDirector` owns the label from there on, so a completing objective's
 `REMOVE_OBJECTIVE_TARGET` clears the stamp and its `SET_HELP_LABEL` rewrites the category over the
 block's slot 39, resolved once at the write. That relabel is not decoration: CM02's three Balmorals

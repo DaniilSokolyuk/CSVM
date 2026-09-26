@@ -330,7 +330,7 @@ is left is an `ftol` of `INT_MIN`, which the CRT's `ftol` returns for an indefin
 stack makes the case's `FILD` at `0x0040fb27` produce one, and `INT_MIN / 0x55` is -25264513, whose
 id is -25264012. The capture's other three words are the Blue Streak template's own fields, and that
 template's engine is 4 (`0x0061ab80`), so the record is the template and the blank line is the FPU
-state the menu inherited, not a field. `CSVM/src/UI/PlaneRatings.cs` clamps at both ends and cannot
+state the menu inherited, not a field. `CSVM/src/UI/Hangar/PlaneRatings.cs` clamps at both ends and cannot
 reproduce it.
 
 ## Into the mission: what the build changes on the spawned vehicle
@@ -688,7 +688,7 @@ row.
 
 The four zones sum to the airframe's own armour rating base in ten of the eleven rows, the Kestrel
 (100 against a base of 110) the only one parting from it, so a stock aircraft's ARMOR word comes
-out of very nearly twice its base. `CSVM/src/Flight/HangarEconomy.cs` carries those sums as
+out of very nearly twice its base. `CSVM/src/Flight/Hangar/HangarEconomy.cs` carries those sums as
 `StockArmourUnits`, which is all the rating needs; the guns and hardpoints of the same builds are
 in `CSVM/data/stock_loadouts.json`, where they agree with these rows slot for slot.
 

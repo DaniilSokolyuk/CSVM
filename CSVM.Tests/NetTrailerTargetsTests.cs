@@ -1,6 +1,6 @@
 using System;
 using CSVM.Mech3;
-using CSVM.Session;
+using CSVM.Session.Objectives;
 using Godot;
 using Xunit;
 

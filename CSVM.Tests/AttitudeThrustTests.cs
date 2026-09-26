@@ -1,6 +1,6 @@
 using System.IO;
-using CSVM.Flight;
-using CSVM.Testing;
+using CSVM.Flight.Airframe;
+using CSVM.Tooling;
 using Godot;
 using Xunit;
 

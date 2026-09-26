@@ -302,7 +302,7 @@ in dial-local coordinates (x right, y up, **bezel radius = 1**, z ≈ 0); the in
 
 Read from the planes.zbd `gungauge` / `missilegauge` subtrees +
 `support\cockpit.gw` (the interp boot script that wires their texture cycles);
-remake implementation extends `src/Flight/GaugeCluster.cs`. Screen placement is
+remake implementation extends `src/Flight/Hud/GaugeCluster.cs`. Screen placement is
 ours (measured off `OriginalScreenshots/HUD.png`, the Warhawk): the **ROCKETS**
 dial sits one dial-pitch (190.5 px, the alt→damage spacing) above the altimeter,
 the **GUNS** dial the same above the speedometer; both share the other dials'
@@ -408,7 +408,7 @@ placeholder grammar (`%N`, a trailing `!spec!` consumed, `%%` → literal `%`) i
 
 ## Bitmap font
 
-Decoded by pixel-probing the atlas; remake reader `src/Flight/HudFont.cs`.
+Decoded by pixel-probing the atlas; remake reader `src/Flight/Hud/HudFont.cs`.
 
 Two textures in **`extracted/rimage/`** (the menu/UI image set, *not* the chapter texture
 archives that carry the compass/gauge art):
@@ -446,7 +446,7 @@ sprite. It is a filled warm-white disc, core `(255,247,222)`, ring `(247,227,181
 open centre"). The alpha channel is authored (transparent background, anti-aliased edges), so it
 draws directly with no colour-keying, unlike the black-backed font atlas.
 
-**Behaviour (remake E37, `src/Flight/ImpactReticle.cs`).** The reticle is **not pinned to screen
+**Behaviour (remake E37, `src/Flight/Hud/ImpactReticle.cs`).** The reticle is **not pinned to screen
 centre.** It marks the **projected ballistic impact point of the selected gun group's rounds at a
 fixed convergence distance**, computed with the *same* `VELOCITY`/`ACCELERATION`/`GRAVITY`
 integration `ProjectilePool` fires each round with, the pipper and the rounds agree exactly, since

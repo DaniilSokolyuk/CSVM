@@ -304,9 +304,9 @@ different speakers on the same frame, the pursuer and one of the player's wingme
 
 ## The remake's dispatch sites
 
-The rules above are represented in `CSVM/src/Flight/AiVoiceDispatcher.cs` (the gate, cooldowns,
+The rules above are represented in `CSVM/src/Flight/Ai/AiVoiceDispatcher.cs` (the gate, cooldowns,
 halving, election, DI tiers, bearing index, engine-free, seeded) and wired by
-`CSVM/src/Session/AiVoiceRuntime.cs`. Where the original's dispatch site is
+`CSVM/src/Session/Roster/AiVoiceRuntime.cs`. Where the original's dispatch site is
 decoded, the remake uses it; where only the trigger's meaning is decoded, the chosen stand-in
 site is recorded here. The runtime watches the mode machine of every AI the session hands it,
 whether or not that aircraft resolved a voice of its own: rows 1-12 below are broadcast, so they
@@ -318,7 +318,7 @@ are spoken by the killer, not by the aircraft that died.
 
 | ids | status | site / reason |
 |---|---|---|
-| 0 | wired | the gunner's own acquisition (`Flight/TurretController.cs`), carried mount and world emplacement alike: the first tick it holds a human player as its acquired target, by the entry's own `DETECTION_RANGE` and the shared target picker, with a clear sight line by its own rule. The report leaves through `ProjectilePool.TurretAcquiredPlayer`, the seam both turret families are built against, and `AiVoiceRuntime.WatchTurrets` broadcasts on the warned player's team |
+| 0 | wired | the gunner's own acquisition (`Flight/Weapons/TurretController.cs`), carried mount and world emplacement alike: the first tick it holds a human player as its acquired target, by the entry's own `DETECTION_RANGE` and the shared target picker, with a clear sight line by its own rule. The report leaves through `ProjectilePool.TurretAcquiredPlayer`, the seam both turret families are built against, and `AiVoiceRuntime.WatchTurrets` broadcasts on the warned player's team |
 | 1–12, 14 | wired | the decoded sites above: the pursuer speaks `WA-Attack` and the flight broadcasts the bearing call-out computed in the warned player's frame, raised together while the pursuer's gunner holds a human quarry (`AiVoiceRuntime.RaiseAttackCallOuts`, off the sim clock, not off a mode edge). The original raises them every frame from the weapon pass and the combat driver; the remake raises at the 15 s slot-cooldown interval, since no slot can speak twice inside it. Losing the human re-arms the raise, so a fresh engagement speaks at once, and the mode machine's patrol→pursue commit raises the pair as well when it falls after the mute window. Rows 25 and 26 ride the same raise, ahead of `WA-Attack`, as they do in the original's own block |
 | 13 | wired | a human rig's summary health crossing 30 % on the projectile hit path (decoded threshold), broadcast |
 | 17–19 | wired | the speaker's own summary health on the projectile hit path, 70/50/30 % most-severe-first (decoded) |
@@ -328,7 +328,7 @@ are spoken by the killer, not by the aircraft that died.
 | 25–26 | wired | the decoded site above, on the same raise as rows 1–12 and 14 and addressed to the pursuer (`AiVoiceRuntime.RaiseAttackCallOut` through `AiVoiceDispatcher.TauntTriggerFor`): the cosine between the pursuer's nose and the line to the human it holds picks 26 above `TauntNoseCos` and 25 below `-TauntTailCos`, and neither between them. A pursuer in its own evade reaction is refused, as the decoded block's `+0xba` read refuses it; a pilot with no mode machine counts as not evading |
 | 27 | wired | the speaker's evade episode ending with the flag already cleared, the pursuer shaken ("fires as the reaction flag clears", decoded, and the original raises it where it clears the flag and nowhere else). An episode the speaker leaves with the flag still up says nothing here; that geometry is the pursuer's own row 26. A target lost mid-reaction reads as a shake, the flag's own clear rule with no pursuer left to test |
 | 28 | wired, one arm | the decoded first arm only: `FlightController.DamageApplied` carries the round's shooter, and a shooter registered through `RegisterPlayer` whose team the predicate calls friendly over the struck aircraft's makes that aircraft speak (`AiVoiceRuntime.OnFriendlyFire`). The second arm, the survivor count over `DAT_0071c4e4`/`e8`/`ec` with its default sound set, is left unwired: what those three globals are is undecoded (below) | 
-| 15 | unwired | the danger-zone modes are never entered (their gate data is undecoded, F17) |
+| 15 | wired | the decoded site, which is the player's run and not an AI's: the zone module's completion routine broadcasts the trigger once more than one gate has been crossed (`FUN_00446990`, the `FUN_004b86a0(0xf)` call at `0x004469ff`), and that routine is reached for the local player's vehicle alone (`FUN_0048e580`, the owner guard at `0x0048ea1f`). The remake raises it on the same report the objective and wrap-up counters ride: `CampaignDirector.NotifyDangerZoneCompleted` raises `WorldInputs.DangerZoneSpoken`, `GameSession` hands the flown aeroplane to `AiVoiceRuntime.DangerZoneCompleted`, and the flight broadcasts on that aeroplane's team |
 
 Stand-ins and inventions, named:
 

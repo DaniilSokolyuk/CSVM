@@ -118,12 +118,12 @@ public sealed class SoundFalloffTests
             foreach (float bad in new[] { 0f, -2f, float.NaN, float.PositiveInfinity })
             {
                 SoundFalloff.SetRangeScale(bad);
-                Assert.Equal(1f, SoundFalloff.RangeScale);
+                Assert.Equal(SoundFalloff.ShippedRangeScale, SoundFalloff.RangeScale);
             }
         }
         finally
         {
-            SoundFalloff.SetRangeScale(1f);
+            SoundFalloff.SetRangeScale(SoundFalloff.ShippedRangeScale);
         }
     }
 

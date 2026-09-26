@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using CSVM.UI;
+using CSVM.UI.Boards;
 using CSVM.UI.Menu;
 using CSVM.UI.Menu.Original;
 using CSVM.Utils;

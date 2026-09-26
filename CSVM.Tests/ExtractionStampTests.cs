@@ -1,6 +1,6 @@
 using System.IO;
 using System.Text.RegularExpressions;
-using CSVM.Session;
+using CSVM.Session.Launch;
 using Xunit;
 
 namespace CSVM.Tests;

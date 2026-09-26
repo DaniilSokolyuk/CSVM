@@ -34,8 +34,15 @@ internal static class ClutterCardDepthSuites
     // buffer and reports every frame as wholly changed.
     private const int Channels = 3;
 
+    // How far an Rgb8 channel has to move before a card counts as having drawn there, for the
+    // overpaint measure only. The feather's faintest texels move the frame by one step. Over a
+    // backdrop they round to its own value, which is quantisation rather than a lost card.
+    private const int FeatherFloor = 4;
+
     // Card ranges in metres. The far pair is where the report was made, a ridge about a kilometre
-    // and a half out, which is also where the depth buffer's resolution is thinnest.
+    // and a half out. That is also where the depth buffer's resolution is thinnest. A range under
+    // the fade's near edge does not belong here, since the card is culled outright there. Every
+    // case then measures an empty pane, and the suite reports a fade setting, not a draw order.
     private static readonly float[] Ranges = { 60f, 750f, 1500f };
 
     private static readonly Vector2I PaneSize = new(PaneEdge, PaneEdge);
@@ -117,6 +124,9 @@ internal static class ClutterCardDepthSuites
         pane.AddChild(eye);
         ctx.Host.AddChild(pane);
 
+        var blended = BlendPlate(ctx, gamez, textures, scene);
+        ctx.Check(blended != null, $"{Chapter} skins a world surface with a blended material");
+
         var cards = Cards(card);
         try
         {
@@ -135,6 +145,21 @@ internal static class ClutterCardDepthSuites
             {
                 plate.Rotate(Vector3.Right, Mathf.Pi);
             }
+            if (blended != null)
+            {
+                pane.AddChild(blended);
+                PosePlate(blended, eye, -Ranges[0] * 0.5f);
+                plate.Visible = false;
+                int drew = Differing(bare, Shot(pane));
+                if (drew == 0)
+                {
+                    blended.Rotate(Vector3.Right, Mathf.Pi);
+                    drew = Differing(bare, Shot(pane));
+                }
+                ctx.Check(drew > 100, $"the blended world surface fills the pane pixels={drew}");
+                blended.Visible = false;
+                plate.Visible = true;
+            }
             foreach (float range in Ranges)
             {
                 foreach (bool full in new[] { true, false })
@@ -142,6 +167,10 @@ internal static class ClutterCardDepthSuites
                     Frame(eye, card, range);
                     Ground(ctx, pane, eye, plate, cards, card, range, full);
                     Ahead(ctx, pane, eye, plate, cards, card, range, full);
+                    if (blended != null)
+                    {
+                        Behind(ctx, pane, eye, plate, blended, cards, card, range, full);
+                    }
                 }
             }
         }
@@ -149,6 +178,7 @@ internal static class ClutterCardDepthSuites
         {
             cards.Free();
             plate.Free();
+            blended?.Free();
             pane.Free();
         }
     }
@@ -253,6 +283,60 @@ internal static class ClutterCardDepthSuites
         ctx.Note($"{at} ahead: body={covered} far={drawnFar} through={through}");
     }
 
+    // A BLENDED world surface standing behind the card. A scissored surface is opaque and settles in
+    // the depth pass, so a card in front of one composites over it whatever the draw order. A blended
+    // one is drawn in the transparency pass alongside the card. There the sort decides which paints
+    // last, and a kind's whole-chapter MultiMesh carries one sort key for every card in it. The far
+    // instance is parked aside, outside the pane but inside the MultiMesh's bounds. That gives the
+    // near card the distant sort key it has in the world.
+    private static void Behind(TestContext ctx, SubViewport pane, Camera3D eye, Node3D opaque,
+        Node3D blended, MultiMeshInstance3D cards, ClutterBuilder.KindExport card, float range, bool full)
+    {
+        string at = $"{range:0} m {(full ? "opaque" : "mid-fade")}";
+        float near = -range * 0.5f;
+        opaque.Visible = false;
+        blended.Visible = false;
+        Park(cards, card, NearIndex);
+        PlaceAside(cards, card, FarIndex, -range * 4f);
+        byte[] bare = Shot(pane);
+
+        Place(cards, card, NearIndex, near, full);
+        byte[] cardAlone = Shot(pane);
+
+        opaque.Visible = true;
+        PosePlate(opaque, eye, -range * 1.5f);
+        byte[] cardOverOpaque = Shot(pane);
+        opaque.Visible = false;
+
+        blended.Visible = true;
+        PosePlate(blended, eye, -range * 1.5f);
+        byte[] cardOverBlended = Shot(pane);
+        byte[] blendedAlone = Without(pane, cards, card, NearIndex, near, full);
+        blended.Visible = false;
+        // ⚠ Hand the opaque plate back visible. Ground() poses it without showing it, so a case
+        // that leaves it hidden silently empties every later ground measurement.
+        opaque.Visible = true;
+
+        // Opaque where the card drew something and drew the same thing over either backdrop, so the
+        // assertion covers only the pixels the card owns outright.
+        var body = Mask(bare, cardAlone, cardOverOpaque);
+        int covered = Count(body);
+        int drawnPlate = Differing(bare, blendedAlone);
+        int through = Differing(cardAlone, cardOverBlended, body);
+        // The soft half of the question. Over its body the card writes depth, and the surface behind
+        // it is rejected whatever the sort says. Over its feathered edge it writes none, so a surface
+        // drawn after it lands there and the card contributes nothing.
+        int lost = Erased(bare, cardAlone, blendedAlone, cardOverBlended);
+
+        ctx.Check(covered > 100, $"the card's body covers the pane at {at} pixels={covered}");
+        ctx.Check(drawnPlate > 100, $"the blended surface draws behind the card at {at} pixels={drawnPlate}");
+        ctx.Same(0L, through,
+            $"a blended world surface behind the card changes no pixel of its body at {at} pixels={through}");
+        ctx.Same(0L, lost,
+            $"the card is not painted over by the blended surface behind it at {at} pixels={lost}");
+        ctx.Note($"{at} behind: body={covered} surface={drawnPlate} through={through} lost={lost}");
+    }
+
     // The same pose with one instance left out, so a frame and its own reference differ by that
     // instance alone.
     private static byte[] Without(SubViewport pane, MultiMeshInstance3D cards,
@@ -283,10 +367,70 @@ internal static class ClutterCardDepthSuites
             new Vector3(0f, 0f, z));
     }
 
+    // The first world mesh this chapter skins with a BLENDED surface material, as a plate. The
+    // material is the real one off the real mesh. The question is what that material's place in the
+    // transparency sort does, and a stand-in built here would answer it about itself instead.
+    private static Node3D? BlendPlate(TestContext ctx, GameZ gamez, TextureArchive textures, SceneBuilder scene)
+    {
+        ArrayMesh? bestMesh = null;
+        Material? bestMaterial = null;
+        int bestModel = -1;
+        float best = 0f;
+        for (int i = 0; i < gamez.Meshes.Count; i++)
+        {
+            if (!SoftAlphaSkinned(gamez, textures, gamez.Meshes[i]) || scene.SharedMesh(i) is not { } built)
+            {
+                continue;
+            }
+            // The broadest and flattest one wins. The plate is laid across the pane, so a wall or a
+            // sliver stands edge-on to the eye and photographs as nothing, whatever it blends.
+            var box = built.GetAabb();
+            float span = Mathf.Min(box.Size.X, box.Size.Z);
+            if (span <= best)
+            {
+                continue;
+            }
+            for (int s = 0; s < built.GetSurfaceCount(); s++)
+            {
+                if (scene.AlphaOf(built.SurfaceGetMaterial(s)) != SceneBuilder.TransparencyClass.BlendSurface)
+                {
+                    continue;
+                }
+                (bestMesh, bestMaterial, bestModel, best) = (built, built.SurfaceGetMaterial(s), i, span);
+                break;
+            }
+        }
+        if (bestMesh == null)
+        {
+            return null;
+        }
+        var size = bestMesh.GetAabb().Size;
+        ctx.Note($"{Chapter} blended world surface: model={bestModel} extent={size.X:0}x{size.Y:0}x{size.Z:0} m");
+        return PlateOf(bestMesh, bestMaterial);
+    }
+
+    // Whether any of a mesh's polygons names a texture the archive calls soft. It is the cheap
+    // filter that keeps the scan above from building every mesh in the chapter to read a material.
+    private static bool SoftAlphaSkinned(GameZ gamez, TextureArchive textures, GameZMesh mesh)
+    {
+        foreach (var poly in mesh.Polygons)
+        {
+            if (poly.MaterialIndex < 0 || poly.MaterialIndex >= gamez.Materials.Count
+                || gamez.Materials[poly.MaterialIndex].TextureName is not { } texName)
+            {
+                continue;
+            }
+            textures.Find(texName);
+            if (textures.LastHadAlpha && textures.LastAlphaIsSoft)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // The ground polygon as an occluder: the first mesh under the built subtree, re-hung under a
-    // node that stands it on edge across the pane. Its authored centre is cancelled and its span
-    // normalised to one unit on the child, so the parent's scale is the plate's width in metres
-    // whatever the template's own corner coordinates are.
+    // node that stands it on edge across the pane.
     private static Node3D? Plate(Node3D? built)
     {
         var found = FirstMesh(built);
@@ -295,11 +439,23 @@ internal static class ClutterCardDepthSuites
             built?.Free();
             return null;
         }
-        var box = found.GetAabb();
         var mesh = found.Mesh;
         var material = found.GetActiveMaterial(0);
-        float span = Mathf.Max(box.Size.X, box.Size.Z);
         built.Free();
+        return PlateOf(mesh, material);
+    }
+
+    // One mesh and one material as a plate. The mesh's authored centre is cancelled and its span
+    // normalised to one unit on the child. The parent's scale is then the plate's width in metres,
+    // whatever the source's own corner coordinates are.
+    private static Node3D? PlateOf(Mesh? mesh, Material? material)
+    {
+        if (mesh == null)
+        {
+            return null;
+        }
+        var box = mesh.GetAabb();
+        float span = Mathf.Max(box.Size.X, box.Size.Z);
         if (span <= 0f)
         {
             return null;
@@ -360,6 +516,17 @@ internal static class ClutterCardDepthSuites
 
     private static void Park(MultiMeshInstance3D node, ClutterBuilder.KindExport kind, int index)
         => Place(node, kind, index, ParkZ, full: true);
+
+    // One card far away and far enough off the camera axis to fall outside the pane's narrow field
+    // of view. It draws nothing and still counts toward the MultiMesh's bounds. That is the only way
+    // to give the card under test the distant sort key a chapter-wide kind hands every card.
+    private static void PlaceAside(MultiMeshInstance3D node, ClutterBuilder.KindExport kind,
+        int index, float z)
+    {
+        node.Multimesh!.SetInstanceTransform(index, new Transform3D(
+            Basis.Identity, new Vector3(Mathf.Abs(z), -kind.Height / 2f, z)));
+        node.Multimesh.SetInstanceCustomData(index, new Color(0f, 0f, 0f, 0f));
+    }
 
     // One card at one depth, planted at its base so lowering it by half its height centres it on
     // the camera axis, which is what makes the near and the far card concentric. A card asked for
@@ -448,11 +615,47 @@ internal static class ClutterCardDepthSuites
         return changed;
     }
 
+    // Pixels the subject drew over an empty frame and then contributed nothing to once the backdrop
+    // was there: the backdrop landed on top of them. Read against the drawn pixels rather than the
+    // opaque ones, because a card's feathered edge writes no depth and is where an overpaint lands.
+    private static int Erased(byte[] empty, byte[] subject, byte[] backdrop, byte[] both)
+    {
+        if (empty.Length == 0 || subject.Length != empty.Length
+            || backdrop.Length != empty.Length || both.Length != empty.Length)
+        {
+            return -1;
+        }
+        int erased = 0;
+        for (int i = 0; i + Channels <= empty.Length; i += Channels)
+        {
+            // ⚠ The drawn side needs a tolerance and the composite side must not have one. At the
+            // faint end of the feather the card moves the frame by one Rgb8 step. Over any backdrop
+            // it rounds to that backdrop's own value, which reads as an overpaint and is not one.
+            if (MovedBy(empty, subject, i, FeatherFloor) && !Moved(backdrop, both, i))
+            {
+                erased++;
+            }
+        }
+        return erased;
+    }
+
     private static bool Moved(byte[] a, byte[] b, int i)
     {
         for (int c = 0; c < Channels; c++)
         {
             if (a[i + c] != b[i + c])
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool MovedBy(byte[] a, byte[] b, int i, int tolerance)
+    {
+        for (int c = 0; c < Channels; c++)
+        {
+            if (Mathf.Abs(a[i + c] - b[i + c]) > tolerance)
             {
                 return true;
             }

@@ -1,4 +1,4 @@
-using CSVM.UI;
+using CSVM.UI.Campaign;
 using Xunit;
 
 namespace CSVM.Tests;

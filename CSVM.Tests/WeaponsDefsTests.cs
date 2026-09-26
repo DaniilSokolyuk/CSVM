@@ -1,7 +1,7 @@
 using System.IO;
 using System.Linq;
-using CSVM.Flight;
-using CSVM.Testing;
+using CSVM.Flight.Weapons;
+using CSVM.Tooling;
 using Xunit;
 
 namespace CSVM.Tests;

@@ -1,8 +1,11 @@
 using System;
 using CSVM.Bindings;
-using CSVM.Flight;
+using CSVM.Flight.Ai;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Camera;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
-using CSVM.Session;
+using CSVM.Session.Roster;
 using Godot;
 
 namespace CSVM.Testing;
@@ -26,7 +29,8 @@ internal static class ExhaustSmokeSuites
     [Suite("exhaust-smoke",
         "the exhaust smoke on the human throttle path: a single one-eighth digit from idle peaks "
         + "far too faint to see, closing the lever charges nothing, and an idle-to-full digit slam "
-        + "lights the trail at the decoded strength and puts it out again within four seconds")]
+        + "lights the trail at the decoded strength and puts it out again within four seconds, "
+        + "which a scheduled capture press reaches the same way")]
     internal static void ExhaustSmokeCharge(TestContext ctx)
     {
         ctx.RequireData(ctx.PlanesGamezPath, $"planes gamez");
@@ -71,7 +75,18 @@ internal static class ExhaustSmokeSuites
                 $"{ctx.PlaneName}: the idle-to-full slam lights the trail at peak intensity {slam.Peak:0.000} (decoded 0.356), from step {slam.FirstOn}");
             ctx.Check(slam.LastOn >= 0 && slam.LastOn * StepDt < 4.1f && !smoke.StreamingForTest,
                 $"…and puts it out {slam.LastOn * StepDt:0.00} sim-s after the slam (decoded 3.9)");
-            ctx.Note($"{ctx.PlaneName}: one-eighth peak {eighth.Peak:0.0000}, slam peak {slam.Peak:0.000} lit steps {slam.FirstOn}..{slam.LastOn}");
+
+            // The capture door: a scheduled press has to reach the same lever the digit row reaches.
+            // A headless run holds no key down, and this plume exists only on a lever gap.
+            pilot.HoldActionForTest(InputAction.ThrottleSet8, false);
+            pilot.HoldActionForTest(InputAction.ThrottleSet0, true);
+            Run(pilot, smoke, 180);
+            pilot.HoldActionForTest(InputAction.ThrottleSet0, false);
+            pilot.ScheduleLeverForTest(new[] { (1f, 1f) });
+            var scheduled = Run(pilot, smoke, 360);
+            ctx.Check(scheduled.FirstOn >= 60 && scheduled.Peak is > 0.33f and < 0.38f,
+                $"…and a scheduled press one second out slams it the same way, lit from step {scheduled.FirstOn}, peak {scheduled.Peak:0.000}");
+            ctx.Note($"{ctx.PlaneName}: one-eighth peak {eighth.Peak:0.0000}, slam peak {slam.Peak:0.000} lit steps {slam.FirstOn}..{slam.LastOn}, scheduled peak {scheduled.Peak:0.000}");
         }
         finally
         {

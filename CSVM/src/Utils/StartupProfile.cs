@@ -48,7 +48,7 @@ public sealed class StartupProfile
     public string Subject { get; set; } = "";
 
     /// <summary>The recorded phases in the order first seen, for a reader that wants to aggregate
-    /// or categorize them (<see cref="Testing.PhaseAttribution"/>) without emitting the line.
+    /// or categorize them (the harness's <c>PhaseAttribution</c>) without emitting the line.
     /// Never calls <see cref="EndBuild"/> itself, so a caller timing the build with its own
     /// stopwatch (the test harness's per-world-build watch) can read the phases mid-build.</summary>
     public IReadOnlyDictionary<string, double> Phases => _phases;

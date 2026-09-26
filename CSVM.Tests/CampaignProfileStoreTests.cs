@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
-using CSVM.Session;
+using CSVM.Session.Campaign;
 using Xunit;
 
 namespace CSVM.Tests;

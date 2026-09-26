@@ -2,13 +2,15 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using CSVM.Mech3;
-using CSVM.UI;
+using CSVM.UI.Boards;
 using CSVM.UI.Menu;
+using CSVM.UI.Menu.Original;
+using CSVM.UI.Screens;
 
 namespace CSVM.Testing;
 
 /// <summary>Suites over the Original presentation's pause screen: the real board over a real
-/// <see cref="Flight.PauseState"/>, composed from the chapter's own <c>escape.zrd</c> dialogs, with
+/// <see cref="Flight.Modes.PauseState"/>, composed from the chapter's own <c>escape.zrd</c> dialogs, with
 /// every bitmap it names checked against the extraction. A second suite does the same for the
 /// Instant Action blackboard the sortie's <c>ia_escape.zrd</c> dialog carries.
 /// Decode: docs/org/pause-screen.md.</summary>
@@ -80,7 +82,7 @@ internal static class PauseSheetSuites
 
     // The profile a campaign pause is taken over here: a seated one that chose a picture. The
     // flown session's own director hands that picture to the readout.
-    private static readonly Session.CampaignProfileDef Seated = SeatProfile();
+    private static readonly Session.Campaign.CampaignProfileDef Seated = SeatProfile();
 
     // The four mission types, in the order the exe's jump table letters them.
     private static readonly string[] MissionTypes =
@@ -518,8 +520,8 @@ internal static class PauseSheetSuites
             return;
         }
 
-        var pause = new Flight.PauseState();
-        var board = Flight.OriginalPauseBoard.Build(
+        var pause = new Flight.Modes.PauseState();
+        var board = OriginalPauseBoard.Build(
             pause,
             _ => new MenuInput { Keyboard = false, Pads = System.Array.Empty<int>() },
             ctx.DataRoot,
@@ -548,9 +550,9 @@ internal static class PauseSheetSuites
     // standing. It and the photo strip are the only two rows that do.
     private static void WalkStrips(
         TestContext ctx,
-        Flight.OriginalPauseBoard board,
+        OriginalPauseBoard board,
         PauseSheet sheet,
-        Flight.PauseState pause,
+        Flight.Modes.PauseState pause,
         StringBuilder report)
     {
         (float X, float Y, bool Pressed)? pointer = null;
@@ -600,9 +602,9 @@ internal static class PauseSheetSuites
     // halted world rather than a resume, which is what returns a player to the sheet.
     private static void FirePhotoStrip(
         TestContext ctx,
-        Flight.OriginalPauseBoard board,
+        OriginalPauseBoard board,
         PauseSheet sheet,
-        Flight.PauseState pause,
+        Flight.Modes.PauseState pause,
         System.Action<(float X, float Y, bool Pressed)?> point,
         StringBuilder report)
     {
@@ -728,8 +730,8 @@ internal static class PauseSheetSuites
     private static void DriveBoard(
         TestContext ctx, (CampaignMission Mission, PauseSheet Sheet) entry, StringBuilder report)
     {
-        var pause = new Flight.PauseState();
-        var board = Flight.OriginalPauseBoard.Build(
+        var pause = new Flight.Modes.PauseState();
+        var board = OriginalPauseBoard.Build(
             pause,
             _ => new MenuInput { Keyboard = false, Pads = System.Array.Empty<int>() },
             ctx.DataRoot,
@@ -806,7 +808,7 @@ internal static class PauseSheetSuites
     // fires, and the photo strip, the other row that does. Both are driven through the same frame
     // the pad's own step runs in.
     private static void DrivePointer(
-        TestContext ctx, Flight.OriginalPauseBoard board, PauseSheet sheet, Flight.PauseState pause,
+        TestContext ctx, OriginalPauseBoard board, PauseSheet sheet, Flight.Modes.PauseState pause,
         StringBuilder report)
     {
         var strip = sheet.Strips[PauseScreens.PreferencesRow];
@@ -872,10 +874,10 @@ internal static class PauseSheetSuites
             + $"{sheet.State.Cursor?.Rollover ?? "-"}");
     }
 
-    private static string? StripArt(Flight.OriginalPauseBoard board, int row) =>
+    private static string? StripArt(OriginalPauseBoard board, int row) =>
         board.Shown is { } shown && row < shown.Plaques.Count ? shown.Plaques[row].Art.Name : null;
 
-    private static string? CursorArt(Flight.OriginalPauseBoard board)
+    private static string? CursorArt(OriginalPauseBoard board)
     {
         if (board.Shown is not { } shown)
         {
@@ -1020,7 +1022,7 @@ internal static class PauseSheetSuites
 
         ctx.Check(rowOne > 0, $"the sheet's own script reveals the priority 1 row ({rowOne} time(s))");
 
-        var graph = new Session.ObjectiveGraph(Session.ObjectiveScript.Parse(reader), new NoWorld());
+        var graph = new Session.Objectives.ObjectiveGraph(Session.Objectives.ObjectiveScript.Parse(reader), new NoWorld());
         for (float t = 0f; t < 3f; t += 0.1f)
         {
             graph.Step(0.1f);
@@ -1322,12 +1324,12 @@ internal static class PauseSheetSuites
         }
 
         return new PauseReadout(
-            rows, Session.CampaignMementos.BitmapFor(Seated), System.Array.Empty<PauseWorldIcon>());
+            rows, Session.Campaign.CampaignMementos.BitmapFor(Seated), System.Array.Empty<PauseWorldIcon>());
     }
 
-    private static Session.CampaignProfileDef SeatProfile()
+    private static Session.Campaign.CampaignProfileDef SeatProfile()
     {
-        var def = Session.CampaignProfileDef.NewProfile("Pause Sheet");
+        var def = Session.Campaign.CampaignProfileDef.NewProfile("Pause Sheet");
         def.Memento = ChosenMemento;
         return def;
     }
@@ -1339,10 +1341,10 @@ internal static class PauseSheetSuites
         TestContext ctx, List<(CampaignMission Mission, PauseSheet Sheet)> sheets, int at,
         StringBuilder report)
     {
-        string chosen = Session.CampaignMementos.BitmapFor(Seated);
-        string seeded = Session.CampaignMementos.BitmapFor(null);
+        string chosen = Session.Campaign.CampaignMementos.BitmapFor(Seated);
+        string seeded = Session.Campaign.CampaignMementos.BitmapFor(null);
         ctx.Check(
-            chosen == Session.CampaignMementos.Bitmap(ChosenMemento) && chosen != seeded,
+            chosen == Session.Campaign.CampaignMementos.Bitmap(ChosenMemento) && chosen != seeded,
             $"the seated profile hangs {chosen} where a session with no profile hangs {seeded}");
         if (at < 0)
         {
@@ -1352,8 +1354,8 @@ internal static class PauseSheetSuites
         var entry = sheets[at];
         string missionZrdr = SessionPaths.MissionZrdr(
             ctx.DataRoot, entry.Mission.ChapterFolder, entry.Mission.MissionFolder);
-        var director = Session.CampaignDirector.Create(
-            Session.ObjectiveScript.Load(missionZrdr), entry.Mission, Seated, null);
+        var director = Session.Campaign.CampaignDirector.Create(
+            Session.Objectives.ObjectiveScript.Load(missionZrdr), entry.Mission, Seated, null);
         ctx.Check(
             director.Memento == chosen,
             $"the flown mission's own director hands that picture to the readout ({director.Memento})");
@@ -1433,7 +1435,7 @@ internal static class PauseSheetSuites
     // The objectives runtime's world seam with no world behind it: the families a session cannot
     // answer report null, exactly as the live adapter does, and every world-touching action is a
     // no-op. Enough to run a mission's own script for its timing and its chaining.
-    private sealed class NoWorld : Session.IObjectiveWorld
+    private sealed class NoWorld : Session.Objectives.IObjectiveWorld
     {
         public bool? NodeInactive(IReadOnlyList<string> path) => null;
 
@@ -1445,7 +1447,7 @@ internal static class PauseSheetSuites
         {
         }
 
-        public bool? TravelersMet(Session.TravelersSpec spec) => null;
+        public bool? TravelersMet(Session.Objectives.TravelersSpec spec) => null;
 
         public void WakeupEnemies(IReadOnlyList<string> names)
         {
@@ -1475,7 +1477,7 @@ internal static class PauseSheetSuites
         {
         }
 
-        public void WarpVehicle(string vehicle, IReadOnlyList<Session.WarpPoint> points)
+        public void WarpVehicle(string vehicle, IReadOnlyList<Session.Objectives.WarpPoint> points)
         {
         }
 

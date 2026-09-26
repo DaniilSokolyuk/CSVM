@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Threading;
 using CSVM;
-using CSVM.Flight;
 using CSVM.Mech3;
 using Godot;
 using Xunit;
@@ -95,6 +94,25 @@ public class SessionSpecParserTests
         Assert.Equal(0.4f, input.Throttle);
     }
 
+    /// <summary>The lever schedule reads eighths, not fractions, and sorts its steps by time so a
+    /// spec written out of order still presses in order.</summary>
+    [Fact]
+    public void ALeverScheduleReadsEighthsInTimeOrder()
+    {
+        var steps = SessionSpec.ParseLever("8@10;0@0;4@12.5");
+        Assert.Equal(3, steps.Length);
+        Assert.Equal((0f, 0f), steps[0]);
+        Assert.Equal((10f, 1f), steps[1]);
+        Assert.Equal((12.5f, 0.5f), steps[2]);
+
+        // An eighth outside the digit row's own range clamps rather than opening the lever past full.
+        Assert.Equal(1f, SessionSpec.ParseLever("12@1")[0].Lever);
+        Assert.Equal(0f, SessionSpec.ParseLever("-3@1")[0].Lever);
+
+        // No '@' is a press at the spawn, the "start at this eighth" form.
+        Assert.Equal((0f, 0.25f), Assert.Single(SessionSpec.ParseLever("2")));
+    }
+
     /// <summary>Three colour slots, body, dark trim, light trim, and a missing one repeats the
     /// last given, so a single triple paints the whole aircraft.</summary>
     [Fact]
@@ -153,10 +171,12 @@ public class SessionSpecParserTests
         var s = SessionSpec.Parse(new[]
         {
             "--damage=nose:50", "--paint-decal=1,2", "--hold=0,0,0,1", "--pos=1,2,3",
+            "--lever=0@0;8@10",
         });
         Assert.Equal(("nose", 0.5f), Assert.Single(s.DamagePreset!));
         Assert.Equal(new[] { 1, 2, 2 }, s.PaintDecalOverride);
         Assert.Single(s.HoldSets!);
+        Assert.Equal(2, s.LeverSteps!.Count);
         Assert.Equal(new Vector3(1, 2, 3), s.Pos);
     }
 
@@ -383,5 +403,23 @@ public class SessionSpecParserTests
         var guest = SessionSpec.Parse(new[] { "--vs", "--net-join=127.0.0.1:47600" });
         Assert.Null(guest.NetHostPort);
         Assert.Equal("127.0.0.1:47600", guest.NetJoin);
+    }
+
+    /// <summary>The enhanced-pass bisect doors: none closed by default, each flag closes its own
+    /// bit, and several on one line accumulate rather than replacing each other.</summary>
+    [Fact]
+    public void EnhancedPassDoorsAccumulate()
+    {
+        Assert.Equal(EnhancedPasses.None, SessionSpec.Parse(new[] { "--fly" }).SkippedPasses);
+        Assert.Equal(EnhancedPasses.Ssao, SessionSpec.Parse(new[] { "--no-ssao" }).SkippedPasses);
+        Assert.Equal(EnhancedPasses.Ssr, SessionSpec.Parse(new[] { "--no-ssr" }).SkippedPasses);
+        Assert.Equal(EnhancedPasses.Glow, SessionSpec.Parse(new[] { "--no-glow" }).SkippedPasses);
+        Assert.Equal(
+            EnhancedPasses.SoftShadows, SessionSpec.Parse(new[] { "--no-soft-shadows" }).SkippedPasses);
+
+        var all = SessionSpec.Parse(new[] { "--no-ssao", "--no-ssr", "--no-glow", "--no-soft-shadows" });
+        Assert.Equal(
+            EnhancedPasses.Ssao | EnhancedPasses.Ssr | EnhancedPasses.Glow | EnhancedPasses.SoftShadows,
+            all.SkippedPasses);
     }
 }

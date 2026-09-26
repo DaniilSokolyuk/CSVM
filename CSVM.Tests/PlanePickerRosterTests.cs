@@ -1,6 +1,6 @@
 using System;
-using CSVM.Flight;
-using CSVM.UI;
+using CSVM.Flight.Hangar;
+using CSVM.UI.Hangar;
 using Xunit;
 
 namespace CSVM.Tests;

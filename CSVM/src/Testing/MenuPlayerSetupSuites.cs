@@ -1,8 +1,8 @@
 using System.Collections.Generic;
 using CSVM.Bindings;
-using CSVM.UI;
 using CSVM.UI.Menu;
 using CSVM.UI.Menu.BuiltIn;
+using CSVM.UI.Screens;
 
 namespace CSVM.Testing;
 
@@ -509,7 +509,7 @@ internal static class MenuPlayerSetupSuites
                 $"the seat's frames reach the shell through the presentation: one row down and selected ({setup.Seats[1].Cursor})");
             // By key, not by a count of Downs: a selection also raises the WEAPON LOADOUT row, so
             // the plaques a step lands on depend on the seat's stage.
-            ctx.Check(WalkTo(host, s2, shell, nameof(CSVM.UI.BoardButton.CancelSelections)),
+            ctx.Check(WalkTo(host, s2, shell, nameof(CSVM.UI.Boards.BoardButton.CancelSelections)),
                 $"the seat's cursor reaches CANCEL SELECTIONS ({shell.FocusedKey})");
             Press(host, s2, Accept);
             ctx.Check(host.Seats.Count == 2 && !setup.Seats[1].Locked
@@ -586,7 +586,7 @@ internal static class MenuPlayerSetupSuites
         CSVM.UI.Menu.Original.OriginalShell shell, PlayerSetupFeature setup)
     {
         var seat = setup.Seats[1];
-        string row = nameof(CSVM.UI.BoardButton.ChangeAmmo);
+        string row = nameof(CSVM.UI.Boards.BoardButton.ChangeAmmo);
         ctx.Check(Row(shell, row) is { Enabled: true }, $"a selected seat's screen offers WEAPON LOADOUT ({Row(shell, row)?.Label})");
         ctx.Check(WalkTo(host, picking, shell, row), $"the picking seat's own cursor reaches it ({shell.FocusedKey})");
         Press(host, picking, Accept);

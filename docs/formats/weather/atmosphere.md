@@ -89,6 +89,67 @@ original; the remake does not reproduce it). The shipped data alone could never 
 (of the reachable bands only C4 authors colours, and equal ones), which is why this stayed
 marked inferred until the decompile.
 
+### An object on the far side of the band is not drawn at all
+
+**Decoded.** The band does more than veil the camera's own view. Every flown object earns a
+`zone_id` once per frame from **its own** altitude, and a camera draws only the zone it is
+standing in, so an aeroplane or an airship sitting wholly on the other side of the band is
+culled outright rather than fogged.
+
+`FUN_00489f60` is the assignment, reached from 19 object-update sites. It takes the object's
+world-space vertical span (the node's bounding box under its transform, `FUN_00492fc0`, with an
+oriented-box arm inlined for the rotated case) and compares it to the band's **midpoint**
+`_DAT_0071c2cc`, then writes the verdict onto the node with `FUN_004cd3b0` (node + 0x30):
+
+| condition | `zone_id` |
+|---|---|
+| the object sits in an armed `fvol` volume (`DAT_0064ff40`, `FUN_0044ded0`) | **3**, tested first |
+| span max < midpoint | **1** |
+| midpoint < span min | **2** |
+| the span straddles the midpoint | **0xff** (−1, drawn at every state) |
+| the mission authors no `CLOUD_COVER` (`DAT_0071dcd0` clear) | **0xff** |
+
+The midpoint is computed once at world init, `004736a5`: `_DAT_0071c2cc = BOTTOM +
+(TOP − BOTTOM) × 0.5`, the `0.5` being the constant at `006032e0`. The next four instructions
+write the opaque core's edges from it, `0071c2d0 = midpoint − THICKNESS × 0.5` and
+`0071c2d4 = midpoint + THICKNESS × 0.5`.
+
+The gate is [`FUN_0056c430`](../weather.md#zone-selection-at-runtime), which draws a node only
+when its `zone_id` is 0xff or sits in the camera's armed set `{0, camera state}`. A camera below
+the band is state 1 and draws nothing carrying zone 2; above the core's bottom edge it is state 2
+and draws nothing carrying zone 1.
+
+⚠ **The object's threshold and the camera's are different altitudes.** The object is judged
+against the MIDPOINT, the camera's state flips at the core's bottom edge (`0042eed3`). The window
+between the two lies inside the fully-opaque core, which is what keeps the mismatch invisible;
+moving the band or thinning `THICKNESS` exposes it, the same way it exposes the deck's regime
+flip above. C1C/M01: band 1055–1110, midpoint 1082.5, core 1067.5–1097.5.
+
+**Ruled out, with the readers enumerated.** There is no per-object cull against `TOP`/`BOTTOM`
+themselves and no fog term keyed on an object's height. Every reader of `0071dcd4` (`TOP`),
+`0071dcd8` (`BOTTOM`), `0071c2d0` and `0071c2d4` is: world init `FUN_004735b0`, the per-frame
+atmosphere update `FUN_0042ee40`, the zone applier `FUN_00472ea0`, and the sun-flare occlusion
+test `FUN_0042b7c0`, which stops casting the flare ray once the camera passes
+`BOTTOM + (TOP − BOTTOM) × 0.8` (`0042b81a`). `ZONE1`'s `FOG_ALTITUDE` fades fog **out** with
+height, so it cannot be what hides anything above the band either.
+
+**An object standing INSIDE the band** takes a separate per-object whiteout instead.
+`FUN_005782d0` takes the object's own centre and radius and returns 0 when the sphere clears the
+band, `1.0` (`_DAT_00a06f74`) through the core, and the linear edge ramps between;
+`FUN_00551d90` raises the object's draw flag 0x800 once that exceeds 1/255. The four edges are
+pushed into the particle module at world init as `_DAT_00a06f78` (`TOP`), `_DAT_00a06f7c` (core
+top), `_DAT_00a06f84` (`BOTTOM`) and `_DAT_00a06f88` (core bottom) with their reciprocals, armed
+by `DAT_00a06f70`, which is set only where the mission authors a band.
+
+> **Landed.** The remake ports the cull. `WeatherState.ObjectZone` is the rule above and
+> `Session.Objectives.ObjectZoneGate` applies it per frame to the session's aircraft and zeppelins, moving
+> each object's meshes onto the zone's visual layer the camera cull mask already narrows to, so
+> the effect meshes hanging under an aircraft ride with it. A mesh already wearing a layer of its
+> own (the own-airframe hide, a per-pane copy) stays ungated, since a cull mask ORs its bits and
+> those layers are camera-local anyway. `--no-fog` opens the gate along with the whiteout, and the
+> pane overlay is unchanged: the per-object in-band whiteout above is **not** ported, the remake
+> whites the whole pane out from the camera's altitude instead.
+
 ## Wind (`WIND`)
 
 Bare-scalar block, four keys, **all four present in all 53 `weather.zrd.json` files in the

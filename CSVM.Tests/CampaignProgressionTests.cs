@@ -1,6 +1,6 @@
 using System.Linq;
-using CSVM.Flight;
-using CSVM.Session;
+using CSVM.Flight.Hangar;
+using CSVM.Session.Campaign;
 using Xunit;
 
 namespace CSVM.Tests;

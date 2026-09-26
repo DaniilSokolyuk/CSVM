@@ -195,7 +195,7 @@ public sealed class DogfightLobbyTests
     [Fact]
     public void TheScoresNameEachSeatOffTheLaunchListBestFirst()
     {
-        var match = new CSVM.Flight.VersusMatch(3, killTarget: 0, timeLimit: 60f);
+        var match = new CSVM.Flight.Modes.VersusMatch(3, killTarget: 0, timeLimit: 60f);
         match.RegisterKill(2, 0);
         match.RegisterKill(2, 1);
         match.RegisterKill(1, 0);

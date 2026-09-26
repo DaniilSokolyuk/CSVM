@@ -3,12 +3,14 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using CSVM.Bindings;
-using CSVM.Flight;
+using CSVM.Flight.Hangar;
 using CSVM.Mech3;
-using CSVM.Session;
-using CSVM.UI;
+using CSVM.Session.Campaign;
+using CSVM.UI.Boards;
+using CSVM.UI.Hangar;
 using CSVM.UI.Menu;
 using CSVM.UI.Menu.Original;
+using CSVM.UI.Screens;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -68,6 +70,9 @@ public class OriginalCoverageTests : IDisposable
     {
         new("free-flight", OriginalScreen.FreeFlight, new[] { OriginalShell.FreeFlightKey }, new[] { OriginalShell.BackKey }),
         new("dogfight", OriginalScreen.Dogfight, new[] { OriginalShell.DogfightKey }, new[] { OriginalShell.BackKey }),
+        new("join-board", OriginalScreen.JoinBoard, new[] { OriginalShell.JoinBoardKey }, new[] { OriginalJoinBoard.BackKey }),
+        new("join-board-continue", OriginalScreen.TopLevel,
+            new[] { OriginalShell.JoinBoardKey, OriginalJoinBoard.ContinueKey }, Array.Empty<string>()),
         // ⚠ The cursor families walk this screen as the picking seat, not as seat 0, which drives
         // nothing here; only the pointer stays seat 0's. ⚠ Leave the map unpicked: the way off by
         // row is the walk's completion, which is the launch itself once FLY's gate is met.

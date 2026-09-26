@@ -49,7 +49,7 @@ which is what makes the viewer read loose files; `-Source`/`-Dest` override the 
 
 Every failure-free run stamps `<Dest>/VERSION.json` with the `unzbd --version` line verbatim, the
 exe's SHA-256, the fork HEAD, the date, and a hand-bumped schema integer the engine
-compares at boot (`src/Session/ExtractionStamp.cs` warns, never blocks), bumped by any reader
+compares at boot (`src/Session/Launch/ExtractionStamp.cs` warns, never blocks), bumped by any reader
 change that invalidates old extractions.
 
 **`messages.json`** comes from a step after the walk, since `strings.dll` sits at the install root
@@ -95,7 +95,7 @@ reticle loaders read loose PNGs there.
 ## Launch scripts
 
 **`RunGame.ps1`, the play entry point.** `dotnet build`, then Godot with **no user args**, so the
-launchscreen (`src/UI/LaunchMenu.cs`, Mode → Chapter → Plane) shows. Args are forwarded verbatim,
+launchscreen (`src/UI/Screens/LaunchMenu.cs`, Mode → Chapter → Plane) shows. Args are forwarded verbatim,
 so a content arg (`--fly`/`--stunt`/`--plane=`/`--chapter=`/`--screenshot=`) bypasses it.
 
 **`RunDev.ps1`, the dev helper**, same build step but with console prompts: no args gives
@@ -277,6 +277,19 @@ read from that file, never written into it, and never stamped into the preset du
 The zip is built through `System.IO.Compression`, since `Compress-Archive` reports success after
 writing nothing when a single file is locked.
 
+**Which number to bump** is decided per release, against what changed since the last tag
+(`git log v<last>..HEAD`), in the commit that is about to be published; builds between releases
+keep stating the last released version, and `BUILD-INFO.txt` names the exact commit. The **patch**
+number is for a release that only fixes, including a fix that brings behaviour closer to the
+original; a player finds nothing new in it. The **minor** number is for a release that adds
+something a player can see (a mode, a screen, an input device, a mechanic), which is where a
+milestone lands; fixes shipped alongside a feature do not make it a patch. The **major** number is
+the author's call that the remake stands in for the original end to end; until then the version
+stays `0.x`, and afterwards a major bump is reserved for a change that breaks saved profiles or
+replaces a subsystem wholesale. ⚠ A patch release never changes the format of anything written to
+`user://` and never changes the network protocol, so builds that differ only in the patch number
+read each other's profiles and can play in the same session.
+
 The payload is `packaging/MANIFEST.md`'s table, copied from its repo sources on every export, which
 keeps it byte-identical.
 
@@ -377,9 +390,13 @@ It stages `.scratch\sandbox\<timestamp>-<vgpu|novgpu>\` with an `input\` folder 
 driver script, mapped read-only) and a writable `output\`, writes the `.wsb`, starts Windows Sandbox
 on it and waits for the driver's `done.txt`. `-NoVGpu` is the below-the-floor machine, `-MemoryMB`
 its memory, `-MapReadOnly` adds host folders the zip does not carry (a retail install, an extraction
-tree), and `-Driver` chooses what runs inside, so a later item can supply its own procedure without
-rebuilding the harness. Everything the run produced stays on the host in `output\`: screenshots,
-both streams, the build's own `logs\`, a line-by-line `steps.log` and `summary.json`.
+tree), `-Networking` gives the guest a network (off by default; the SmartScreen verdict on an
+unknown download is fetched, so a run that records that prompt needs it), and `-Driver` chooses what
+runs inside, so a later item can supply its own procedure without rebuilding the harness. The drivers
+share `sandbox/SandboxCommon.ps1`, copied in beside the driver and dot-sourced by name: the step log,
+the window census, screenshots, the machine facts and the watched launch of `CSVM.exe`. Everything
+the run produced stays on the host in `output\`: screenshots, both streams, the build's own `logs\`,
+a line-by-line `steps.log` and `summary.json`.
 
 **`sandbox/RendererFloor.ps1`** is the driver that answers "what does this machine do with this
 build". It unzips to `C:\CSVM`, launches `CSVM.exe` the way a recipient double-clicks it, records
@@ -392,6 +409,17 @@ gl_compatibility` and with `--rendering-driver opengl3`, so a fallback that does
 documented troubleshooting line rather than a guess. With an extraction tree mapped it also flies a
 chapter with `--no-vsync`, because whether a machine renders a menu says nothing about whether it
 can fly.
+
+**`sandbox/PublicRelease.ps1`** is the driver that follows `packaging/README.md` literally on a zip
+carrying the mark of the web, with a retail install mapped in (`-MapReadOnly`). The zip is copied
+into Downloads as a browser leaves it, unzipped through the shell's own copy engine so the mark
+propagates to the files inside, and then each double-click the README names is done twice: once
+through Explorer, which is where the security prompt appears and is recorded, and once as a plain
+process, which is what "Run anyway" leads to. `CSVM.exe` is started before the extraction for the
+no-game-data screen, `Extract.cmd` is run with its prompt answered by Enter after the mapped install
+is junctioned to a path its probe checks, and the menu and a C1 flight run on the data the machine
+extracted itself. The summary records the mark on the zip and on the extracted files, the extraction's
+time, file count and size, the save folder, and each launch's windows and dialogs.
 
 What the rig had to learn, none of it visible in a failed run:
 
@@ -414,7 +442,15 @@ What the rig had to learn, none of it visible in a failed run:
 - **The logon command can fire before the mapped folders mount,** so it polls for them, and its
   console is invisible, so it redirects. That redirect is still buffered when the session ends, which
   is why the driver appends `steps.log` line by line and reads its own `summary.json` back off the
-  share before saying it finished.
+  share before saying it finished. The append opens the file with every share flag, because a host
+  that tails the log while the guest writes it otherwise makes every later append fail silently.
+- ⚠ **A file carrying the mark of the web is not double-clicked with `Start-Process`.** ShellExecute
+  does not return until the security prompt is answered, so the driver hangs there, and a prompt
+  raised from a hidden helper process never reaches the screen at all. The driver hands the file to
+  `explorer.exe`, which returns at once and shows the prompt where a person would see it.
+- **CIM is access-denied to the sandbox account too**, and `Get-NetAdapter` throws a terminating
+  error through `-ErrorAction SilentlyContinue`, which empties every machine fact gathered in the
+  same expression. Network presence is read from `NetworkInterface.GetIsNetworkAvailable()`.
 
 **The renderer floor, as observed.** The build does not refuse to start without Vulkan. On the
 below-floor machine Godot reports `Required Vulkan instance extension VK_KHR_surface not found`,
@@ -425,8 +461,11 @@ and the no-game-data screen render normally. A flight does not: loading a chapte
 device, `buffer_create` fails with `0x8007000e` (out of memory) tens of thousands of times, and the
 process dies of an access violation (`0xC0000005`) about fourteen seconds in, leaving no window and
 no message. Guest memory is not the constraint, since 8 GB and 16 GB fail identically. So the floor
-is a GPU with a working Vulkan or Direct3D 12 driver, and what a machine below it shows a player is
-menus that work followed by a mission that vanishes.
+is a GPU with a working Vulkan or Direct3D 12 driver. What a machine below it shows a player is the
+boot card and then nothing: with game data present the intro film's first 4 MB vertex buffer fails
+with `DXGI_ERROR_DEVICE_REMOVED` (`0x887a0005`) and the process dies of the same access violation a
+few seconds in, before any menu. Only the no-game-data screen survives on that machine, so a menu
+observed without data says nothing about the floor.
 
 ## `tools/` (git-ignored)
 
@@ -474,6 +513,9 @@ terminal (SHELL-10): **never invoke the Godot binary directly for a scripted run
 `.\RunProbe.ps1 <user args>`.** It forwards every argument verbatim (no build step, so build
 first), runs on its own hidden desktop (`csvm-probe`, falling back to a visible but still
 redirected run if the OS refuses one), parks the streams beside the run's `--log-file` or in
-`.scratch/logs/probe-<stamp>.out/.err`, and exits with Godot's code. Its one switch is
-**`-TimeoutSec`** (default **300**, `0` = wait forever), which kills the run and exits **124**, so
-a probe that never quits cannot hang a session.
+`.scratch/logs/probe-<stamp>.out/.err`, and exits with Godot's code. **`-TimeoutSec`** (default
+**300**, `0` = wait forever) kills the run and exits **124**, so a probe that never quits cannot
+hang a session. **`-Resolution WxH`** is forwarded as Godot's own `--resolution` ahead of the `--`,
+which is the only way a scripted capture lands at a size a player runs: the project ships
+1280x720, and a saved size cannot raise it because `--screenshot` implies `--det`, which drops
+every saved option (DET-8). A resolution-sensitive artefact is invisible at the default size.

@@ -1,6 +1,7 @@
 using System.IO;
 using System.Linq;
-using CSVM.Flight;
+using CSVM.Flight.Hangar;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
 using Xunit;
 
@@ -26,7 +27,7 @@ public class LaunchMenuWizardTests
                 "Hollywood Knight", "Hughes Aviation", "Medusa", "Russian", "Sacred Trust",
                 "German", "Studio Security", "Broadway Bomber",
             },
-            UI.LaunchMenu.MilitiaNames());
+            UI.Screens.LaunchMenu.MilitiaNames());
     }
 
     /// <summary>The `.BM` pattern-coverage reading (decision 7), not vehicle.json's narrower
@@ -40,7 +41,7 @@ public class LaunchMenuWizardTests
     [InlineData("Sacred Trust", new[] { "Hellhound", "Warhawk" })]
     [InlineData("Broadway Bomber", new[] { "Peacemaker" })]
     public void MilitiaAircraftCoverageMatchesTheDecodedTable(string militia, string[] expected) =>
-        Assert.Equal(expected, UI.LaunchMenu.AircraftFor(militia));
+        Assert.Equal(expected, UI.Screens.LaunchMenu.AircraftFor(militia));
 
     /// <summary>The eleven airframes in the langui 3700 order (docs/formats/instant-action.md
     /// "Option strings"), the order the original stores an aircraft as an index into. Names are
@@ -53,22 +54,22 @@ public class LaunchMenuWizardTests
                 "Autogyro", "Hellhound", "Balmoral", "Bloodhawk", "Brigand", "Devastator",
                 "Firebrand", "Fury", "Kestrel", "Peacemaker", "Warhawk",
             },
-            UI.LaunchMenu.PlaneNames());
+            UI.Screens.LaunchMenu.PlaneNames());
 
     /// <summary>Fortune Hunter, the player's own militia, is legal as an enemy militia in the
     /// original's list and is never filtered out here (trap c), it covers all eleven airframes,
     /// the same roster the Plane screen itself offers.</summary>
     [Fact]
     public void FortuneHunterCoversAllElevenAirframes() =>
-        Assert.Equal(11, UI.LaunchMenu.AircraftFor("Fortune Hunter").Length);
+        Assert.Equal(11, UI.Screens.LaunchMenu.AircraftFor("Fortune Hunter").Length);
 
     [Fact]
     public void AnUnrecognisedMilitiaThrows() =>
-        Assert.Throws<System.ArgumentException>(() => UI.LaunchMenu.AircraftFor("Not A Militia"));
+        Assert.Throws<System.ArgumentException>(() => UI.Screens.LaunchMenu.AircraftFor("Not A Militia"));
 
     [Fact]
     public void TheThreeSkillsExistInLanguiOrder() =>
-        Assert.Equal(new[] { "novice", "veteran", "ace" }, UI.LaunchMenu.SkillKeys());
+        Assert.Equal(new[] { "novice", "veteran", "ace" }, UI.Screens.LaunchMenu.SkillKeys());
 
     /// <summary>The wave editor's own build step: a configured slot (count > 0) becomes a real
     /// InstantActionWave off the militia/aircraft/skill cursors; an unconfigured one (count 0)
@@ -77,7 +78,7 @@ public class LaunchMenuWizardTests
     [Fact]
     public void WaveForBuildsAConfiguredSlot()
     {
-        var wave = UI.LaunchMenu.WaveFor(count: 5, militiaIndex: 0, aircraftIndex: 0, skillIndex: 2);
+        var wave = UI.Screens.LaunchMenu.WaveFor(count: 5, militiaIndex: 0, aircraftIndex: 0, skillIndex: 2);
         Assert.Equal(5, wave.NumEnemies);
         Assert.Equal("Autogyro", wave.EnemyPlane); // Black Hat's first aircraft in the 3700 order
         Assert.Equal("ace", wave.EnemySkill);
@@ -98,8 +99,8 @@ public class LaunchMenuWizardTests
     [Fact]
     public void WaveForAnUnconfiguredSlotIsTheEmptyWaveWhateverTheCursorsAre()
     {
-        Assert.Equal(InstantAction.EmptyWave, UI.LaunchMenu.WaveFor(0, militiaIndex: 4, aircraftIndex: 3, skillIndex: 1));
-        Assert.Equal(InstantAction.EmptyWave, UI.LaunchMenu.WaveFor(-1, militiaIndex: 0, aircraftIndex: 0, skillIndex: 0));
+        Assert.Equal(InstantAction.EmptyWave, UI.Screens.LaunchMenu.WaveFor(0, militiaIndex: 4, aircraftIndex: 3, skillIndex: 1));
+        Assert.Equal(InstantAction.EmptyWave, UI.Screens.LaunchMenu.WaveFor(-1, militiaIndex: 0, aircraftIndex: 0, skillIndex: 0));
     }
 
     /// <summary>The Ammo Selection list's pylon rows: the stock Bloodhawk's three, then the same
@@ -112,12 +113,12 @@ public class LaunchMenuWizardTests
         var stock = StockLoadouts.Load(
             Path.Combine(TestData.RepoRoot, "CSVM", "data", "stock_loadouts.json")).ForModel("player_bhawk");
         Assert.NotNull(stock);
-        Assert.Equal(new[] { 1, 5, 2 }, UI.LaunchMenu.AmmoPylons(stock));
+        Assert.Equal(new[] { 1, 5, 2 }, UI.Screens.LaunchMenu.AmmoPylons(stock));
 
         var built = CustomPlaneBuild.LoadoutFor(
             new CustomPlaneDef { Name = "Blue Streak", Airframe = 3, Engine = 1, LeftHardpoints = 1, RightHardpoints = 1 },
             stock!);
-        Assert.Equal(new[] { 1, 2 }, UI.LaunchMenu.AmmoPylons(built));
-        Assert.Empty(UI.LaunchMenu.AmmoPylons(null));
+        Assert.Equal(new[] { 1, 2 }, UI.Screens.LaunchMenu.AmmoPylons(built));
+        Assert.Empty(UI.Screens.LaunchMenu.AmmoPylons(null));
     }
 }

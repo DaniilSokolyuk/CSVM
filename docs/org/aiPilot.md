@@ -15,9 +15,9 @@ the authored airframe side is [`formats/vehicle.md`](../formats/vehicle.md) (`mo
 [`formats/ai-nets.md`](../formats/ai-nets.md). The flight physics an AI shares with the player is
 [`flightModel.md`](flightModel.md); the firing half (when an AI pulls the trigger, and the
 `weapons` 5-tuple that governs it) is [`aiPilot/aiWeapons.md`](aiPilot/aiWeapons.md). CSVM's
-implementation seam is `src/Flight/AiPilot.cs`, the driver that picks each mode's aim point and
+implementation seam is `src/Flight/Ai/AiPilot.cs`, the driver that picks each mode's aim point and
 parameter block; the steering law it hands them to is
-`src/Flight/AiControlLaw.cs`, decoded in [`aiControlLaw.md`](aiControlLaw.md).
+`src/Flight/Ai/AiControlLaw.cs`, decoded in [`aiControlLaw.md`](aiControlLaw.md).
 
 ## The headline: there is no netless patrol
 
@@ -28,16 +28,27 @@ by one authored key and one authored field:
 - a **formation escort**, which requires a `primary_target` and never looks at a net.
 
 An aircraft with no patrol net does not fly a degenerate straight line and does not loiter. It
-either flies a formation station on its leader, or it is a `jet` with no net, which the engine has no
-branch for.
+either flies a formation station on its leader, or it is a `jet` with no net, which the engine
+builds dead.
 
-⚠ **The shipped data does produce one netless `jet`.** C1/M04's `blakepeace_2_2` (team 2, group 4,
-enabled) authors slot 0 as an empty list, every volume as `0.0` and its spawn at the world origin.
-The spawn reader `FUN_0047c210` takes the id when the list count is 1, draws `rand() % count` when
-it is higher, and otherwise writes `-1` to `+0x2e4` (`0x0047c76d`); nothing on that path skips the
-block. The net follower `FUN_0041d1f0` then looks `-1` up in the chapter net table
-(`0x0041d20a`–`0x0041d228`), finds no match and indexes record `-1`, 100 bytes before the table's
-first record, with no guard. What the aeroplane does on that read is not determinable statically.
+⚠ **The shipped data does produce one netless `jet`, and the original builds it dead.** C1/M04's
+`blakepeace_2_2` (team 2, group 4, enabled, `deactivated 0`) authors slot 0 as an empty list, every
+volume as `0.0` and its spawn at the world origin. The spawn reader `FUN_0047c210` takes the id when
+the list count is 1, draws `rand() % count` when it is higher, and otherwise writes `-1` to `+0x2e4`
+(`0x0047c76d`); nothing on that path skips the block. What decides its fate is the vehicle build
+`FUN_00476250`: it sets the dead byte `+0x91d` to 1 and the current edge `+0x2ec` to `-1` before net
+assignment (`0x0047636b`), and clears the dead byte again (`0x004763df`) on exactly two paths, a
+block whose `mode` is still `wingman` after the demotion test below, or a `netids >= 0` whose
+assignment `FUN_00475fc0` left a real edge in `+0x2ec`. A `jet` with `netids == -1` takes neither,
+so it is built dead: the world tick skips it (`+0x91d == 0 || +0x91f != 0`), targeting skips it,
+`DEDG` does not count it, and `WAKEUP_ENEMIES` cannot revive it because the hidden bit `+0x945`
+stays clear. The net follower `FUN_0041d1f0` would look `-1` up in the chapter net table
+(`0x0041d20a`–`0x0041d228`), find no match and index record `-1`, 100 bytes before the table's first
+record, with no guard, but it is never reached for this vehicle. Read live under the debugger on
+C1/M04: the vehicle sits in `VehicleList` at (0, 0, 0) with `+0x91d = 1`, `+0x945 = 0`,
+`+0x944 = 0`, `+0x2ec = -1` and its spawn speed still in `+0x934`, and the 100 bytes before the net
+table hold a null node-array pointer, so the read would have faulted had it run. CSVM does not spawn
+the block (`CampaignRoster.cs`, the plan's `Skipped` list).
 
 ## `mode`, the dynamics class
 
@@ -609,14 +620,14 @@ runs inside the hold through `AiTargetRanking.KeepsStandingTarget`, so an enemy 
 into reach takes an ally off a camp building at once rather than at the hold's end. A hull is neither
 class and keeps its ranked place. `--ai-targeting=decoded` puts the single running minimum back and
 the bare decoded hold with it, and the order is then the two biases' alone.
-`Session/SurfaceGunner` never takes the preference, since it
+`Flight/Ai/SurfaceGunner` never takes the preference, since it
 drops non-aircraft candidates anyway.
 
 The admission volume comes out as the attack one in every picker. `AiTargetRanking.Score` refuses a
 candidate past the `attackRange` it is handed, and `FlightController.SelectRankedTarget`, its
 re-score `HoldsStandingTarget` and the withdrawal's reach test all hand it
 `AiModeMachine.AttackRange`, so a member whose activation volume a `DEDG` widened keeps its own
-attack radius for what it may pick up. `Session/SurfaceGunner` is handed the radius
+attack radius for what it may pick up. `Flight/Ai/SurfaceGunner` is handed the radius
 `SurfaceVehicleRuntime` resolves for the hull at spawn, the block's and net's attack slot over the
 def's own `attack` over the 400 m def record default, which is the engine's own order (see "Where a
 hull's attack triple comes from"). `AiModeMachine.ActivationRange` is left where the spawn seeds it
@@ -791,9 +802,10 @@ the net-id table for the vehicle's `netids` value at `+0x2e4` and, **on no match
 indexing 100 bytes before the first element of the net array and dereferencing the node and edge
 pointers it finds there. There is no guard and no fallback path.
 
-This is latent rather than reachable: the shipped data never gives a `jet` a missing net (below),
-so the index −1 read is never executed by the retail game. It is recorded here because it is the
-positive proof that "netless patrol" is not a behaviour the engine has.
+This is latent rather than reachable: a `jet` with no net is built dead by `FUN_00476250` (the
+headline), so the follower never runs for it and the index −1 read is never executed by the retail
+game. It is recorded here because it is the positive proof that "netless patrol" is not a behaviour
+the engine has.
 
 Net assignment is `FUN_00475fc0`. On `netids == -1` it returns immediately, leaving the task
 untouched. On a valid net it:
@@ -1004,7 +1016,7 @@ reach nine seconds after the intro.
 
 ### What CSVM ports of this (D34)
 
-`src/Flight/AiEscort.cs` is the law: the five-state machine, both station offsets, the ramp, the
+`src/Flight/Ai/AiEscort.cs` is the law: the five-state machine, both station offsets, the ramp, the
 break-off test and the separation push, pure over a leader/target snapshot. `AiPilot.Escort` holds
 it and, when its leader is in play, dispatches to it INSTEAD of pursue, lay off, patrol, evade and
 a running maneuver, keeping only stunned and avoid crash ahead of it, which is the original's own
@@ -1025,7 +1037,7 @@ does. The `wingman-engage` suite measures it on a flown leg: the wingman holds o
 target throughout, opens fire, and its escort state never leaves the formation.
 
 **The spawner.** A campaign session spawns the mission's `aiv` roster through
-`Session/CampaignRoster.cs` (the plan) and `CampaignDirector.BuildRoster` (the placement). The fork
+`Session/Campaign/CampaignRoster.cs` (the plan) and `CampaignDirector.BuildRoster` (the placement). The fork
 above is applied per block from the def's `mode` (`Mech3/VehicleDefs.cs`, resolved through
 `kind_of`) and the block's `netids`: a netless `mode wingman` block gets `AiPilot.Escort` on the rig
 its `primary_target` names (the literal `player` is the first human), resolved in a second pass once
@@ -1316,6 +1328,15 @@ Per zone: `+0x44` is a difficulty, the node's flag word `+0x28 >> 23`; `+0x48` i
 cleared by `dzones.zrd`'s `disable` list (`FUN_00445da0`) and by the script's zone on/off op;
 `+0x49` is cleared by `nosnapshot`; `+0x4c` is the objective slot from `objective_numbers`.
 
+The difficulty read is the whole word shifted right as an unsigned quantity, with no mask and no
+sign extension: `MOV ECX,[EBX+0x28]` then `SHR ECX,0x17` then `MOV [EDX+0x44],ECX` at
+`0x00445f7d`–`0x00445f8e`, so bits 23 to 31 and nothing else. The pick then refuses a zone on the
+signed test `natural_touch < difficulty` (`0x004210e0`'s unforced arm), which admits an exact
+match. **Every one of the install's 80 `dzpath` nodes authors no flag word at all**, six in C1,
+seven in C1B, thirteen in C2, five in C3, fifteen in C4 and thirty-four in C5, with none in C1C or
+C2B, so every shipped zone is difficulty 0 and the term admits every pilot. The field is read
+anyway: the authored bits are the only thing allowed to set it.
+
 ### Two entries, and which one the shipped data uses
 
 **The node tag** (`FUN_0041d1f0`, right after the walk step `FUN_0041d8f0`): the node just
@@ -1328,17 +1349,34 @@ forced arm. Neither arm rolls anything, tests a range or reads a difficulty:
   vertex is closer). A refused entry sets a 5 s retry stamp (`+0x8a0`) and nothing else.
 - the forced arm of `FUN_004210e0` takes the nearest end of ANY active zone, at any range.
 
-**The proximity roll** (`FUN_004210e0`'s unforced arm) is a different thing and a narrow one: it
-runs from the PURSUE arm alone (`FUN_0041d9f0`, its first statement), and only while the vehicle
-is a `jet` in state 0 with byte `+0xba` set, which the damage handler sets on a FAILED steady-hand
-test (`FUN_004b9bc0`, "Absorbed %f damage, steady hand test failed") and pursue clears when the
-player is no longer behind it. Every 5 s (`+0x8a0`) it rolls `rand()/32767 <
-daredevil_chance` (`+0x954`, default 0.2), "Dare devil test passed. Looking for danger zones.",
-then over every active zone with a FREE lane and a difficulty at or under the pilot's
-`natural_touch` (`+0x958`, default 4; "Choosing danger zone. Natural touch test failed") it takes
-the end inside **500 m** whose into-ribbon tangent best lines up with the direction from the
-aeroplane to it. So the roll is an evasion: a hit pilot being chased dives into a nearby zone.
-The only other caller is the debug console's `force_dz` (`FUN_0043d640`), on the player's target.
+**The proximity roll** (`FUN_004210e0`'s unforced arm) is a different thing and a narrow one. Its
+gate is the head of the combat driver `FUN_0041d9f0`, five tests before anything else that driver
+does, each falling through to `0x0041da43`: the global suspend flag `DAT_0064f66e` is clear
+(`0x0041d9f9`), the vehicle class `+0x67c` is 0, a `jet` (`0x0041da07`), the state `+0x358` is 0
+(`0x0041da11`), the hit byte `+0xba` is set (`0x0041da1b`), and the mission clock `DAT_0071c470`
+has reached the retry stamp `+0x8a0` (`0x0041da25`, `FCOMP` then `TEST AH,1`, so the call is taken
+on clock at or past stamp). Then `FUN_004210e0(0, 0)` at `0x0041da3e`. The hit byte is the damage
+handler's, set on a FAILED steady-hand test (`FUN_004b9bc0`, "Absorbed %f damage, steady hand test
+failed") and cleared by pursue when the player is no longer behind it, so the roll is an evasion:
+a hit pilot being chased dives into a nearby zone.
+
+The unforced arm rolls `rand() × 3.051851e-05 < daredevil_chance` (`+0x954`, written from the def
+at `0x0047ce4e`, constructor default 0.2 at `0x004b03c2`), logging "Dare devil test passed.
+Looking for danger zones." or "Dare devil test failed. Not looking for danger zones.". On a pass
+it walks every zone whose active byte `+0x48` is set, whose difficulty `+0x44` is at or under the
+pilot's `natural_touch` (`+0x958`, written at `0x0047ce92`, default 4 at `0x004b03cc`; "Choosing
+danger zone. Natural touch test failed") and which has a free lane (`FUN_00446510`), reads both
+ends through `FUN_00446790`/`FUN_00446850`, and takes the end within **500 m** (the squared test
+`local_4c <= 250000.0`) whose into-ribbon tangent best lines up with the direction from the
+aeroplane to it. Every path that does not enter stamps `+0x8a0 = DAT_0071c470 + 5.0` at
+`LAB_00421443`. The only other caller is the debug console's `force_dz` (`FUN_0043d640`), on the
+player's target.
+
+The suspend flag is not a danger-zone term and reads 0 for the whole of a played mission: the
+mission load clears it (`0x00464693`) as does the new-game path (`0x004654fa`), the debug
+console's `suspend` command writes it (`0x0043db4d`), and the state core raises it only once a
+deadline of 1,000,000,000 ticks stamped at load has passed (`0x004a0252`, the constant at
+`DAT_00622bb4`).
 
 Both entries end the same way: the run record is written to `+0x9bc`, the state to **2**, and the
 standing target `+0x948` is released. `FUN_004897c0` then re-arms state 2 from a non-null
@@ -1424,11 +1462,21 @@ edge pick (`FUN_00431e40`) excluding the edge the walk was on when the run began
 crash checks are both gated on state < 4 / < 2 in `FUN_004897c0`, so nothing interrupts a rail
 run but a stun write, after which `+0x9bc` re-arms the approach at the cursor's current point.
 
+⚠ **The `PR-DngrZn` line belongs to the gate count, not to the AI's run.** The zone module's own
+completion routine `FUN_00446990` broadcasts combat-voice trigger 15 through `FUN_004b86a0(0xf)`
+at `0x004469ff`, inside the branch that needs more than one gate crossed (`0x004469dc`) and right
+after the loop that clears each gate's crossed byte `+0x10` (`FUN_00446930` sets it). The same
+branch flags matching `DANGER_ZONES_COMPLETED` objective names, increments the completion count
+`_DAT_0071d328` and arms the snapshot `DAT_0064fb78`. `FUN_0048e580` reaches that routine for the
+local player's vehicle alone (`CMP EDI,[0x0071c298]` at `0x0048ea1f`), so the line is the flight
+praising the player's run through the gates, and an AI's own rail run never speaks it.
+
 ### What CSVM ports of this
 
-`Flight/DangerZoneRibbon.cs` is the spline, the run cursor and the rail integrator with every
-constant above; `Flight/DangerZoneRibbons.cs` reads every `dzpathN` of the chapter gamez by the
-route-versus-gate material rule and applies `dzones.zrd`'s `disable` list. `AiNetFollower`
+`Flight/Modes/DangerZoneRibbon.cs` is the spline, the run cursor and the rail integrator with every
+constant above; `Flight/Modes/DangerZoneRibbons.cs` reads every `dzpathN` of the chapter gamez by the
+route-versus-gate material rule, takes each zone's difficulty off its node's flag word and applies
+`dzones.zrd`'s `disable` list. `AiNetFollower`
 reports the node it just reached (`ArrivedNode`), `AiPilot` takes the node-tag entry into
 `AiModeMachine.ApproachingDangerZone`, locks at 105 m into `NavigatingDangerZone` and publishes
 `RailPose`, which `FlightController.SimStep` applies in place of the model step; the exit
@@ -1436,6 +1484,16 @@ re-seats the follower through `AiNetFollower.Reseat`, which is handed the leg th
 the entry and refuses it, the exclusion above. Measured on C2/M03 with the world's colliders up
 (the `campaign-racers` suite, 208 s of sim): all six racers fly `dzpath1, 2, 3, 10, 6, 7, 9` in
 the net's tag order, each once, through approach, lock and exit.
+
+The proximity roll is ported beside the tag entry. `AiModeMachine.RollDaredevil` is the roll and
+the 5 s stamp, with the original's own log strings; `DangerZoneRibbons.ProximityPick` is the zone
+walk, the difficulty and free-lane admission and the 500 m best-facing end; `AiPilot` calls them
+from the combat modes with `Evading` up, which is the remake's `+0xba`, and both entries then run
+through one `StartDangerZoneRun`. The class gate lives where the chance is assembled
+(`AiFlightAssembler`, a non-`jet` gets a chance of 0), so a wingman escort keeps its station under
+fire. The trigger 15 line rides the player's own completion report:
+`CampaignDirector.NotifyDangerZoneCompleted` raises `WorldInputs.DangerZoneSpoken`, which
+`GameSession` turns into `AiVoiceRuntime.DangerZoneCompleted` for the flown aeroplane.
 
 ⚠ **The exclusion is what carries a racer out of a zone.** Without it the seat pick after a run
 is free to take the leg back toward the tagged node, and `dzpath3`'s exit sets the aeroplane
@@ -1463,10 +1521,10 @@ install's one tagged node on a generator's net. The `generator-launch-danger-zon
 off the Dante over the mission's built world, seats him on `M4MilesRun` the way OBJECTIVE60 does and
 reads the entry off his pilot.
 
-Not ported: the proximity roll (it needs the `+0xba` hit flag the mode machine does not carry;
-`DangerZoneRibbon.ProximityRangeM` and `HasFreeLane` are its admission terms, kept for it), the
-target release at the lock (CSVM's gunner target is the host's), the altitude-floor bypass on the
-approach solve, the lane table past the zero lane (no shipped node has one), and the vertical nose a
+Not ported: the suspend flag the roll's gate reads first (nothing in CSVM suspends a mission that
+way), the target release at the lock (CSVM's gunner target is the host's), the altitude-floor
+bypass on the approach solve, the lane table past the zero lane (no shipped node has one), and the
+vertical nose a
 bay launch seats its net with (CSVM seats a launched follower on its first update, from the
 aeroplane's live nose, so a drop's first leg is the best-aligned one rather than the first-listed).
 
@@ -1685,8 +1743,5 @@ law is a campaign behaviour and the wrong fix for a wingman that leaves the figh
   point into bank, pitch and rudder) is a separate decode, and it is what would replace
   `AiPilot`'s placeholder.
 - `mode_alt` has no identified consumer.
-- What a `jet` whose net resolved to `-1` flies (C1/M04's `blakepeace_2_2`, see the headline) is a
-  read of record `-1` outside the net table; only a debugger run of that mission can say what it
-  finds there.
 - Whether the original's Instant Action wingmen visibly hold station is untested. The code path says
   they do not.

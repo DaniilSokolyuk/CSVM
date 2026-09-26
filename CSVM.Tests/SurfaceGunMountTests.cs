@@ -1,4 +1,5 @@
-using CSVM.Flight;
+using CSVM.Flight.Ai;
+using CSVM.Flight.Weapons;
 using Godot;
 using Xunit;
 

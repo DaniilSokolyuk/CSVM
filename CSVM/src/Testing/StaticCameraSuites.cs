@@ -2,9 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
-using CSVM.Flight;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Camera;
+using CSVM.Flight.Modes;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
-using CSVM.Session;
+using CSVM.Session.Roster;
+using CSVM.Session.World;
 using CSVM.Utils;
 using Godot;
 
@@ -450,7 +454,7 @@ internal static class StaticCameraSuites
                 RigCount = rigs.Count,
                 Rigs = rigs,
                 PauseState = new PauseState(),
-                MenuInputFor = _ => new UI.MenuInput(),
+                MenuInputFor = _ => new UI.Screens.MenuInput(),
                 ExitSession = () => { },
             }, starts);
     }

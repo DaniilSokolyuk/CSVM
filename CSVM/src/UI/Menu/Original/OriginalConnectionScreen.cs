@@ -4,6 +4,8 @@ using System.Globalization;
 using System.Linq;
 using CSVM.Mech3;
 using CSVM.Net;
+using CSVM.UI.Boards;
+using CSVM.UI.Campaign;
 
 namespace CSVM.UI.Menu.Original;
 

@@ -2,11 +2,16 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CSVM.Flight;
+using CSVM.Flight.Modes;
+using CSVM.Flight.Weapons;
 using CSVM.Net;
 using CSVM.UI;
+using CSVM.UI.Boards;
+using CSVM.UI.Hangar;
 using CSVM.UI.Menu;
 using CSVM.UI.Menu.BuiltIn;
 using CSVM.UI.Menu.Original;
+using CSVM.UI.Screens;
 
 namespace CSVM.Testing;
 
@@ -608,12 +613,12 @@ internal static class MenuOriginalConnectionSuites
         var planes = launch.Seats.Select(s => s.PlaneNode).ToList();
         var fits = launch.Seats.Select(s => s.Fit).ToList();
         var stock = StockLoadouts.Load();
-        var (roster, seatFits) = CSVM.Session.Launcher.VersusLaunchField(wire.Transport, planes, fits, stock);
+        var (roster, seatFits) = CSVM.Session.Launch.Launcher.VersusLaunchField(wire.Transport, planes, fits, stock);
         ctx.Check(roster.Length == 2 && roster[1].PlaneNode == PlanePickerRoster.AirframeNode(1)
                   && slot >= 0 && seatFits[1].AmmoAt(slot) == 2,
             $"the host's roster builds the guest's seat on its pick and fit ({string.Join(", ", roster.Select(s => s.PlaneNode))})");
         var bare = ((NetLobby)wire.Transport).Inner;
-        var (withheld, _) = CSVM.Session.Launcher.VersusLaunchField(bare, planes, fits, stock);
+        var (withheld, _) = CSVM.Session.Launch.Launcher.VersusLaunchField(bare, planes, fits, stock);
         ctx.Check(withheld.Length == 2 && withheld[1].PlaneNode == planes[0],
             $"ABLE-TO-FAIL CONTROL: with the pick withheld the seat takes the local airframe ({withheld.LastOrDefault()?.PlaneNode})");
         return roster;
@@ -652,12 +657,12 @@ internal static class MenuOriginalConnectionSuites
             heard.ApplyScore(line.PlayerIndex, line.Score, line.Kills, line.Deaths);
         }
 
-        ctx.Check(CSVM.Session.Launcher.LobbyLanding(true, host.Door.Dogfight, played) == null,
+        ctx.Check(CSVM.Session.Launch.Launcher.LobbyLanding(true, host.Door.Dogfight, played) == null,
             $"ABLE-TO-FAIL CONTROL: a match still running lands nowhere near the lobby");
         played.Advance(60f);
         heard.ApplyState(0, 60f, 0f, ended: true);
-        var hostLanding = CSVM.Session.Launcher.LobbyLanding(true, host.Door.Dogfight, played);
-        var guestLanding = CSVM.Session.Launcher.LobbyLanding(true, guest.Door.Dogfight, heard);
+        var hostLanding = CSVM.Session.Launch.Launcher.LobbyLanding(true, host.Door.Dogfight, played);
+        var guestLanding = CSVM.Session.Launch.Launcher.LobbyLanding(true, guest.Door.Dogfight, heard);
         ctx.Check(hostLanding != null && guestLanding != null, $"a completed match lands both ends on their lobby");
         ctx.Check(host.Door.Reclaim() && guest.Door.Reclaim(), $"and both doors take their wire back");
         if (hostLanding == null || guestLanding == null)
@@ -718,7 +723,7 @@ internal static class MenuOriginalConnectionSuites
 
         var planes = launch.Seats.Select(s => s.PlaneNode).ToList();
         var fits = launch.Seats.Select(s => s.Fit).ToList();
-        var (roster, _) = CSVM.Session.Launcher.VersusLaunchField(wire.Transport, planes, fits, StockLoadouts.Load());
+        var (roster, _) = CSVM.Session.Launch.Launcher.VersusLaunchField(wire.Transport, planes, fits, StockLoadouts.Load());
         GuestLaunch(ctx, wire, roster, guest, guestExits);
     }
 
@@ -735,7 +740,7 @@ internal static class MenuOriginalConnectionSuites
 
         var planes = new[] { PlanePickerRoster.AirframeNode(0) };
         var fits = new LoadoutChoice?[] { null };
-        var (roster, _) = CSVM.Session.Launcher.VersusLaunchField(wire.Transport, planes, fits, StockLoadouts.Load());
+        var (roster, _) = CSVM.Session.Launch.Launcher.VersusLaunchField(wire.Transport, planes, fits, StockLoadouts.Load());
         ctx.Check(roster.Length == 2 && roster[1].PlaneNode == PlanePickerRoster.AirframeNode(2),
             $"the host's roster builds the guest's seat on its pick ({string.Join(", ", roster.Select(s => s.PlaneNode))})");
         int before = guestExits.Count;

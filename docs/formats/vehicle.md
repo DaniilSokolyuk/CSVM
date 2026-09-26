@@ -23,7 +23,7 @@ def; properties resolve **nearest-first** through the chain (e.g. `pbloodhawk` â
 `player_airplane`; `nodename` names the GameZ model root (`player_bhawk`). AI variants
 (wingmen, pirates) are separate defs with the same shape but different numbers.
 
-Keys the remake consumes (see `src/Flight/PlaneStats.cs`):
+Keys the remake consumes (see `src/Flight/Airframe/PlaneStats.cs`):
 
 | Key | Meaning |
 |---|---|

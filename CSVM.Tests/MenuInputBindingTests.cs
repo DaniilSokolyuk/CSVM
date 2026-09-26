@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 using CSVM.Bindings;
-using CSVM.UI;
+using CSVM.UI.Screens;
 using Godot;
 using Xunit;
 

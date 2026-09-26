@@ -507,7 +507,7 @@ AI aircraft keeps the `ai_crash_*` vector its params carried.
 **Select.** `FUN_0048b920` `0x0048bac5`–`0x0048bb00`, unchanged: index vehicle `+0x6e0` with the
 struck material's surface id; null material / negative / out-of-range / empty slot → slot 0;
 empty vector or empty slot 0 → the bare handle at `+0x6d0`. One cascade, two vectors, keyed by
-which vehicle crashed. `Session/SurfaceDefTable.cs` was reused verbatim with
+which vehicle crashed. `Flight/Airframe/SurfaceDefTable.cs` was reused verbatim with
 `lastResort = the plane's own name`.
 
 **Census.** All 8 chapters ship exactly three defs: `ai_crash_default` / `_dirt` / `_water`

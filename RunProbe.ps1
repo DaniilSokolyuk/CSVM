@@ -20,6 +20,12 @@
     .scratch/logs/probe-<stamp>.out/.err; the script prints both paths and exits with
     Godot's exit code.
 
+.PARAMETER Resolution
+    Window size as WxH, forwarded as Godot's own `--resolution` BEFORE the `--` separator.
+    Without it a probe renders at the project's 1280x720, and a saved option cannot raise it
+    because --screenshot implies --det, which drops every saved option (DET-8). This is the
+    only way a scripted capture lands at a size a player actually runs.
+
 .PARAMETER TimeoutSec
     Kill the run if it has not exited after this many seconds and exit 124 (the GNU
     timeout convention, so "hung and killed" is distinguishable from "ran and failed").
@@ -40,6 +46,7 @@
 [CmdletBinding(PositionalBinding = $false)]
 param(
     [int]$TimeoutSec = 300,
+    [ValidatePattern('^\d+x\d+$')][string]$Resolution = "",
     # Everything else -- the Godot/CSVM arguments, forwarded verbatim. `--flag=value`
     # tokens never collide with the named parameter above (PowerShell only binds
     # single-dash names), so callers that pass no -TimeoutSec are untouched.
@@ -70,7 +77,10 @@ if (-not (Test-Path $LogDir)) { $null = New-Item -ItemType Directory -Path $LogD
 . (Join-Path $PSScriptRoot "HiddenDesktop.ps1")
 $HiddenDesktop = Open-HiddenDesktop -Name "csvm-probe"
 
-$Launch = @("--path", $ProjectDir, "res://scenes/Main.tscn", "--") + @($GodotArgs)
+# Engine options belong before the `--`; everything after it is the CSVM argument list.
+$Engine = @("--path", $ProjectDir, "res://scenes/Main.tscn")
+if ($Resolution) { $Engine += @("--resolution", $Resolution) }
+$Launch = $Engine + @("--") + @($GodotArgs)
 
 # SHELL-19: the argument string is re-split by the callee, and a path may carry a space, so
 # any argument carrying one is quoted here or Godot receives it split. Same rule as

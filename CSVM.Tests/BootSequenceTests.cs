@@ -3,7 +3,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using CSVM.UI;
+using CSVM.UI.Boards;
+using CSVM.UI.Screens;
 using Xunit;
 
 namespace CSVM.Tests;

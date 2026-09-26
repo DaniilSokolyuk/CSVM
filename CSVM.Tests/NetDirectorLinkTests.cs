@@ -5,6 +5,7 @@ using System.Linq;
 using CSVM.Mech3;
 using CSVM.Net;
 using CSVM.Session;
+using CSVM.Session.Objectives;
 using Xunit;
 
 namespace CSVM.Tests;

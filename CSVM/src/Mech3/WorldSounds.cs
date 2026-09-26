@@ -271,7 +271,7 @@ public sealed partial class WorldSounds : Node3D
     }
 
     /// <summary>Where the session's audio listeners are, one camera per pane, since every pane is
-    /// listener-enabled (UI.SplitScreen). The NEAREST of them is what every emitter's level is
+    /// listener-enabled (UI.Boards.SplitScreen). The NEAREST of them is what every emitter's level is
     /// measured to, because that is the pane whose volume wins the mix; Godot still does the
     /// panning from its own listeners. Also the debug log's distance column. Without this the
     /// emitters stay at their authored level, which is what a harness pumping no world sees.</summary>

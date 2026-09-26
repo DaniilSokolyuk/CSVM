@@ -163,17 +163,18 @@ GODOT --path CSVM res://scenes/Main.tscn -- --plane=player_bhawk
 
 (First time only: run with `--headless --import` once before running scenes.)
 
-**Module map, the index at [`docs/architecture.md`](docs/architecture.md) routes to the per-namespace file `docs/architecture/<Namespace>.md`.** Find the module in that index, then read only its `##` entry: `Grep "## src/Flight/FlightModel.cs" -A 12 docs/architecture/` returns the whole entry. Read a module's entry before changing it.
+**Module map, the index at [`docs/architecture.md`](docs/architecture.md) routes to the per-namespace file `docs/architecture/<Namespace>.md`.** Find the module in that index, then read only its `##` entry: `Grep "## src/Flight/Airframe/FlightModel.cs" -A 12 docs/architecture/` returns the whole entry. Read a module's entry before changing it.
 
 - `src/Mech3/`, extraction readers, the GameZ→Godot builders, and the animation runtime: install → live world.
-- `src/Flight/`, the aircraft as a flying, shooting, damageable thing, plus its HUD and stunt mode.
+- `src/Flight/`, the aircraft as a flying, shooting, damageable thing, plus its HUD and stunt mode, in eight sub-namespaces, one folder each: `Airframe/` (`FlightController.cs`, the flying node, and `FlightModel.cs`, its physics, with collision and damage), `Weapons/` (fire control, the projectile pool, targeting, turrets), `Ai/` (the AI pilot and the surface hulls), `Camera/`, `Hud/`, `Modes/` (stunt, Dogfight, pause), `Hangar/` (the custom plane) and `Audio/`.
 - `src/Effects/`, particle systems: puffers, the ambient cloud field, precipitation, the world wind.
-- `src/UI/`, launchscreen, splitscreen rig, and the inspection labs (each with a scripted `--debug-*` twin).
+- `src/UI/`, launchscreen, splitscreen rig, and the inspection labs (each with a scripted `--debug-*` twin), in six sub-namespaces, one folder each: `Boards/` (the widget library: the composed board and its view, the board menu, the splitscreen rig, the layer order), `Campaign/` (the campaign pages and the scrapbook), `Screens/` (`LaunchMenu.cs`, boot, cinema, load, pause and results boards, menu input), `Hangar/` (the hangar pages), `Overlays/` (debug and HUD overlays) and `Labs/`, beside `Menu/`, the presentation seam (`docs/menu-presentations.md`).
 - `src/Video/`, the managed MPEG-1 decoder for the install's `.mpg` cinemas: system-stream demux, video decode, frames as pixel buffers. Holds no engine type.
 - `src/Utils/`, session-wide services: clock, log, seed, shader time, config, startup profile, options, graphics mode. Determinism lives here.
-- `src/Testing/`, the in-engine assertion harness behind `--run-tests` and the `--dump-*` probes.
+- `src/Testing/`, the in-engine assertion harness behind `--run-tests`: the suites, their registry and fixtures. Nothing outside it depends on it except the `--run-tests` dispatch.
+- `src/Tooling/`, runtime tooling the game and the harness share: the `--dump-*` probes and their wrappers, the `--screenshot`/`--shots` capture, the golden-image hash, the glTF export.
 - `src/Bindings/`, the input binding model and the named-action seam: device identity, the tagged control, the binding list an action resolves through, the registry that resolves a device identity to a live pad, the seat device state a polling site reads its pad set through, a player's action map resolved once per tick, and the shipped default keymap with its versioned per-player file.
-- `src/Session/`, `Launcher.cs` (Main.tscn root: bootstrap, launchscreen, persistent camera/lighting) and `GameSession.cs` (the per-launch session node it instantiates), plus livery/spawn/plane-roster resolution, the roster aggregate with grouped inputs and its two internal assemblers, the effect/crash stage factory, and the weather rig.
+- `src/Session/`, six sub-namespaces, one folder each: `Launch/` (`Launcher.cs`, the Main.tscn root, and `GameSession.cs`, the per-launch session node it instantiates), `InstantAction/`, `Campaign/` (the campaign director and the profile), `Roster/` (the aircraft aggregate, livery and spawn resolution, the AI generators), `World/` (the simulation step, weather, effects, zeppelins, turrets, cutscenes) and `Objectives/` (the mission script and its rules).
 - `src/Net/`, the network seam: the transport interface a session sends byte payloads through, the in-process loopback carrier with its injected latency, jitter and loss model, the ENet carrier a match ships over, and the seat, handshake, clock and remote-pose records around them. Only the carriers name an engine type.
 - `src/` root, `SessionSpec.cs`, `SessionPaths.cs`, `Pads.cs`.
 - `CSVM.Tests/`, the xUnit project: engine-free reader units. Anything reaching `GD.*` or a live `Node` belongs in `src/Testing/` instead.
@@ -233,9 +234,9 @@ Full validated format documentation lives in **`docs/formats/`**, one page per f
 
 ## Agent skills
 
-- Issue tracker: this repo's own markdown, `backlog.md`, a live `docs/PLAN-*.md`, `playtest.md`. Public GitHub Issues are a separate surface, worked in the issue and never mirrored into these files; the form and the policies are in `.github/`. See [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md).
-- Triage labels: the five canonical roles, unrenamed. See [`docs/agents/triage-labels.md`](docs/agents/triage-labels.md).
-- Domain docs: single-context; this repo's glossary and decisions live in `docs/`, not `CONTEXT.md`/`docs/adr/`. See [`docs/agents/domain.md`](docs/agents/domain.md).
+- Issue tracker: GitHub Issues on `Laeresh/CSVM` via `gh`, with `backlog`/`playtest`/`capture` labels in place of new `BL-`/`PT-`/`CAP-` ids. `backlog.md` and `playtest.md` hold only the entries filed before the switch, until each closes; `docs/PLAN-*.md` is still the live plan. See [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md).
+- Triage labels: the five canonical roles, unrenamed, created on the repo. See [`docs/agents/triage-labels.md`](docs/agents/triage-labels.md).
+- Domain docs: single-context; glossary in `CONTEXT.md`, structural decisions in `docs/adr/`, the rest in `docs/` and git history. See [`docs/agents/domain.md`](docs/agents/domain.md).
 
 ## Current status / next step
 
@@ -243,8 +244,8 @@ Full validated format documentation lives in **`docs/formats/`**, one page per f
 
 **Where the project is.** Milestones 1 through 5 are delivered: 11 flyable aircraft over 8 animated chapter worlds, launched from the in-game menu, with original liveries, weather, world animation and sound; extraction is complete and round-trips byte-identically. M3 added guns, rockets and world destructibles that take damage, die, lose collision, throw debris and reset; M4 added the combat AI (aircraft that patrol, engage, evade and die, turrets, zeppelins, pilot voice), and all four Instant Action mission types plus the 2–4-player splitscreen Dogfight deathmatch are playable and scored. M5 added the single-player campaign: per-profile progression across the cabin, briefing and flight-check screens, and missions that run their authored `objectives.zrd` choreography with intro cutscenes, letterbox and campaign wingmen.
 
-**Active plans:** [`docs/PLAN-public-release.md`](docs/PLAN-public-release.md) at `E41`, A1's Known Issues draft being that file's appendix; [`docs/PLAN-enhanced-graphics-2.md`](docs/PLAN-enhanced-graphics-2.md) at Wave A, orchestrated on branch `enhanced-graphics-2`.
-Next: `BL-764` and `BL-765` carry what runs 12 and 13's sorties left open, Plane Construction first; `BL-693` carries what input rebinding left open; CM13's race pace, `PT-119`'s two CM14 sorties and the enhanced mode's pass against `PLAN-enhanced-graphics`'s Open judgements are owed at the controls.
+**Active plans:** [`docs/PLAN-enhanced-graphics-2.md`](docs/PLAN-enhanced-graphics-2.md) at Wave A, orchestrated on branch `enhanced-graphics-2`; [`docs/PLAN-flight-sticks.md`](docs/PLAN-flight-sticks.md) at Wave A, orchestrated on branch `flight-sticks`.
+Next: `BL-693` carries what input rebinding left open; CM13's race pace, `PT-119`'s two CM14 sorties and the enhanced mode's pass against `PLAN-enhanced-graphics`'s Open judgements are owed at the controls.
 
 Use the targeted/quick development loop above, then verify landed code with the complete
 **`.\RunTests.ps1`**; read [`docs/verification.md`](docs/verification.md) before measuring.

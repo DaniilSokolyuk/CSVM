@@ -12,7 +12,7 @@ namespace CSVM.Mech3;
 /// <c>target</c>, and reports plane-frame positions plus co-located groups. See
 /// <c>docs/formats/markers.md</c> for the full decode.
 /// This is the committed instrument <c>markers.md</c> regenerates from; <c>--dump-markers</c>
-/// and <see cref="UI.MarkerOverlay"/> share it so the gizmos and the dumped table agree.
+/// and <c>UI.Overlays.MarkerOverlay</c> share it so the gizmos and the dumped table agree.
 /// </summary>
 public sealed class MarkerRig
 {

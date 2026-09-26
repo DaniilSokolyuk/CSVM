@@ -1,4 +1,5 @@
-using CSVM.Session;
+using CSVM.Session.Campaign;
+using CSVM.Session.Objectives;
 using Xunit;
 
 namespace CSVM.Tests;

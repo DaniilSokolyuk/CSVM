@@ -4,7 +4,7 @@ Part of the [format documentation](README.md). Covers the chapter-scope reader t
 world's invisible fog volumes with cloud sprites, the original's ambient cloud field.
 Consumed by `CSVM/src/Mech3/FogVolumes.cs` (reader + volume census + the in-volume whiteout rule,
 `FogVolumeWhiteout`), `CSVM/src/Effects/FogVolumeClutter.cs` (the scatter and the render) and
-`CSVM/src/Session/WeatherRig.cs` (the whiteout overlay). Which key reaches which consumer:
+`CSVM/src/Session/World/WeatherRig.cs` (the whiteout overlay). Which key reaches which consumer:
 [Consumed by the remake](#consumed-by-the-remake). What the original's own scatter and card draw do
 with these keys, decoded from the executable, is [`../org/cloudCards.md`](../org/cloudCards.md).
 
@@ -210,8 +210,8 @@ runs.
 `cloudsprite1`/`cloudsprite2` are ordinary [clutter template roots](clutter.md), parentless
 `Object3d` nodes resolved by name (`ClutterBuilder.FindTemplateRoot`, shared with the trees) with
 one child carrying the card. The card is a single 4-vertex, 1-polygon tri-strip quad,
-`model_type: Facade` + `facade_mode: SphericalY` (turned to face the eye in any direction, not the
-trees' upright `CylindricalY`), skinned `cloud1.tif` / `cloud2.tif`, vertex colours 240/240/240, centred on its
+`model_type: Facade` + `facade_mode: SphericalY` (turned to face the eye in any direction, tilting
+as well as yawing, not the trees' upright `CylindricalY`), skinned `cloud1.tif` / `cloud2.tif`, vertex colours 240/240/240, centred on its
 own quad centre to within 3 mm.
 
 ⚠ **We render those cards at the authored 240, and no colour term is applied to them at all.**

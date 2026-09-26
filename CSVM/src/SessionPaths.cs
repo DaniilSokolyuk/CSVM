@@ -8,7 +8,7 @@ namespace CSVM;
 /// data root, preferring an unpacked sibling folder over its <c>.zip</c>. Static and engine-free
 /// so every entry point, <c>--anim-lab</c> included, resolves the paths a normal session does.
 /// ⚠ The <c>--gamez=</c>/<c>--textures=</c>/<c>--zrdr=</c>/<c>--sounds=</c> overrides are the
-/// caller's policy and stay in <see cref="CSVM.Session.GameSession"/>.
+/// caller's policy and stay in <see cref="CSVM.Session.Launch.GameSession"/>.
 /// </summary>
 public static class SessionPaths
 {

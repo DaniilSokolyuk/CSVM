@@ -1,12 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using CSVM.Flight;
+using CSVM.Flight.Hangar;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
-using CSVM.UI;
+using CSVM.UI.Boards;
+using CSVM.UI.Hangar;
 using CSVM.UI.Menu;
 using CSVM.UI.Menu.BuiltIn;
 using CSVM.UI.Menu.Original;
+using CSVM.UI.Screens;
 
 namespace CSVM.Testing;
 
@@ -404,7 +407,7 @@ internal static class MenuInstantActionSuites
         Is(ctx, "its player aircraft is the seat's stock name", "Fury", def.PlayerPlane);
         ctx.Check(def.NumWingmen == 2, $"two wingmen ({def.NumWingmen})");
         Is(ctx, "flying the stepped aircraft", "Warhawk", def.WingmanPlane);
-        ctx.Check(def.WingmanLoadout == null, $"with the stock fit");
+        ctx.Check(launch.WingmanLoadout == null, $"with the stock fit");
         ctx.Check(def.Lives == 1, $"one life ({def.Lives})");
         ctx.Check(def.Waves.Count == 4, $"four wave slots ({def.Waves.Count})");
         // The trailing id is the militia's own wave accent, Russian's and Black Swan's.
@@ -931,7 +934,7 @@ internal static class MenuInstantActionSuites
         Click(host, seat, Pointer(fit, accept.X + 5f, accept.Y + 5f, pressed: true, clicked: true));
         ctx.Check(shell.Screen == OriginalScreen.InstantAction && ia.WingmanFit.PylonFor(pylon) == picked,
             $"ACCEPT keeps the pick and returns to the screen ({shell.Screen}, {ia.WingmanFit.PylonFor(pylon)})");
-        // The def carries the wingman fit only where wingmen fly.
+        // The launch carries the wingman fit only where wingmen fly.
         if (ia.IsAceDuel)
         {
             ia.SelectMissionType(1);
@@ -942,7 +945,7 @@ internal static class MenuInstantActionSuites
             ia.SetWingmen(1);
         }
 
-        ctx.Check(ReferenceEquals(ia.BuildDef().WingmanLoadout, ia.WingmanFit), $"and the built def carries the wingman fit ({ia.MissionType.Key}, {ia.NumWingmen} wingmen)");
+        ctx.Check(ReferenceEquals(ia.LaunchWingmanFit, ia.WingmanFit), $"and the launch carries the wingman fit ({ia.MissionType.Key}, {ia.NumWingmen} wingmen)");
         ia.ResetWingmanFit();
     }
 

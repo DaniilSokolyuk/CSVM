@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using CSVM.Flight;
 using CSVM.Utils;
 using Godot;
 
@@ -13,7 +12,7 @@ namespace CSVM.Mech3;
 /// Propellers have several representations under <c>dontmove</c> (see <see cref="PropParts"/>).
 /// The default (exterior) build keeps the still <c>staticpropN</c> disc and drops the blur
 /// layers; the <c>spinningProps</c> build (free flight) keeps BOTH rather than choosing one, so a
-/// <see cref="Flight.PropAnimator"/> can spin the blur discs while the startprops/stopprops
+/// <c>Flight.Airframe.PropAnimator</c> can spin the blur discs while the startprops/stopprops
 /// choreography cross-fades between them and the static disc at spawn and at engine stop.
 /// The <c>nitropropN</c> boost disc is built hidden in a flight build, for the nitro_boost def.
 /// </summary>
@@ -25,6 +24,13 @@ public sealed class PlaneBuilder
     /// geometry. ⚠ The interior and the airframe are not a similarity apart, do not try to derive
     /// this from the model. First-person decode: docs/org/cameraViews.md.</summary>
     public const float InteriorScale = 0.04f;
+
+    /// <summary>The fixed head-pitch offset <c>FUN_0042d980</c> applies about the same axis as
+    /// elevation, in both first-person views: −4.70° = −0.08203 rad (bit pattern
+    /// <c>0xbda7ff58</c>). Not head-look, a constant tilt baked into the view build. The camera
+    /// reads it with <see cref="CockpitCameraOffset"/>, and the interior mount carries the same
+    /// tilt so the gunsight stays on the guns. Decode: docs/org/cameraViews.md.</summary>
+    public const float HeadPitchOffsetRad = -0.08203f;
 
     // Non-prop subtrees that make no sense in an exterior view: cockpit interiors are
     // separate (differently-scaled) models; damage/destroyed are alternate states.
@@ -99,20 +105,20 @@ public sealed class PlaneBuilder
     public int MeshInstanceCount => _scene.MeshInstanceCount + (_interiorScene?.MeshInstanceCount ?? 0);
 
     /// <summary>The wingtip flare nodes, built hidden (reset state) and re-skinned with an
-    /// additive amber tint. A <see cref="Flight.WingLightBlinker"/> flashes them in flight;
+    /// additive amber tint. A <c>Flight.Airframe.WingLightBlinker</c> flashes them in flight;
     /// the static viewer leaves them off. Populated by <see cref="Build"/>.</summary>
     public IReadOnlyList<Node3D> WingFlares => _wingFlares;
 
     /// <summary>Flight and damage-lab builds: the exterior damage-state
     /// panels, the torn-skin pdpN nodes, built HIDDEN (their reset state), plus their
-    /// healthy pdpN_h twins, built visible. A <see cref="Flight.DamageVisuals"/> flips
+    /// healthy pdpN_h twins, built visible. A <c>Flight.Airframe.DamageVisuals</c> flips
     /// them as part HP crosses the vehicle def's injure_anims thresholds.</summary>
     public IReadOnlyList<Node3D> DamagePanels => _damagePanels;
 
     /// <summary>Cockpit-interior builds only: the two torn-skin cockpit panels,
     /// <c>pcdp4</c>/<c>pcdp6</c>, built HIDDEN like their exterior
     /// counterparts. They carry no healthy twin (no <c>pcdp4_h</c>/<c>pcdp6_h</c> ships anywhere
-    /// in <c>planes.zbd</c>), <see cref="Flight.DamageVisuals"/> flips them off the SAME
+    /// in <c>planes.zbd</c>), <c>Flight.Airframe.DamageVisuals</c> flips them off the SAME
     /// <c>pdpanel4</c>/<c>pdpanel6</c> injure entries that flip <c>pdp4</c>/<c>pdp6</c>, not a
     /// separate cockpit rule. Empty unless the builder was asked for a cockpit interior.</summary>
     public IReadOnlyList<Node3D> CockpitDamagePanels => _cockpitDamagePanels;
@@ -131,11 +137,11 @@ public sealed class PlaneBuilder
 
     /// <summary>The built <c>cockpit1</c> interior inside the model <see cref="Build"/> returned,
     /// hidden and mounted at <see cref="CockpitCameraOffset"/>; null unless the builder was asked
-    /// for one. <see cref="Flight.CockpitVisibility"/> is what shows it, per view mode.</summary>
+    /// for one. <c>Flight.Hud.CockpitVisibility</c> is what shows it, per view mode.</summary>
     public Node3D? CockpitInterior { get; private set; }
 
     /// <summary>The interior's own textured materials paired with the texture each resolved from,
-    /// the same registry <see cref="Repaint"/> uses. <see cref="Flight.CockpitGauges"/> reads it to
+    /// the same registry <see cref="Repaint"/> uses. <c>Flight.Hud.CockpitGauges</c> reads it to
     /// tell an indicator's light from its hilite bar by NAME rather than by guessing at the
     /// surface order, then overrides each driven surface with a copy of its own.</summary>
     public IReadOnlyList<(ShaderMaterial Material, string TextureName)> InteriorMaterials =>
@@ -144,7 +150,7 @@ public sealed class PlaneBuilder
     /// <summary>A <c>cockpit1</c> node whose visibility is a STATE something else drives, so a
     /// pristine cockpit must show none of it: the <c>bulNx</c> hole quads the
     /// <c>cockpit_bulletholes</c> defs light, and the two warning lamps, which
-    /// <see cref="Flight.CockpitGauges"/> lights. Parking them still holds: a build with no rig
+    /// <c>Flight.Hud.CockpitGauges</c> lights. Parking them still holds: a build with no rig
     /// driving it must render pristine, and the labs are such builds. ⚠ Everything else on the
     /// panel is always-drawn geometry that changes COLOUR, not visibility.</summary>
     public static bool IsInteriorDrivenState(string name)
@@ -362,7 +368,7 @@ public sealed class PlaneBuilder
                 return;
             }
             n3d.Transform = new Transform3D(
-                new Basis(Vector3.Right, CameraController.HeadPitchOffsetRad)
+                new Basis(Vector3.Right, HeadPitchOffsetRad)
                     .Scaled(Vector3.One * InteriorScale),
                 CockpitCameraOffset);
             n3d.Visible = false; // shown only while a first-person view is on the screen

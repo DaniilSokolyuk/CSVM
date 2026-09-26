@@ -1,10 +1,11 @@
 using System;
 using System.Collections.Generic;
 using CSVM.Bindings;
-using CSVM.UI;
+using CSVM.UI.Boards;
 using CSVM.UI.Menu;
 using CSVM.UI.Menu.BuiltIn;
 using CSVM.UI.Menu.Original;
+using CSVM.UI.Screens;
 
 namespace CSVM.Testing;
 

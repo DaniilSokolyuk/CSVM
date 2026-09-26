@@ -335,7 +335,7 @@ internal static class CloudFieldSuites
 
     // ⚠ The pose reads the eye's POSITION and never its basis. A billboard assembled from
     // INV_VIEW_MATRIX's columns carries the camera's roll into every card, which is the one thing
-    // the original's shortest-arc tracker cannot do (docs/org/cloudCards.md).
+    // the original's per-card tracker cannot do (docs/org/cloudCards.md).
     private static void CheckCardPose(TestContext ctx, string chapter, FogVolumeClutter field)
     {
         int examined = 0;
@@ -348,7 +348,7 @@ internal static class CloudFieldSuites
 
             string code = shader.Code;
             ctx.Check(code.Contains("csky_facade_spherical(", System.StringComparison.Ordinal),
-                $"{chapter} {child.Name} card poses through the facade arc");
+                $"{chapter} {child.Name} card poses through the facade look-at");
             ctx.Check(!code.Contains("INV_VIEW_MATRIX[0]", System.StringComparison.Ordinal)
                       && !code.Contains("INV_VIEW_MATRIX[1]", System.StringComparison.Ordinal)
                       && !code.Contains("INV_VIEW_MATRIX[2]", System.StringComparison.Ordinal),
@@ -392,7 +392,7 @@ internal static class CloudFieldSuites
             {
                 // The card's lower corners carry the pair pointing out of it, the normals a turn
                 // swings across the light; its top corners carry the one along the card's own +Y,
-                // which the arc holds perpendicular to the eye, and so to a probe sun placed there.
+                // which the pose holds perpendicular to the eye, and so to a probe sun placed there.
                 if (vertices[v].Y < 0f)
                 {
                     toward += VertexLight(facing * normals[v]);
@@ -427,24 +427,21 @@ internal static class CloudFieldSuites
         ctx.Check(examined > 0, $"{chapter} cloud card meshes examined for the vertex law count={examined}");
     }
 
-    // The basis the card is drawn through, csky_facade_spherical's shortest arc: the rotation
-    // carrying the card's authored +Z onto the direction to the eye with no twist about it. The
-    // eye's own basis never enters it (docs/org/cloudCards.md), and a card's authored normals
-    // reach the world through this, never through a model transform.
+    // The basis the card is drawn through, csky_facade_spherical's world-up look-at: the card's +Z
+    // at the eye, its +Y the world's up projected off that line. The eye's own basis never enters
+    // it (docs/org/cloudCards.md), and a card's authored normals reach the world through this,
+    // never through a model transform.
     private static Basis FacadeBasis(Vector3 towardCamera)
     {
         var f = towardCamera.Normalized();
-        float d = 1f + f.Z;
-        if (d < 1e-6f)
+        var right = Vector3.Up.Cross(f);
+        if (right.LengthSquared() < 1e-8f)
         {
-            return new Basis(new Vector3(1f, 0f, 0f), new Vector3(0f, -1f, 0f), new Vector3(0f, 0f, -1f));
+            right = Vector3.Back.Cross(f);
         }
 
-        float k = 1f / d;
-        return new Basis(
-            new Vector3(1f - (k * f.X * f.X), -(k * f.X * f.Y), -f.X),
-            new Vector3(-(k * f.X * f.Y), 1f - (k * f.Y * f.Y), -f.Y),
-            f);
+        right = right.Normalized();
+        return new Basis(right, f.Cross(right), f);
     }
 
     // The decoded per-vertex term itself, on one world-space normal.

@@ -41,7 +41,7 @@ public readonly record struct CampaignMission(
 /// The campaign's mission order, read from the shared <c>cm_sequence.zrd</c> reader
 /// (docs/formats/campaign-sequence.md): 24 flat entries, no branch, no predicate and no
 /// alternates. The engine's only selection rule is "the next <c>seq</c>", which is why
-/// <see cref="Session.CampaignProgression"/> models a single integer position rather than a graph.
+/// <c>Session.Campaign.CampaignProgression</c> models a single integer position rather than a graph.
 /// </summary>
 public static class CampaignSequence
 {

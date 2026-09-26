@@ -34,6 +34,7 @@ choreography in [objectives.md](objectives.md).
 - [Ammo selection: `ORDINANCELAYOUT.SCRIPT`](#ammo-selection-ordinancelayoutscript)
 - [The scrapbook: `SCRAPBOOK.SCRIPT`, `SCRAPBOOKZOOM.SCRIPT`, `SCRAPBOOK_TOC.SCRIPT`](#the-scrapbook-scrapbookscript-scrapbookzoomscript-scrapbook_tocscript)
   - [The zoom view's sepia](#the-zoom-views-sepia)
+  - [Fitting a block to its box](#fitting-a-block-to-its-box)
   - [Export to Desktop](#export-to-desktop)
   - [Entry, exit and the table of contents](#entry-exit-and-the-table-of-contents)
 - [Callback reference](#callback-reference)
@@ -773,7 +774,9 @@ The remake takes the same pose in `DangerZonePhotograph`, a viewport of its own 
 pane's world, so the pane is never moved. A pilot in a first-person view has the hidden airframe
 groups shown for that one frame on a visual layer no pane draws, and the fill light below lights
 the pilot's own aircraft for that frame. A run that draws no frames (headless) photographs the pane
-instead.
+instead. The original's back buffer was 4:3 at every resolution it ran at, so its file is that
+buffer scaled; a pane here can be any shape, and the remake writes the centred 4:3 window of it at
+the pane's full height, which is what a 640×480 screen framed.
 
 Authoring gaps stay as they are: CM18 numbers a zone 19 with no row for it, CM19 numbers one 31
 with no row, CM23 ships rows 27 and 28 for zones it disables, and every `_31` row is dead because
@@ -845,6 +848,36 @@ instead of at the row's authored `ZoomX`/`ZoomY`. The window is cut for a 640×4
 offset, so a file of another shape lands inside the opaque mount instead of behind the window.
 EXPORT TO DESKTOP copies the file, which never meets the mount, and the exported PNG is therefore
 the plain print.
+
+### Fitting a block to its box
+
+Every `SBZ_T_TITLE<letter>`, `SBZ_T_CAPTION<letter>` and `SBZ_T_TEXT<letter>` row carries a `Height`
+beside its `Width`, and **the original ignores it**. It draws a block at the point size the langui
+row's `[FONTID]` names, one line per face height, from the box's top down, and words that do not
+fit run on past the box and off the screen. Mission 1's second spread is the plain case: the diary
+scrap `1_2_2` is `VIN14` in a 555×590 box at y 10, its shipped text wraps to about 597 px, and the
+original's own page cuts the last line at the bottom edge of the 600 px screen. The original
+neither shrinks, clips nor scrolls; it simply overruns.
+
+**CSVM departs here.** A block taller than its box is stepped down a whole point at a time, its
+pitch scaled with it, and drawn at the largest size that fits. Of the 165 blocks the shipped table
+carries, ten are over their box at the authored size and take the step: `0_1_9`, `1_1_2`, `1_2_2`,
+`4_1_2`, `7_1_5`, `9_1_3`, `16_1_3`, `20_1_1`, `23_2_2` and `24_2_1`. Nine are 14 pt bodies that
+land at 13 pt or, for `0_1_9`, at 12 pt. The tenth is `20_1_1`'s `CENT36` headline, which wraps to
+three lines in a 110 px band and lands at 30 pt, the deepest step any shipped scrap takes. The
+floor is 8 pt: a block that will not fit even there is drawn at 8 pt and overruns, so a fault shows
+rather than words being dropped silently. No shipped scrap reaches the floor.
+
+Twelve further blocks draw a raw `IDS_SB_...` symbol, because `RESRC1.H` or the string table does
+not carry it and an unresolved key degrades to itself. All twelve are single-line titles and all
+twelve fit their box, so no overrun in the shipped table is a placeholder standing in for shorter
+words.
+
+The rule lives in the renderer rather than the composition, because how many lines words wrap to is
+a font metric: `CampaignScrapbookZoomPage` puts the box's authored height on the `BoardLine` and
+`ComposedBoardView` does the stepping, the same division `BoardNote`'s `Shrink` already uses. The
+`scrapbook-fit` suite sweeps every row of the shipped table, names the blocks over their box in its
+artifact, and fails if one is still over it after the step.
 
 ### Export to Desktop
 

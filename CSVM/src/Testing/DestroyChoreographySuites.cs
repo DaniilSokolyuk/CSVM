@@ -1,9 +1,14 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using CSVM.Flight;
+using CSVM.Flight.Ai;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Camera;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
-using CSVM.Session;
+using CSVM.Session.Campaign;
+using CSVM.Session.Roster;
+using CSVM.Tooling;
 using Godot;
 
 namespace CSVM.Testing;
@@ -53,7 +58,7 @@ internal static class DestroyChoreographySuites
                 var pool = new Node3D { Name = $"pool{slot}" };
                 pool.SetMeta(AnimRuntime.PoolSlotMeta, slot);
                 stage.AddChild(pool);
-                Session.WorldEffectsFactory.BuildEffectStage(world.Gamez,
+                Session.World.WorldEffectsFactory.BuildEffectStage(world.Gamez,
                     world.Session.Builder.Scene, pool, new[] { "planeflakes" });
                 foreach (var child in pool.GetChildren())
                 {
@@ -66,7 +71,7 @@ internal static class DestroyChoreographySuites
 
             ctx.Check(copies.Count == 4, $"four planeflakes copies staged ({copies.Count})");
             var runtime = new AnimRuntime(
-                Session.WorldEffectsFactory.NewCrashTemplateStage())
+                Session.World.WorldEffectsFactory.NewCrashTemplateStage())
             {
                 AutoStart = false,
                 ManualAdvance = true,
@@ -791,7 +796,7 @@ internal static class DestroyChoreographySuites
                 ctx.Host.AddChild(live);
                 var spec = SessionSpec.Parse(System.Array.Empty<string>());
                 var liveries = new LiveryResolver(spec, Path.Combine(ctx.DataRoot, "extracted", "rof"));
-                var factory = new Session.WorldEffectsFactory(spec, ctx.Host, () => Vector3.Zero);
+                var factory = new Session.World.WorldEffectsFactory(spec, ctx.Host, () => Vector3.Zero);
                 var inputs = new AircraftAssemblyResources
                 {
                     PlanesGamez = planesGamez,
@@ -861,7 +866,7 @@ internal static class DestroyChoreographySuites
                 // Every airframe, not ctx.PlaneName: part of the verdict IS the branch between
                 // them, and `pilot` is a name all eleven carry, so a resolver binding the wrong
                 // one is wrong everywhere at once.
-                foreach (var planeName in Session.EffectCatalogue.AirframeDestroyAnims.Keys)
+                foreach (var planeName in Flight.Airframe.EffectCatalogue.AirframeDestroyAnims.Keys)
                 {
                     PlayerDestroyArm(ctx, world, planesGamez, textures, planeName,
                         autogyro: string.Equals(planeName, "player_autogyro", System.StringComparison.OrdinalIgnoreCase));
@@ -897,7 +902,7 @@ internal static class DestroyChoreographySuites
                 {
                     var controller = new Node3D { Name = "controller_replica" };
                     var runtime = AnimRuntime.ForCrashRig(
-                        Session.WorldEffectsFactory.NewCrashTemplateStage(),
+                        Session.World.WorldEffectsFactory.NewCrashTemplateStage(),
                         1, new CountingEmitterFactory(), false);
                     runtime.ManualAdvance = true;
                     try
@@ -909,9 +914,9 @@ internal static class DestroyChoreographySuites
                         crashRoot.SetMeta(AnimRuntime.NameMeta, "player");
                         crashRoot.Transform = planeModel.Transform;
                         controller.AddChild(crashRoot);
-                        var rootNames = Session.WorldEffectsFactory.CrashStageRootNames(
+                        var rootNames = Session.World.WorldEffectsFactory.CrashStageRootNames(
                             world.Session.Program, world.Gamez, controller);
-                        Session.WorldEffectsFactory.StageCrashTemplates(world.Gamez,
+                        Session.World.WorldEffectsFactory.StageCrashTemplates(world.Gamez,
                             world.Session.Builder.Scene, crashRoot, rootNames,
                             Utils.EffectPools.Load());
                         var copies = new List<(string Root, int Slot, Node3D Copy)>();
@@ -946,8 +951,8 @@ internal static class DestroyChoreographySuites
                         ctx.Host.AddChild(runtime);
                         var restOrigin = planeModel.GlobalTransform.Origin;
                         runtime.Bind(controller,
-                            world.Session.Program.Subset(Session.EffectCatalogue.CrashRigAnimNames(
-                                Session.EffectCatalogue.CrashDefTable(world.Session.Program))));
+                            world.Session.Program.Subset(Flight.Airframe.EffectCatalogue.CrashRigAnimNames(
+                                Flight.Airframe.EffectCatalogue.CrashDefTable(world.Session.Program))));
                         for (int i = 0; i < 6; i++)
                         {
                             runtime.Advance(1f / 60f);
@@ -1071,7 +1076,7 @@ internal static class DestroyChoreographySuites
                 var controller = new Node3D { Name = "controller_replica" };
                 var emitters = new CountingEmitterFactory();
                 var runtime = AnimRuntime.ForCrashRig(
-                    Session.WorldEffectsFactory.NewCrashTemplateStage(), 1, emitters, false);
+                    Session.World.WorldEffectsFactory.NewCrashTemplateStage(), 1, emitters, false);
                 runtime.ManualAdvance = true;
                 try
                 {
@@ -1081,8 +1086,8 @@ internal static class DestroyChoreographySuites
                     ctx.Host.AddChild(controller);
                     ctx.Host.AddChild(runtime);
                     runtime.Bind(controller,
-                        world.Session.Program.Subset(Session.EffectCatalogue.CrashRigAnimNames(
-                            Session.EffectCatalogue.CrashDefTable(world.Session.Program))));
+                        world.Session.Program.Subset(Flight.Airframe.EffectCatalogue.CrashRigAnimNames(
+                            Flight.Airframe.EffectCatalogue.CrashDefTable(world.Session.Program))));
 
                     ctx.Check(Find(planeModel, "exhaust1") != null,
                         $"{model}: builds the exhaust1 marker nitro_boost's puffers anchor at");
@@ -1131,7 +1136,7 @@ internal static class DestroyChoreographySuites
             FlightController? player = null;
             try
             {
-                var factory = new Session.WorldEffectsFactory(
+                var factory = new Session.World.WorldEffectsFactory(
                     SessionSpec.Parse(System.Array.Empty<string>()), ctx.Host, () => Vector3.Zero);
                 var spawn = new Vector3(0f, 500f, 0f);
                 var stats = PlaneStats.Load(ctx.ZrdrPath, model);
@@ -1251,7 +1256,7 @@ internal static class DestroyChoreographySuites
             var built = new List<FlightController>();
             try
             {
-                var factory = new Session.WorldEffectsFactory(
+                var factory = new Session.World.WorldEffectsFactory(
                     SessionSpec.Parse(System.Array.Empty<string>()), ctx.Host, () => Vector3.Zero);
                 var stats = PlaneStats.Load(ctx.ZrdrPath, model);
                 FlightController? Build(bool human, Vector3 spawn, int index)
@@ -1519,7 +1524,7 @@ internal static class DestroyChoreographySuites
             FlightController? ai = null;
             try
             {
-                var factory = new Session.WorldEffectsFactory(
+                var factory = new Session.World.WorldEffectsFactory(
                     SessionSpec.Parse(System.Array.Empty<string>()), ctx.Host, () => Vector3.Zero);
                 var spawn = new Vector3(0f, 500f, 0f);
                 var stats = PlaneStats.Load(ctx.ZrdrPath, model);
@@ -1599,7 +1604,7 @@ internal static class DestroyChoreographySuites
                         engagedAt = i;
                     if (ai.Nitro.ReleasedThisTick && releasedAt < 0)
                         releasedAt = i;
-                    bool shaking = rig.AnimStateOf(Session.EffectCatalogue.AiShakeAnim) == 2;
+                    bool shaking = rig.AnimStateOf(Flight.Airframe.EffectCatalogue.AiShakeAnim) == 2;
                     if (shaking)
                     {
                         if (shakeFrom < 0)
@@ -1635,7 +1640,7 @@ internal static class DestroyChoreographySuites
                 // The shake: an aircraft nobody is sitting in gets the plane-rocking def instead of
                 // the camera shake, on its own node, and it is a finite three-loop wobble.
                 ctx.Check(shakeFrom == engagedAt,
-                    $"{model}: {Session.EffectCatalogue.AiShakeAnim} starts on the engaging frame shakeFrom={shakeFrom}");
+                    $"{model}: {Flight.Airframe.EffectCatalogue.AiShakeAnim} starts on the engaging frame shakeFrom={shakeFrom}");
                 ctx.Check(shakeTo > shakeFrom && shakeTo < Frames - 1,
                     $"{model}: …and ends with the def rather than running on shakeTo={shakeTo}");
                 ctx.Check(healthy != null && maxShakeDeg > 0.5f,
@@ -1682,7 +1687,7 @@ internal static class DestroyChoreographySuites
             var controller = new Node3D { Name = "controller_replica" };
             var fake = new CountingEmitterFactory();
             var runtime = AnimRuntime.ForCrashRig(
-                Session.WorldEffectsFactory.NewCrashTemplateStage(), 1, fake, false);
+                Session.World.WorldEffectsFactory.NewCrashTemplateStage(), 1, fake, false);
             runtime.ManualAdvance = true;
             try
             {
@@ -1694,10 +1699,10 @@ internal static class DestroyChoreographySuites
                 crashRoot.Transform = planeModel.Transform;
                 controller.AddChild(crashRoot);
                 var program = world.Session.Program;
-                var crashDefs = Session.EffectCatalogue.CrashDefTable(program);
-                var rootNames = Session.WorldEffectsFactory.CrashStageRootNames(
+                var crashDefs = Flight.Airframe.EffectCatalogue.CrashDefTable(program);
+                var rootNames = Session.World.WorldEffectsFactory.CrashStageRootNames(
                     program, world.Gamez, controller, crashDefs);
-                Session.WorldEffectsFactory.StageCrashTemplates(world.Gamez,
+                Session.World.WorldEffectsFactory.StageCrashTemplates(world.Gamez,
                     world.Session.Builder.Scene, crashRoot, rootNames, Utils.EffectPools.Load());
                 var wreck = builder.BuildDestroyed(model);
                 if (wreck != null)
@@ -1709,7 +1714,7 @@ internal static class DestroyChoreographySuites
                 ctx.Host.AddChild(controller);
                 ctx.Host.AddChild(runtime);
                 runtime.Bind(controller,
-                    program.Subset(Session.EffectCatalogue.CrashRigAnimNames(crashDefs)));
+                    program.Subset(Flight.Airframe.EffectCatalogue.CrashRigAnimNames(crashDefs)));
                 for (int i = 0; i < 6; i++)
                 {
                     runtime.Advance(1f / 60f);
@@ -1839,7 +1844,7 @@ internal static class DestroyChoreographySuites
                 ctx.Host.AddChild(live);
                 var spec = SessionSpec.Parse(System.Array.Empty<string>());
                 var liveries = new LiveryResolver(spec, Path.Combine(ctx.DataRoot, "extracted", "rof"));
-                var factory = new Session.WorldEffectsFactory(spec, ctx.Host, () => Vector3.Zero);
+                var factory = new Session.World.WorldEffectsFactory(spec, ctx.Host, () => Vector3.Zero);
                 var inputs = new AircraftAssemblyResources
                 {
                     PlanesGamez = planesGamez,
@@ -1945,7 +1950,7 @@ internal static class DestroyChoreographySuites
             var planesGamez = GameZ.Load(ctx.PlanesGamezPath);
             var textures = new TextureArchive(SessionPaths.ChapterTextures(ctx.DataRoot, world.Chapter));
             var stats = PlaneStats.Load(ctx.ZrdrPath, ctx.PlaneName);
-            var factory = new Session.WorldEffectsFactory(
+            var factory = new Session.World.WorldEffectsFactory(
                 SessionSpec.Parse(System.Array.Empty<string>()), ctx.Host, () => Vector3.Zero);
             FlightController? ai = null;
             FlightController? human = null;
@@ -1981,7 +1986,7 @@ internal static class DestroyChoreographySuites
                     return;
                 ctx.Check(ai.CrashDefs.PlayableDefs.Count == 3
                           && ai.CrashDefs.PlayableDefs.All(d =>
-                              d.StartsWith(Session.EffectCatalogue.AiCrashDefPrefix, System.StringComparison.Ordinal)),
+                              d.StartsWith(Flight.Airframe.EffectCatalogue.AiCrashDefPrefix, System.StringComparison.Ordinal)),
                     $"the AI table's playable slots are the ai_crash_* trio [{string.Join(", ", ai.CrashDefs.PlayableDefs)}]");
 
                 // The two subtrees one context node has to reach: `healthy` sits on the plane
@@ -2000,7 +2005,7 @@ internal static class DestroyChoreographySuites
                 dirt.SetMeta(SceneBuilder.SurfaceIdMeta, 13);
                 ctx.Host.AddChild(dirt);
                 ai.DebugForceCrash(null, dirt);
-                ctx.Check(ai.Crashed && ai.LastCrashDef == Session.EffectCatalogue.AiCrashDefPrefix + "dirt",
+                ctx.Check(ai.Crashed && ai.LastCrashDef == Flight.Airframe.EffectCatalogue.AiCrashDefPrefix + "dirt",
                     $"an AI crash on dirt(13) plays ai_crash_dirt def={ai.LastCrashDef ?? "-"}");
                 string healthyState = healthy == null ? "-" : healthy.Visible ? "on" : "off";
                 string wreckState = wreck == null ? "-" : wreck.Visible ? "on" : "off";
@@ -2010,7 +2015,7 @@ internal static class DestroyChoreographySuites
                 // No struck body: the null-material arm resolves slot 0 of the SAME family.
                 ai.Respawn();
                 ai.DebugForceCrash();
-                ctx.Check(ai.LastCrashDef == Session.EffectCatalogue.AiCrashDefPrefix + "default",
+                ctx.Check(ai.LastCrashDef == Flight.Airframe.EffectCatalogue.AiCrashDefPrefix + "default",
                     $"an AI crash with no material falls to ai_crash_default def={ai.LastCrashDef ?? "-"}");
 
                 // The A/B control: a human rig through the same factory keeps the player family.
@@ -2032,10 +2037,10 @@ internal static class DestroyChoreographySuites
                     world.Session.Builder.Scene, textures, world.Session.Program, verbose: false,
                     planesGamez: planesGamez);
                 ctx.Check(human.CrashDefs != null && human.CrashDefs.PlayableDefs.All(d =>
-                        d.StartsWith(Session.EffectCatalogue.CrashDefPrefix, System.StringComparison.Ordinal)),
+                        d.StartsWith(Flight.Airframe.EffectCatalogue.CrashDefPrefix, System.StringComparison.Ordinal)),
                     $"the same factory keeps a human rig on player_crash_* [{string.Join(", ", human.CrashDefs?.PlayableDefs ?? System.Array.Empty<string>())}]");
                 human.DebugForceCrash(null, dirt);
-                ctx.Check(human.LastCrashDef == Session.EffectCatalogue.CrashDefPrefix + "dirt",
+                ctx.Check(human.LastCrashDef == Flight.Airframe.EffectCatalogue.CrashDefPrefix + "dirt",
                     $"…and its dirt crash plays player_crash_dirt def={human.LastCrashDef ?? "-"}");
             }
             finally
@@ -2311,7 +2316,7 @@ internal static class DestroyChoreographySuites
             ctx.Same(1, Count(starts, "fury"),
                 $"the rig started the self-named destroy def exactly once on the kill");
             int crashStarts = starts.Where(kv => kv.Key.StartsWith(
-                Session.EffectCatalogue.AiCrashDefPrefix, System.StringComparison.OrdinalIgnoreCase))
+                Flight.Airframe.EffectCatalogue.AiCrashDefPrefix, System.StringComparison.OrdinalIgnoreCase))
                 .Sum(kv => kv.Value);
             ctx.Same(0, crashStarts,
                 $"…and no ai_crash_* def, which belongs to the ground contact seconds away");
@@ -2617,7 +2622,7 @@ internal static class DestroyChoreographySuites
             ctx.Check(landedAt is > 0f and < 3f,
                 $"the wreck reached the world inside the 3.0 s window, so it was still a vehicle t={landedAt:0.00} s");
             ctx.Check(ai.LastCrashDef != null && ai.LastCrashDef.StartsWith(
-                    Session.EffectCatalogue.AiCrashDefPrefix, System.StringComparison.Ordinal),
+                    Flight.Airframe.EffectCatalogue.AiCrashDefPrefix, System.StringComparison.Ordinal),
                 $"…and its contact played the AI ground-impact family, indexed by the struck surface def={ai.LastCrashDef ?? "-"}");
             ctx.Check(visibleFramesBeforeLanding > 0 && !model.Visible,
                 $"…which is what hides it, and only then: {visibleFramesBeforeLanding} visible frame(s) of flight, then model={model.Visible}");
@@ -2646,7 +2651,7 @@ internal static class DestroyChoreographySuites
     private static void PlayerDestroyArm(TestContext ctx, TestWorld world, GameZ planesGamez,
         TextureArchive textures, string planeName, bool autogyro)
     {
-        var factory = new Session.WorldEffectsFactory(
+        var factory = new Session.World.WorldEffectsFactory(
             SessionSpec.Parse(System.Array.Empty<string>()), ctx.Host, () => Vector3.Zero);
         FlightController? player = null;
         try
@@ -2683,7 +2688,7 @@ internal static class DestroyChoreographySuites
             }
 
             rig.ManualAdvance = true;
-            ctx.Check(player.DestroyDef == Session.EffectCatalogue.PlayerDestroyAnim
+            ctx.Check(player.DestroyDef == Flight.Airframe.EffectCatalogue.PlayerDestroyAnim
                       && !player.DestroyDefFliesWreck,
                 $"{planeName}: the human rig's destroy def is '{player.DestroyDef ?? "-"}' and authors no hull ObjectMotion (fliesOwnHull={player.DestroyDefFliesWreck})");
 

@@ -756,6 +756,11 @@ public sealed class GameZNode
     /// the player's own selection still admits it.</summary>
     public bool IsGasbagStructure => (MissionTargetWord & 0x00400000u) != 0;
 
+    /// <summary>The danger-zone difficulty a <c>dzpathN</c> node authors: the flag word shifted
+    /// right by 23, unsigned and unmasked, so bits 23 to 31. Zero on a node authoring no word.
+    /// Decode: docs/org/aiPilot.md, "Per zone".</summary>
+    public int DangerZoneDifficulty => (int)(MissionTargetWord >> 23);
+
     /// <summary>The team the engine gives this node as a mission structure in the numbered mission
     /// of its chapter: the two-bit ownership slot at bit <c>2 * mission - 2</c>, read as a team id
     /// in the one team space (0 neutral, 1 the player's side, 2 and 3 the enemy indices). Zero

@@ -3,11 +3,11 @@
 Part of the [format documentation](README.md). The chapter-scoped patrol graphs the
 original's AI flies: waypoint sets with an **explicit edge list**, referenced by every
 AI-consuming reader family. Engine reader: `CSVM/src/Mech3/AiNets.cs`; the
-`--debug-ainets` overlay (F13) renders them, and `CSVM/src/Flight/AiNetFollower.cs`
+`--debug-ainets` overlay (F13) renders them, and `CSVM/src/Flight/Ai/AiNetFollower.cs`
 flies them as a patrol behaviour (`--ai=<plane>:<net>`), traversal along the edge list, an anchored
-trailer ridden (`BL-377`), stop points held and released. `CSVM/src/Session/ZeppelinRuntime.cs`
+trailer ridden (`BL-377`), stop points held and released. `CSVM/src/Session/World/ZeppelinRuntime.cs`
 is the `COMPLETED_STOPPOINT` consumer; a reached node's danger-zone fields send an aircraft down
-the named `dzpathN` ribbon on rails (`Flight/DangerZoneRibbon.cs`,
+the named `dzpathN` ribbon on rails (`Flight/Modes/DangerZoneRibbon.cs`,
 [`org/aiPilot.md`](../org/aiPilot.md) "The danger-zone run").
 
 ## Archive locations

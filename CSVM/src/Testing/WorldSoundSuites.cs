@@ -32,6 +32,10 @@ internal static class WorldSoundSuites
         ctx.RequireData(ctx.ZrdrPath, $"zrdr archive");
         ctx.RequireData(ctx.SoundsPath, $"sound archive (soundsh)");
 
+        // Every level below is the decoded curve at the definition's own radii. This suite reads
+        // at 1, not at the reach the session ships.
+        using var authored = TestContext.AtAuthoredSoundRadii();
+
         var defs = SoundDefs.Load(ctx.ZrdrPath);
         var groups = SoundDefs.LoadGroups(ctx.ZrdrPath);
         using var archive = new SoundArchive(ctx.SoundsPath);

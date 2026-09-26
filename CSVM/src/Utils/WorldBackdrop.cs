@@ -6,7 +6,7 @@ namespace CSVM.Utils;
 /// What the process's one <c>WorldEnvironment</c> draws where nothing opaque covers it. That
 /// environment outlives every session and its background is a <c>ProceduralSkyMaterial</c>, a
 /// grey-blue gradient belonging to no menu and no mission, so the menu runs over flat black
-/// instead and a session gets the sky back. <c>Session/Launcher.cs</c> owns every call: black on
+/// instead and a session gets the sky back. <c>Session/Launch/Launcher.cs</c> owns every call: black on
 /// each menu show and at the quits that still draw a frame, the sky at each launch.
 /// ⚠ No session may run under the black. With the background flat the sky no longer feeds the
 /// glossy water's specular, so the launch path restores it before a world is built.

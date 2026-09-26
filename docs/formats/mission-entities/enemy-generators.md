@@ -51,7 +51,7 @@ counter advances and the global `%s_eg%d` ordinal increments. Nothing is built, 
 slot is never freed because no vehicle exists to die, so `eairg32` (`max_active 4`) blocks itself
 after four empty launches. The other branch, the first block of the def or the sibling generator's
 block, does not exist in the code. CSVM matches this: the launch builds nothing, the ordinal
-advances and the slot stays taken (`Session/AiGeneratorRuntime.cs`); the `player_bhawk` stand-in
+advances and the slot stays taken (`Session/Roster/AiGeneratorRuntime.cs`); the `player_bhawk` stand-in
 is only for a generator that authors no `params` key at all.
 
 ## The generator cycle
@@ -94,7 +94,7 @@ Three things that reading pins down:
   entirely when `min_altitude` is unset (a `-1.0` sentinel).
 
 One value the decode does not pin: the FIRST `nextEvent` threshold after load. The remake's
-implementation (`Session/GeneratorCycle.cs`) assumes the full inter-wave gap
+implementation (`Session/Roster/GeneratorCycle.cs`) assumes the full inter-wave gap
 (`ind_period + wave_period`), the conservative reading, and says so where F20 will revisit it.
 
 ### The door is a four-state machine
@@ -243,8 +243,8 @@ under `generators` under the terrain tile `g36347`, its geometry `ship_gen.flt` 
 the path flag on it, so the boat runs `esg31_aip0..5` under the scripted-path follower and joins
 `M2Patrol1` where the path ends; the mission's `SET_AI_NET [patrolboat_egN, M2GoosePatrol]`
 clauses then walk each launch between nets. CSVM: `GeneratorLaunch.Surface` in
-`Session/CampaignRoster.cs`, built by `Session/SurfaceVehicleRuntime.cs` and launched down the
-path by `Session/AiGeneratorRuntime.cs`; never the CLI airframe in a hull's place.
+`Session/Campaign/CampaignRoster.cs`, built by `Session/World/SurfaceVehicleRuntime.cs` and launched down the
+path by `Session/Roster/AiGeneratorRuntime.cs`; never the CLI airframe in a hull's place.
 
 ## A launch flies its net like a roster aircraft
 
@@ -356,7 +356,7 @@ two points, and launches on the decoded pose: point 0 plus 0.2 m, nose on point 
 the throttle open. An aircraft then flies the take-off **run** under the scripted-path follower
 and is handed to the flight model at the final leg's 300 m point, climbing; a hull runs the same
 points and joins its
-net where they end (`Session/SurfaceVehicle.cs`).
+net where they end (`Flight/Ai/SurfaceVehicle.cs`).
 
 **The door hold is kept, its length is not.** The remake's cycle carries a two-state door and no
 animation clock, so a spawn released past its threshold with the hangar shut opens the door and
@@ -369,7 +369,7 @@ still launches on its threshold rather than a second late, and a door caught mid
 where the original refuses. Pinned by `GeneratorCycleTests` over the four shapes that leave a cycle
 overdue behind a shut door, and by the `generator-callback-credit` and `zeppelin-launch` suites.
 
-**CSVM runs the credit rule as decoded.** `Session/GeneratorCycle.cs` never reads the authored
+**CSVM runs the credit rule as decoded.** `Session/Roster/GeneratorCycle.cs` never reads the authored
 `capacity`: every cycle starts at zero remaining and blocks while the wave's remainder exceeds it,
 so an uncredited generator holds its timer and keeps its doors shut for the whole mission.
 `AiGeneratorRuntime.GrantWaveCapacity(host, n)` is the one credit, fed by the objective apply

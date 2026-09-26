@@ -126,7 +126,7 @@ undecoded. The real delay is open.
 
 ## What the remake takes
 
-`Flight/VersusMatch.cs` keeps the same signed score: `KillScore` (+1) per kill, `SuicideScore`
+`Flight/Modes/VersusMatch.cs` keeps the same signed score: `KillScore` (+1) per kill, `SuicideScore`
 (-1) for a death with no killer, the kill-target row compared against the score rather than against
 raw kills, and standings ranked by score with a tie at the top rendered as a draw. Kills and deaths
 stay as separate display counters, which the original keeps in the pilot's career record rather

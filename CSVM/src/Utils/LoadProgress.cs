@@ -66,7 +66,7 @@ public enum LoadStep
 /// The load screen's progress while a build holds the frame loop: the original's authored
 /// milestone table, its monotonic setter and its wall-clock-throttled repaint pump. Engine-free,
 /// so the table, the fill width and the propeller's frame settle without a window;
-/// <c>UI.LoadBoard</c> supplies the <see cref="Repaint"/> that actually draws.
+/// <c>UI.Screens.LoadBoard</c> supplies the <see cref="Repaint"/> that actually draws.
 /// Ambient like <see cref="StartupProfile"/>: a build reports its steps unconditionally and a
 /// launch with no screen over it leaves <see cref="Current"/> null, so every call is a no-op.
 /// Decode: docs/org/loading-screen.md.

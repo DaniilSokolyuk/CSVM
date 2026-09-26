@@ -1,4 +1,4 @@
-using CSVM.Session;
+using CSVM.Session.World;
 using CSVM.Utils;
 using Xunit;
 

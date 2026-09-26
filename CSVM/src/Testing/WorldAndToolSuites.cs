@@ -1,10 +1,16 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using CSVM.Flight;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Camera;
+using CSVM.Flight.Hud;
+using CSVM.Flight.Modes;
 using CSVM.Mech3;
-using CSVM.Session;
-using CSVM.UI;
+using CSVM.Session.World;
+using CSVM.Tooling;
+using CSVM.UI.Boards;
+using CSVM.UI.Labs;
+using CSVM.UI.Screens;
 using Godot;
 
 using static CSVM.Testing.SuiteConstants;
@@ -1283,6 +1289,68 @@ internal static class WorldAndToolSuites
         ctx.Same(0, wrongGround, $"no moved stamp changed its ground position");
         ctx.Check(unmoved > 0, $"the other kinds stamped and stayed put count={unmoved}");
         ctx.Note($"{chapter}/{template}: {moved} glow stamps lifted 4.75 m, {unmoved} stamps unchanged, poles={poles?.Count ?? 0}");
+    }
+
+    // ⚠ A card's pose reads the eye's POSITION and never its basis. A billboard assembled from
+    // INV_VIEW_MATRIX's columns carries the camera's roll into every stamp, which is the one thing
+    // the original's per-card tracker cannot do (docs/org/cloudCards.md). Asserted on the
+    // emitted shader text, because a vertex-stage rotation leaves no trace in the built scene.
+    [Suite("clutter-card-pose",
+        "C5's poleflare glow stamps pose through the facade look-at and never through the camera's own "
+        + "basis, while the lightpole cards beside them keep the cylindrical pose")]
+    internal static void ClutterCardPose(TestContext ctx)
+    {
+        const string chapter = "C5";
+        const string template = "cblock7";   // the district carrying lightpole and its poleflare glow
+        string texturesPath = SessionPaths.ChapterTextures(ctx.DataRoot, chapter);
+        string gamezPath = SessionPaths.ChapterGamez(ctx.DataRoot, chapter);
+        ctx.RequireData(texturesPath, $"{chapter} textures");
+        ctx.RequireData(gamezPath, $"{chapter} gamez");
+
+        var gamez = GameZ.Load(gamezPath);
+        using var textures = new TextureArchive(texturesPath);
+        var props = ClutterTemplateSpec.Load(SessionPaths.ChapterZrdr(ctx.DataRoot, chapter));
+        var clutter = new ClutterBuilder(gamez, textures, null, props);
+        var built = clutter.Build(new[] { template });
+
+        var code = new Dictionary<string, string>(System.StringComparer.Ordinal);
+        int examined = 0;
+        foreach (var kind in clutter.ExportedKinds ?? System.Array.Empty<ClutterBuilder.KindExport>())
+        {
+            if (kind.Solid || kind.Material is not ShaderMaterial { Shader: { } shader })
+            {
+                continue;
+            }
+            code[kind.Texture] = shader.Code;
+            ctx.Check(!shader.Code.Contains("INV_VIEW_MATRIX[0]", System.StringComparison.Ordinal)
+                      && !shader.Code.Contains("INV_VIEW_MATRIX[1]", System.StringComparison.Ordinal)
+                      && !shader.Code.Contains("INV_VIEW_MATRIX[2]", System.StringComparison.Ordinal),
+                $"{kind.Texture} builds no basis from the camera's columns");
+            examined++;
+        }
+        built?.Free();
+
+        ctx.Check(examined > 0, $"{template} exports card kinds count={examined}");
+        bool hasGlow = code.TryGetValue("poleflare.tif", out var glow);
+        bool hasPole = code.TryGetValue("lightpole.tif", out var pole);
+        ctx.Check(hasGlow, $"{template} stamps the poleflare glow card");
+        ctx.Check(hasPole, $"{template} stamps the lightpole card");
+        if (!hasGlow || !hasPole)
+        {
+            return;
+        }
+
+        ctx.Check(glow!.Contains("csky_facade_spherical(origin, CAMERA_POSITION_WORLD)", System.StringComparison.Ordinal),
+            $"the glow card poses through the facade look-at");
+        ctx.Check(glow.Contains("res://shaders/csky_facade.gdshaderinc", System.StringComparison.Ordinal),
+            $"the glow card's shader includes the facade block it calls");
+        // The post is the control, the same emitter one flag apart. Without it a glow reading
+        // right while the post lost its own pose would pass unseen.
+        ctx.Check(!pole!.Contains("csky_facade_spherical", System.StringComparison.Ordinal),
+            $"the lightpole card takes no spherical pose");
+        ctx.Check(pole.Contains("CAMERA_POSITION_WORLD.xz - origin.xz", System.StringComparison.Ordinal),
+            $"the lightpole card still spins about its own vertical");
+        ctx.Note($"{chapter}/{template}: {examined} card kinds examined, glow and post read apart");
     }
 
     // The DirectionalLight3D is pointed by the flown zone's authored SUNLIGHT_ORIENTATION and keeps

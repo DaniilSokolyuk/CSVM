@@ -10,7 +10,7 @@ namespace CSVM.Mech3;
 /// and orients the hinge line.
 /// ⚠ Parent hinge-group names deliberately do not classify; rotating both parent and child would
 /// double the deflection. No zrdr anim defines deflection: the angles, the channel mixing and the
-/// smoothing are decoded from the executable and live in <c>Flight.ControlSurfaceMix</c>.
+/// smoothing are decoded from the executable and live in <c>Flight.Airframe.ControlSurfaceMix</c>.
 /// </summary>
 public static class ControlSurfaces
 {

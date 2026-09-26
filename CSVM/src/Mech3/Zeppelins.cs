@@ -23,7 +23,7 @@ public readonly record struct ZeppelinCannon(string Node, string DeployAnim, str
 /// original converts most angles to radians at load but skips <c>min_pitch</c>/<c>max_pitch</c>
 /// (the load-time unit bug, docs/formats/mission-entities.md "Units and the load-time pitch
 /// clamp"); keeping the reader verbatim leaves that conversion, and the decision not to
-/// reproduce the no-op initial-pitch clamp, to the consumer (<see cref="Flight.ZeppelinMotion"/>
+/// reproduce the no-op initial-pitch clamp, to the consumer (<c>Flight.Airframe.ZeppelinMotion</c>
 /// for F17's motion keys; F18 consumes the damage half). Format page:
 /// docs/formats/mission-entities.md.
 /// </summary>
@@ -284,7 +284,7 @@ public sealed class ZeppelinDef
     public required int NumHealthyRequired { get; init; }
 
     /// <summary>The engine nacelle nodes (12/14/18). The denominator of the engine-loss curve
-    /// (<see cref="Flight.ZeppelinMotion.EngineFactor"/>).</summary>
+    /// (<c>Flight.Airframe.ZeppelinMotion.EngineFactor</c>).</summary>
     public required IReadOnlyList<string> Engines { get; init; }
 
     /// <summary>Per-gasbag hit points and destruction anims. Authored on 57 of 58.</summary>

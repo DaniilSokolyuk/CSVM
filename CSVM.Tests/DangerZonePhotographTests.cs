@@ -1,6 +1,6 @@
-using CSVM.Flight;
+using CSVM.Flight.Modes;
 using CSVM.Mech3;
-using CSVM.UI;
+using CSVM.UI.Boards;
 using Godot;
 using Xunit;
 

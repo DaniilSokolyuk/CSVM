@@ -1,7 +1,9 @@
 using System.Linq;
 using CSVM.Mech3;
-using CSVM.Session;
-using CSVM.UI;
+using CSVM.Session.Campaign;
+using CSVM.UI.Boards;
+using CSVM.UI.Campaign;
+using CSVM.UI.Hangar;
 using CSVM.UI.Menu;
 using CSVM.UI.Menu.Original;
 using CSVM.Utils;
@@ -27,19 +29,19 @@ public class OriginalShellTests
     private static readonly MenuCommands Right = new() { MoveX = 1 };
 
     [Fact]
-    public void TheTopLevelIsTheSixDecodedRowsPlusTheFreeFlightDoorAndOpensFocusedOnTheDoor()
+    public void TheTopLevelIsTheSixDecodedRowsPlusTheThreeRemakeDoorsAndOpensFocusedOnFreeFlight()
     {
         var shell = Shell(out _);
 
         Assert.Equal(OriginalScreen.TopLevel, shell.Screen);
         Assert.Equal(
-            new[] { OriginalShell.FreeFlightKey, OriginalShell.DogfightKey, "MM_B_CAMPAIGN", "MM_B_INSTANTACTION", "MM_B_MULTIPLAYER", "MM_B_PREFERENCES", "MM_B_CREDITS", "MM_B_QUIT" },
+            new[] { OriginalShell.FreeFlightKey, OriginalShell.DogfightKey, OriginalShell.JoinBoardKey, "MM_B_CAMPAIGN", "MM_B_INSTANTACTION", "MM_B_MULTIPLAYER", "MM_B_PREFERENCES", "MM_B_CREDITS", "MM_B_QUIT" },
             shell.Rows.Select(r => r.Key));
         Assert.Equal(OriginalShell.FreeFlightKey, shell.FocusedKey);
         // The decoded rows with no remake destination yet are disabled; Instant Action,
         // Preferences (the Options door), Credits and Quit react. The hangar is reached through
-        // Instant Action's Build Custom Plane, so no door of its own stands here.
-        Assert.Equal(new[] { true, true, false, true, false, true, true, true }, shell.Rows.Select(r => r.Enabled));
+        // Instant Action's Build Custom Plane, and MULTIPLAYER is the original's network play.
+        Assert.Equal(new[] { true, true, true, false, true, false, true, true, true }, shell.Rows.Select(r => r.Enabled));
         // A decoded button's rectangle is its authored corner and its measured strip's frame.
         var quit = shell.Rows.Single(r => r.Key == "MM_B_QUIT");
         Assert.Equal((280f, 530f, 240f, 50f), (quit.X, quit.Y, quit.Width, quit.Height));
@@ -62,7 +64,7 @@ public class OriginalShellTests
         step = shell.Step(Pointer(290f, 290f));
         Assert.Equal("MM_B_QUIT", shell.FocusedKey);
         Assert.Empty(step.Cues);
-        Assert.Equal(2, shell.Hover);
+        Assert.Equal(3, shell.Hover);
     }
 
     [Fact]
@@ -134,6 +136,8 @@ public class OriginalShellTests
 
         shell.Step(Down);
         Assert.Equal(OriginalShell.DogfightKey, shell.FocusedKey);
+        shell.Step(Down);
+        Assert.Equal(OriginalShell.JoinBoardKey, shell.FocusedKey);
         shell.Step(Down);
         Assert.Equal("MM_B_INSTANTACTION", shell.FocusedKey);
         shell.Step(Down);
@@ -221,6 +225,7 @@ public class OriginalShellTests
         shell.Step(Down);
         shell.Step(Down);
         shell.Step(Down);
+        shell.Step(Down);
         Assert.Equal("MM_B_QUIT", shell.FocusedKey);
         Assert.IsType<QuitExit>(shell.Step(Accept).Exit);
     }
@@ -256,7 +261,7 @@ public class OriginalShellTests
     {
         // A roster longer than the eleven-row window, so the aircraft column has a thumb at all.
         var setup = new PlayerSetupFeature();
-        var roster = OriginalPresentation.Roster(System.Array.Empty<CSVM.Flight.CustomPlaneDef>()).ToList();
+        var roster = OriginalPresentation.Roster(System.Array.Empty<CSVM.Flight.Hangar.CustomPlaneDef>()).ToList();
         roster.AddRange(roster.Take(3).ToList());
         setup.SetRoster(roster);
         setup.Join(new ScriptedMenuSeat());
@@ -410,7 +415,7 @@ public class OriginalShellTests
     {
         var free = new FreeFlightFeature();
         var setup = new PlayerSetupFeature();
-        setup.SetRoster(OriginalPresentation.Roster(System.Array.Empty<CSVM.Flight.CustomPlaneDef>()));
+        setup.SetRoster(OriginalPresentation.Roster(System.Array.Empty<CSVM.Flight.Hangar.CustomPlaneDef>()));
         setup.Join(new ScriptedMenuSeat());
         var shell = new OriginalShell(
             MenuLayoutReaderTests.OriginalLayout(), free, setup,
@@ -419,7 +424,7 @@ public class OriginalShellTests
         var board = shell.Compose();
         Assert.Empty(board.Backdrop);
         Assert.Equal(new[] { "PM_Logo.png", "PM_Frame.png" }, board.Pictures.Select(p => p.Art.Name));
-        Assert.Equal(8, board.Plaques.Count);
+        Assert.Equal(9, board.Plaques.Count);
     }
 
     [Fact]
@@ -442,11 +447,14 @@ public class OriginalShellTests
         var shell = new OriginalShell(layout, new FreeFlightFeature(), new PlayerSetupFeature(), _ => null);
 
         var rows = shell.Rows;
-        Assert.Equal(new[] { OriginalShell.FreeFlightKey, OriginalShell.DogfightKey }, rows.Select(r => r.Key));
+        Assert.Equal(
+            new[] { OriginalShell.FreeFlightKey, OriginalShell.DogfightKey, OriginalShell.JoinBoardKey },
+            rows.Select(r => r.Key));
         var board = shell.Compose();
         Assert.Empty(board.Plaques);
         Assert.Contains(board.Lines, l => l.Text == "FREE FLIGHT");
         Assert.Contains(board.Lines, l => l.Text == "DOGFIGHT");
+        Assert.Contains(board.Lines, l => l.Text == "JOIN BOARD");
         Assert.Contains(board.Fills, f => f.Border);
         Assert.Equal(new MenuLayoutColor(0xFF, 0xFF, 0xFF, 0xFF), shell.Inks.LabelNormal);
     }
@@ -901,7 +909,7 @@ public class OriginalShellTests
     private static OriginalShell CreditsShell()
     {
         var setup = new PlayerSetupFeature();
-        setup.SetRoster(OriginalPresentation.Roster(System.Array.Empty<CSVM.Flight.CustomPlaneDef>()));
+        setup.SetRoster(OriginalPresentation.Roster(System.Array.Empty<CSVM.Flight.Hangar.CustomPlaneDef>()));
         setup.Join(new ScriptedMenuSeat());
         var strings = UiStrings.Parse(
             """
@@ -920,14 +928,14 @@ public class OriginalShellTests
     // A shell with the hangar behind its Build door, over a scratch store in a temp directory
     // that goes with the test. It takes the hangar's own art measure, since the door's screens are
     // the module's. The Devastator is the Instant Action pick a default build inherits.
-    private static void WithHangarShell(System.Action<OriginalShell, HangarFeature, PlayerSetupFeature, CSVM.Flight.CustomPlaneStore> test)
+    private static void WithHangarShell(System.Action<OriginalShell, HangarFeature, PlayerSetupFeature, CSVM.Flight.Hangar.CustomPlaneStore> test)
     {
         string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "csvm-original-shell-hangar-" + System.Guid.NewGuid().ToString("N"));
         try
         {
-            var store = new CSVM.Flight.CustomPlaneStore(dir);
+            var store = new CSVM.Flight.Hangar.CustomPlaneStore(dir);
             var setup = new PlayerSetupFeature();
-            setup.SetRoster(OriginalPresentation.Roster(System.Array.Empty<CSVM.Flight.CustomPlaneDef>()));
+            setup.SetRoster(OriginalPresentation.Roster(System.Array.Empty<CSVM.Flight.Hangar.CustomPlaneDef>()));
             setup.Join(new ScriptedMenuSeat());
             var hangar = new HangarFeature(UiStrings.Empty, PlanePickerRoster.AirframeNode);
             var instantAction = new InstantActionFeature(_ => InstantAction.Defaults());
@@ -957,9 +965,9 @@ public class OriginalShellTests
         try
         {
             var store = new CampaignProfileStore(System.IO.Path.Combine(dir, "Profiles"));
-            var planes = new CSVM.Flight.CustomPlaneStore(System.IO.Path.Combine(dir, "Planes"));
+            var planes = new CSVM.Flight.Hangar.CustomPlaneStore(System.IO.Path.Combine(dir, "Planes"));
             var setup = new PlayerSetupFeature();
-            setup.SetRoster(OriginalPresentation.Roster(System.Array.Empty<CSVM.Flight.CustomPlaneDef>()));
+            setup.SetRoster(OriginalPresentation.Roster(System.Array.Empty<CSVM.Flight.Hangar.CustomPlaneDef>()));
             setup.Join(new ScriptedMenuSeat());
             var hangar = new HangarFeature(UiStrings.Empty, PlanePickerRoster.AirframeNode);
             var campaign = new CampaignFeature(UiStrings.Empty, airframe => $"node{airframe}");
@@ -993,7 +1001,7 @@ public class OriginalShellTests
     {
         free = new FreeFlightFeature();
         var setup = new PlayerSetupFeature();
-        setup.SetRoster(OriginalPresentation.Roster(System.Array.Empty<CSVM.Flight.CustomPlaneDef>()));
+        setup.SetRoster(OriginalPresentation.Roster(System.Array.Empty<CSVM.Flight.Hangar.CustomPlaneDef>()));
         setup.Join(new ScriptedMenuSeat());
         return new OriginalShell(MenuLayoutReaderTests.OriginalLayout(), free, setup, Measure, options: options);
     }

@@ -5,8 +5,11 @@ description: Explain the active plan's item in plain language — where it sits,
 
 Explain one item of the **active plan** so it can be worked cold, then start it, close it, or park it.
 
-The sibling skill for `backlog.md` entries is [`/backlog`](../backlog/SKILL.md) — a `BL-NNN` that is
-*not* scheduled into the active plan belongs there, not here. The binary-decode **rule** below (§4's
+The sibling skill for `backlog.md` entries and `backlog` GitHub issues is
+[`/backlog`](../backlog/SKILL.md) — a `BL-NNN` or `#N` that is *not* scheduled into the active
+plan belongs there, not here. Wherever this file says "the backlog entry", a plan item that cites
+an issue (`#12`) instead has the issue's body plus comments as its entry, read with
+`gh issue view N --comments` per `docs/agents/issue-tracker.md`. The binary-decode **rule** below (§4's
 provenance triage, and §5 option 2's Ghidra read-only charter, its what-a-decode-reports contract and
 its write-it-down contract) is mirrored from that skill; keep those in sync. The **handoffs
 deliberately diverge**, and syncing them is the mistake: an item here carries an Approach and a Verify
@@ -39,7 +42,8 @@ One authority; do not glob for candidates.
 ## 2. Resolve the item
 
 - An **item ID** (`A1`, `a1`, `B11`, `D31`) — exact match wins, case-insensitive.
-- A **`BL-NNN` the plan carries** (`BL-051` → A1) — the two vocabularies are interchangeable here.
+- A **`BL-NNN` or `#N` the plan carries** (`BL-051` → A1, `#12` → B3) — the vocabularies are
+  interchangeable here.
 - A **phrase** → list the candidate items with their wave headings and **ask**. Never guess silently.
 - **No argument** → the next item, by `/commit-next` step 2's rule: the first **◐ in progress**, else
   the first **☐ open** in wave/number order, **respecting the plan's "Dependency and parallelism
@@ -59,8 +63,10 @@ Do the reading yourself; no Explore subagent. The item text and code need to sta
    `## ⚠ Read this before implementing anything` section if it has one, `## Decisions`, the item's
    `## Checklist` line, and `## Dependency and parallelism notes`.
 2. **The backlog entry, always** — the `BL-NNN` the item cites, and its enclosing section heading
-   (the heading carries status). Plan items summarise and delegate — "Full evidence: `backlog.md`
-   `BL-051`" — so the counts, the rejected fixes, and the real traps live there.
+   (the heading carries status); or the `#N` it cites, whole thread, latest comment last, since a
+   later comment can overturn the body, plus its state and triage label. Plan items summarise and
+   delegate — "Full evidence: `backlog.md` `BL-051`" or "Full evidence: #12" — so the counts, the
+   rejected fixes, and the real traps live there.
 3. **Only what the item names** — the code files and symbols (`FromToMotion.cs:109-111`,
    `WorldBuilder.NoCollisionNode`), the doc sections (a module's entry in
    `docs/architecture/<Namespace>.md`, found through the index in `docs/architecture.md`;
@@ -135,8 +141,8 @@ Use these headings, in this order:
   live-cockpit feel judgement. **Not** the decodable ones — those were named as decodable above. If
   the item's own "unsettled TUNE" or "needs an original-game A/B" line is really a constant in
   `crimson.exe`, say that instead of repeating it.
-- **Related** — only the `BL-NNN`s, sibling plan items, and doc sections the item itself cites. No
-  adjacency guessing; don't invent links nobody authored.
+- **Related** — only the `BL-NNN`s, `#N`s, sibling plan items, and doc sections the item itself
+  cites. No adjacency guessing; don't invent links nobody authored.
 
 If the item looks stale, already landed, or self-contradictory, say so under **Status** — and let §5's
 *close it* handle it rather than editing anything now.
@@ -224,27 +230,29 @@ until *start it here* is picked. When the answer is wanted on disk: **`docs/org/
 falls inside an existing decode page's topic (weather, clutter, flightModel, tracers, puffer,
 sequences, aim-assist), matching those pages' contract — behaviour and constants, every claim naming
 the function it came from, no decompiler output reproduced; otherwise **`analysis/<slug>/FINDINGS.md`**,
-dated, with the method stated. **In either case also offer the one-line amendment to the `backlog.md`
-entry** — the number, its address, the pointer. No date: `backlog.md` is live prose, so the decode's
-date belongs in the commit message that lands it. That line is load-bearing: without it the
-next explanation re-reads the stale footage number, re-flags it, and re-recommends the decode that was
-already done.
+dated, with the method stated. **In either case also offer the one-line amendment to the entry** —
+the number, its address, the pointer. For a `backlog.md` entry that is an edit with no date, since
+`backlog.md` is live prose and the decode's date belongs in the commit message that lands it; for
+an issue it is a comment (`gh issue comment N --body-file <file>`), posted after the write-up's
+commit so it can cite the hash. Without that line the next explanation re-reads the stale footage
+number, re-flags it, and re-recommends the decode that was already done.
 
 Then re-offer the handoff. A decode usually makes *start it here* the obvious next move, and may
 change what the item's work should be — say so if it does.
 
 ### Option 3 — close it
 
-The plan bookkeeping is this skill's; the `BL-NNN` side is not.
+The plan bookkeeping is this skill's; the `BL-NNN` or `#N` side is not.
 
 - Flip the checklist line: **☑** if the work landed, **❌** if the explanation disproved it or it is
   moot. Ask which if it isn't obvious — the glyph is the plan's record of *why*.
 - Add the one-line verdict to the item's `### <ID>` body.
 - Advance `PROJECT_CONTEXT.md` "Current status" if this was the next-item pointer — **swap or delete
   only**, never add a sentence about what closed (that section's own fixed-shape rule).
-- Then hand to **`/close-backlog-item <BL-NNN>`**, unmodified. It owns the closure kind, deleting the
-  entry, the closure record in the closing commit's message, retiring any `CAP-nn`/`PT-nn`, and the
-  restated-caveat sweep. Do not pre-empt its closure record.
+- Then hand to **`/close-backlog-item <BL-NNN or #N>`**, unmodified. It owns the closure kind,
+  deleting the entry or closing the issue, the closure record in the closing commit's message,
+  retiring any `CAP-nn`/`PT-nn` or `capture`/`playtest` issue, and the restated-caveat sweep. Do
+  not pre-empt its closure record.
 - **If that was the plan's last open item**, say so and *offer* the completion: delete the plan
   file in the closing commit (git keeps it; no archive), record the completion in that commit's
   message, clear PROJECT_CONTEXT.md's "Current status" pointer, and unlink any live prose that
@@ -254,9 +262,9 @@ The plan bookkeeping is this skill's; the `BL-NNN` side is not.
 
 ### Option 4 — defer it
 
-**Write nothing.** The item stays `☐ open` in the plan, `backlog.md` is untouched, and
-`PROJECT_CONTEXT.md` is untouched — "not now" is a session decision, and a deferral note that is
-obsolete tomorrow is noise.
+**Write nothing.** The item stays `☐ open` in the plan, `backlog.md` and the issue are untouched,
+and `PROJECT_CONTEXT.md` is untouched — "not now" is a session decision, and a deferral note that
+is obsolete tomorrow is noise.
 
 Say in one line that nothing was written, then resolve the **next** item by §2's no-argument rule,
 excluding anything deferred earlier in this session. **Name that item and ask** whether to explain it.

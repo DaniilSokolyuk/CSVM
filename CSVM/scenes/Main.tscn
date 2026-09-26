@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://src/Session/Launcher.cs" id="1_viewer"]
+[ext_resource type="Script" path="res://src/Session/Launch/Launcher.cs" id="1_viewer"]
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1_viewer")

@@ -2,8 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using CSVM.Mech3;
-using CSVM.UI;
+using CSVM.UI.Boards;
 using CSVM.UI.Menu;
+using CSVM.UI.Screens;
 using CSVM.Utils;
 using Godot;
 
@@ -76,7 +77,7 @@ internal static class LoadProgressSuites
                 ctx.ZrdrPath, ctx.MessagesPath,
                 SessionPaths.MissionZrdr(ctx.DataRoot, mission.ChapterFolder, mission.MissionFolder),
                 EscapeDialog.CampaignKey(mission.Campaign, mission.Mission),
-                Session.CampaignMementos.BitmapFor(null));
+                Session.Campaign.CampaignMementos.BitmapFor(null));
         }
 
         return null;

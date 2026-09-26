@@ -6,7 +6,7 @@ using Godot;
 namespace CSVM.Mech3;
 
 /// <summary>Builds one chapter world and binds its animation program to it: the world+anim half of
-/// <see cref="CSVM.Session.GameSession"/>'s session build, extracted so <c>--anim-lab</c>
+/// <c>GameSession</c>'s session build, extracted so <c>--anim-lab</c>
 /// builds the same world+runtime a normal session does without duplicating it.
 /// Load → <see cref="WorldBuilder"/> → clutter → mission setup → <see cref="AnimProgram"/> →
 /// <see cref="AnimRuntime"/> wiring → <c>Bind</c> → sound-prewarm. Stops before the per-view steps
@@ -47,7 +47,7 @@ public sealed class WorldSession
     public WorldLights Lights { get; private set; } = null!;
 
     /// <summary>The chapter's <c>landings.zrd</c> approach triggers this mission can run, resolved
-    /// against the built gamez. Empty unless <see cref="Options.CutsceneRoots"/> asked for them,
+    /// against the built gamez. Empty unless <see cref="Options.LandingTriggers"/> asked for them,
     /// and empty in any mission carrying none of the chapter's approach animations.</summary>
     public IReadOnlyList<LandingApproach> Landings { get; private set; } =
         Array.Empty<LandingApproach>();
@@ -119,7 +119,7 @@ public sealed class WorldSession
         mark = StartupProfile.Mark();
         var builder = new WorldBuilder(gamez, textures, collision: o.Collision,
             scrollOverrides: missionSetup?.ScrollByModel(gamez),
-            debugClutterFlag: o.DebugClutterFlag);
+            debugClutterFlag: o.DebugClutterFlag, hiddenAlpha: o.HiddenAlpha);
         // A mission-structure node authors an owner per mission of the chapter, so the build has
         // to know which mission it is standing in before it stamps any team.
         builder.MissionSlot = GameZ.MissionSlotOf(o.Mission);
@@ -171,7 +171,7 @@ public sealed class WorldSession
             // templates.zrd drives `substitute` and `scale_range` (docs/formats/templates.md).
             // Null when the chapter ships no such file, every decoration then stands at its
             // authored model and size, which is also what an empty file (C1C/C2B) produces.
-            var clutterProps = ClutterTemplateSpec.Load(SessionPaths.ChapterZrdr(o.DataRoot, o.Chapter));
+            var clutterProps = ClutterTemplateSpec.Load(o.ChapterZrdrPath);
             clutterBuilder = new ClutterBuilder(gamez, textures, builder.Scene, clutterProps);
             if (clutterBuilder.Build(clutterNames, collision: o.Collision) is { } clutter)
             {
@@ -190,6 +190,11 @@ public sealed class WorldSession
         StartupProfile.Record("clutter", mark);
         LoadProgress.Report(LoadStep.Clutter);
         s.Clutter = clutterBuilder;
+        // The transparency census a draw-order question is read against. It says which classes this
+        // chapter carries, and which of them an isolation run left out.
+        string hidden = o.HiddenAlpha == SceneBuilder.TransparencyClass.None
+            ? string.Empty : $"; hidden {o.HiddenAlpha}";
+        Log.Info("world", $"alpha classes: surfaces blend={builder.BlendSurfaceCount} scissor={builder.ScissorSurfaceCount}; cards blend={clutterBuilder?.BlendCardKinds ?? 0} scissor={clutterBuilder?.ScissorCardKinds ?? 0}{hidden}");
 
         // --debug-clutterflag: force clutter blue and print the census. Blue is the one colour
         // the world shader cannot express itself, a decoration's own polygons are unflagged,
@@ -204,7 +209,7 @@ public sealed class WorldSession
         // at end state (hangar doors swing, the C1 train drives its loop). The program merges the
         // compiled cam_anim/mis_anim archives with the three zrdr scopes.
         mark = StartupProfile.Mark();
-        var chapterZrdrPath = SessionPaths.ChapterZrdr(o.DataRoot, o.Chapter);
+        var chapterZrdrPath = o.ChapterZrdrPath;
         var (chapterAnimPath, missionAnimPath) =
             AnimProgram.ArchivePaths(o.DataRoot, o.Chapter, o.Mission);
         var animProgram = o.Decode == null
@@ -238,8 +243,7 @@ public sealed class WorldSession
             AutoStart = o.AutoStart,
             Seed = o.RuntimeSeed,
             Setup = missionSetup,
-            EmitterFactory = o.EmitterFactory
-                ?? new Anim.PufferEmitterFactory(textures, o.EffectsParent, o.Ambience),
+            EmitterFactory = o.EmitterFactory ?? o.ArchiveEmitterFactory(textures, o.EffectsParent),
             // Where the LIGHT_STATE point term reaches the world shaders. Owned by the caller so a
             // teardown drops the previous world's lights.
             Lights = lights,
@@ -286,12 +290,12 @@ public sealed class WorldSession
                 }
             }
         }
-        string? introAnim = BootstrapCutsceneOf(animProgram);
+        string? introAnim = o.Cutscenes is { } names ? BootstrapCutsceneOf(animProgram, names) : null;
         bool intro = introAnim != null;
         bool cutscenes = intro || s.Landings.Count > 0 || s.MissionCutsceneAnims.Count > 0;
-        if (o.CutsceneRoots && cutscenes)
+        if (o.Cutscenes is { } rootNames && cutscenes)
         {
-            BuildCutsceneRoots(root, gamez, builder, animProgram);
+            BuildCutsceneRoots(root, gamez, builder, animProgram, rootNames);
         }
 
         // Not gated on cutscenes: a staged prop is ordinary mission content, and its definitions run
@@ -304,7 +308,7 @@ public sealed class WorldSession
         // ⚠ Every cutscene, not an intro alone: a mid-mission definition poses the flown aeroplane
         // on the same `player` marker, and with no stage the pilot is held undrawn throughout.
         // Before the bind, like the roots above (docs/architecture.md).
-        if (o.CutsceneRoots && cutscenes && o.PlanesGamezPath is { Length: > 0 } planesPath)
+        if (o.Cutscenes != null && cutscenes && o.PlanesGamezPath is { Length: > 0 } planesPath)
         {
             var planesGamez = o.Decode == null ? GameZ.Load(planesPath) : o.Decode.Gamez(planesPath);
             s.Aircraft = AircraftStage.Build(root, gamez.Nodes.Count, planesGamez, textures);
@@ -444,13 +448,16 @@ public sealed class WorldSession
     // from its start anim `calldestroy_the_cargozep` and appears in no list. ⚠ Ask by name, not
     // by the callback codes: `player_setup`, which every mission opening without a movie
     // bootstraps, authors the same nine, so a code test would give every mission a held world.
-    private static string? BootstrapCutsceneOf(AnimProgram program)
+    private static string? BootstrapCutsceneOf(AnimProgram program, CutsceneNames names)
     {
         foreach (var def in program.Subset(program.StartAnims).Defs)
         {
-            if (Session.CutsceneController.IsIntro(def.AnimName))
+            foreach (string intro in names.IntroAnims)
             {
-                return def.AnimName;
+                if (string.Equals(def.AnimName, intro, StringComparison.Ordinal))
+                {
+                    return def.AnimName;
+                }
             }
         }
 
@@ -491,21 +498,21 @@ public sealed class WorldSession
     // off. Standing them up before the bind is what makes the bars data rather than an overlay
     // (docs/formats/anim-definitions/cutscenes.md).
     private static void BuildCutsceneRoots(Node3D root, GameZ gamez, WorldBuilder builder,
-        AnimProgram program)
+        AnimProgram program, CutsceneNames names)
     {
         BuildCompositionFrames(root, gamez, program);
-        var camera = new Node3D { Name = Session.CutsceneController.CameraNode };
+        var camera = new Node3D { Name = names.CameraNode };
         // ⚠ Stamp the gamez index a scene-built node would carry. Every compiled cutscene binds
         // `camera1` through its symbol table, and a claimed index with no node behind it makes
         // AnimRuntime.Targets drop the event rather than name-match around it.
-        if (gamez.FindByName(Session.CutsceneController.CameraNode) is { } cameraNode)
+        if (gamez.FindByName(names.CameraNode) is { } cameraNode)
         {
             camera.SetMeta(AnimRuntime.NameMeta, cameraNode.Name);
             camera.SetMeta(AnimRuntime.IndexMeta, cameraNode.Index);
         }
 
         root.AddChild(camera);
-        if (gamez.FindByName(Session.CutsceneController.BarsNode) is not { } bars)
+        if (gamez.FindByName(names.BarsNode) is not { } bars)
         {
             return;
         }
@@ -645,6 +652,11 @@ public sealed class WorldSession
         return painted;
     }
 
+    /// <summary>The names the cutscene half of the build stands on. They are the camera node a
+    /// definition poses, the letterbox bars' node, and the definitions that open a story mission. The cutscene host owns all three and hands them in, so the build asks by
+    /// name and never names the host.</summary>
+    public sealed record CutsceneNames(string CameraNode, string BarsNode, IReadOnlyList<string> IntroAnims);
+
     /// <summary>Build settings that vary by mode; the loaded archives are passed to
     /// <see cref="Build"/> separately.</summary>
     public sealed class Options
@@ -655,6 +667,11 @@ public sealed class WorldSession
         public required string ZrdrPath { get; init; }
         public required string InterpPath { get; init; }
         public required string MissionZrdrPath { get; init; }
+
+        /// <summary>The chapter's own zrdr scope, which <c>templates.zrd</c>, <c>landings.zrd</c>
+        /// and the chapter animation layer are read from. The caller resolves it, since the data
+        /// root's layout is the session's to know.</summary>
+        public required string ChapterZrdrPath { get; init; }
 
         /// <summary>Where this build takes its <see cref="AnimProgram"/> and its aircraft archive
         /// from, when the caller has one. Null (the default) loads both fresh, so a session that
@@ -680,7 +697,7 @@ public sealed class WorldSession
         public required Func<Vector3> PlayerPosition { get; init; }
 
         /// <summary>Every 3D audio listener's position, one per pane, since every pane camera is
-        /// listener-enabled (UI.SplitScreen). Read only by the debug sound log's distance column;
+        /// listener-enabled (UI.Boards.SplitScreen). Read only by the debug sound log's distance column;
         /// the engine reads the listeners themselves. Null → <see cref="PlayerPosition"/> alone.</summary>
         public Func<IReadOnlyList<Vector3>>? ListenerPositions { get; init; }
 
@@ -717,6 +734,11 @@ public sealed class WorldSession
         /// never be confused. See <see cref="SceneBuilder.DebugClutterFlag"/>.</summary>
         public bool DebugClutterFlag { get; init; }
 
+        /// <summary><c>--hide-alpha=</c>: leave the named transparency classes out of the build. A
+        /// frame where two of them paint in the wrong order then names the pair by elimination.
+        /// See <see cref="SceneBuilder.HiddenAlpha"/>.</summary>
+        public SceneBuilder.TransparencyClass HiddenAlpha { get; init; }
+
         /// <summary><c>--clutter-templates=</c>: build these clutter templates instead of the
         /// chapter's own registered list, so one district at a time can be A/B'd against the
         /// original. The per-polygon <c>no_clutter</c> gate still applies. Null → the chapter's
@@ -732,20 +754,18 @@ public sealed class WorldSession
         public bool TexturesOutliveBuild { get; init; }
 
         /// <summary>The factory <see cref="AnimRuntime"/> builds <c>PUFFER_STATE</c> emitters
-        /// through. Null (default) is the real <see cref="Anim.PufferEmitterFactory"/> over this
-        /// build's archive, subject to <see cref="TexturesOutliveBuild"/>; a caller-supplied one
-        /// (the test harness's <c>CountingEmitterFactory</c>) holds no archive reference and is
+        /// through. Null (default) takes the real one <see cref="ArchiveEmitterFactory"/> builds
+        /// over this build's archive, subject to <see cref="TexturesOutliveBuild"/>. A
+        /// caller-supplied one, such as <c>CountingEmitterFactory</c>, holds no archive and is
         /// never auto-retired. ⚠ Read once, here, a post-<see cref="Build"/> swap would miss the
         /// bootstrap, where most <c>PUFFER_STATE</c>s fire.</summary>
         public Anim.IEmitterFactory? EmitterFactory { get; init; }
 
-        /// <summary>The wind and pane camera poses every <c>PUFFER_STATE</c> emitter this build
-        /// makes reads per frame. Must be the instance the weather rig publishes to, the one the
-        /// player's own effects share, so the world's emitters take the same wind and fade.
-        /// ⚠ Null (the default) is the still-air null object, which carries no camera, and a
-        /// camera-less emitter runs neither the fade nor either cull: correct only for a caller
-        /// with no session behind it. Unread when <see cref="EmitterFactory"/> brings its own.</summary>
-        public Effects.EffectAmbience? Ambience { get; init; }
+        /// <summary>Builds the real <c>PUFFER_STATE</c> emitter factory over this build's texture
+        /// archive and <see cref="EffectsParent"/>. The caller closes over the wind and pane camera
+        /// poses its emitters read, which must be the instance the weather rig publishes to.
+        /// Unread when <see cref="EmitterFactory"/> brings its own.</summary>
+        public required Func<TextureArchive, Node3D, Anim.IEmitterFactory> ArchiveEmitterFactory { get; init; }
 
         /// <summary>The mission's combat-voice clip defs (<see cref="CombatVoice.SessionPrewarmNames"/>),
         /// prewarmed with the animation program's own sound names so a pilot's line still decodes
@@ -782,10 +802,11 @@ public sealed class WorldSession
         public bool PlacesCalledTemplates { get; init; }
 
         /// <summary>Build the two roots a cutscene definition drives (<c>camera1</c> and the
-        /// <c>letterbox</c> bars), which the <c>world1</c> walk never reaches. False (default)
-        /// leaves every session's node census exactly as it was; a flown chapter session sets it,
-        /// because that is where an intro definition can play.</summary>
-        public bool CutsceneRoots { get; init; }
+        /// <c>letterbox</c> bars), which the <c>world1</c> walk never reaches. The mission's
+        /// opening definition is recognised by these names too. Null (default) does neither and
+        /// leaves every session's node census unchanged. A flown chapter session sets it, because
+        /// that is where an intro definition can play.</summary>
+        public CutsceneNames? Cutscenes { get; init; }
 
         /// <summary>Resolve the chapter's <c>landings.zrd</c> approach triggers. Set by a STORY
         /// mission only. ⚠ Not by an Instant Action one, although the original's shared mission

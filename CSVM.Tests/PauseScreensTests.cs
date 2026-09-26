@@ -2,8 +2,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using CSVM;
-using CSVM.UI;
+using CSVM.UI.Boards;
 using CSVM.UI.Menu;
+using CSVM.UI.Overlays;
 using Xunit;
 
 namespace CSVM.Tests;

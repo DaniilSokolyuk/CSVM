@@ -270,7 +270,7 @@ and motion dwords are not taken either; the remake spends 8 bytes on a quantised
 
 `0x42` carries one event of the host's objectives graph as a code, an id and the host's clock,
 reliable, in the order the graph raised it. The host is the only sender; a guest's graph is
-replicated and changes only by replaying these (`Session/NetDirectorLink.cs`). The message is 16
+replicated and changes only by replaying these (`Session/Objectives/NetDirectorLink.cs`). The message is 16
 bytes: the header, a `u16` code, two bytes of padding, an `i32` id, and an `f32` `HostClock`, the
 host's session time when its graph raised the event. The codes are `NetDirectorEvent`:
 
@@ -324,7 +324,7 @@ What a guest replays, and what it derives from what it replayed:
   `0x4E` (below), and the `PlayerRange` conditions run on each end over the whole field.
   The escorting wingman is a roster block spawned at build, not a director event.
 
-A guest applies each event on arrival and then catches up on it (`Session/NetDirectorCatchUp.cs`).
+A guest applies each event on arrival and then catches up on it (`Session/Objectives/NetDirectorCatchUp.cs`).
 The lateness is the guest's shared clock minus the stamp, never negative. What the event started
 is advanced by that much:
 - the objective's private timer, its nap and a countdown it set;
@@ -345,7 +345,7 @@ photograph or an award. A guest that joins late has missed every earlier event.
 ## The host-owned world
 
 The host flies every AI aircraft and decides every world hit; a guest replicates the state and
-replays nothing that draws from the AI stream (`Session/NetWorldLink.cs`). The same seed is not the
+replays nothing that draws from the AI stream (`Session/World/NetWorldLink.cs`). The same seed is not the
 same AI: the mode machine rolls on the AI stream every step, so two ends running one AI would part
 on the first roll that landed differently. An AI is named on the wire by its admission ordinal, its
 index in the roster's append-only AI list, which both ends grow in the same order for the aircraft
@@ -377,7 +377,7 @@ not carried here.
 same half second. A zeppelin is named by its placement index, which both ends build from the same
 records. The part-state word and the cannon-shot tail are not carried: a part's death arrives as a
 pool event, and each end's cannons still fire on their own. A guest runs the original's chase
-(`Flight/ZeppelinReplica.cs`) in place of its follower, so the two ends cannot part on a branch
+(`Flight/Airframe/ZeppelinReplica.cs`) in place of its follower, so the two ends cannot part on a branch
 pick. A hull the host holds, has not woken or has lost is not sent, and the guest's copy stays where
 the last sample left it.
 
@@ -408,7 +408,7 @@ every end removes that aeroplane and tells its players "<name> left", and the mi
 Code 3 goes out at once for a stage change or a kill. A hit that lowers a pool without either is
 held and sent on the seat stream's next tick, one sample per pool however many hits landed, because
 three guest-visible rules read the health between stages: the target bar's fraction
-(`Flight/TargetPool.cs`), a surface hull's injure ladder (`Session/SurfaceVehicle.cs`), and every
+(`Flight/Weapons/TargetPool.cs`), a surface hull's injure ladder (`Flight/Ai/SurfaceVehicle.cs`), and every
 `ANIM_HEALTH` condition. A sample waiting when a stage change goes out is dropped, since the stage
 event carries the same health. Chip samples ride the reliable class with the stage events: a guest
 only ever lowers a pool, so an old sample arriving late changes nothing, and a lost last one would
@@ -444,7 +444,7 @@ Each simulation phase, as a guest runs it:
 A landing row and the ladder switch start definitions off where a human is, and in a campaign
 across a link that human may be flying on another machine. The host decides both over the whole
 field, its own panes and each guest's copy, and sends the decision; a guest's trigger and switch
-are replicated and decide nothing (`Session/NetPositionalStartLink.cs`). Deciding on each end
+are replicated and decide nothing (`Session/Campaign/NetPositionalStartLink.cs`). Deciding on each end
 instead would start a row twice or not at all, since each end reads a guest's aeroplane a buffer
 delay apart.
 

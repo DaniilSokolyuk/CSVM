@@ -1,7 +1,9 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using CSVM.Flight;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Camera;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
 using Xunit;
 

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using CSVM.Net;
+using CSVM.UI.Boards;
+using CSVM.UI.Screens;
 
 namespace CSVM.UI.Menu.Original;
 
@@ -88,15 +90,11 @@ public sealed partial class OriginalShell
     /// <summary>The first roster row the aircraft column shows.</summary>
     public int AirframeTop => _airframeTop;
 
-    /// <summary>Whether Start on a free pad joins a seat on the standing screen: the four screens
-    /// that launch a flight, and the CONTROLS page. The two sortie screens give a joined seat an
-    /// aircraft column, the flight check a check of its own; Instant Action opens so a second pilot
-    /// can join before FLY MISSION rather than nowhere at all; the CONTROLS page opens because its
-    /// seat chooser is the only door to a second player's keymap. Everywhere else a pad's Start
-    /// does nothing.</summary>
-    public bool JoiningOpen =>
-        _screen is OriginalScreen.FreeFlight or OriginalScreen.Dogfight or OriginalScreen.InstantAction
-            or OriginalScreen.CampaignFlightCheck or OriginalScreen.ControlsPrefs;
+    /// <summary>Whether the screen showing is where a pad signs onto a seat, which is the join
+    /// board and nowhere else (<see cref="OriginalJoinBoard"/>). Every other screen reads the
+    /// roster the board wrote. Who is flying is settled by players saying so, not by whichever
+    /// flight screen happened to open.</summary>
+    public bool JoiningOpen => _screen == OriginalScreen.JoinBoard;
 
     private bool IsSortie => _screen is OriginalScreen.FreeFlight or OriginalScreen.Dogfight;
 
@@ -474,7 +472,7 @@ public sealed partial class OriginalShell
 
         if (seats.Count < PlayerSetupFeature.MinimumSeats(SortieMode))
         {
-            return "Dogfight needs a second seat: press START on a free pad to join";
+            return "Dogfight needs a second seat: sign one on at the JOIN BOARD";
         }
 
         for (int i = 1; i < seats.Count; i++)
@@ -491,8 +489,8 @@ public sealed partial class OriginalShell
         }
 
         return seats.Count >= PlayerSetupFeature.MaxSeats
-            ? "Four seats joined, the maximum. FLY when ready"
-            : "FLY when ready, or press START on a free pad to join";
+            ? "Four seats signed on, the maximum. FLY when ready"
+            : "FLY when ready";
     }
 
     // The sortie screen's own words: the heading, the column labels, the seat strip, the scroll
@@ -518,7 +516,7 @@ public sealed partial class OriginalShell
         lines.Add(new BoardLine("MAP", LeftColumnX, ListTop - 20f, 0f, RowFont, BoardInk.Detail));
         lines.Add(new BoardLine("AIRCRAFT", RightColumnX, ListTop - 20f, 0f, RowFont, BoardInk.Detail));
         lines.Add(new BoardLine(
-            "Up / Down  Choose       Left / Right  Column       Enter / A / Click  Pick       Esc / B  Back       START  Join",
+            "Up / Down  Choose       Left / Right  Column       Enter / A / Click  Pick       Esc / B  Back",
             0f, FooterY, BoardFit.AuthoredWidth, FooterFont, BoardInk.Detail, -1, false, BoardJustify.Center));
         lines.Add(new BoardLine(SortieHint(), HintX, HintY, HintWidth, FooterFont, BoardInk.Detail, -1, false, BoardJustify.Center));
 

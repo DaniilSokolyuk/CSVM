@@ -1,16 +1,16 @@
 using System.Collections.Generic;
-using CSVM.Flight;
+using CSVM.Flight.Weapons;
 using Xunit;
 
 namespace CSVM.Tests;
 
 /// <summary>
-/// <see cref="FireControl"/>, the firing half extracted from <see cref="FlightController"/>: trigger
+/// <see cref="FireControl"/>, the firing half extracted from <see cref="Flight.Airframe.FlightController"/>: trigger
 /// edges, per-group fire-rate accumulators, muzzle rotation, ammo draw-down, the two weapon
 /// selectors with their on-empty auto-advance, the rocket launch gate and both dry-clip cues.
 /// Engine-free: fakes for <see cref="IGunSlot"/>/<see cref="IPylonSlot"/>, tick-by-tick
 /// <see cref="FireControl.Step"/>, decisions read off the reused <see cref="FireOutcome"/>.
-/// The slot-selection cases prove <see cref="WeaponCursor"/>'s facts through the calling interface.
+/// The slot-selection cases prove <see cref="Flight.Hud.WeaponCursor"/>'s facts through the calling interface.
 /// ⚠ Where a case depends on exact fire-rate/ammo/tick arithmetic, its rate is chosen so every
 /// accumulator threshold falls on an exact multiple of <c>dt</c>, so the comparisons are between
 /// bit-identical floats rather than results that depend on rounding.

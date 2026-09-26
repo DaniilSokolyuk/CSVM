@@ -2,9 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using CSVM.Flight;
+using CSVM.Flight.Airframe;
 using CSVM.Mech3;
 using CSVM.Net;
 using CSVM.Session;
+using CSVM.Session.Campaign;
+using CSVM.Session.Launch;
+using CSVM.Session.Objectives;
 using CSVM.Utils;
 using Godot;
 

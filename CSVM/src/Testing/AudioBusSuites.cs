@@ -3,12 +3,15 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using CSVM.Flight;
+using CSVM.Flight.Ai;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Audio;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
-using CSVM.Session;
-using CSVM.UI;
+using CSVM.Session.Launch;
 using CSVM.UI.Menu;
 using CSVM.UI.Menu.Original;
+using CSVM.UI.Screens;
 using CSVM.Utils;
 using Godot;
 

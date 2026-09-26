@@ -295,5 +295,5 @@ Where this stops:
   neither was followed into the executable: the script callback dispatch is not a plain switch on
   the id, so finding it is its own job. Neither blocks a player: the chapter number is something the
   campaign already knows, and CSVM gates the final cinema on a win on the campaign's last mission,
-  first flight or replay (`CSVM/src/Session/ClosingCinema.cs`), rather than on a decode of 3104.
+  first flight or replay (`CSVM/src/Session/Campaign/ClosingCinema.cs`), rather than on a decode of 3104.
   What that callback answers for a mission failed on a finished campaign is unknown.

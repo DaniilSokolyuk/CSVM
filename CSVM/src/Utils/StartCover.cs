@@ -3,7 +3,7 @@ namespace CSVM.Utils;
 /// <summary>
 /// The ramp behind the cover a session starts under: opaque while the world is still assembling,
 /// then up from a dark tone over <see cref="FadeSeconds"/> once the first frame the player is
-/// meant to see is ready. Engine free, so the whole rule is unit testable; <c>UI/SessionStartFade</c>
+/// meant to see is ready. Engine free, so the whole rule is unit testable; <c>UI/Screens/SessionStartFade</c>
 /// paints it. The original goes from its load screen straight into the cutscene or the flight and
 /// comes up from dark rather than black, with no frame of the world building in between.
 /// </summary>

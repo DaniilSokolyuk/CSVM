@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using CSVM.Bindings;
-using CSVM.UI;
 using CSVM.UI.Menu;
 using CSVM.UI.Menu.Original;
+using CSVM.UI.Screens;
 using Xunit;
 
 namespace CSVM.Tests;
@@ -163,7 +163,7 @@ public class OriginalControlsTests
     {
         free = new FreeFlightFeature();
         setup = new PlayerSetupFeature();
-        setup.SetRoster(OriginalPresentation.Roster(Array.Empty<CSVM.Flight.CustomPlaneDef>()));
+        setup.SetRoster(OriginalPresentation.Roster(Array.Empty<CSVM.Flight.Hangar.CustomPlaneDef>()));
         setup.Join(new ScriptedMenuSeat());
         return new OriginalShell(MenuLayoutReaderTests.OriginalLayout(), free, setup, Measure, controls: controls);
     }

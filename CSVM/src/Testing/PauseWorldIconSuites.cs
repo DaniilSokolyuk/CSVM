@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using CSVM.Flight;
+using CSVM.Flight.Hud;
+using CSVM.Flight.Modes;
 using CSVM.Mech3;
-using CSVM.Session;
-using CSVM.UI;
+using CSVM.Session.Objectives;
+using CSVM.Session.World;
+using CSVM.UI.Boards;
 using CSVM.UI.Menu;
+using CSVM.UI.Overlays;
 using Godot;
 
 namespace CSVM.Testing;

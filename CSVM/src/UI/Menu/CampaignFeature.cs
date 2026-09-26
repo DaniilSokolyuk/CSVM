@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using CSVM.Flight;
+using CSVM.Flight.Hangar;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
-using CSVM.Session;
+using CSVM.Session.Campaign;
 
 namespace CSVM.UI.Menu;
 
@@ -82,13 +83,13 @@ public sealed class CampaignFeature : IMenuFeature
 
     /// <summary>The chapter cinema every cabin door runs its handoff through, or null when the
     /// caller has none and a cabin door simply opens the cabin. One instance serves both
-    /// presentations, and its latch is what stops a film replaying (<c>Session/Launcher.cs</c>).
+    /// presentations, and its latch is what stops a film replaying (<c>Session/Launch/Launcher.cs</c>).
     /// </summary>
     public ChapterCinema? ChapterCinema { get; }
 
     /// <summary>The closing cinema the scrapbook door a flown mission takes runs its handoff
     /// through, or null when the caller has none and that door simply opens the book. One instance
-    /// serves both presentations (<c>Session/Launcher.cs</c>), and the flown mission's own result
+    /// serves both presentations (<c>Session/Launch/Launcher.cs</c>), and the flown mission's own result
     /// is what decides whether it plays.</summary>
     public ClosingCinema? ClosingCinema { get; }
 
@@ -557,7 +558,8 @@ public sealed class CampaignFeature : IMenuFeature
     /// <summary>ACCEPT LOADOUT: writes the picks into the record and, for the seated player's own
     /// aircraft, saves the profile, the original's <c>uiData</c> 2034 commit path. A guest's record
     /// is session-scoped and belongs to no profile, so their ACCEPT writes the record and saves
-    /// nothing.</summary>
+    /// nothing. The field (<see cref="CampaignFlightField"/>) keeps that record across the
+    /// sortie's missions.</summary>
     public void CommitLoadout(OwnedPlane plane, int[] ammo, int[] ordnance)
     {
         ArgumentNullException.ThrowIfNull(plane);

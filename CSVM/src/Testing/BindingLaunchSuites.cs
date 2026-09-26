@@ -2,7 +2,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using CSVM.Bindings;
-using CSVM.Flight;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Camera;
 using Godot;
 
 namespace CSVM.Testing;

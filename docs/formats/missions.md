@@ -192,7 +192,7 @@ The three sources combine into the original's marker string
 <category_label> [<help_label>] - <description>   →   "Danger Zone [Fly Through] - Train Tunnel Mid"
 ```
 
-The remake draws that string through the targeting HUD (`src/Flight/TargetHud.cs`), since a zone
+The remake draws that string through the targeting HUD (`src/Flight/Hud/TargetHud.cs`), since a zone
 is an objective on the pilot's own target cycle like any other: the category and help labels make
 line 1, the description line 2, and off screen a screen-edge arrow carries the block plus the
 relative clock bearing (`… 7 o'clock`), which is computed from the plane's heading rather than

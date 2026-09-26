@@ -1,8 +1,9 @@
 using System.IO;
 using System.Linq;
 using CSVM.Mech3;
-using CSVM.Session;
-using CSVM.UI;
+using CSVM.Session.Campaign;
+using CSVM.UI.Boards;
+using CSVM.UI.Campaign;
 using CSVM.UI.Menu;
 using Xunit;
 
@@ -139,7 +140,9 @@ public class CampaignLayoutTests
 
         var b = layout.ZoomFamily('B');
         Assert.NotNull(b);
-        Assert.Equal(new ScrapbookZoomFamily(24f, 55f, 670f, 0f, 0f, 700f, 20f, 140f, 674f), b!.Value);
+        Assert.Equal(
+            new ScrapbookZoomFamily(24f, 55f, 670f, 82f, 0f, 0f, 700f, 550f, 20f, 140f, 674f, 373f),
+            b!.Value);
         Assert.Null(layout.ZoomFamily('C'));
         Assert.Null(layout.ZoomFamily('Z'));
         Assert.Null(CampaignLayout.Fallback.ZoomFamily('B'));

@@ -1,5 +1,5 @@
 {
-  "_about": "Stock loadouts for the 11 player aircraft, read off the original's Ammo Selection / configurator UI (user-supplied 2026-07-22). Hand-authored config describing the original game, NOT an extracted asset. Consumed by src/Flight/Loadout.cs (M3 wave B, item B12).",
+  "_about": "Stock loadouts for the 11 player aircraft, read off the original's Ammo Selection / configurator UI (user-supplied 2026-07-22). Hand-authored config describing the original game, NOT an extracted asset. Consumed by src/Flight/Weapons/Loadout.cs (M3 wave B, item B12).",
   "_references": "Mounts + binding rule: docs/formats/markers.md. Weapon ids + the caliber x ammo matrix: docs/formats/weapons.md. File format: docs/formats/loadouts.md.",
   "_ammo_types": {
     "slug": 0,

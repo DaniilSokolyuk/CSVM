@@ -172,7 +172,7 @@ white at half-life → transparent black. C1 uses peak alpha 0.4/0.5/0.5; C4 use
 The generic distance-puffer update leaves emitted particles in world space. Consequently the
 aircraft passes through each puff, and its screen-visible duration falls approximately inversely
 with airspeed. This effect is separate from both chapter cloud-card populations and the
-hard-coded throttle-rise exhaust below. CSVM implements it in `Flight.SpeedCue`, loading the
+hard-coded throttle-rise exhaust below. CSVM implements it in `Flight.Hud.SpeedCue`, loading the
 chapter reader verbatim and assigning one private renderer set to each player rig.
 
 ## Aircraft throttle-rise exhaust
@@ -209,7 +209,7 @@ step's slew and the intensity settles below the 0.01 floor. The generic puffer u
 particles in world space, which is why they pass behind the moving aircraft.
 
 `FUN_00476250` builds the wrappers for every aircraft that carries `exhaust%d` markers, not only
-the player's. CSVM implements it in `CSVM/src/Flight/ExhaustSmoke.cs` and builds it on the human
+the player's. CSVM implements it in `CSVM/src/Flight/Airframe/ExhaustSmoke.cs` and builds it on the human
 and the AI rig alike, each fed its own pilot's gap. The trails' particle scatter draws on the
 shared puffer seed stream, as the original's generic particle spawn (`FUN_0054f8b0`) calls the CRT
 `rand` every other puffer calls, so each launched aircraft with exhaust markers re-seeds the

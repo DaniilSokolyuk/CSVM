@@ -1,5 +1,7 @@
 using System.Diagnostics;
-using CSVM.UI;
+using CSVM.UI.Boards;
+using CSVM.UI.Campaign;
+using CSVM.UI.Screens;
 using Godot;
 
 namespace CSVM.Testing;

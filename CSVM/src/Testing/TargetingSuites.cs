@@ -1,8 +1,13 @@
 using System.Collections.Generic;
 using System.Linq;
-using CSVM.Flight;
+using CSVM.Flight.Ai;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Camera;
+using CSVM.Flight.Hud;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
-using CSVM.Session;
+using CSVM.Session.InstantAction;
+using CSVM.Session.Roster;
 using CSVM.Utils;
 using Godot;
 
@@ -767,13 +772,13 @@ internal static class TargetingSuites
             {
                 var textures = new TextureArchive(texturesPath);
                 ProjectilePool? live = null;
-                Session.TurretEmplacementRuntime? emplacements = null;
+                Session.World.TurretEmplacementRuntime? emplacements = null;
                 var shown = new List<Node3D>();
                 try
                 {
                     live = new ProjectilePool(textures, null, null);
                     ctx.Host.AddChild(live);
-                    emplacements = new Session.TurretEmplacementRuntime(turretDefs, weapons,
+                    emplacements = new Session.World.TurretEmplacementRuntime(turretDefs, weapons,
                         (pattern, scope) => world.Runtime.FindNodes(pattern, scope), live,
                         world.Runtime.WorldRoot);
                     // The runtime registers its own emplacements with the pool; a second
@@ -924,7 +929,7 @@ internal static class TargetingSuites
             var pane1 = new TargetHud { PlayerIndex = 0 };
             var pane2 = new TargetHud { PlayerIndex = 1, MarkAll = true };
             var both = new List<TargetHud> { pane1, pane2 };
-            var f16 = new UI.DebugMarkerToggle(() => both);
+            var f16 = new UI.Overlays.DebugMarkerToggle(() => both);
             f16.Toggle();
             ctx.Check(pane1.MarkAll && pane2.MarkAll,
                 $"F16 switches the all-aircraft markers on across every pane p1={pane1.MarkAll} p2={pane2.MarkAll}");
@@ -934,7 +939,7 @@ internal static class TargetingSuites
             // A press with no pane to mark changes nothing and latches no state of its own. A pane
             // can join the session after it, a splitscreen pane built late.
             var latePanes = new List<TargetHud>();
-            var noPanes = new UI.DebugMarkerToggle(() => latePanes);
+            var noPanes = new UI.Overlays.DebugMarkerToggle(() => latePanes);
             noPanes.Toggle();
             ctx.Check(latePanes.Count == 0,
                 $"a session with no flight pane still has none after the press panes={latePanes.Count}");
@@ -1344,12 +1349,12 @@ internal static class TargetingSuites
                 $"CONTROL: it is NOT the sim pose the gates read ({hud.PlanePos}), which is the tick-quantised eye the disc used to jitter from");
 
             // What the picture may draw. The own-airframe layer is the one bit the disc drops.
-            uint own = UI.SplitScreen.OwnAirframeLayer(0);
+            uint own = UI.Boards.SplitScreen.OwnAirframeLayer(0);
             ctx.Check(hud.Picture is { } masked && (masked.DiscCullMask & own) == 0
                       && (ctx.Camera.CullMask & own) != 0,
                 $"the disc's camera drops the layer this pilot's own aeroplane is drawn on (0x{hud.Picture?.DiscCullMask:X5} against the pane's 0x{ctx.Camera.CullMask:X5}), so no part of the aircraft the eye sits inside is in the picture");
             ctx.Check(hud.Picture is { } kept
-                      && (kept.DiscCullMask & UI.SplitScreen.OwnAirframeLayer(1)) != 0
+                      && (kept.DiscCullMask & UI.Boards.SplitScreen.OwnAirframeLayer(1)) != 0
                       && kept.DiscCullMask == (ctx.Camera.CullMask & ~own),
                 $"CONTROL: it drops that ONE bit and nothing else, so the world, every AI aircraft and a splitscreen neighbour's aeroplane are all still in the picture");
 
@@ -1360,7 +1365,7 @@ internal static class TargetingSuites
             // The other half of the exclusion, on a REAL built airframe standing in for the
             // pilot's own: the stamp a human rig applies moves every mesh onto that one layer, so
             // dropping the bit takes the whole aeroplane out rather than its root node alone.
-            UI.SplitScreen.SetVisualLayer(model, own);
+            UI.Boards.SplitScreen.SetVisualLayer(model, own);
             uint discMask = SpyglassView.DiscMask(ctx.Camera.CullMask, own);
             var (meshes, inDisc) = DrawnUnder(model, discMask);
             var (_, inPane) = DrawnUnder(model, ctx.Camera.CullMask);
@@ -1435,7 +1440,7 @@ internal static class TargetingSuites
             var gasbagInst = runtime.Destructibles.Register(
                 new AnimDefinition { Name = "gasbag1", AnimName = "zep_zone_gasbag1" }, gasbagNode, 200f);
 
-            var debugKill = new UI.DebugKillTarget(() => null, () => runtime);
+            var debugKill = new UI.Overlays.DebugKillTarget(() => null, () => runtime);
 
             const int Killer = FlightRoster.ShooterIdBase + 1;
             int? downedKiller = null;
@@ -1456,7 +1461,7 @@ internal static class TargetingSuites
             debugKill.KillSource(new object(), "unrecognised", Killer);
 
             // Nothing selected: Kill() itself (not KillSource) must not throw with no pilot.
-            var noPilotKill = new UI.DebugKillTarget(() => null, () => runtime);
+            var noPilotKill = new UI.Overlays.DebugKillTarget(() => null, () => runtime);
             noPilotKill.Kill();
         }
         finally

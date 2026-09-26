@@ -31,9 +31,9 @@ project published, rather than something a third party rebuilt or altered.
 
 - **Windows 10 or 11**, 64-bit.
 - **A graphics card with a working Vulkan or Direct3D 12 driver.** Either one is enough;
-  the build picks whichever is available. Below that line the menu still works and a
-  mission does not; "The game disappears when a mission starts" below says how to
-  recognise that case.
+  the build picks whichever is available. Below that line the program starts and then
+  vanishes at the intro film, before any menu; "The game disappears after it starts" below
+  says how to recognise that case.
 - **A retail Crimson Skies install** (the original 2000 PC game) on this machine.
 - **About 1 GB of free disk space** for the game data you extract.
 - Nothing else. The .NET runtime this engine needs is inside the download, so there is no
@@ -79,7 +79,11 @@ safe) and takes **well under a minute** on an SSD, around 15 seconds on a fast m
 folder, Windows will likely show a blue **"Windows protected your PC"** screen. Click
 **"More info"**, then **"Run anyway"**.
 
-That screen means Windows does not recognise the publisher, which is true of every
+`Extract.cmd` raises a different, smaller prompt: an **"Open File - Security Warning"**
+box saying the publisher could not be verified, with **Run** and **Cancel** buttons. Click
+**Run**.
+
+Both prompts mean Windows does not recognise the publisher, which is true of every
 unsigned download and says nothing about what the file does. The check that does mean
 something is the SHA-256 above, taken against the release page. If this zip reached you
 from anywhere other than <https://github.com/Laeresh/CSVM/releases>, do that check before
@@ -108,13 +112,15 @@ Three failures answer themselves:
 - **The game warns about the extraction when it starts.** Re-run `Extract.cmd`. The warning
   names `ExtractAssets.ps1` and `ExtractRof.ps1`, which are the two scripts `Extract.cmd`
   runs for you.
-- **The game disappears when a mission starts.** Read on.
+- **The game disappears after it starts.** Read on.
 
-### The game disappears when a mission starts
+### The game disappears after it starts
 
-The menu works, you pick a mission, the world loads, and the program vanishes with no
-window and no message. That is what this build does on a machine below the requirement
-above, and there is no setting inside the game that changes it.
+The window opens, the boot card shows, and a few seconds later, as the intro film begins,
+the program vanishes with no window and no message. That is what this build does on a
+machine below the requirement above, and there is no setting inside the game that changes
+it. Without extracted data the same machine still shows the "No game data found" screen,
+so seeing that screen does not mean the machine can play.
 
 To tell that case apart from a genuine crash, open the newest file in `logs\` and find the
 line beginning `[perf] gpu=`. It names your graphics adapter and the renderer in use. A

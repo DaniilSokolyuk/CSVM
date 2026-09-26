@@ -4,7 +4,10 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using CSVM.Mech3;
-using CSVM.Session;
+using CSVM.Session.Campaign;
+using CSVM.Session.Objectives;
+using CSVM.Session.Roster;
+using CSVM.Session.World;
 using Godot;
 
 namespace CSVM.Testing;
@@ -554,7 +557,7 @@ internal static class CampaignSuites
 
         var textures = new TextureArchive(texturesPath);
         var planesGamez = GameZ.Load(ctx.PlanesGamezPath);
-        var weaponDefs = Flight.WeaponDefs.Load(ctx.ZrdrPath, null);
+        var weaponDefs = Flight.Weapons.WeaponDefs.Load(ctx.ZrdrPath, null);
         var cannon = weaponDefs.All.FirstOrDefault(w => w.IsCannon && w.ArmorDamage is > 0f);
         ctx.Check(cannon != null, $"a CANNON gun exists in the data");
         if (cannon == null)
@@ -568,14 +571,14 @@ internal static class CampaignSuites
         var targetPos = new Vector3(500f, 800f, 0f);
         var profile = CampaignProfileDef.NewProfile("Zachary");
         var director = CampaignDirector.Create(script, mission, profile, null);
-        Flight.ProjectilePool? pool = null;
-        Flight.FlightController? seated = null;
-        Flight.FlightController? guest = null;
-        Flight.FlightController? target = null;
+        Flight.Weapons.ProjectilePool? pool = null;
+        Flight.Airframe.FlightController? seated = null;
+        Flight.Airframe.FlightController? guest = null;
+        Flight.Airframe.FlightController? target = null;
         var report = new StringBuilder();
         try
         {
-            var live = new Flight.ProjectilePool(textures, null, null);
+            var live = new Flight.Weapons.ProjectilePool(textures, null, null);
             pool = live;
             ctx.Host.AddChild(live);
 
@@ -583,8 +586,8 @@ internal static class CampaignSuites
             guest = BuildAttemptRig(ctx, planesGamez, textures, live, 1, guestPos);
             // Use an enemy target because friendly fire is disabled between
             // co-op humans, so a round aimed at the OTHER human would never register a hit.
-            target = BuildAttemptRig(ctx, planesGamez, textures, live, 2, targetPos, Flight.AimAssist.PlayerTeam + 1);
-            var field = new List<Flight.FlightController> { seated, guest };
+            target = BuildAttemptRig(ctx, planesGamez, textures, live, 2, targetPos, Flight.Weapons.AimAssist.PlayerTeam + 1);
+            var field = new List<Flight.Airframe.FlightController> { seated, guest };
 
             director.Attach(new CampaignDirector.WorldInputs
             {
@@ -599,7 +602,7 @@ internal static class CampaignSuites
             ctx.Check(!live.ScoredShooters.Contains(guest.PlayerIndex),
                 $"...and the guest's never is");
 
-            void FireAt(Flight.FlightController shooter, Vector3 at)
+            void FireAt(Flight.Airframe.FlightController shooter, Vector3 at)
             {
                 var muzzle = new Transform3D(
                     Basis.LookingAt(Vector3.Back, Vector3.Up), at + new Vector3(0f, 0f, -20f));
@@ -701,17 +704,17 @@ internal static class CampaignSuites
         var guestPos = new Vector3(0f, 800f, -2000f);
         var profile = CampaignProfileDef.NewProfile("Zachary");
         var report = new StringBuilder();
-        Flight.ProjectilePool? pool = null;
-        Flight.FlightController? seated = null;
-        Flight.FlightController? guest = null;
+        Flight.Weapons.ProjectilePool? pool = null;
+        Flight.Airframe.FlightController? seated = null;
+        Flight.Airframe.FlightController? guest = null;
         try
         {
-            var live = new Flight.ProjectilePool(textures, null, null);
+            var live = new Flight.Weapons.ProjectilePool(textures, null, null);
             pool = live;
             ctx.Host.AddChild(live);
             seated = BuildAttemptRig(ctx, planesGamez, textures, live, 0, seatedPos);
             guest = BuildAttemptRig(ctx, planesGamez, textures, live, 1, guestPos);
-            var field = new List<Flight.FlightController> { seated, guest };
+            var field = new List<Flight.Airframe.FlightController> { seated, guest };
 
             int paid = FlyForTheReward(ctx, script, mission, profile, live, seated, field, paying.Number, winner);
             ctx.Same(reward.Value.Cash, paid,
@@ -1236,9 +1239,9 @@ internal static class CampaignSuites
         ctx.Host.AddChild(overlay);
         try
         {
-            var rig = new Flight.PlayerRig { Camera = camera, HudParent = ctx.Host };
+            var rig = new Flight.Camera.PlayerRig { Camera = camera, HudParent = ctx.Host };
             rig.WorldOverlays.Add(overlay);
-            host.BindRigs(new[] { rig }, () => System.Array.Empty<Flight.FlightController>());
+            host.BindRigs(new[] { rig }, () => System.Array.Empty<Flight.Airframe.FlightController>());
             ctx.Check(overlay.Visible, $"a rig's world overlays are up while nothing presents");
             host.Host(2, CutsceneController.IntroAnims[1]);
             ctx.Check(host.Presenting && !overlay.Visible,
@@ -1282,8 +1285,8 @@ internal static class CampaignSuites
             // and a program carrying none answers "ended", which is the ordinary exit.
             runtime.Bind(world, new AnimProgram());
             host.BindWorld(runtime);
-            cockpit = Seat.Build(ctx, planesGamez, textures, Flight.PilotViewMode.Cockpit, 0);
-            chase = Seat.Build(ctx, planesGamez, textures, Flight.PilotViewMode.Chase, 1);
+            cockpit = Seat.Build(ctx, planesGamez, textures, Flight.Camera.PilotViewMode.Cockpit, 0);
+            chase = Seat.Build(ctx, planesGamez, textures, Flight.Camera.PilotViewMode.Chase, 1);
             if (cockpit.Body == null || cockpit.Interior == null || cockpit.Pilot.CockpitPass == null)
             {
                 ctx.Check(false, $"the seat build carries an airframe body, an interior and its pass");
@@ -1291,7 +1294,7 @@ internal static class CampaignSuites
             }
 
             host.BindRigs(new[] { cockpit.Rig, chase.Rig },
-                () => System.Array.Empty<Flight.FlightController>());
+                () => System.Array.Empty<Flight.Airframe.FlightController>());
             DriveEpisode(ctx, host, cockpit, chase, byDefinitionEnd: true);
             DriveEpisode(ctx, host, cockpit, chase, byDefinitionEnd: false);
         }
@@ -1347,8 +1350,8 @@ internal static class CampaignSuites
             $"…and puts the cockpit seat back in the cockpit it chose, rather than leaving it outside its own aeroplane");
         ctx.Check(cockpit.Pilot.CockpitPass is { Visible: true },
             $"…with its interior pass drawing again");
-        ctx.Check(cockpit.Pilot.ViewMode == Flight.PilotViewMode.Cockpit
-                  && chase.Pilot.ViewMode == Flight.PilotViewMode.Chase,
+        ctx.Check(cockpit.Pilot.ViewMode == Flight.Camera.PilotViewMode.Cockpit
+                  && chase.Pilot.ViewMode == Flight.Camera.PilotViewMode.Chase,
             $"…and neither seat's SELECTED view was moved to get there");
         ctx.Check(chase.Body is { Visible: true } && chase.Interior is { Visible: false },
             $"…while the chase seat still draws its airframe and no interior");
@@ -1807,8 +1810,8 @@ internal static class CampaignSuites
     // end the mission on its own INSTANTWIN. Returns what the reward table paid for it.
     private static int FlyForTheReward(
         TestContext ctx, ObjectiveScript script, CampaignMission mission, CampaignProfileDef profile,
-        Flight.ProjectilePool live, Flight.FlightController seated,
-        List<Flight.FlightController> field, int payingNumber, int winner)
+        Flight.Weapons.ProjectilePool live, Flight.Airframe.FlightController seated,
+        List<Flight.Airframe.FlightController> field, int payingNumber, int winner)
     {
         var director = CampaignDirector.Create(script, mission, profile, null);
         var seatedPos = seated.WorldPosition;
@@ -1950,29 +1953,29 @@ internal static class CampaignSuites
     // A human rig for CampaignCoopAttempt, built and registered like CombatSuites' own manual rig:
     // Setup before the node joins the tree, then RegisterAircraft, so its body is a real hittable
     // target for another rig's cannon round.
-    private static Flight.FlightController BuildAttemptRig(
-        TestContext ctx, GameZ planesGamez, TextureArchive textures, Flight.ProjectilePool live,
+    private static Flight.Airframe.FlightController BuildAttemptRig(
+        TestContext ctx, GameZ planesGamez, TextureArchive textures, Flight.Weapons.ProjectilePool live,
         int index, Vector3 at, int? team = null)
     {
-        var stats = Flight.PlaneStats.Load(ctx.ZrdrPath, ctx.PlaneName);
+        var stats = Flight.Airframe.PlaneStats.Load(ctx.ZrdrPath, ctx.PlaneName);
         var model = new PlaneBuilder(planesGamez, textures).Build(ctx.PlaneName);
-        var pilot = new Flight.FlightController
+        var pilot = new Flight.Airframe.FlightController
         {
             PlaneModel = model,
-            Collider = Flight.PlaneCollider.Build(model),
+            Collider = Flight.Airframe.PlaneCollider.Build(model),
             Damage = stats.DestroyableParts.Count > 0 || stats.VehicleHealth is > 0f
-                ? Flight.PlaneDamage.For(stats) : null,
+                ? Flight.Airframe.PlaneDamage.For(stats) : null,
             PlayerIndex = FlightRoster.ShooterIdBase + index,
             IsHumanPiloted = true,
             Projectiles = live,
             UseKeyboard = false,
             PadDevices = System.Array.Empty<int>(),
             AllowPause = false,
-            Team = team ?? Flight.AimAssist.PlayerTeam,
+            Team = team ?? Flight.Weapons.AimAssist.PlayerTeam,
             Name = $"AttemptRig{index}",
         };
         pilot.AddChild(model);
-        pilot.Setup(new Flight.FlightModel(stats), ctx.Camera, new Flight.CamParams(), at, at + Vector3.Forward);
+        pilot.Setup(new Flight.Airframe.FlightModel(stats), ctx.Camera, new Flight.Camera.CamParams(), at, at + Vector3.Forward);
         ctx.Host.AddChild(pilot);
         live.RegisterAircraft(pilot.Body!);
         return pilot;
@@ -2131,8 +2134,8 @@ internal static class CampaignSuites
     // wires them. Nothing here is shared with another suite, so it frees everything it made.
     private sealed class Seat
     {
-        private Seat(Flight.PlayerRig rig, Flight.FlightController pilot, Node3D? body,
-            Node3D? interior, Flight.PilotViewMode view)
+        private Seat(Flight.Camera.PlayerRig rig, Flight.Airframe.FlightController pilot, Node3D? body,
+            Node3D? interior, Flight.Camera.PilotViewMode view)
         {
             Rig = rig;
             Pilot = pilot;
@@ -2141,9 +2144,9 @@ internal static class CampaignSuites
             View = view;
         }
 
-        internal Flight.PlayerRig Rig { get; }
+        internal Flight.Camera.PlayerRig Rig { get; }
 
-        internal Flight.FlightController Pilot { get; }
+        internal Flight.Airframe.FlightController Pilot { get; }
 
         // The airframe's own `healthy` group and its `cockpit1` subtree: the two nodes the per-mode
         // rule writes, read directly so the check reads the scene rather than the rule again.
@@ -2151,25 +2154,25 @@ internal static class CampaignSuites
 
         internal Node3D? Interior { get; }
 
-        private Flight.PilotViewMode View { get; }
+        private Flight.Camera.PilotViewMode View { get; }
 
         internal static Seat Build(TestContext ctx, GameZ planesGamez, TextureArchive textures,
-            Flight.PilotViewMode view, int index)
+            Flight.Camera.PilotViewMode view, int index)
         {
             var builder = new PlaneBuilder(planesGamez, textures, spinningProps: true,
                 cockpitInterior: true);
             var model = builder.Build(ctx.PlaneName);
-            var pilot = new Flight.FlightController
+            var pilot = new Flight.Airframe.FlightController
             {
                 PlaneModel = model,
-                Collider = Flight.PlaneCollider.Build(model),
+                Collider = Flight.Airframe.PlaneCollider.Build(model),
                 PlayerIndex = index,
                 IsHumanPiloted = true,
                 UseKeyboard = false,
                 PadDevices = System.Array.Empty<int>(),
                 AllowPause = false,
                 PinnedViewMode = view,
-                Cockpit = Flight.CockpitVisibility.Bind(model, builder.CockpitInterior),
+                Cockpit = Flight.Hud.CockpitVisibility.Bind(model, builder.CockpitInterior),
                 CockpitInterior = builder.CockpitInterior,
                 Name = $"CutsceneSeat{index}",
             };
@@ -2182,12 +2185,12 @@ internal static class CampaignSuites
             // plane model, which is why hiding the airframe cannot take the panel with it.
             if (builder.CockpitInterior is { } interior)
             {
-                pilot.CockpitPass = Flight.CockpitOverlay.Build(ctx.Host, interior, null, null);
+                pilot.CockpitPass = Flight.Hud.CockpitOverlay.Build(ctx.Host, interior, null, null);
             }
 
-            pilot.Setup(new Flight.FlightModel(Flight.PlaneStats.Load(ctx.ZrdrPath, ctx.PlaneName)),
-                camera, new Flight.CamParams(), Vector3.Zero, Vector3.Forward);
-            var rig = new Flight.PlayerRig
+            pilot.Setup(new Flight.Airframe.FlightModel(Flight.Airframe.PlaneStats.Load(ctx.ZrdrPath, ctx.PlaneName)),
+                camera, new Flight.Camera.CamParams(), Vector3.Zero, Vector3.Forward);
+            var rig = new Flight.Camera.PlayerRig
             {
                 Index = index,
                 Camera = camera,
@@ -2198,7 +2201,7 @@ internal static class CampaignSuites
         }
 
         // The write the per-frame camera arm makes on an ordinary flying frame in this seat's view.
-        internal void ApplyView() => Pilot.Cockpit?.Apply(View, Flight.PilotView.IsFirstPerson(View));
+        internal void ApplyView() => Pilot.Cockpit?.Apply(View, Flight.Camera.PilotView.IsFirstPerson(View));
 
         internal void Free()
         {

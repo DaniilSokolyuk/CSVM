@@ -1,5 +1,5 @@
 using System;
-using CSVM.Flight;
+using CSVM.Flight.Camera;
 using Xunit;
 
 namespace CSVM.Tests;

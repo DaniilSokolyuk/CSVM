@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
-using CSVM.Flight;
+using CSVM.Flight.Ai;
+using CSVM.Flight.Airframe;
 using CSVM.Mech3;
 using Godot;
 using Xunit;
@@ -949,6 +950,43 @@ public class AiModeMachineTests
         m.AssistEnabled = false;
         Assert.Equal(AiMode.Pursue,
             m.Update(Home, Level, Astern600, null, 1f / 60f, Chasing, targetIsHuman: true));
+    }
+
+    /// <summary>The daredevil roll behind the proximity pick. A certainty passes and says so in
+    /// the engine's own vocabulary. A zero chance never rolls at all, the class gate a non-jet
+    /// spawn is given. A failed roll holds the next look five seconds.</summary>
+    [Fact]
+    public void TheDaredevilRollHoldsFiveSecondsAfterAFailedLook()
+    {
+        var m = Machine();
+        var rolls = new List<string>();
+        m.RollLogged += rolls.Add;
+
+        m.DaredevilChance = 0f;
+        Assert.False(m.RollDaredevil());
+        Assert.Empty(rolls);
+
+        m.DaredevilChance = 1f;
+        Assert.True(m.RollDaredevil());
+        Assert.Equal("Dare devil test passed. Looking for danger zones.", Assert.Single(rolls));
+
+        // A look that started no run stamps the hold, and nothing rolls again inside it.
+        m.StampDangerZoneRetry();
+        m.Update(Home, Level, null, null, AiModeMachine.DangerZoneRetryS - 0.5f);
+        Assert.False(m.RollDaredevil());
+        Assert.Single(rolls);
+        m.Update(Home, Level, null, null, 1f);
+        Assert.True(m.RollDaredevil());
+
+        // …and a failed roll arms the same hold, so the refusal costs one roll per interval.
+        m.DaredevilChance = 0.0001f;
+        m.Update(Home, Level, null, null, AiModeMachine.DangerZoneRetryS);
+        Assert.False(m.RollDaredevil());
+        Assert.Equal("Dare devil test failed. Not looking for danger zones.", rolls[^1]);
+        int failed = rolls.Count;
+        m.DaredevilChance = 1f;
+        Assert.False(m.RollDaredevil());
+        Assert.Equal(failed, rolls.Count);
     }
 
     [Fact]

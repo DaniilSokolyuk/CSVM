@@ -1,6 +1,6 @@
 using System;
 using System.Linq;
-using CSVM.UI;
+using CSVM.UI.Screens;
 using CSVM.Utils;
 using Xunit;
 

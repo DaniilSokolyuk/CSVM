@@ -91,7 +91,7 @@ _Avoid_: AI roster (it excludes the human field)
 The one seam onto the live physics world, `IWorldQuery`: `Sweep`, a shape cast along a motion,
 `Ray`, a single ray, and `Overlaps`, a standing-pose touch test. The only Godot adapter over
 `DirectSpaceState`.
-_Avoid_: probe (taken by `Testing/Probes.cs`, `ProbeGroundBlow` and `ProbeBlocked` already)
+_Avoid_: probe (taken by `Tooling/Probes.cs`, `ProbeGroundBlow` and `ProbeBlocked` already)
 
 ## Contact
 

@@ -1,7 +1,8 @@
 using System.IO;
 using CSVM.Mech3;
-using CSVM.Session;
-using CSVM.UI;
+using CSVM.Session.Campaign;
+using CSVM.UI.Boards;
+using CSVM.UI.Campaign;
 using Xunit;
 
 namespace CSVM.Tests;
@@ -82,8 +83,42 @@ public class CampaignScrapbookZoomPageTests
         Assert.Equal(BoardJustify.Left, body.Justify); // SBZ_T_TEXTB's Justify 4, no reading of its own
     }
 
+    /// <summary>A block carries its box's authored height as well as its width. That is what lets
+    /// the renderer step a block too tall for the box down until it fits. The rule is in
+    /// <c>docs/formats/campaign-screens.md</c>, "Fitting a block to its box". The composition
+    /// cannot do the stepping itself, since how many lines words wrap to is a font metric.</summary>
+    [Fact]
+    public void EachBlockCarriesItsBoxsAuthoredHeight()
+    {
+        string root = ScrapbookCompositionFixture.WriteResolvableScrap(TestData.TempDir(), mission: 1);
+        File.WriteAllText(Path.Combine(root, "extracted", "rof", "ASSETS", "SCRAPBOOK.CSV"),
+            "[SCRAPBOOK]\n" +
+            "1_1_1=0,0,SB_01_01_test,P0,10,20,1,0,0,5,\"0,0,0,0\",B,0,0,IDS_TEST_TITLE,IDS_TEST_BODY\n");
+        var strings = UiStrings.Parse(
+            "[{\"id\":40002,\"text\":\"ZACHARY NABS BALMORAL!\",\"dll\":\"langui\"}," +
+            "{\"id\":40003,\"text\":\"Notorious corsair\",\"dll\":\"langui\"}]");
+        var flow = OpenedOnZoom(root, strings, CampaignLayout.Over(MenuLayoutReaderTests.OriginalLayout()));
+
+        // SBZ_T_TITLEB's 82 and SBZ_T_TEXTB's 373, the same rows their widths come from.
+        Assert.Equal(82f, Assert.Single(flow.Page.Captions, l => l.Text == "ZACHARY NABS BALMORAL!").Height);
+        Assert.Equal(373f, Assert.Single(flow.Page.Captions, l => l.Text == "Notorious corsair").Height);
+    }
+
+    /// <summary>With no decoded layout behind it the page falls back on
+    /// <see cref="ScrapbookComposition.ZoomFamily"/>'s own read of <c>LAYOUT.CSV</c>. The heights
+    /// come with it rather than being lost to the fallback.</summary>
+    [Fact]
+    public void TheFallbackReadOfLayoutCsvCarriesTheHeightsToo()
+    {
+        var flow = OpenedOnZoom();
+
+        // The fixture's SBZ_T_TITLEM and SBZ_T_TEXTM, family M.
+        Assert.Equal(85f, Assert.Single(flow.Page.Captions, l => l.Text == "IDS_TEST_TITLE").Height);
+        Assert.Equal(487f, Assert.Single(flow.Page.Captions, l => l.Text == "IDS_TEST_BODY").Height);
+    }
+
     /// <summary>A player capture's detail view: the print at the mount's own inset offset and at
-    /// the size every retail photograph is, with the torn mount drawn over it, since
+    /// the size every one of the original's photographs is, with the torn mount drawn over it, since
     /// <c>SBZ_GRIME</c>'s Z of 200 stands above <c>SBZ_IMAGE</c>'s 0. The mount's translucent
     /// middle is the tint the scrapbook shows and the exported file does not.</summary>
     [Fact]

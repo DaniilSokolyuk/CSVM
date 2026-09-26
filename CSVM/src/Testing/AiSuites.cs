@@ -1,9 +1,18 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using CSVM.Flight;
+using CSVM.Flight.Ai;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Audio;
+using CSVM.Flight.Camera;
+using CSVM.Flight.Modes;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
-using CSVM.Session;
+using CSVM.Session.Campaign;
+using CSVM.Session.InstantAction;
+using CSVM.Session.Roster;
+using CSVM.Session.World;
+using CSVM.Tooling;
 using CSVM.Utils;
 using Godot;
 
@@ -89,7 +98,7 @@ internal static class AiSuites
                     RigCount = 2,
                     Rigs = rigs,
                     PauseState = pauseState,
-                    MenuInputFor = _ => new UI.MenuInput(),
+                    MenuInputFor = _ => new UI.Screens.MenuInput(),
                     ExitSession = () => { },
                 }, new FixedFlightStarts());
             humanRoster.SetTargetSubParts(targetSource);
@@ -630,7 +639,7 @@ internal static class AiSuites
             FlightController? target = null;
             FlightController? friend = null;
             FlightController? zepBait = null;   // its own rig: the zeppelin rings shoot it to bits
-            Session.TurretEmplacementRuntime? emplacements = null;   // a Node now: freed below
+            Session.World.TurretEmplacementRuntime? emplacements = null;   // a Node now: freed below
             var savedClock = Utils.GameClock.Current;
             try
             {
@@ -643,7 +652,7 @@ internal static class AiSuites
                 // ⚠ Keep the clock stepping (INSTR-49): without it the gunner's 1-2 s line-of-sight
                 // cache never expires and the woken gun rides the one cast it took at wake.
                 Utils.GameClock.Current = new Utils.GameClock { Mode = Utils.GameClock.RunMode.FixedStep };
-                var runtime = emplacements = new Session.TurretEmplacementRuntime(turretDefs, weapons,
+                var runtime = emplacements = new Session.World.TurretEmplacementRuntime(turretDefs, weapons,
                     (pattern, scope) => world.Runtime.FindNodes(pattern, scope), live,
                     world.Runtime.WorldRoot);
 
@@ -949,10 +958,10 @@ internal static class AiSuites
             using var c4Textures = new TextureArchive(texturesPath);
             var live = new ProjectilePool(c4Textures, null, null);
             ctx.Host.AddChild(live);
-            Session.TurretEmplacementRuntime? c4Emplacements = null;
+            Session.World.TurretEmplacementRuntime? c4Emplacements = null;
             try
             {
-                var runtime = c4Emplacements = new Session.TurretEmplacementRuntime(turretDefs, weapons,
+                var runtime = c4Emplacements = new Session.World.TurretEmplacementRuntime(turretDefs, weapons,
                     (pattern, scope) => world.Runtime.FindNodes(pattern, scope), live,
                     world.Runtime.WorldRoot);
                 var census = new List<string>();
@@ -1001,12 +1010,12 @@ internal static class AiSuites
             {
                 var textures = new TextureArchive(texturesPath);
                 ProjectilePool? live = null;
-                Session.TurretEmplacementRuntime? emplacements = null;
+                Session.World.TurretEmplacementRuntime? emplacements = null;
                 try
                 {
                     live = new ProjectilePool(textures, null, null) { DamageSink = world.Runtime.DamageAt };
                     ctx.Host.AddChild(live);
-                    emplacements = new Session.TurretEmplacementRuntime(turretDefs, weapons,
+                    emplacements = new Session.World.TurretEmplacementRuntime(turretDefs, weapons,
                         (pattern, scope) => world.Runtime.FindNodes(pattern, scope), live,
                         world.Runtime.WorldRoot);
                     ctx.Host.AddChild(emplacements);
@@ -1096,7 +1105,7 @@ internal static class AiSuites
             var textures = new TextureArchive(texturesPath);
             ProjectilePool? pool = null;
             FlightController? target = null;
-            Session.TurretEmplacementRuntime? emplacements = null;
+            Session.World.TurretEmplacementRuntime? emplacements = null;
             var savedClock = Utils.GameClock.Current;
             try
             {
@@ -1111,7 +1120,7 @@ internal static class AiSuites
                     return world.Runtime.DamageAt(node, dmg);
                 };
                 ctx.Host.AddChild(live);
-                var runtime = emplacements = new Session.TurretEmplacementRuntime(turretDefs, weapons,
+                var runtime = emplacements = new Session.World.TurretEmplacementRuntime(turretDefs, weapons,
                     (pattern, scope) => world.Runtime.FindNodes(pattern, scope), live,
                     world.Runtime.WorldRoot);
                 var guns = runtime.Emplacements.Where(t => t.Label.StartsWith("MSG_TUR_AAA@aagun")).ToList();
@@ -1258,7 +1267,7 @@ internal static class AiSuites
         ctx.RequireData(missionZrdr, $"C1/M02 zrdr");
 
         // The mission's own wake directive, read from the shipped script rather than assumed.
-        var script = Session.ObjectiveScript.Load(missionZrdr);
+        var script = Session.Objectives.ObjectiveScript.Load(missionZrdr);
         var patterns = new List<string>();
         foreach (var def in script.Objectives)
             patterns.AddRange(def.WakeupTurrets);
@@ -1282,7 +1291,7 @@ internal static class AiSuites
             var textures = new TextureArchive(texturesPath);
             ProjectilePool? pool = null;
             FlightController? target = null;
-            Session.TurretEmplacementRuntime? emplacements = null;
+            Session.World.TurretEmplacementRuntime? emplacements = null;
             try
             {
                 var hits = new List<(string Victim, float Damage)>();
@@ -1296,7 +1305,7 @@ internal static class AiSuites
                     return world.Runtime.DamageAt(node, dmg);
                 };
                 ctx.Host.AddChild(live);
-                var runtime = emplacements = new Session.TurretEmplacementRuntime(turretDefs, weapons,
+                var runtime = emplacements = new Session.World.TurretEmplacementRuntime(turretDefs, weapons,
                     (pattern, scope) => world.Runtime.FindNodes(pattern, scope), live,
                     world.Runtime.WorldRoot);
                 var guns = runtime.Emplacements.Where(t => t.Label.StartsWith("MSG_TUR_AAA@aagun")).ToList();
@@ -1310,14 +1319,14 @@ internal static class AiSuites
 
                 // A chapter 1 log holding all five wrecked, written by CM07 itself: the walk cuts
                 // it off, so the mission opens on the fort the .gw built.
-                var log = new Session.CampaignPersistLog();
-                var wrecked = new List<Session.PersistedObject>();
+                var log = new Session.Campaign.CampaignPersistLog();
+                var wrecked = new List<Session.Campaign.PersistedObject>();
                 foreach (var g in guns)
                 {
                     if (world.Runtime.Destructibles.Resolve(g.Site!) is { } inst
                         && inst.Anchor.HasMeta(AnimRuntime.IndexMeta))
                     {
-                        wrecked.Add(new Session.PersistedObject((int)inst.Anchor.GetMeta(AnimRuntime.IndexMeta),
+                        wrecked.Add(new Session.Campaign.PersistedObject((int)inst.Anchor.GetMeta(AnimRuntime.IndexMeta),
                             inst.Def.Name, inst.Anchor.Name, true, 0f));
                     }
                 }
@@ -2049,7 +2058,9 @@ internal static class AiSuites
         "hit sets the evade flag and enters an evasive maneuver, a pursuer pointed elsewhere " +
         "clears the flag and releases the reaction while a nose-on one holds it and chains a " +
         "second program, an ordered evade carries no flag and leaves the next hit its roll " +
-        "while a hit with nothing eligible sets and holds one, a failed " +
+        "while a hit with nothing eligible sets and holds one, a hit pilot whose dare devil test " +
+        "passes dives into a danger-zone ribbon 300 m off its nose rather than flying the " +
+        "engagement out, a failed " +
         "sixth-sense roll stuns (gunner silent) and recovers after stun_recovery_interval, " +
         "the avoid-crash override climbs out on a blocked probe and releases, and the D15 " +
         "rubber-band assist: a chasing human fallen behind puts the machine in lay off " +
@@ -2378,6 +2389,33 @@ internal static class AiSuites
             ctx.Check(machine.Mode == AiMode.Pursue,
                 $"a non-pursuing target releases lay off after the hold mode={AiModeMachine.NameOf(machine.Mode)}");
 
+            // --- the proximity pick (FUN_004210e0's unforced arm), last, since the dive takes
+            // the aeroplane off its engagement. The roll is pinned to a certainty, so what is
+            // measured is the gate and the entry rather than the dice.
+            var lead = ai.NoseDirection.Normalized();
+            var zoneEntry = ai.WorldPosition + (lead * 300f);
+            pilot.DangerZones = DangerZoneRibbons.Of(new[]
+            {
+                DangerZoneRibbon.FromPolyline("dzpath1", 1, new[]
+                {
+                    zoneEntry, zoneEntry + (lead * 400f), zoneEntry + (lead * 800f),
+                }),
+            });
+            machine.DaredevilChance = 1f;
+            machine.Library = null;
+            target.PlaceHeld(targetPos, ai.WorldPosition);   // nose-on, so the fresh flag stands
+            machine.SteadyHandExponent = float.PositiveInfinity;
+            ai.TakeProjectileHit(gun, ai.WorldPosition + new Vector3(2f, 0f, 0f), "fuselage", 0);
+            machine.SteadyHandExponent = 0f;
+            ctx.Check(machine.Mode == AiMode.Evade && machine.Evading,
+                $"a hit pilot with nothing eligible flies its engagement marked mode={AiModeMachine.NameOf(machine.Mode)}");
+            Step(1);
+            ctx.Check(machine.Mode == AiMode.ApproachingDangerZone
+                && pilot.ZoneRun?.Ribbon.Name == "dzpath1",
+                $"…and a passed dare devil test dives into the zone off its nose instead mode={AiModeMachine.NameOf(machine.Mode)} run={pilot.ZoneRun?.Ribbon.Name ?? "none"}");
+            ctx.Check(transitions.Contains("evade>approaching danger zone"),
+                $"…logged in the engine's own vocabulary transitions=[{string.Join(" ", transitions)}]");
+
             ctx.Note($"transitions: {string.Join(" ", transitions)}");
         }
         finally
@@ -2519,7 +2557,8 @@ internal static class AiSuites
         + "fresh engagement past the 15 s slot cooldown speaks the pair again; and the same raise "
         + "addresses the taunt pair to the pursuer off its own nose against the human it holds: "
         + "inside the nose cone taunts 26, on its own tail taunts 25, abeam taunts neither though "
-        + "the raise ran, and a pursuer in its own evade reaction taunts nothing nose-on")]
+        + "the raise ran, and a pursuer in its own evade reaction taunts nothing nose-on; and a "
+        + "Danger Zone the player has flown broadcasts 15 to that player's own flight")]
     internal static void AiVoice(TestContext ctx)
     {
         ctx.RequireData(ctx.PlanesGamezPath, $"planes gamez");
@@ -2545,8 +2584,8 @@ internal static class AiSuites
         using var archive = new SoundArchive(ctx.SoundsPath);
         WorldSounds? sounds = null;
         MissionRadio? radio = null;
-        Session.AiVoiceRuntime? runtime = null;
-        Session.AiVoiceRuntime? attack = null;
+        Session.Roster.AiVoiceRuntime? runtime = null;
+        Session.Roster.AiVoiceRuntime? attack = null;
         FlightController? ai = null;
         ProjectilePool? turretPool = null;
         var gloatRigs = new List<FlightController>();
@@ -2564,7 +2603,7 @@ internal static class AiSuites
 
             radio = new MissionRadio(defs, groups, sounds.StreamFor);
             ctx.Host.AddChild(radio);
-            runtime = new Session.AiVoiceRuntime(voice, sounds, radio, new System.Random(5));
+            runtime = new Session.Roster.AiVoiceRuntime(voice, sounds, radio, new System.Random(5));
             ctx.Host.AddChild(runtime);
 
             var aiModel = new PlaneBuilder(planesGamez, textures).Build(ctx.PlaneName);
@@ -2981,7 +3020,7 @@ internal static class AiSuites
             // edge, so a commit inside the 2 s mute window costs nothing. The second runtime
             // carries its own clock, the only way to put a transition inside that window here.
             PumpRadio(radio);
-            attack = new Session.AiVoiceRuntime(voice, sounds, radio, new System.Random(9));
+            attack = new Session.Roster.AiVoiceRuntime(voice, sounds, radio, new System.Random(9));
             ctx.Host.AddChild(attack);
             var calls = new List<(string Tag, int Trigger, string Clip)>();
             attack.LinePlayed += (tag, trigger, clip) => calls.Add((tag, trigger, clip));
@@ -3092,6 +3131,17 @@ internal static class AiSuites
             ctx.Check(busyModes.Evading && !Taunted(busy, AiVoiceDispatcher.TaFailShk)
                 && !Taunted(busy, AiVoiceDispatcher.TaFailTail),
                 $"…and a pursuer in its own evade reaction taunts nothing nose-on flag={busyModes.Evading}");
+
+            // --- the Danger Zone praise (15): the player flying a zone out is the original's
+            // own site. The line is broadcast, so one of the player's flight speaks it.
+            PumpRadio(radio);
+            int zoneBefore = calls.Count;
+            attack.DangerZoneCompleted(chased);
+            ctx.Check(calls.Count == zoneBefore + 1
+                && calls[^1].Trigger == AiVoiceDispatcher.PrDngrZn
+                && calls[^1].Tag == flightMate.Name
+                && calls[^1].Clip.StartsWith("snd_id2_PR-D"),
+                $"a Danger Zone the player completed is praised by its flight, not by the player last={(calls.Count > zoneBefore ? calls[^1].ToString() : "none")}");
 
             ctx.Note($"lines: {string.Join(", ", played)}; attack pair: {string.Join(", ", calls)}");
         }
@@ -3295,6 +3345,10 @@ internal static class AiSuites
         string texturesPath = SessionPaths.ChapterTextures(ctx.DataRoot, "C1");
         ctx.RequireData(texturesPath, $"C1 textures");
 
+        // Every cull and level below is the cue's own authored one. This suite reads at 1, not at
+        // the reach the session ships.
+        using var authored = TestContext.AtAuthoredSoundRadii();
+
         var planesGamez = GameZ.Load(ctx.PlanesGamezPath);
         var soundDefs = SoundDefs.Load(ctx.ZrdrPath);
         var soundGroups = SoundDefs.LoadGroups(ctx.ZrdrPath);
@@ -3363,7 +3417,7 @@ internal static class AiSuites
                 Utils.Log.Configure("sound:debug");
                 using var sink = Utils.Log.PushConsoleSink(line =>
                 {
-                    if (line.Contains("ai weapons ") && (line.Contains(" culled ") || line.Contains(" audible ")))
+                    if (line.Contains("ai weapons ") && (line.Contains(" culled ") || line.Contains(" sounding ")))
                         culls.Add(line);
                 });
 
@@ -3392,8 +3446,8 @@ internal static class AiSuites
                     && here[0].Position.DistanceTo(ears[0]) > 20f
                     && there[0].Position.DistanceTo(ears[0]) > 20f,
                     $"…and neither sits on the listener, which is what a voice pinned to the ear would do");
-                ctx.Check(culls.Count(l => l.Contains(" audible ")) == 2,
-                    $"both voices logged the transition into earshot (got {culls.Count(l => l.Contains(" audible "))})");
+                ctx.Check(culls.Count(l => l.Contains(" sounding ")) == 2,
+                    $"both voices logged the transition into earshot (got {culls.Count(l => l.Contains(" sounding "))})");
 
                 // The cull, driven from the listener rather than by moving the aeroplane. The two
                 // ears below straddle the 1.1x, which is what separates this cull from one taken at

@@ -15,7 +15,7 @@ namespace CSVM.Mech3;
 /// <see cref="EnemyGeneratorDef.Capacity"/> gives its own unresolved key. <c>EnemyAccentId</c>
 /// IS read by the wave parser and IS this wave's voice, subject to
 /// the decoded re-roll: an authored 12 (the wingman accent range's own base) becomes
-/// <c>12 + rand() % 5</c> at spawn, not at parse time, <see cref="Session.InstantActionRuntime.ResolveWaveAccentId"/>.</summary>
+/// <c>12 + rand() % 5</c> at spawn, not at parse time, <c>Session.InstantAction.InstantActionRuntime.ResolveWaveAccentId</c>.</summary>
 public readonly record struct InstantActionWave(
     int NumEnemies, string EnemyName, string EnemyPlane, string EnemySkill, int EnemyAccentId);
 
@@ -43,7 +43,7 @@ public static class InstantAction
     private static readonly int[] DefaultAceStats = { 5, 6, 6, 8, 9, 6, 7, 6, 9 };
 
     // Display name -> planes.zbd root node (docs/formats/instant-action.md "The built-in
-    // defaults": the IDS_IA_PLANES order). Deliberately duplicates UI.LaunchMenu.Planes rather
+    // defaults": the IDS_IA_PLANES order). Deliberately duplicates UI.Screens.LaunchMenu.Planes rather
     // than sharing it, which keeps the launchscreen file free of this table. CSVM ships one gamez
     // node per airframe (extracted/planes/nodes.json carries no bare "bhawk", only "player_bhawk"),
     // reused for the player and every AI/generator spawn alike, so there is no separate "plain" or
@@ -128,8 +128,7 @@ public static class InstantAction
     /// <c>dogfight_ace</c>, matching <see cref="BuildDef"/>'s parse-time rule.</summary>
     public static InstantActionDef BuildFromWizard(InstantActionDef baseDef, string missionType,
         string playerPlane, int numWingmen, string wingmanPlane,
-        IReadOnlyList<InstantActionWave> waves, int lives,
-        Flight.LoadoutChoice? wingmanLoadout = null)
+        IReadOnlyList<InstantActionWave> waves, int lives)
     {
         bool ace = string.Equals(missionType, "dogfight_ace", StringComparison.OrdinalIgnoreCase);
         var resolvedWaves = new List<InstantActionWave>(4);
@@ -157,9 +156,6 @@ public static class InstantAction
             AceAccentId = baseDef.AceAccentId,
             AceLivery = baseDef.AceLivery,
             Lives = Math.Max(0, lives),
-
-            // No wingmen means no wingman fit, so a stale pick cannot outlive the count going to 0.
-            WingmanLoadout = ace || numWingmen <= 0 ? null : wingmanLoadout,
         };
     }
 
@@ -401,9 +397,4 @@ public sealed class InstantActionDef
     /// one-life run; N gives N-1 respawns on
     /// the existing 3s <c>VersusRespawnDelay</c> path; 0 is unlimited. Per pilot, not shared.</summary>
     public int Lives { get; init; } = 1;
-
-    /// <summary>INVENTED, no <c>ia.json</c> key carries this. The fit the wizard's Wingmen step
-    /// chose, covering every wingman at once as the original's Player/Wingman radio does, or null
-    /// for the stock fit. Not per wingman: one choice, one flight.</summary>
-    public Flight.LoadoutChoice? WingmanLoadout { get; init; }
 }

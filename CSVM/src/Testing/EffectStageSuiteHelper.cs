@@ -4,7 +4,7 @@ using System.Linq;
 using CSVM.Effects;
 using CSVM.Mech3;
 using CSVM.Mech3.Anim;
-using CSVM.Session;
+using CSVM.Session.World;
 using Godot;
 
 namespace CSVM.Testing;

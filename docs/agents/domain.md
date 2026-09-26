@@ -10,8 +10,10 @@ All binding:
 
 - **`CONTEXT.md`**, the domain-terminology glossary: the term this project has fixed for a
   concept, and the words to avoid for it. Distinct from the project brief below. Read it before
-  naming a domain concept in any output. `docs/adr/` does not exist and is not used; decisions
-  live where "Flag decision conflicts" below says they do.
+  naming a domain concept in any output.
+- **`docs/adr/`**, architecture decision records, one numbered file per decision that
+  reshaped a module's structure (the first is the dispatch-axis split of `AnimRuntime`).
+  Most decisions are not there; they live where "Flag decision conflicts" below says.
 - **`PROJECT_CONTEXT.md`**, the compact authoritative project brief: charter, hard rules,
   module index, CLI flags, current status. `CLAUDE.md` / `AGENTS.md` are thin, tool-specific
   pointers into it, read whichever of those your tool uses, then this file.
@@ -54,7 +56,7 @@ Comment length and shape are capped; see `PROJECT_CONTEXT.md`'s coding conventio
 
 ## Flag decision conflicts
 
-Decisions here live in commit messages, `⚠` constraint lines in module entries in
+Decisions here live in `docs/adr/`, commit messages, `⚠` constraint lines in module entries in
 `docs/architecture/<Namespace>.md`, rules in `docs/verification.md`, and the completed plans in git
 history (which deliberately keep their dead ends). If your output
 contradicts one, surface it explicitly rather than silently overriding:

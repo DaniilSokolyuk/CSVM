@@ -264,6 +264,85 @@ public class NameResolverTests
         Assert.Contains(stray, found);
     }
 
+    // ---- a definition the world holds several instances of writes inside its own instance only ----
+
+    [Fact]
+    public void AWildcardInstancedDefsMissedNameReachesNoOtherNode()
+    {
+        // C3's shape: the shared `crate**` destructible, whose death writes `healthy INACTIVE`.
+        // An instance carrying no healthy model must switch nothing off anywhere else.
+        var crate01 = Node("crate01");
+        var crateHealthy = Node("healthy");
+        var crate02 = Node("crate02"); // this copy carries no healthy model of its own
+        var hull = Node("piratezep");
+        var hullHealthy = Node("healthy");
+        var resolver = Build(
+            (crate01, "crate01", null),
+            (crateHealthy, "healthy", crate01),
+            (crate02, "crate02", null),
+            (hull, "piratezep", null),
+            (hullHealthy, "healthy", hull));
+        var def = Def("crate**", rootName: "healthy");
+        var path = new List<string> { "healthy" };
+
+        Assert.Equal(new[] { crateHealthy }, resolver.ResolveScoped(path, def, crate01));
+        Assert.Contains(hullHealthy, resolver.FindAll("healthy", null)); // the world node is there
+        Assert.Empty(resolver.ResolveScoped(path, def, crate02));        // and stays unreached
+        Assert.Equal(1, resolver.GlobalTierRefused);
+    }
+
+    [Fact]
+    public void AnExactlyNamedDefStillFallsThroughToTheGlobalTier()
+    {
+        // The contrast: one world object, one instance. A name it does not carry is still the
+        // world's to answer, exactly as the original's localOnly-clear chain answers it.
+        var anchor = Node("air_gen");
+        var stray = Node("door1");
+        var resolver = Build((anchor, "air_gen", null), (stray, "door1", null));
+
+        var found = resolver.ResolveScoped(new List<string> { "door1" }, Def("air_gen"), anchor);
+
+        Assert.Equal(new[] { stray }, found);
+        Assert.Equal(0, resolver.GlobalTierRefused);
+    }
+
+    [Fact]
+    public void AWildcardCarryingNameKeepsTheGlobalTier()
+    {
+        // The boundary: `lkshw*` writing `lkshb*` (the install's only such write). A wildcard in
+        // the name stands in for the digit the odometer stamps into it. It still names the
+        // definition's own family, so the whole index answers, as it does for the matcher today.
+        var shadow = Node("lkshw1");
+        var burnt = Node("lkshb1");
+        var plain = Node("lkshb");
+        var resolver = Build((shadow, "lkshw1", null), (burnt, "lkshb1", null), (plain, "lkshb", null));
+        var def = Def("lkshw*");
+
+        Assert.Equal(new[] { burnt, plain }, resolver.ResolveScoped(new List<string> { "lkshb*" }, def, shadow));
+        Assert.Empty(resolver.ResolveScoped(new List<string> { "lkshb" }, def, shadow));
+        Assert.Equal(1, resolver.GlobalTierRefused); // the plain name, and only it
+    }
+
+    [Fact]
+    public void ARootLiftedDefIsRefusedTheGlobalTierToo()
+    {
+        // The other multi-instance anchoring: an exact NAME that matches nothing, lifted onto every
+        // parent of its ANIMATION_ROOT_NAME. Two instances, so a generic name is theirs, not the
+        // world's; the refusal has to read the lift, which the definition alone does not record.
+        var b1 = Node("apbuild01.flt");
+        var b2 = Node("apbuild02.flt");
+        var stray = Node("door1");
+        var resolver = Build(
+            (b1, "apbuild01.flt", null), (Node("healthy"), "healthy", b1),
+            (b2, "apbuild02.flt", null), (Node("healthy"), "healthy", b2),
+            (stray, "door1", null));
+        var def = Def("m_build01", rootName: "healthy"); // no node carries the NAME
+
+        Assert.Equal(new[] { b1, b2 }, resolver.Anchors(def));
+        Assert.Empty(resolver.ResolveScoped(new List<string> { "door1" }, def, b1));
+        Assert.Equal(1, resolver.GlobalTierRefused);
+    }
+
     // ---- symbol authority: an exact gamez-index binding beats ambiguous name matching ----
 
     [Fact]

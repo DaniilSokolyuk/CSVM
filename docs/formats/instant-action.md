@@ -194,7 +194,7 @@ not carry per-chapter values) because they are what each row can then be *offere
 | *(none)* | *(not offered)* | C1C | zeppelin_run | ground_target, stunt_flying |
 
 ⚠ **C1C is the chapter Instant Action omits, not C2B.** The launcher's map covers chapter ids
-1, 5, 6, 8, 2, 7, 4 and never 3, and `CSVM/src/UI/LaunchMenu.cs` has carried this mapping
+1, 5, 6, 8, 2, 7, 4 and never 3, and `CSVM/src/UI/Screens/LaunchMenu.cs` has carried this mapping
 (`c1, c2b, c3, c5, c1b, c4, c2`, C1C campaign/MP only) since before this page existed.
 
 **This page originally had two of these rows wrong**, pairing "the clouds" with C1C and calling C2B

@@ -3,7 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using CSVM.Mech3;
-using CSVM.Session;
+using CSVM.Session.Campaign;
+using CSVM.Session.Objectives;
 using Godot;
 
 namespace CSVM.Testing;
@@ -46,6 +47,20 @@ internal static class CampaignPandoraLossSuites
     private const string BrigandPrefix = "medbrigand";
     private const float BrigandBias = 0.5f;
 
+    // The shared crate destructible, and the C3 node that carries no healthy model of its own.
+    // The pair shows a definition the world holds several instances of writing outside one.
+    private const string CrateFile = "box_call_generic.zrd.json";
+    private const string LakeNode = "craterlake";
+
+    // The hull's seventeen turrets, each behind its own <turret>/healthy model, the census a stray
+    // `healthy INACTIVE` write switches off in one go.
+    private static readonly string[] Turrets =
+    {
+        "rtur1", "rtur2", "rtur3", "rtur4", "rtur5", "rtur6",
+        "ltur1", "ltur2", "ltur3", "ltur4", "ltur5", "ltur6",
+        "ctur1", "ctur2", "ctur3", "doublecannon4", "doublecannon5",
+    };
+
     // The twelve INACTIVE paths every rung carries, in the file's own order.
     private static readonly string[] Nacelles =
     {
@@ -63,10 +78,11 @@ internal static class CampaignPandoraLossSuites
         (9, 6, 10, 45f),
     };
 
-    /// <summary>Drives CM05's zeppelin-damage chain over the mission's BUILT world: the twelve
-    /// nacelles all start switched on behind their own 40 HP pools, five out leave the loss
-    /// objective dormant, the sixth naps it for the authored 45 s, and the mission is lost when
-    /// that nap runs out and not before.</summary>
+    /// <summary>Drives CM05's zeppelin-damage chain over the mission's BUILT world. The twelve
+    /// nacelles all start switched on behind their own 40 HP pools. Five out leave the loss
+    /// objective dormant, the sixth naps it for 45 s, and the mission is lost when the nap runs
+    /// out. The crate leg first shows what must NOT arm the chain: a shared destructible dying
+    /// elsewhere with no healthy model under it.</summary>
     [Suite("campaign-pandora-loss",
         "CM05 (C3/M04)'s authored instant loss over its own BUILT world: the Pandora's twelve "
         + "engine nacelles start switched on, each behind its own 40 HP WeaponHit pool, and the "
@@ -74,7 +90,10 @@ internal static class CampaignPandoraLossSuites
         + "OBJECTIVE10 dormant with the mission running; the sixth completes the last rung, which "
         + "naps OBJECTIVE10 for the authored 45 s, and since that objective is INSTANTLOSS with no "
         + "condition of its own the mission is lost when the nap runs out, not on the kill. Nothing "
-        + "else in the script reaches OBJECTIVE10, so the nacelle count is the whole loss condition")]
+        + "else in the script reaches OBJECTIVE10, so the nacelle count is the whole loss condition. "
+        + "The shared crate destructible, killed first on a node carrying no healthy model of its "
+        + "own, leaves all twelve nacelles lit and all seventeen hull turrets alive, since a "
+        + "definition the world holds several instances of writes inside its own instance or nowhere")]
     internal static void CampaignPandoraLoss(TestContext ctx)
     {
         ctx.RequireData(ctx.ZrdrPath, $"zrdr archive");
@@ -247,9 +266,48 @@ internal static class CampaignPandoraLossSuites
             return;
         }
 
+        CheckCrateDeathStaysOffTheHull(ctx, runtime, host, healthy, report);
         CheckFiveIsNotEnough(ctx, runtime, graph, healthy, completed, report);
         CheckSixthArmsTheFuse(ctx, runtime, graph, healthy, report);
     }
+
+    // The shared crate destructible killed on a node carrying no healthy model. Its NAME wildcard
+    // makes it one of several instances of one authored definition, so the write resolves inside
+    // its own instance or nowhere. Decode: docs/org/sequences.md, "Where CSVM stands against this".
+    private static void CheckCrateDeathStaysOffTheHull(TestContext ctx, AnimRuntime runtime,
+        Node3D host, IReadOnlyList<Node3D?> healthy, StringBuilder report)
+    {
+        var crate = AnimDefs.LoadFileDefs(ctx.ZrdrPath, CrateFile)
+            .FirstOrDefault(d => d.Name.Contains('*'));
+        var lake = runtime.FindNodes(LakeNode).FirstOrDefault();
+        if (crate == null || lake == null)
+        {
+            ctx.Check(false, $"'{CrateFile}' and '{LakeNode}' both resolve for the {Chapter} world");
+            return;
+        }
+
+        ctx.Same(0, runtime.FindNodes("healthy", lake).Count,
+            $"'{LakeNode}' carries no healthy model, which is what makes the '{crate.Name}' write miss");
+        ctx.Same(Turrets.Length, TurretsAlive(runtime, host),
+            $"all {Turrets.Length} of the hull's turrets show their healthy model before the crate dies");
+
+        runtime.Destructibles.Register(crate, lake, crate.Health, lake);
+        ctx.Check(runtime.DamageAt(lake, crate.Health + 1f),
+            $"the shared '{crate.Name}' destructible takes the hit on '{LakeNode}' and dies");
+
+        int lit = healthy.Count(h => h is { Visible: true });
+        int turrets = TurretsAlive(runtime, host);
+        report.AppendLine($"'{crate.Name}' killed on '{LakeNode}': {lit} of {Nacelles.Length} nacelle "
+            + $"healthy models still on, {turrets} of {Turrets.Length} turrets still alive");
+        ctx.Same(Nacelles.Length, lit,
+            $"its healthy write reaches no engine nacelle, so the rung chain is still unarmed");
+        ctx.Same(Turrets.Length, turrets,
+            $"and no turret on the hull loses its healthy model to another instance's death");
+    }
+
+    // How many of the hull's turrets still show a healthy model of their own.
+    private static int TurretsAlive(AnimRuntime runtime, Node3D host) =>
+        Turrets.Count(t => Healthy(runtime, host, t) is { Visible: true });
 
     // Five nacelles down: the first three rungs complete and the last one wakes, but its own count
     // is six, so the loss objective is still dormant and the mission is still running.

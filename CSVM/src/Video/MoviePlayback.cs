@@ -8,7 +8,7 @@ namespace CSVM.Video;
 /// A play count of zero plays endlessly, which is how the layout's <c>Loops</c> field spells a
 /// background, and every pass after the first restarts through <see cref="MpegMovie.Rewind"/>.
 /// Nothing here touches the engine, so the clock and the loop decision run in a plain unit test;
-/// the texture they feed is <c>CSVM.UI.MovieSurface</c>.
+/// the texture they feed is <c>CSVM.UI.Screens.MovieSurface</c>.
 /// </summary>
 public sealed class MoviePlayback
 {

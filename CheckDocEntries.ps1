@@ -182,7 +182,7 @@ foreach ($h in $allHeadings) {
 $coverageBucket = 'CSVM/src'
 if (Test-Path -LiteralPath $srcRoot) {
     # A heading or bullet covers a file exactly, by a "*" glob in the same directory
-    # (src/UI/Hangar*Page.cs), or by a trailing-slash directory path (src/Mech3/Anim/).
+    # (src/UI/Hangar/Hangar*Page.cs), or by a trailing-slash directory path (src/Mech3/Anim/).
     function Test-Covered([string]$srcPath, [string[]]$patterns) {
         foreach ($pat in $patterns) {
             if ($pat -eq $srcPath) { return $true }

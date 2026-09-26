@@ -183,10 +183,10 @@ The 1.0 s freeze and the 2.0 s fade are not reproduced: the ending simply takes 
 hold ends.
 
 Where that ending goes depends on the presentation. Built-in keeps its own board inside the flight
-(`src/Flight/IaWrapupBoard.cs`, a stunt run's photographs drawn as a strip under its splits), which
+(`src/UI/Screens/IaWrapupBoard.cs`, a stunt run's photographs drawn as a strip under its splits), which
 is also where Restart, Exit and photo mode live. Original
 leaves the world instead and lands on this page in the menu shell, `src/UI/Menu/Original/`
-`OriginalWrapupScreen.cs` over `src/UI/InstantActionWrapupPage.cs`: the magazine spread, the notepad
+`OriginalWrapupScreen.cs` over `src/UI/Screens/InstantActionWrapupPage.cs`: the magazine spread, the notepad
 carrying the heading and the four decoded rows at their authored positions, and CONTINUE back to the
 Instant Action screen in place of the board's Restart. Three pieces of the page are the remake's own,
 on space the shipped page leaves empty. Yellow post-its under the four rows carry the lines the
@@ -219,7 +219,7 @@ now confirmed from the launcher as well. The environment dropdown index becomes 
 No chapter folder name exists anywhere in `crimson.exe` (searched: no `c1b`, `c1c` or `c2b`
 string), so the executable never spells out which folder an id names. The ids are the eight chapter
 folders in alphabetical order, C1 = 1 through C5 = 8, which resolves the map to **C1, C2B, C3, C5,
-C1B, C4, C2** and leaves id 3 (C1C) unreferenced. That is the mapping `CSVM/src/UI/LaunchMenu.cs`
+C1B, C4, C2** and leaves id 3 (C1C) unreferenced. That is the mapping `CSVM/src/UI/Screens/LaunchMenu.cs`
 has carried all along, decoded before this plan and restated in its `Chapters` comment, so this
 read is a second source for it rather than a new finding. It corrects the "Environment → chapter"
 table above, which A5 had wrong on two rows.

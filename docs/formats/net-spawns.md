@@ -3,7 +3,7 @@
 Part of the [format documentation](README.md). The per-mission table the original places
 multiplayer pilots on at the start of a match. One file per mission folder in the mission's own
 zrdr archive (`<Cx>/<mission>/zrdr.zbd`), **45 install-wide**. Engine reader:
-`SpawnPoints.LoadNetFreeForAll` in `CSVM/src/Flight/SpawnPoints.cs`; what the executable then does
+`SpawnPoints.LoadNetFreeForAll` in `CSVM/src/Flight/Modes/SpawnPoints.cs`; what the executable then does
 with a picked entry is [`org/multiplayer-spawn.md`](../org/multiplayer-spawn.md).
 
 ⚠ **Despite the name this is not a patrol net.** It carries no edge list, no stop points and no

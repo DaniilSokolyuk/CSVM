@@ -1,4 +1,4 @@
-using CSVM.Flight;
+using CSVM.Flight.Camera;
 using Godot;
 using Xunit;
 

@@ -181,6 +181,16 @@ member, and it does not go here.
   against the print's 0. A matrix fitted to the measured ratio would have been a second tint on top
   of the one piece of art that already makes it.
 
+- **SHOT-42**, **Measure a full-screen dither as the mean 2x2 alternation `|a-b-c+d|` over
+  luminance, and bisect it by differencing the pass doors rather than by reading the frames.** A
+  pass that resolves through a screen-space sample pattern is the only one whose own contribution
+  alternates pixel to pixel, so the difference between the full frame and the frame with that pass
+  off carries the alternation and every other pass's difference is a smooth field. At C1's
+  waterfall under `--graphics=enhanced` at 1920x1080 the soft-shadow difference scored 2.17 over
+  81% of the frame while SSAO, SSR and glow scored 0.10, 0.07 and 0.00. Reading the frames
+  themselves cannot separate the pattern from the texture it lies on: over the same pose the C2
+  city frame's own detail buries it entirely.
+
 ## GOLD, golden images
 
 - **GOLD-1**, **Update moved hashes with the visual change, and explain each moved shot in the
@@ -513,6 +523,16 @@ member, and it does not go here.
   (`models.json` plus `nodes.json`), so the question is answered by a census in minutes and cannot
   be answered by a frame. A look that survives that census comes from some other mechanism, and
   implementing the named one moves nothing in the chapter that was complained about.
+- **WORLD-49**, **A node table that keeps the first claimant of a name needs the OUTGOING subtree
+  taken out of it, not only the freed ones: two live subtrees under the same names leave every
+  definition resolving the one that was indexed first.** The animation runtime stages one flown
+  airframe for the zeppelin hookup to pose, and retired rows on a free alone, which covers the
+  airframe swap (its outgoing aeroplane is freed) and covers nothing when both aeroplanes are
+  alive. With two humans flying, the hookup's `IF NODE_ACTIVE` arms went on resolving the seat
+  staged when the rigs were bound, so that pilot's docking hook swung while the human who flew
+  the approach docked with none. `campaign-coop-hookup-seat` reads the table's own answer for the
+  airframe name beside the two hooks, which tells an arm resolving the wrong aeroplane apart from
+  an effect attached to the wrong rig.
 
 ## SHELL, Windows, PowerShell, and processes
 
@@ -824,7 +844,12 @@ member, and it does not go here.
   comparison striding four reports every frame as wholly changed.** A tree card's occlusion pane
   read a card that drew 0 pixels and a ground quad that filled 6912 of 9216, both artifacts of this,
   before any of the three was accounted for.
-- **INSTR-92**, **A session's own clock stands still under a suite that drives `_PhysicsProcess`
+- **INSTR-92**, **A positional voice that is not culled is not therefore heard: the decoded law's
+  band between the audible radius and the 1.1x cull runs from -30 dB to -100 dB, so a cue logged as
+  reaching a distance can be 70 dB down there. Read the level the line prints, never the cull
+  distance beside it.** An AI aeroplane's `snd_30cal` at 398 m of its 413 m cull measured -72 dB,
+  and a turret cue whose scaled radius is 1000 m stands at -30 dB there.
+- **INSTR-93**, **A session's own clock stands still under a suite that drives `_PhysicsProcess`
   alone, because `GameClock.Time` advances in `BeginFrame` and nothing but the frame callback calls
   it: every timestamp two harness sessions exchange therefore reads zero, and a difference between
   them can only be made by calling `_Process` on one of them.** The match-state tick carried a host

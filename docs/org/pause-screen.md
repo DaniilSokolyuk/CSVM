@@ -205,7 +205,7 @@ art (alpha at least 250) runs from x 15 to x 214 and y 21 to y 283, which off it
 [555, 6]` puts the paper's right edge at x 770 and its bottom at y 290. `EscapeObjectivesList`
 carries those two and gives the list `RowWrap` 190 (the authored `WORDWRAP` width exactly) and
 `RowBox` 240 from its `[580, 50]` corner. `BoardNote.Shrink` then asks the renderer for a fit:
-`UI/ComposedBoardView.cs`'s `Fitted` steps the face down a point at a time until every entry fits
+`UI/Boards/ComposedBoardView.cs`'s `Fitted` steps the face down a point at a time until every entry fits
 that box in both axes, and never cuts a row or a word. `RowFont` is 13 rather than the authored 14
 because the substitute face is wider and taller per character; at 13 all 24 campaign lists keep the
 original's own line breaks and stand inside the paper, the deepest, `CM15` (`C2/M05`), ending at
@@ -352,18 +352,18 @@ released.
 
 ## Where CSVM differs
 
-`UI/PauseScreens.cs` composes the pause sheet at its authored coordinates and
-`Flight/OriginalPauseBoard.cs` hangs it over the flown world in the Original presentation; the
-Built-in presentation keeps `Flight/PauseBoard.cs`. `UI/Menu/EscapeDialog.cs` reads `escape.zrd`,
-its Instant Action twin and the load screen's `Loading.zrd`, and `UI/MissionMap.cs` is the one map
+`UI/Boards/PauseScreens.cs` composes the pause sheet at its authored coordinates and
+`UI/Menu/Original/OriginalPauseBoard.cs` hangs it over the flown world in the Original presentation; the
+Built-in presentation keeps `UI/Screens/PauseBoard.cs`. `UI/Menu/EscapeDialog.cs` reads `escape.zrd`,
+its Instant Action twin and the load screen's `Loading.zrd`, and `UI/Overlays/MissionMap.cs` is the one map
 drawer this screen shares with the campaign briefing and the load screen, which is where the world
 window and the pin placement live.
 
-**An Instant Action sortie pauses on its own blackboard.** `Session/GameSession.cs` keys the sheet on
+**An Instant Action sortie pauses on its own blackboard.** `Session/Launch/GameSession.cs` keys the sheet on
 the sortie's chapter, through `Mech3/CampaignSequence.cs`'s `ChapterNumber`, and its mission type's
-own letter, reads it out of `ia_escape.zrd`, and hands `Flight/OriginalPauseBoard.cs` a board written
-in `UI/BoardPalette.cs`'s `EscapeBlackboard`, the load screen's chalk with the near-black label inks
-the strips' light plates need. The four texts are composed through `UI/LoadScreens.cs`'s
+own letter, reads it out of `ia_escape.zrd`, and hands `UI/Menu/Original/OriginalPauseBoard.cs` a board written
+in `UI/Boards/BoardPalette.cs`'s `EscapeBlackboard`, the load screen's chalk with the near-black label inks
+the strips' light plates need. The four texts are composed through `UI/Screens/LoadScreens.cs`'s
 `DialogTexts`, the drawing the load screen already has for these dialogs, so the two screens write
 the same words at the same authored points. The parchment stands or not on the dialog's own script,
 which is what keeps it off this sheet, and with no map, memento or parchment the board asks for no
@@ -378,7 +378,7 @@ inks rather than three faces, which is the same mapping every other composed boa
 ([`campaign-board.md`](campaign-board.md)).
 
 **The parchment's rows lean, and are set a point smaller than the data authors.** `ObjList` is
-Andy Bold 14 italic, so both screens set the rows through `UI/ComposedBoardView.cs`'s synthetic
+Andy Bold 14 italic, so both screens set the rows through `UI/Boards/ComposedBoardView.cs`'s synthetic
 oblique, a 0.25-em x-shear of the board's own face; the `ObjListTitle` line above them stays
 upright, which is how the original sets it. The shear is a transform on the glyph outlines and
 leaves their advances alone, so it changes no line break. What does is the substitute face itself,
@@ -401,7 +401,7 @@ strip while the keyboard's selection rests on another. Only a seat holding a mou
 which is seat 0, so a pad player's pause is the pad's alone and the OS cursor is left as it was.
 
 **Preferences opens the Original options over the held world.** The original opens its own
-preferences dialog over the paused mission, and this port stands `Flight/PausePreferences.cs`
+preferences dialog over the paused mission, and this port stands `UI/Screens/PausePreferences.cs`
 there: the Original presentation's Options screen with the Game Options, AUDIO, VIDEO and
 rebinding pages behind its doors, hosted over the pause rather than over the menu. The halt is
 untouched while it stands, so the world stays held beneath it, and every door out (a page's
@@ -444,7 +444,7 @@ it 225 degrees clockwise is what stands it upright, the propeller disc at the to
 at the end of the rear fuselage, so its drawn nose points up and to the left, an eighth of a turn
 counter-clockwise of the chart's north. `nw-m1wv_icon`, the zeppelin, is drawn nose up, as is every
 other icon the chart places. The original turns that art by the heading alone, so its own sheet
-draws the player leaning by that eighth; `UI/MissionMap.cs` takes the art's own nose off the turn
+draws the player leaning by that eighth; `UI/Overlays/MissionMap.cs` takes the art's own nose off the turn
 instead (`ArtRevs`, keyed by bitmap name), so the drawn nose lands on the heading the compass tape
 reads. A chart whose icon and compass disagree is the one thing a pilot reads the sheet for, which
 is why the departure is taken rather than reproduced. The chart is north up: its projection puts

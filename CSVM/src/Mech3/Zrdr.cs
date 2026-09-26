@@ -203,7 +203,7 @@ public sealed class ZrdrDict
 
     /// <summary>Every key present, in no particular order (duplicates already collapsed). Lets a
     /// typed reader assert it consumed every key its source file carries, see
-    /// <see cref="Flight.WeaponDefs"/>'s unhandled-key check.</summary>
+    /// <c>Flight.Weapons.WeaponDefs</c>'s unhandled-key check.</summary>
     public IReadOnlyCollection<string> Keys => _props.Keys;
 
     public static ZrdrDict FromAlternating(List<object?> list)

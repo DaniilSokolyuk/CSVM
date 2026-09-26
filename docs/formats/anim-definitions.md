@@ -156,7 +156,7 @@ written: the zone apply multiplies its range by the detail level's `FOG_SCALE` (
 the event's range goes in raw. Decode notes: [org/weather.md](../org/weather.md#the-fog_state-animation-event).
 
 CSVM: `AnimRuntime` raises the event through `FogStateSink` (`AnimRuntime.FogStateChange`, one
-nullable field per flag bit) and `Session.WeatherRig.ApplyFogState` writes the carried fields onto
+nullable field per flag bit) and `Session.World.WeatherRig.ApplyFogState` writes the carried fields onto
 the `csky_fog_*` globals; an event raised inside the world bootstrap, before the rig exists, is held
 and applied after the zone. The next fog-zone edge re-applies the zone over it. The `fog-state`
 suite pins it on this definition. The `altitude` pair is read as `FogLow`/`FogHigh` in
@@ -1269,7 +1269,7 @@ transient layer: zeppelin turrets, gasbags, engine nacelles, balloons, player co
   carries, persisted state is not limited to a static destroyed/healthy flag.
 - CSVM builds every session from the bootstrap and keeps the persisted half of that log in the
   campaign profile, applied to a later mission of the same chapter
-  (`Session/CampaignPersistLog.cs`). An instant action loaded after a campaign mission in the same
+  (`Session/Campaign/CampaignPersistLog.cs`). An instant action loaded after a campaign mission in the same
   run reads nothing, which is where it still diverges from the original.
 
 **Not yet pinned:** whether the commit happens at damage time or at mission completion (destroy,

@@ -71,10 +71,12 @@ point at how to fill it (their own drafting, the `Plan` agent, or `milestone-pol
   - `direction-sound` — only with a measurement behind it. The magnitude stays TUNE.
   - `lead-only` — everything resting on discussion. Most grilling-derived items land here. Say so.
 - **Backlog-derived items: record provenance, don't re-check.** The template requires each item drawn
-  from `backlog.md` to have been re-verified still-open against both the record and the code. State
-  in the scope paragraph which items *were* re-verified in this session and which were not; give each
-  unverified one a `<TODO: re-verify still-open against git log --grep + the code>`. Do not run the
-  check yourself — that is the exploration this skill doesn't do.
+  from `backlog.md` or from a `backlog` GitHub issue (`docs/agents/issue-tracker.md`) to have been
+  re-verified still-open against both the record and the code. A checklist item cites its source
+  id, `BL-NNN` or `#N`. State in the scope paragraph which items *were* re-verified in this
+  session and which were not; give each unverified one a
+  `<TODO: re-verify still-open against git log --grep (or gh issue view N --json state) + the code>`.
+  Do not run the check yourself — that is the exploration this skill doesn't do.
 - **Verify lines and Model recommendations** are usually not in a conversation. If the session didn't
   settle them, they are TODOs like anything else.
 

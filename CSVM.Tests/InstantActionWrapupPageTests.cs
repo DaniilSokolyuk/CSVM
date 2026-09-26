@@ -1,7 +1,8 @@
 using System.Linq;
-using CSVM.Flight;
-using CSVM.UI;
+using CSVM.Flight.Modes;
+using CSVM.UI.Campaign;
 using CSVM.UI.Menu;
+using CSVM.UI.Screens;
 using Xunit;
 
 namespace CSVM.Tests;

@@ -3,7 +3,7 @@
 Part of the [format documentation](README.md) (see also [zrdr.md](zrdr.md),
 [world-structure.md](world-structure.md)). Covers the mission's `weather.json` reader: distance fog, the cloud-cover
 whiteout band, wind, and the shared **colour-triple encoding rule**. Consumed by
-`CSVM/src/Flight/Weather.cs` (`WeatherState`) + `Session.WeatherRig.Build`.
+`CSVM/src/Flight/Airframe/Weather.cs` (`WeatherState`) + `Session.World.WeatherRig.Build`.
 
 This reference covers fog colour, precipitation
 (item 5) and the `SUNLIGHT_*` world-lighting decode (item 6, the night/overcast brightness
@@ -388,6 +388,12 @@ three of the four deck chapters and records where it does not (C2B's `fvol*` are
 and C2B ships no `cloudparent` nodes at all, a real per-chapter divergence, not a re-derivation
 of this disproof).
 
+⚠ **The authored `zone_id` is only half the gate.** A flown object is not authored into a zone at
+all, it earns one every frame from its own altitude against the cloud band's midpoint
+(`FUN_00489f60`), which is what keeps an aeroplane or an airship on the far side of the band out of
+the picture. That half is decoded in
+[atmosphere.md](weather/atmosphere.md#an-object-on-the-far-side-of-the-band-is-not-drawn-at-all).
+
 **The skirt/`FOG_COLOR` pair agrees, but it cannot discriminate here.** Each dome's untextured
 skirt is authored in its zone's own `FOG_COLOR` (above), and every render of these four is
 consistent with that: C1/C1C/C2B show a 176 skirt against 176 fog, C4 a 192 skirt against 192. It
@@ -450,7 +456,7 @@ to `FOG_COLOR` at the horizon.
 The deck tiles author `lighting: false` like the dome and C1's and C4's `fvol` cloud cards (C1C,
 C2B and C5 author theirs `true`, which buys them a per-vertex directional term rather than a
 brightness scalar; see [`../org/vertexLighting.md`](../org/vertexLighting.md)), but the deck
-alone was measured to be SUNLIGHT-dimmed in the original, `Flight/Weather.cs`'s `SunIncidence`
+alone was measured to be SUNLIGHT-dimmed in the original, `Flight/Airframe/Weather.cs`'s `SunIncidence`
 was calibrated on this exact texture. `WorldBuilder.Add` therefore force-lights the deck's own
 tiles (`forceLit: isDeck`) regardless of the authored flag, applying `csky_world_light` deck-local,
 never as a change to the `lighting` gate or to `csky_world_light` itself.

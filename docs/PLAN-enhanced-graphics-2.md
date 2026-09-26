@@ -8,7 +8,7 @@ pointer; any live prose linking this file by path is unlinked in the same commit
 The opt-in Enhanced mode (`GraphicsMode.Enhanced`, `--graphics=enhanced`) today lights the world
 from the authored sun and ambient, mirrors the committed world lights onto real omni lights, casts
 4-split soft shadow maps, runs SSAO, blurs a screen-space reflection on water, blooms only the
-glow-arm sprites and tonemaps with AgX (`CSVM/src/Session/Launcher.cs` `SetupLighting`). Clouds are
+glow-arm sprites and tonemaps with AgX (`CSVM/src/Session/Launch/Launcher.cs` `SetupLighting`). Clouds are
 still the original's flat, unshaded sprite cards and explosions are still unlit puffer billboards.
 This plan adds four things to that stack, all behind the same switch: a temporal anti-aliasing pass
 plus a render-scale display setting (Wave A), lit explosions (Wave B), lit cloud cards and volumetric
@@ -88,7 +88,7 @@ worktree session here; use a local commit or a file copy.
   for both modes. `CockpitOverlay.cs:133`, `SpyglassView.cs:45` and `SplitScreen.cs:259` copy that
   project setting onto their own `SubViewport`s, so any viewport-level pass has four places to
   reach. No code reads `use_taa`, `screen_space_aa` or `scaling_3d_*`.
-- **The capture trap.** `Testing/CaptureDirector.cs:109`: a `--shots` image is the previous
+- **The capture trap.** `Tooling/CaptureDirector.cs:109`: a `--shots` image is the previous
   frame's render; `_00` is un-jittered and `_01+` carries the burst camera's dither. A dither
   verdict comes from the controls or an undithered capture, never from a burst frame.
 - **World lights under Enhanced.** `Mech3/WorldLights.cs`: `Begin`/`Add`/`Commit` per frame, and
@@ -120,7 +120,7 @@ worktree session here; use a local commit or a file copy.
 - **The golden set.** `analysis/goldens/manifest.json` runs every shot under `--det --mute`, and
   under `--det` only the `--graphics=` flag reaches `GraphicsMode.Resolve`, so an enhanced shot is
   one more manifest entry with the flag in its args.
-- **The speed cue as shipped.** `Flight/SpeedCue.cs` loads each chapter's `speed_cue.zrd`
+- **The speed cue as shipped.** `Flight/Hud/SpeedCue.cs` loads each chapter's `speed_cue.zrd`
   verbatim: three `cuepufferN` states picked by camera altitude, emitted 60 m ahead of the player
   and left in world space for the aircraft to pass (`docs/formats/effects.md` "Aircraft speed-cue
   wisps"); off within 50 m of the ground. Their opacity was judged right at the controls
@@ -171,7 +171,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 1. ☐ TAA on every 3D viewport under Enhanced
 2. ☐ Render Scale, a VIDEO page row applied to every 3D viewport, ignored under `--det`
-3. ☐ BL-803 closes on the flight after A1, or the bisect doors land and find the pass
+3. ☑ BL-803 closes on the flight after A1, or the bisect doors land and find the pass
 4. ☐ Alpha-to-coverage on the cutout surfaces under Enhanced
 5. ☐ FSR 2.2 tried once as the alternative temporal pass, kept or parked on the user's verdict
 
@@ -284,26 +284,15 @@ titles and round-trip the store); at the controls, 200% on C5 visibly sharpens t
 scale them the same way or the panes disagree in sharpness. The row is a display setting and is
 NOT under the Enhanced switch (decision 3).
 
-## A3 ☐ BL-803 closes on the flight after A1, or the bisect doors land and find the pass
+## A3 ☑ BL-803 closes on the flight after A1, or the bisect doors land and find the pass
 
-**Goal.** The whole-screen dithering reported under Enhanced is gone, and its closing record names
-what it was.
-
-**Evidence (confidence: lead-only).** `backlog.md` `BL-803`: reported at the controls, no chapter,
-view or window size recorded; nothing in the enhanced Environment asks for a dither; the shadow
-blur's own comment records that raising it "dithered the lit water"; Godot's SSAO and soft-shadow
-passes resolve with screen-space noise. `<TODO: re-verify still-open against git log --grep=BL-803, git log -S and the code>`
-
-**Approach.** After A1 lands the user flies Enhanced, still and moving, over water and ground. If
-the pattern is gone, close `BL-803` on that verdict with A1 as the fix. If it persists, add
-`--no-ssao`, `--no-ssr`, `--no-shadow-blur` inspection doors beside `--no-fog` in `SessionSpec`,
-bisect at the controls, and fix the one pass (a half-resolution buffer or a resolution scale is the
-usual cause).
-
-**Model recommendation.** high if the bisect runs: it is judgement over four interacting passes.
-
-**Verify.** The user's flight; if bisected, the door that clears it named in the closing commit,
-and the doors documented in `docs/cli.md` (600-character bullet cap).
+Taken by the bisect route rather than the flight, so it does not wait on A1. The doors
+`--no-ssao`, `--no-ssr`, `--no-glow` and `--no-soft-shadows` landed in `SessionSpec` and named the
+sun's penumbra filter: it alone resolves through a screen-space pattern, over 81 % of the C1
+waterfall frame. Raising the directional soft-shadow filter to its top rung removed 86 % of the
+excess and held the judged penumbra width. `analysis/screen-dither/FINDINGS.md` holds the
+instrument and the numbers; A1's TAA is no longer what this item waits on. What is still owed is
+the look at the controls, which no instrument replaces.
 
 **⚠ Traps.** Do not bisect on `--shots` frames. Debanding is off and is not the cause. Do not
 widen the fix to the faithful path, which is not reported to show it.

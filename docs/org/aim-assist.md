@@ -354,7 +354,7 @@ model is one per-plane scalar, and the sticky-bullet path is the human's.** That
 
 CSVM fired straight down the muzzle axis with no assist at all, which is why `BL-301`/`PT-43`
 report gun kills as impractical in VS mode. `BL-342` carries the implementation, and as of
-2026-08-13 the mechanism is built: `CSVM/src/Flight/AimAssist.cs` holds it, and
+2026-08-13 the mechanism is built: `CSVM/src/Flight/Weapons/AimAssist.cs` holds it, and
 `FlightController.ApplyFireOutcome` computes each gun round's direction through it. Whether it
 FEELS right is `PT-43`'s call at the controls, not this page's. Deltas worth naming up front:
 

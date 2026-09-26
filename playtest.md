@@ -112,7 +112,8 @@ draws its authored 800x600 space one-to-one.
 
 | ID | Capture | What must be in frame | Unblocks |
 |---|---|---|---|
-| `CAP-34` | Wing-light flare shape + view-dependence | Any player plane except the Bloodhawk (the one airframe with no wing-light anim or flare nodes) with wing lights on, one continuous orbit from front through side to tail. Close enough to read whether the flare shows sharp radiating star points (vs a soft round glow) and whether it stays visible across the orbit or only from a narrow chase-view cone | `BL-284` |
+| `CAP-34` | Wing-light flare shape | Any player plane except the Bloodhawk (the one airframe with no wing-light anim or flare nodes) with wing lights on, one continuous orbit from front through side to tail. Close enough to read whether the flare shows sharp radiating star points (vs a soft round glow). The view-dependence half this capture once carried is answered by data: the flare mesh is a `Facade`/`SphericalY` model, `BL-1039` | `BL-284` |
+| `CAP-59` | **Does a C1B night cloud have a moon side?** | In the original, fly C1B by night and film **one** cloud from **two headings at the same range**, first with the moon behind the camera, then with the moon behind the cloud, holding the same puff large enough in frame to read its near and far sides, with the moon itself in frame on the second pass so the bearing is readable. *Look for:* whether the side turned toward the moon reads brighter than the side turned away **at a fixed range**, which is the one thing that separates a moon side from distance through the night fog. ⚠ `playtest/CAP-11/`'s stills cannot answer it: both put their cloud on the moon's bearing at very different ranges, so their 218-against-70 split reads as fog depth. C1B's clouds are the 70 placed `cloudparent` facades, authored `lighting: false` with an empty normal array, so a moon side there would be a remake departure rather than a decoded term | `BL-325` |
 
 ### Damage & collision
 
@@ -566,20 +567,6 @@ against `BL-389` rather than against the wash routing.
 ./RunGame.ps1
 ```
 
-- `PT-155` `[Own]` **Both planes fly on through the ending's hold and the wrap-up follows**
-  (it closed `BL-975`, whose record is in that commit, `git log --grep=BL-975`). Two pads (or pad + keyboard); menu path: Instant Action → C4 → Stunt Flying, both
-  pilots joined. The original had no splitscreen, so this checks the remake against its own solo
-  rule (`docs/formats/instant-action/wrap-up.md`, "The hold after the ending"). A scripted two-pilot
-  run already shows the wrap-up arriving 3.0 s after the win with no race board; what no instrument
-  shows is two humans flying real gates to the finish.
-  *Look for:*
-  - (a) the first pilot through the last gate pair keeps flying, with a placing banner, while the
-    other still flies;
-  - (b) after the second pilot's last gate pair, both planes keep flying under the stick for about
-    3 s, no stunt race results board appears, and the Instant Action wrap-up board follows;
-  - (c) a marker either pilot enters during those 3 s takes no photograph and plays no camera sting.
-
-  *Blocks:* nothing tracks the outcome; a fail mints a new `BL` item.
 - `PT-173` `[Own]` **A stunt run through every marker photographs each one, and any landed
   photograph opens full size on both presentations.** One pilot is enough. Menu path: Instant
   Action → C4 → Stunt Flying, then the same run with `--presentation=original`. The photographs

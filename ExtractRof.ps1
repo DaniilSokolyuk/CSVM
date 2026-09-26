@@ -501,7 +501,7 @@ if ($skipped -gt 0) { Write-Host "  up to date:      $skipped archive(s); pass -
 
 # ---- version stamp --------------------------------------------------------
 # Adds this script's field to the shared VERSION.json that ExtractAssets.ps1 writes at
-# the extraction root (read at boot by src\Session\ExtractionStamp.cs). Read-merge-write
+# the extraction root (read at boot by src\Session\Launch\ExtractionStamp.cs). Read-merge-write
 # so ExtractAssets' fields survive; $StampSchema bumps together with ExtractAssets.ps1's
 # and ExtractionStamp.Schema, in the same commit as any reader change that invalidates
 # old extractions.

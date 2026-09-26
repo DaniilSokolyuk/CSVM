@@ -10,7 +10,7 @@ the addresses are given so any claim can be re-checked at source.
 **Where the other halves live.** The authored side, the `FIRE`/`FLYOUT`/`IMPACT` bindings, the
 prototype-root table, the per-ammo texture axis, is [`formats/weapons.md`](../formats/weapons.md)
 and [`formats/weapon-effects.md`](../formats/weapon-effects.md), which name the tracer textures but
-say nothing about how they are drawn. Our implementation is `CSVM/src/Flight/Projectile.cs`. This
+say nothing about how they are drawn. Our implementation is `CSVM/src/Flight/Weapons/Projectile.cs`. This
 page is the original's runtime: what the engine does with the `FLYOUT MODEL` a weapon names.
 
 ⚠ **This page is a decode, not a proposal.** Where it disagrees with a footage measurement, the
@@ -226,7 +226,7 @@ puffer smoke ([`formats/weapon-effects.md`](../formats/weapon-effects.md), "FLYO
 
 ## Where CSVM differs
 
-`CSVM/src/Flight/Projectile.cs` does not instance the prototype at all: it draws a hand-tuned sprite
+`CSVM/src/Flight/Weapons/Projectile.cs` does not instance the prototype at all: it draws a hand-tuned sprite
 per round. The decode settles the numbers that tuning was standing in for.
 
 At the range-expiry branch (`Projectile.cs:897-912`) we agree with the original on the case that

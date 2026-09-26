@@ -560,7 +560,7 @@ nom_gravity-scaled read gives 109/447 mph instead, numbers this page never quote
 Evaluated against a REAL airframe rather than the fallback numbers, this surfaces a residual the
 fallback coincidence hides: the Bloodhawk's own data (`veh_weight` 1900, `ref_area` 330) computes a
 56.5 mph stall, against the "Stall 0% Thrust no input" clip's measured ~76 mph nose-drop
-(`src/Flight/FlightModel.cs`'s stall-threshold comment). The remake's retired `StallSpeedFrac = 0.25`
+(`src/Flight/Airframe/FlightModel.cs`'s stall-threshold comment). The remake's retired `StallSpeedFrac = 0.25`
 matched that clip only because 0.25 × the BLOODHAWK's fd_speed (302 mph) happens to sit close to
 the FALLBACK aircraft's own stall speed (75.5–76.3 mph), the wing-loading coincidence this plan
 warned not to read as validation, and it does not extend to the Bloodhawk's real numbers. **The
@@ -2907,8 +2907,8 @@ runway takeoff run, though `FUN_004940d0` shows a goal can attach a path for any
 Action places no vehicle on a path (`ia.zrd.json`'s `dzpath1`–`dzpath5` are danger-zone gates), so no
 golden can see it.
 
-**What CSVM ports of this.** `Flight/PathFollower.cs` is the law with every constant above,
-`Mech3/ScriptedPath.cs` the route, and `Session/ScriptedPathVehicles.cs` the lifecycle, released by
+**What CSVM ports of this.** `Flight/Ai/PathFollower.cs` is the law with every constant above,
+`Mech3/ScriptedPath.cs` the route, and `Session/World/ScriptedPathVehicles.cs` the lifecycle, released by
 `CampaignDirector`'s `START_TAXI`. Pinned by the `scripted-path` suite over C1's real `pp1`.
 The altitude between waypoints and the finish test are both the decode's: the motion is pitched at
 the steering target's height over the horizontal distance to it, and the leg-advance test is
@@ -2920,7 +2920,7 @@ take.
 The roster spawner calls `ScriptedPathVehicles.Place`, so C1/M04 really does put four aeroplanes on
 `pp1`–`pp4` and its `START_TAXI` chain really does release them.
 A surface vehicle (`mode ship`, the patrol boats) is driven by the same law for its whole life
-(`Session/SurfaceVehicle.cs`): the follower steers it over an unbounded route, a generator's
+(`Flight/Ai/SurfaceVehicle.cs`): the follower steers it over an unbounded route, a generator's
 take-off run and then a walk of its net's edges, so it never reaches the final leg's acceleration
 and climb-out, and its height is pinned to the water rather than taken from the route. The 40 mph
 taxi speed is the only speed it has; the def's own `rates` are not consumed.
@@ -3146,7 +3146,7 @@ Neither is a damage-invulnerability timer; `obj+0xAC` disables collision itself.
 ## Collision damage (`FUN_0048d2c0`)
 
 The section above is the response; this is the damage. `FUN_0048d7f0` returns an impact severity and
-`FUN_0048d2c0` turns it into a damage pair. **Ported**, as `Flight/CollisionDamage.cs` with the
+`FUN_0048d2c0` turns it into a damage pair. **Ported**, as `Flight/Airframe/CollisionDamage.cs` with the
 authored ranges read in `PlaneStats` and the contact resolved in `AircraftContactResolver`;
 the struck party's damage runs through `AnimRuntime.CollideDamageAt` and the striker's through
 `PlaneDamage.Apply`. One part of the section below is knowingly not ported and says so where it
@@ -3540,7 +3540,7 @@ argument at `0x4b22b8`) and sits inside the method, so the AI arm sounds it at t
 through the per-frame release calls that follow the maneuver, and not during the maneuver itself,
 where nothing calls the method.
 
-**What CSVM implements.** `Flight/NitroSystem.cs` is the state machine above, engine-free:
+**What CSVM implements.** `Flight/Airframe/NitroSystem.cs` is the state machine above, engine-free:
 tank, burn, recharge, the 99 % arm, the 5 % cutoff, the engine-out refusal and the boost-animation
 edges, with `LoopRefreshedThisTick` standing for the refresh call. `FlightController.AdvanceNitro`
 plays `medium_aishake` on a non-human pilot's own rig (`EffectCatalogue.AiShakeAnim`, guarded by
@@ -3915,8 +3915,8 @@ and `stall` needs a flight slower than any of these scenarios holds.
 
 ## What this changes for the remake
 
-Checked against [`src/Flight/FlightModel.cs`](../../CSVM/src/Flight/FlightModel.cs) and
-[`src/Flight/PlaneStats.cs`](../../CSVM/src/Flight/PlaneStats.cs), the items most likely to differ:
+Checked against [`src/Flight/Airframe/FlightModel.cs`](../../CSVM/src/Flight/Airframe/FlightModel.cs) and
+[`src/Flight/Airframe/PlaneStats.cs`](../../CSVM/src/Flight/Airframe/PlaneStats.cs), the items most likely to differ:
 
 1. **Lift is the demanded G, delivered.** The remake's `liftFrac` cancels a *share* of gravity's
    cross-path component; the original builds a demand vector, clamps it to ±5/9 G and applies it.

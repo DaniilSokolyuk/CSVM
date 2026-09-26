@@ -353,7 +353,7 @@ whole, so the transient is never inverted and the blended bounds are never forme
 Decoded from `FUN_0042d010`. Three callers share it: the
 first-person placement `FUN_0042d980` (both Cockpit and Nose, elevation floor `0`, autohead flag
 cleared for Nose); the chase placement `FUN_0042c7f0` (floor `−π/2` via the literal `0xbfc90fdb`,
-autohead off, at `0042c877`-`0042c87c`). CSVM's port is `HeadLook` (`src/Flight/HeadLook.cs`), one
+autohead off, at `0042c877`-`0042c87c`). CSVM's port is `HeadLook` (`src/Flight/Camera/HeadLook.cs`), one
 instance per pilot, floored per frame by whichever view places it
 (`CameraController.StepHead`), and turned into a chase offset by `CameraController.ChaseSwing`.
 

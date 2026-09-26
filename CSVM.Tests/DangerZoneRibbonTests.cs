@@ -1,17 +1,21 @@
 using System;
 using System.Collections.Generic;
-using CSVM.Flight;
+using CSVM.Flight.Ai;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Modes;
+using CSVM.Mech3;
 using Godot;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace CSVM.Tests;
 
 /// <summary>
-/// The decoded danger-zone run, engine-free: the ribbon's cubic pieces pass through the route
-/// vertices with metres for a parameter, a run enters from the nearer end and walks the segments
-/// the right way round, the rail closes the aeroplane's offset onto the ribbon and banks into the
-/// bend, and the pilot's node-tag entry drives the mode machine through approach, lock, run and
-/// the return to patrol.
+/// The decoded danger-zone run, engine-free. The ribbon's cubic pieces pass through the route
+/// vertices with metres for a parameter. A run enters from the nearer end and walks the segments
+/// the right way round. The rail closes the aeroplane's offset onto the ribbon and banks into the
+/// bend. The pilot's node-tag entry drives the mode machine through approach, lock, run and the
+/// return to patrol. The install sweep reads every shipped zone's authored difficulty.
 /// </summary>
 public class DangerZoneRibbonTests
 {
@@ -20,6 +24,28 @@ public class DangerZoneRibbonTests
     private static readonly Vector3[] Bend =
     {
         new(0f, 400f, 0f), new(500f, 400f, 0f), new(1000f, 400f, -300f), new(1500f, 400f, -300f),
+    };
+
+    private readonly ITestOutputHelper _output;
+
+    public DangerZoneRibbonTests(ITestOutputHelper output)
+    {
+        _output = output;
+    }
+
+    /// <summary>Per chapter: the <c>dzpathN</c> nodes the gamez carries, the ribbons the loader
+    /// builds from them, and the difficulty census as <c>value x count</c>. Surveyed off
+    /// <c>extracted/*/gamez/nodes.json</c>; two chapters ship no danger zone at all.</summary>
+    public static TheoryData<string, int, int, string> ChapterZoneDifficulties => new()
+    {
+        { "C1", 6, 6, "0 x6" },
+        { "C1B", 7, 7, "0 x7" },
+        { "C1C", 0, 0, "" },
+        { "C2", 13, 13, "0 x13" },
+        { "C2B", 0, 0, "" },
+        { "C3", 5, 5, "0 x5" },
+        { "C4", 15, 15, "0 x15" },
+        { "C5", 34, 34, "0 x34" },
     };
 
     [Fact]
@@ -213,6 +239,93 @@ public class DangerZoneRibbonTests
         Assert.False(pick.Value.FarEnd);
     }
 
+    /// <summary>The proximity pick a hit pilot's passed roll makes: the end inside 500 m whose
+    /// tangent leads AWAY, not always the nearest one. Its admission terms are pinned here too:
+    /// range, a free lane, the active byte.</summary>
+    [Fact]
+    public void TheProximityPickTakesTheEndThatLeadsAwayInsideFiveHundredMetres()
+    {
+        var from = new Vector3(0f, 400f, 0f);
+        var ahead = DangerZoneRibbon.FromPolyline("dzpath1", 1, new[]
+        {
+            new Vector3(300f, 400f, 0f), new Vector3(800f, 400f, 0f),
+        });
+        // Nearer, but its ribbon runs back past the aeroplane: entering here would double back.
+        var behind = DangerZoneRibbon.FromPolyline("dzpath2", 2, new[]
+        {
+            new Vector3(-200f, 400f, 0f), new Vector3(700f, 400f, 0f),
+        });
+        var zones = DangerZoneRibbonsFor(ahead, behind);
+
+        var pick = zones.ProximityPick(from, naturalTouch: 9);
+        Assert.NotNull(pick);
+        Assert.Same(ahead, pick!.Value.Ribbon);
+        Assert.False(pick.Value.FarEnd);
+
+        // The only free lane taken by a run in progress drops the ribbon out of the pick.
+        var run = new DangerZoneRun(ahead, reversed: false);
+        Assert.False(ahead.HasFreeLane);
+        Assert.Same(behind, zones.ProximityPick(from, 9)!.Value.Ribbon);
+        run.Release();
+
+        // Beyond 500 m nothing qualifies, however well the end lines up.
+        Assert.Null(zones.ProximityPick(from + new Vector3(-1000f, 0f, 0f), 9));
+
+        ahead.Active = false;
+        behind.Active = false;
+        Assert.Null(zones.ProximityPick(from, 9));
+    }
+
+    /// <summary>The pick's difficulty admission. The original refuses a zone when natural_touch
+    /// is below it (<c>FUN_004210e0</c>). An exact match is taken; only a harder zone is passed
+    /// over.</summary>
+    [Fact]
+    public void TheProximityPickRefusesAZoneAboveTheNaturalTouchAndTakesOneWithinIt()
+    {
+        var from = new Vector3(0f, 400f, 0f);
+        var zone = DangerZoneRibbon.FromPolyline("dzpath1", 1, new[]
+        {
+            new Vector3(300f, 400f, 0f), new Vector3(800f, 400f, 0f),
+        }, laneOffsets: null, difficulty: 4);
+        var zones = DangerZoneRibbonsFor(zone);
+        Assert.Equal(4, zone.Difficulty);
+
+        Assert.Null(zones.ProximityPick(from, naturalTouch: 3));
+        Assert.Same(zone, zones.ProximityPick(from, naturalTouch: 4)!.Value.Ribbon);
+        Assert.Same(zone, zones.ProximityPick(from, naturalTouch: 9)!.Value.Ribbon);
+    }
+
+    /// <summary>Every shipped zone's difficulty, off the node's flag word. The census is pinned, so
+    /// a reader or extraction change that moved those bits moves a test. Each ribbon is checked
+    /// against its own node, so the loader cannot drop the term again.</summary>
+    [ExtractedDataTheory]
+    [MemberData(nameof(ChapterZoneDifficulties))]
+    public void EveryShippedZoneTakesTheDifficultyItsNodeAuthors(
+        string chapter, int expectedNodes, int expectedRibbons, string expectedCensus)
+    {
+        var gamez = GameZ.Load(SessionPaths.ChapterGamez(TestData.DataRoot!, chapter));
+        var census = new SortedDictionary<int, int>();
+        int nodes = 0;
+        foreach (var node in gamez.Nodes)
+        {
+            if (!IsDangerZoneNode(node.Name))
+                continue;
+            nodes++;
+            census[node.DangerZoneDifficulty] = census.GetValueOrDefault(node.DangerZoneDifficulty) + 1;
+            _output.WriteLine($"{chapter} {node.Name} difficulty={node.DangerZoneDifficulty}");
+        }
+        Assert.Equal(expectedNodes, nodes);
+        var parts = new List<string>();
+        foreach (var pair in census)
+            parts.Add($"{pair.Key} x{pair.Value}");
+        Assert.Equal(expectedCensus, string.Join(" ", parts));
+
+        var ribbons = DangerZoneRibbons.Load(gamez);
+        Assert.Equal(expectedRibbons, ribbons?.All.Count ?? 0);
+        foreach (var ribbon in ribbons?.All ?? (IReadOnlyCollection<DangerZoneRibbon>)Array.Empty<DangerZoneRibbon>())
+            Assert.Equal(gamez.FindByName(ribbon.Name)!.DangerZoneDifficulty, ribbon.Difficulty);
+    }
+
     [Fact]
     public void AnInterruptedRunResumesAsAnApproachAndTheRailIgnoresTheProbe()
     {
@@ -241,6 +354,13 @@ public class DangerZoneRibbonTests
     // A ribbon set built without a gamez, through the same private-constructor path Load uses.
     private static DangerZoneRibbons DangerZoneRibbonsFor(params DangerZoneRibbon[] ribbons) =>
         DangerZoneRibbons.Of(ribbons);
+
+    // The numbered route nodes alone; the "dzpaths" parent they hang under is not a zone.
+    private static bool IsDangerZoneNode(string name) =>
+        name.StartsWith("dzpath", StringComparison.OrdinalIgnoreCase)
+        && name.Length > 6
+        && int.TryParse(name.AsSpan(6), System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out _);
 
     // A bare FlightModel stand-in the tests move by hand: the pilot reads position, attitude,
     // velocity and speed, and the arrival test is on position alone.

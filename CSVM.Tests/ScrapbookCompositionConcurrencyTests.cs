@@ -2,7 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Threading;
-using CSVM.UI;
+using CSVM.UI.Campaign;
 using Xunit;
 
 namespace CSVM.Tests;

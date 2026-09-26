@@ -3,8 +3,13 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using CSVM.Flight;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Modes;
 using CSVM.Net;
 using CSVM.Session;
+using CSVM.Session.Launch;
+using CSVM.Session.Roster;
+using CSVM.Tooling;
 using CSVM.Utils;
 using Godot;
 
@@ -477,7 +482,7 @@ internal static class NetSessionSuites
             CaptureDirector = new CaptureDirector(spec),
             MasterSeed = seed,
             Camera = camera,
-            Orbit = new UI.OrbitCamera(camera),
+            Orbit = new UI.Overlays.OrbitCamera(camera),
             Sun = sun,
             Env = new Godot.Environment(),
             MenuDriven = false,
@@ -527,7 +532,7 @@ internal static class NetSessionSuites
         public int[] Feeds { get; } = new int[3];
         public bool Flying { get; set; }
 
-        public CSVM.Flight.FlightInput Stick { get; set; }
+        public FlightInput Stick { get; set; }
     }
 
     // One peer's whole rig, so the teardown is one call per end. It cannot then free a pane out

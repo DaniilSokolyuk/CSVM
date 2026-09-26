@@ -1,29 +1,30 @@
 #ifndef CSKY_FACADE_INC
 #define CSKY_FACADE_INC
 
-// The basis a SphericalY facade is turned by: the rotation that carries the card's authored +Z
-// onto the direction from the card to the eye and adds no twist about it. The eye's own basis
-// never enters, so rolling the aircraft leaves every card exactly where it was, which is the
-// property the original has and a camera-basis billboard does not.
-// The original steps a per-instance quaternion by the shortest arc from the card's PREVIOUS
-// facing each frame; this is that arc taken from the authored facing in one go, the same pose on
-// the first frame and afterwards apart from the twist a looping camera path transports.
-// Decode, with addresses: docs/org/cloudCards.md.
+// The basis a SphericalY facade is turned by: the card's +Z points at the eye from any direction
+// and its +Y is the world's up projected off that line, so the card tilts toward the eye and holds
+// its roll in the world. The eye's own basis never enters, so rolling the aircraft leaves every
+// card standing, and the up hint is constant, so translating past a card leaves it standing too.
+// The original steps a per-instance quaternion by the shortest arc from the card's PREVIOUS facing
+// each frame, which a shader cannot accumulate; each twist-free step keeps the roll a card started
+// with, so away from the pole this is the pose that tracker settles into. Taking the arc from a
+// fixed axis instead is not equivalent: its twist depends on where the eye stands and reads as a
+// roll under sideways motion. Decode, with addresses: docs/org/cloudCards.md.
 mat3 csky_facade_spherical(vec3 origin, vec3 eye) {
     vec3 f = eye - origin;
     float len2 = dot(f, f);
     f = len2 > 0.0 ? f * inversesqrt(len2) : vec3(0.0, 0.0, 1.0);
-    float d = 1.0 + f.z;
-    // The eye exactly behind the authored facing: no shortest arc exists, and the original picks
-    // an arbitrary perpendicular and turns a half circle about it, which for a +Z facing is x.
-    if (d < 1e-6) {
-        return mat3(vec3(1.0, 0.0, 0.0), vec3(0.0, -1.0, 0.0), vec3(0.0, 0.0, -1.0));
+    vec3 right = cross(vec3(0.0, 1.0, 0.0), f);
+    float r2 = dot(right, right);
+    // The eye straight above or below the card: the world's up is along the line of sight and
+    // says nothing about roll, so the card's up is taken along the world's +Z there. A round puff
+    // seen face on hides the roll this leaves it with.
+    if (r2 < 1e-8) {
+        right = cross(vec3(0.0, 0.0, 1.0), f);
+        r2 = dot(right, right);
     }
-    float k = 1.0 / d;
-    return mat3(
-        vec3(1.0 - (k * f.x * f.x), -(k * f.x * f.y), -f.x),
-        vec3(-(k * f.x * f.y), 1.0 - (k * f.y * f.y), -f.y),
-        f);
+    right *= inversesqrt(r2);
+    return mat3(right, cross(f, right), f);
 }
 
 #endif

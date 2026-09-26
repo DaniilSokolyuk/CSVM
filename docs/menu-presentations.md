@@ -30,7 +30,7 @@ format is [`formats/menu-layout.md`](formats/menu-layout.md).
 
 A menu presentation is a screen graph together with its navigation, interaction, animation and cue
 selection over the shared features. Drawing alone is not the boundary: the two shipped
-presentations, Built-in (`CSVM/src/UI/Menu/BuiltIn/`, the launchscreen in `CSVM/src/UI/LaunchMenu.cs`)
+presentations, Built-in (`CSVM/src/UI/Menu/BuiltIn/`, the launchscreen in `CSVM/src/UI/Screens/LaunchMenu.cs`)
 and Original (`CSVM/src/UI/Menu/Original/`, the decoded 800x600 screens over the player's extracted
 menu data), reach the same features through different screen sequences, different input idioms
 (cursor rows against a pointer-first page) and different sounds.
@@ -47,7 +47,7 @@ extracted menu artwork to be usable, and every other presentation is additive be
 
 `PresentationRegistry` (`CSVM/src/UI/Menu/PresentationRegistry.cs`) holds one factory per
 `PresentationId`, a non-empty ordinal token, the word `--presentation=` names. `Launcher.BuildMenuHost`
-(`CSVM/src/Session/Launcher.cs`) fills the registry once per process:
+(`CSVM/src/Session/Launch/Launcher.cs`) fills the registry once per process:
 
 ```
 registry.Register(PresentationId.BuiltIn,  () => new BuiltInPresentation(...));
@@ -136,7 +136,7 @@ and `MoveX` with auto-repeat applied, the edges `Accept`, `Back`, `Join`, `Loado
 on the press edge, `Wheel` as the steps turned since the last poll and positive toward a list's
 foot; null when the seat's devices have none). A presentation reads meaning and never a key, button
 or axis. A presentation that polls its seats also reads the campaign flow's `Film`
-(`CSVM/src/UI/CinemaHandoff.cs`) before it applies a frame: a cinema stops and hands off inside the
+(`CSVM/src/UI/Screens/CinemaHandoff.cs`) before it applies a frame: a cinema stops and hands off inside the
 input flush, ahead of that poll, so the press that skipped the film would otherwise land as an edge
 on the screen the film just opened.
 
@@ -149,17 +149,20 @@ plugs in as another `IMenuInputSource` with no change to any presentation.
 The seats themselves are the `PlayerSetupFeature`'s. Once that feature is registered,
 `MenuHost.Seats` is its live source list, `MenuHost.AddSeat` joins through it, and a join made
 anywhere shows up in every presentation's `Seats` read. The pad side (`MenuSeatDevices`,
-`CSVM/src/UI/MenuSeatDevices.cs`) is presentation-side and shared by both: seat 0's claimed pad,
-hotplug reconciliation, the Start-to-join scan (each presentation decides on which screens it is
-open), and `FlightPads`, the binding a launch carries per seat. Both presentations call
-`ClaimP1Pad` every frame while joining is closed (Built-in off its Plane screen, Original wherever
-`OriginalShell.JoiningOpen` is false), so the pad seat 0 steers with is seat 0's for good and can
-never join as a further seat. Original opens joining on the four screens that launch a flight
-(Free Flight, Dogfight, Instant Action and the campaign flight check) and, once a second seat has
-joined, draws a seat strip over every campaign board and over the Instant Action screen as an
-overlay; a solo campaign shows the authored board alone. That strip is Built-in's own chip row, the
+`CSVM/src/UI/Screens/MenuSeatDevices.cs`) is presentation-side and shared by both: seat 0's claimed pad,
+hotplug reconciliation, the gesture scans (each presentation decides on which screens they are
+open), and `FlightPads`, the binding a launch carries per seat. Built-in keeps the Start-to-join
+scan (`PrimeJoins`/`ScanJoins`) on the screens that launch a flight and calls `ClaimP1Pad` every
+frame off its Plane screen, so the pad seat 0 steers with is seat 0's for good and can never join
+as a further seat. Original signs pads on at one screen only, the join board (`OriginalJoinBoard`,
+behind the top level's JOIN BOARD door), through `PrimeBoard` and `ScanBoard`: A signs a pad onto
+the next open seat, B on a seated pad gives that seat back, and the captain's Start casts off.
+`OriginalShell.JoiningOpen` is true on the board alone, so the screens that launch a flight (Free
+Flight, Dogfight, Instant Action and the campaign flight check) only read the roster the board
+wrote. Once a second seat has signed on, Original draws a seat strip over every campaign board and
+over the Instant Action screen as an overlay; a solo campaign shows the authored board alone. That strip is Built-in's own chip row, the
 player tags alone in the top-right corner each in its seat's identity colour over a dark ground
-(`CSVM/src/UI/SeatStrip.cs` holds the shape the two share, and the Instant Action screen asks for
+(`CSVM/src/UI/Boards/SeatStrip.cs` holds the shape the two share, and the Instant Action screen asks for
 the more opaque ground its light paper needs). The sortie screens keep their own strip lower down,
 where the device and the pick status stand beside the tag. A
 presentation with a pointer maps the window-pixel pointer into its own space; Original does it
@@ -195,7 +198,7 @@ decoded.
 
 The wheel and the thumb reach the lists through one seam. `OriginalShell.Lists` answers the screen's
 scrolling lists as `OriginalList` records, topmost first, each a key, a `ListWindow`
-(`CSVM/src/UI/ListWindow.cs`) the list widget built from its own geometry, and the write that puts
+(`CSVM/src/UI/Boards/ListWindow.cs`) the list widget built from its own geometry, and the write that puts
 the window's first row somewhere else. Nothing is listed under a dialog, and while a drop-down is
 open its list is the only one, since it hangs over the screen. Per frame the shell takes the thumb
 first (a held thumb owns the pointer until it is let go, and the click that took hold activates
@@ -358,7 +361,7 @@ around rectangles the layout authors at differing widths.
 `BeginNarration(wavName)` starts spoken narration, replacing any playing and ducking the music,
 `EndNarration()` stops it, idempotent, and `PreviewMix(levels, moved)`/`EndMixPreview()` carry the
 mix a page that sets one stands at. The presentation chooses which cue to ask for and when; the
-service (`MenuAudioService`, `CSVM/src/Session/MenuAudioService.cs`) owns lookup, decoding,
+service (`MenuAudioService`, `CSVM/src/Session/Launch/MenuAudioService.cs`) owns lookup, decoding,
 playback, volume, the buses and the handoff into a launching session. A cue name the table lacks, a
 missing file or a failed decode is logged once and cached as silence; a presentation never learns
 whether a sound exists.
@@ -404,7 +407,7 @@ the script: `ZB = 0` stands on every `@ctl@SK` object the shipped scripts build,
 `GLOBALS.SCRIPT`'s menu music, which plays on while the menu is up, so the field settles nothing.
 Film of the original is the only thing that would.
 
-The cue table (`MenuCueTable`, `CSVM/src/Session/MenuCueTable.cs`) resolves the four names the
+The cue table (`MenuCueTable`, `CSVM/src/Session/Launch/MenuCueTable.cs`) resolves the four names the
 original's globals script binds: `menu.rollover`, `menu.click`, `menu.text`, `menu.text-error`, each
 to a wav under the extracted rof tree's `ASSETS/SOUNDS`. Original asks for all four
 (`OriginalCues`); Built-in asks for none and uses the service for briefing narration alone. A new
@@ -423,7 +426,7 @@ consumed by `Launcher.OnMenuExit`. The hierarchy is closed:
 | `LaunchExit` | chapter, one `MenuSeatChoice` per seat, `MenuMode`, an `InstantActionDef` for Instant Action, a `VersusRules` for Dogfight, a `MenuNetLaunch` for a networked one | derive the session spec from the CLI plus the payload, bind the seats' pads, build |
 | `CampaignMissionExit` | the profile name, the `cm_sequence` position, one `MenuSeatChoice` per joined human | the same, over the campaign's story position |
 | `QuitExit` | nothing | quit the process |
-| `OptionsApplyExit` | the graphics-mode and difficulty words, the four display settings, the four volume levels, the nearest-after-a-kill switch, the controller-rumble toggle, the opening view, the automatic head turn and the rocket carve | save every one of them, then one frame later end the presentation and show it again at its top level |
+| `OptionsApplyExit` | the graphics-mode and difficulty words, the four display settings, the four volume levels, the nearest-after-a-kill switch, the controller-rumble toggle, the opening view and the automatic head turn | save every one of them, then one frame later end the presentation and show it again at its top level |
 
 `MenuSeatChoice` is the plane node, the pad devices the seat claimed, the fit and, for a saved
 custom plane, its resolved `CustomPlaneDef`; the consumer never reads a store. The features build
@@ -509,7 +512,8 @@ is absent, and every fixture is hand-authored.
 Shared contracts, features and readers live in the namespace `CSVM.UI.Menu` exactly (folder
 `CSVM/src/UI/Menu/`). Each presentation lives in a sub-namespace (`CSVM.UI.Menu.BuiltIn`,
 `CSVM.UI.Menu.Original`) and may depend on anything, `Godot` included. `ComposedBoard`, `BoardFit`
-and the other board types stay presentation-side in `CSVM.UI`.
+and the other board types stay presentation-side in `CSVM.UI.Boards`, beside the other flat UI
+sub-namespaces (`CSVM.UI.Campaign`, `.Screens`, `.Hangar`, `.Overlays`, `.Labs`).
 
 Two scans over the compiled metadata enforce it (`CSVM.Tests/MenuNamespaceDependencyTests.cs`,
 through `AssemblyDependencyScan`, which walks signatures and method-body IL alike without loading
@@ -517,7 +521,7 @@ the assembly):
 
 - no type in `CSVM.UI.Menu` references `Godot.*` or any `CSVM.UI.*` type outside that exact
   namespace, which is what keeps every feature free of both presentations and of the engine;
-- nothing in `CSVM.UI` or any `CSVM.UI.Menu*` namespace names `GameSession`, `Launcher` or
+- nothing in `CSVM.UI` or any of its sub-namespaces names `GameSession`, `Launcher` or
   `LauncherContext`, which is what keeps every presentation from building a session or reaching
   the launcher.
 
@@ -547,7 +551,8 @@ standing open, the one leaf list whose sizes can outrun the window its row autho
 `controls`, `keys` and `keys:<category>` with the KEYS AND BUTTONS page standing on the tab of that
 name (spaces and case ignored), `keys:other` being the one category that outruns its list window and
 `keys:targeting` the eleven targeting actions, `credits` and
-`credits:about` with the About box standing over it, the
+`credits:about` with the About box standing over it, `join-board` on the crew manifest with nobody
+signed on and `join-board:<pads>` with that many entries posed as signed on, the
 `plane-*` hangar poses with `plane-construction:open` standing the airframe list open on a row the
 hub's figures preview, `plane-construction:overweight` on a build past its capacity,
 `plane-construction:defaults` with the airframe swap's three-button question standing over an

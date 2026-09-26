@@ -13,13 +13,19 @@ namespace CSVM.Effects;
 /// Built once, world-anchored, zero per-frame cost, one <see cref="MultiMeshInstance3D"/> per
 /// sprite kind, shared by every splitscreen pane; the shader billboards, fades and culls per view.
 /// ⚠ Do not re-introduce a hand-tuned cloud field. Every count, radius, size, opacity and band
-/// margin is authored data read here; this file holds exactly one TUNE constant, marked at
-/// its own field.
-/// ⚠ C1B, C2 and C3 render nothing here on purpose, see fogvol.md. Their ambient sky is the
+/// margin is authored data read here; the two that are not are marked at their own fields.
+/// ⚠ C1B, C2 and C3 render nothing here on purpose (see fogvol.md); their ambient sky is the
 /// world's own placed <c>cloudparent</c> sprites, built elsewhere.
 /// </summary>
 public sealed partial class FogVolumeClutter : Node3D
 {
+    /// <summary>The X/Z offset every lattice card ships displaced by, in metres, unless
+    /// <c>--cloud-jitter=</c> says otherwise. A remake-only departure with nothing decoded behind
+    /// it: the original's own perturbation leaves its lattice standing. Flown along the deck, the
+    /// undisplaced field reads as rows. ⚠ Do not widen the decoded perturbation to chase it; the
+    /// reading is in docs/org/cloudCards.md.</summary>
+    public const float ShippedJitter = 30f;
+
     // A runaway guard, not a tuning knob: the shipped chapters place up to ~25k sprites (base
     // field plus the map-edge continuation), so this is several times the largest real field. It
     // can only bind if a future extraction reports a `distance` near zero or a volume far larger

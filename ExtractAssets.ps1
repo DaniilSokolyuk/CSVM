@@ -28,7 +28,7 @@
 
     A failure-free run stamps <Dest>\VERSION.json with what produced the tree (unzbd
     version line, exe SHA-256, fork commit when the checkout is present, date, schema
-    integer). The engine compares the schema at boot (src\Session\ExtractionStamp.cs)
+    integer). The engine compares the schema at boot (src\Session\Launch\ExtractionStamp.cs)
     and warns when it no longer matches.
     RULE: the schema integer is a hand-maintained promise -- bump $StampSchema here,
     in ExtractRof.ps1, and ExtractionStamp.Schema in the SAME commit as any reader
@@ -123,7 +123,7 @@ Write-Host "  with: $UnzbdExe"
 if ($Unzip) { Write-Host "  (will also unzip produced archives)" }
 Write-Host ""
 
-$extracted = 0; $upToDate = 0; $skipped = 0; $unzipped = 0; $transformNotes = 0
+$extracted = 0; $upToDate = 0; $skipped = 0; $unzipped = 0; $transformNotes = 0; $animNotes = 0
 $failures = New-Object System.Collections.Generic.List[string]
 $unknowns = New-Object System.Collections.Generic.List[string]
 
@@ -175,8 +175,17 @@ foreach ($zbd in $zbds) {
         # (that is what makes the gamez round-trip byte-identical), and the Godot loader
         # reads it in preference to the angles. Counted, not printed -- a few hundred
         # across a full run would bury real errors.
-        $benign = @($stderrLines | Where-Object { "$_" -match "object3d transform fail" })
-        $unexpected = @($stderrLines | Where-Object { "$_" -notmatch "object3d transform fail" })
+        # "INTERVAL VAL FAIL" / "DELTA VAL FAIL" is unzbd's anim reader noting that an
+        # event's interval or delta fields do not validate against its flags; the raw
+        # values are kept as garbage in the JSON and the event still extracts. Thousands
+        # per full run, on a run that succeeds, so also counted rather than printed.
+        # "anim def duplicate anim ref" is the same reader seeing a call-object-connector
+        # ref name twice in one anim def, which the original data does; both refs are kept.
+        $benignPattern = "object3d transform fail|VAL FAIL|anim def duplicate anim ref"
+        $benign = @($stderrLines | Where-Object { "$_" -match $benignPattern })
+        $unexpected = @($stderrLines | Where-Object { "$_" -notmatch $benignPattern })
+        $transformFails = @($benign | Where-Object { "$_" -match "object3d transform fail" }).Count
+        $valFails = $benign.Count - $transformFails
 
         if ($exit -ne 0) {
             Write-Host "       FAILED (unzbd exit $exit)" -ForegroundColor Red
@@ -185,9 +194,13 @@ foreach ($zbd in $zbds) {
             continue
         }
         foreach ($line in $unexpected) { Write-Host "       $line" -ForegroundColor Yellow }
-        if ($benign.Count -gt 0) {
-            Write-Host "       ($($benign.Count) transform-precision notes)" -ForegroundColor DarkGray
-            $transformNotes += $benign.Count
+        if ($transformFails -gt 0) {
+            Write-Host "       ($transformFails transform-precision notes)" -ForegroundColor DarkGray
+            $transformNotes += $transformFails
+        }
+        if ($valFails -gt 0) {
+            Write-Host "       ($valFails anim-validation notes)" -ForegroundColor DarkGray
+            $animNotes += $valFails
         }
         $extracted++
     }
@@ -247,6 +260,9 @@ if ($Unzip)              { Write-Host "  unzipped:   $unzipped" }
 if ($transformNotes -gt 0) {
     Write-Host "  transform-precision notes: $transformNotes (informational -- see the comment in this script)" -ForegroundColor DarkGray
 }
+if ($animNotes -gt 0) {
+    Write-Host "  anim-validation notes: $animNotes (informational -- see the comment in this script)" -ForegroundColor DarkGray
+}
 if ($unknowns.Count -gt 0) {
     Write-Host "  UNKNOWN types (no mode mapped -- check the script):" -ForegroundColor Yellow
     $unknowns | ForEach-Object { Write-Host "    $_" -ForegroundColor Yellow }
@@ -254,7 +270,7 @@ if ($unknowns.Count -gt 0) {
 
 # ---- version stamp --------------------------------------------------------
 # A failure-free run (including the all-up-to-date one) stamps the tree with what
-# produced it, so the engine (src\Session\ExtractionStamp.cs) can tell a boot-time
+# produced it, so the engine (src\Session\Launch\ExtractionStamp.cs) can tell a boot-time
 # "it looks wrong" report which extractor vintage it is looking at. Read-merge-write:
 # ExtractRof.ps1 owns the "rof" field of the same file and must survive this write.
 # $StampSchema bumps together with ExtractRof.ps1's and ExtractionStamp.Schema, in the

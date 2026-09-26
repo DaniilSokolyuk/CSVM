@@ -18,7 +18,7 @@ public readonly record struct AudioBusGains(float Music, float Effects, float Vo
 /// The player's mix: four 0..100 levels turned into one gain per category bus and written there.
 /// Master multiplies the other three rather than being a level of its own, so the three child buses
 /// carry the whole mix. ⚠ Bus 0 is never written here; it carries the developer <c>--volume=</c>
-/// gain and the focus mute alone (<c>Session/Launcher.cs</c>), and a level written there could
+/// gain and the focus mute alone (<c>Session/Launch/Launcher.cs</c>), and a level written there could
 /// un-silence a scripted run. A level of 0 lands on the same -80 dB floor that file uses, because
 /// <c>LinearToDb(0)</c> is negative infinity. The arithmetic is a pure function of the levels;
 /// <see cref="Apply"/>, <see cref="Capture"/> and <see cref="Restore"/> are the members that touch
@@ -50,7 +50,7 @@ public static class AudioMix
     /// Voice Volume row.</summary>
     public const int DefaultVoice = 50;
 
-    // Gain floor for the dB conversion, the value Session/Launcher.cs floors the developer volume
+    // Gain floor for the dB conversion, the value Session/Launch/Launcher.cs floors the developer volume
     // at: LinearToDb(0) is negative infinity, and -80 dB is inaudible.
     private const float Floor = 0.0001f;
 

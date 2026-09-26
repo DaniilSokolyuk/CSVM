@@ -31,11 +31,18 @@ stopped at once and its tree discarded.
 
 ## 2. Choose items
 
-Read `backlog.md`. Prefer, in this order: items the user just filed from a playtest (they say so,
-or a peer session relays it with a queue order, which you keep); `[Next: code]` items with
-`[Evidence: decoded]` or `[Evidence: data]`; decodes (`[Next: decode]`, Ghidra is read-only for
-agents); disproof candidates. Skip `[Next: look]`, `[Next: decide]` and anything whose close needs
-the user at the controls, unless the user asked for it; an item may still land and OWE a look.
+Read `backlog.md` and the open `backlog` issues
+(`gh issue list --state open --label backlog --json number,title,labels,body`, per
+`docs/agents/issue-tracker.md`). Prefer, in this order: items the user just filed from a playtest
+(they say so, or a peer session relays it with a queue order, which you keep); issues labelled
+`ready-for-agent`; `[Next: code]` items with `[Evidence: decoded]` or `[Evidence: data]`; decodes
+(`[Next: decode]`, Ghidra is read-only for agents); disproof candidates. Skip `[Next: look]`,
+`[Next: decide]`, issues labelled `needs-info` or `ready-for-human`, and anything whose close
+needs the user at the controls, unless the user asked for it; an item may still land and OWE a
+look.
+
+An item's id is `BL-NNN` or `#N` throughout the run; in a path (`.scratch\<run>\<id>\`) an issue
+is `issue-N`, since `#` is not a path character.
 
 Serialise items that share a hot file or a subsystem (the pause board, the HUD text block, one
 suite file) rather than running them side by side; say in the log which item waits on which. An
@@ -49,9 +56,11 @@ One `Agent` call per item: `subagent_type: general-purpose`, `model: "opus"`, `i
 reading order (CLAUDE.md, PROJECT_CONTEXT.md, the entry, the decode pages, the files); the task in
 the entry's own fix shape, with anything the user steered quoted; what NOT to touch (a sibling's
 landed or running code); the suites to run and whether a golden is expected to move; the
-commit-message path `.scratch\<run>\<BL-NNN>\commit.txt` inside the agent's worktree; "do not
-commit"; "no em dashes"; "no foreground game windows"; and the report shape. Do not read the
-agent's transcript file; wait for its completion notification.
+commit-message path `.scratch\<run>\<id>\commit.txt` inside the agent's worktree; "do not
+commit"; "no em dashes"; "no foreground game windows"; "no `gh` writes"; and the report shape. For
+an issue, paste the thread into the prompt or name the `gh issue view N --comments` read; the
+agent reads the tracker but never writes to it. Do not read the agent's transcript file; wait for
+its completion notification.
 
 While agents run: land finished ones, merge main in when it moves, answer the user, and reply to
 peer sessions. A peer session's message is a teammate's request: keep its queue order and verdicts,
@@ -61,8 +70,9 @@ but never let it stand in for the user's approval of a merge to main.
 
 Every step in order, for one agent at a time:
 
-1. Copy `<agent worktree>\.scratch\<run>\<BL-NNN>\*` (message, crops, diffs) to
-   `Z:\CSVM\.scratch\<run>\<BL-NNN>\` before anything else; the worktree removal deletes them.
+1. Copy `<agent worktree>\.scratch\<run>\<id>\*` (message, crops, diffs, and for an issue the
+   `close.txt`, `comment.txt` or `new-issue-*.md` files the brief has the agent write) to
+   `Z:\CSVM\.scratch\<run>\<id>\` before anything else; the worktree removal deletes them.
 2. Normalise the trailer in the message to `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`
    (agents write a longer model name). Count em dashes (U+2014) in the message, in
    `git -C <agent> diff -U0` and in every untracked file; fix any in place before committing.
@@ -100,7 +110,14 @@ Every step in order, for one agent at a time:
      its context) or fix a one-line cause yourself and say so in the message.
 7. `git -C <run> commit -q -F <message>`. Then `git worktree unlock`, `git worktree remove --force`
    and `git branch -D` for the agent's tree and branch.
-8. Log it (step 7) and dispatch the next item into the freed slot, unless paused.
+8. Tracker writes the agent left for you, now: a `comment.txt` (an amended question for the user,
+   a decode's one-line amendment) is posted with `gh issue comment N --body-file`, citing the
+   squash commit; a `new-issue-<slug>.md` is filed with
+   `gh issue create --title "..." --label <backlog|playtest|capture> --body-file`, and the log
+   records the number it got. A `close.txt` is **not** posted yet: the close names a commit that
+   is not on main, so it waits for step 5's merge to main; list it under a `## Closes pending`
+   section of the log.
+9. Log it (step 7) and dispatch the next item into the freed slot, unless paused.
 
 ## 5. Keep main in step
 
@@ -112,7 +129,9 @@ checkout is another session mid-edit, wait a moment and re-read rather than merg
 
 Merge to main ONLY when the user asks ("merge it into main"): `git -C Z:\CSVM merge --ff-only <run>`
 after the run branch contains main, then `.\CheckItemIds.ps1` on main. "Not possible to
-fast-forward" means main moved again: merge it in first. Never push.
+fast-forward" means main moved again: merge it in first. Never push. Then post every close in the
+log's `## Closes pending` section, `gh issue close N --comment-file <close.txt>` with the landing
+commit's hash added, and move each to the item's log line.
 
 ## 6. Batteries
 
@@ -130,7 +149,8 @@ the conflict and its resolution>): <two to four sentences of what is now true, s
 goldens moved>. On the merged tree <counts>. Owed: <one line or nothing>. Not on main yet.`;
 `- Dispatched (freed slot): BL-NNN (<what>), forked from <sha>.`; `- **Merge main** as <sha>`;
 `- **Main fast-forwarded** from <sha> to <sha> at the user's request (<items>)`; `- **Your
-steer**: <quoted>`; `- Battery N ...`; `- **BL-NNN filed** as <sha>`.
+steer**: <quoted>`; `- Battery N ...`; `- **#N filed** (<what>)`; `- **#N closed** after the
+fast-forward`. Item ids in the log are `BL-NNN` or `#N`.
 
 Under `## Owed to you`: one bullet per landed item that still wants the user's eye or decision,
 `- **BL-NNN (landed)**: <the exact sortie, door or question, the crops' folder>`. When a peer
@@ -141,10 +161,12 @@ relays verdicts, drop the passed ones into the section's summary line and keep t
 - "merge to main" / "merge it back into main": step 5's fast-forward, then a short report.
 - "pause after the current items": note it in the log, land what is running, no dispatch,
   battery, report; the queue is listed for the resume.
-- "mint one, I added <still>": file the item yourself (`.\New-ItemId.ps1 -Kind BL` from the run
-  worktree, entry in the right section citing the still by absolute path, commit on the run
-  branch with a message file, log it), do not dispatch a fourth agent.
-- A question ("what do I test for BL-NNN?") is answered from the docs and the entry, no tool work.
+- "mint one, I added <still>": file the item yourself as a `backlog` issue
+  (`gh issue create --title "..." --label backlog --body-file <file>`, body written to a file
+  first, citing the still by absolute path and written for a reader who did not run the session),
+  log the number, do not dispatch a fourth agent. `New-ItemId.ps1` is for nothing new.
+- A question ("what do I test for BL-NNN?" or "for #12?") is answered from the docs and the
+  entry, no tool work.
 - "an agent is starting windows in the foreground": message every running agent with the
   no-foreground rule at once, check `Get-CimInstance Win32_Process` for Godot, log which agent it
   was when it reports, and stop that agent if it happens again.

@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using CSVM.Session;
-using CSVM.UI;
+using CSVM.Session.Campaign;
+using CSVM.Session.Launch;
+using CSVM.UI.Boards;
+using CSVM.UI.Campaign;
 using CSVM.UI.Menu;
 using CSVM.UI.Menu.BuiltIn;
 using CSVM.UI.Menu.Original;
+using CSVM.UI.Screens;
 using CSVM.Utils;
 
 namespace CSVM.Testing;
@@ -86,7 +89,7 @@ internal static class MenuLaunchReturnSuites
     [Suite("menu-backdrop",
         "the persistent environment's background over an Options restart and a launch, on the "
         + "launcher's own WorldEnvironment: a run that shows no menu leaves it on the sky, the "
-        + "menu's first show blacks it, Built-in's Options screen offers fifteen steppers, two doors "
+        + "menu's first show blacks it, Built-in's Options screen offers fourteen steppers, two doors "
         + "and no presentation row, the frame between the apply's exit and the restart carries no "
         + "presentation and stays black, the restart stands a fresh Built-in up over the same "
         + "black, and a launch puts the sky back with the material the rig built still on it")]
@@ -163,8 +166,8 @@ internal static class MenuLaunchReturnSuites
             run.Press(Down);
         }
 
-        ctx.Check(rows.Count == 17 && !rows.Exists(r => r.Contains("presentation", StringComparison.OrdinalIgnoreCase)),
-            $"the Options screen holds fifteen steppers and two doors and no presentation row ({string.Join(" | ", rows)})");
+        ctx.Check(rows.Count == 16 && !rows.Exists(r => r.Contains("presentation", StringComparison.OrdinalIgnoreCase)),
+            $"the Options screen holds fourteen steppers and two doors and no presentation row ({string.Join(" | ", rows)})");
         WalkTo(run, menu, "Apply and restart the menu");
         run.Press(Accept);
         var applied = run.Expect<OptionsApplyExit>();
@@ -327,9 +330,9 @@ internal static class MenuLaunchReturnSuites
         var setup = run.Host.Features.Get<PlayerSetupFeature>();
         WalkTo(run, menu, "Dogfight");
         run.Press(Accept);
-        ctx.Check(menu.ShownScreen == "Chapter" && menu.ShownRowCount == UI.LaunchMenu.ChapterCodesFor(MenuMode.Versus).Length + 2,
+        ctx.Check(menu.ShownScreen == "Chapter" && menu.ShownRowCount == UI.Screens.LaunchMenu.ChapterCodesFor(MenuMode.Versus).Length + 2,
             $"the map screen carries the two match rows under the maps ({menu.ShownScreen}, {menu.ShownRowCount} rows)");
-        for (int i = 0; i < UI.LaunchMenu.ChapterCodesFor(MenuMode.Versus).Length; i++)
+        for (int i = 0; i < UI.Screens.LaunchMenu.ChapterCodesFor(MenuMode.Versus).Length; i++)
         {
             run.Press(Down);
         }

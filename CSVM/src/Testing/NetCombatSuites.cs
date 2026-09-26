@@ -2,8 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CSVM.Flight;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Hud;
+using CSVM.Flight.Modes;
+using CSVM.Flight.Weapons;
 using CSVM.Net;
 using CSVM.Session;
+using CSVM.Session.Launch;
+using CSVM.Session.Roster;
+using CSVM.Tooling;
 using CSVM.Utils;
 using Godot;
 
@@ -457,7 +464,7 @@ internal static class NetCombatSuites
 
     // Whether the clock the tick carries is read. ⚠ Under this rig only the host's session clock
     // can move. GameClock.Time advances in the frame callback and a suite drives the fixed step
-    // alone (docs/verification.md INSTR-92). One host frame is the whole of the difference.
+    // alone (docs/verification.md INSTR-93). One host frame is the whole of the difference.
     private static void Slew(TestContext ctx, GameSession[] peers)
     {
         var guests = new[] { peers[1], peers[2] };
@@ -1011,7 +1018,7 @@ internal static class NetCombatSuites
                 CaptureDirector = new CaptureDirector(spec),
                 MasterSeed = seed,
                 Camera = camera,
-                Orbit = new UI.OrbitCamera(camera),
+                Orbit = new UI.Overlays.OrbitCamera(camera),
                 Sun = sun,
                 Env = new Godot.Environment(),
                 MenuDriven = false,

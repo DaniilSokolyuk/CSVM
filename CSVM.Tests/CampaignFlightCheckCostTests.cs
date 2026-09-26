@@ -1,9 +1,10 @@
 using System;
 using System.IO;
-using CSVM.Flight;
+using CSVM.Flight.Hangar;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
-using CSVM.Session;
-using CSVM.UI;
+using CSVM.Session.Campaign;
+using CSVM.UI.Campaign;
 using CSVM.UI.Menu;
 using Xunit;
 

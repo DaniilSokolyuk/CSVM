@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.IO;
 using CSVM.Mech3;
-using CSVM.Session;
+using CSVM.Session.InstantAction;
 using Xunit;
 
 namespace CSVM.Tests;

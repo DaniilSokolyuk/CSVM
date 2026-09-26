@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
-using CSVM.Flight;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
 using Xunit;
 

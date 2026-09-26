@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using CSVM.Session;
+using CSVM.Session.Roster;
 using Xunit;
 
 namespace CSVM.Tests;

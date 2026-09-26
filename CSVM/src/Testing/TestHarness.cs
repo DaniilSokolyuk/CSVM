@@ -751,11 +751,11 @@ public sealed class TestContext
     public IEmitterFactory? EmitterFactory { get; set; }
 
     /// <summary>The ambience the next world this builds hands its real emitter factory, what a game
-    /// session gives from its own instance (<see cref="WorldSession.Options.Ambience"/>). Null (the
-    /// default) leaves the option null, so a suite that never touches this gets still air and no
-    /// camera, the state every other emitter suite reads. Mutable for the reason
-    /// <see cref="EmitterFactory"/> is, and used with <see cref="WithPrivateWorld"/> for the same
-    /// one: a cached world would hand this suite's ambience to every later suite on the chapter.</summary>
+    /// session gives from its own instance (<see cref="WorldSession.Options.ArchiveEmitterFactory"/>).
+    /// Null (the default) builds that factory over still air. A suite that never sets it gets no
+    /// wind and no camera, the state every other emitter suite reads. It is mutable for the reason
+    /// <see cref="EmitterFactory"/> is, and needs <see cref="WithPrivateWorld"/> for the same one.
+    /// A cached world would hand this suite's ambience to every later suite on the chapter.</summary>
     public EffectAmbience? Ambience { get; set; }
 
     /// <summary>Extra sound-group names to prewarm for the next world this builds, a mission's own
@@ -786,6 +786,20 @@ public sealed class TestContext
     /// <summary>How the decode store answered this run: reported so a warm-cache A/B shows the
     /// hits happened rather than only that the wall time moved.</summary>
     internal (int Hits, int Misses) DecodeCounts => (_decode.Hits, _decode.Misses);
+
+    /// <summary>Reads every positional sound level and cull at the data's own <c>RANGE</c> radii
+    /// until the returned handle is disposed, whatever factor the session carries. A suite that
+    /// pins the decoded law's numbers has to say which factor it reads them at. The shipped
+    /// <see cref="Mech3.SoundFalloff.ShippedRangeScale"/> is a departure from the radii the law was
+    /// decoded against. The session's factor comes back on dispose.</summary>
+    public static IDisposable AtAuthoredSoundRadii() => new SoundRangeScope(1f);
+
+    /// <summary>The counterpart of <see cref="AtAuthoredSoundRadii"/>: reads every positional sound
+    /// level and cull at the factor the build ships, whatever the caller's session carries. What a
+    /// suite asking how far a cue reaches AT THE CONTROLS needs. That question is about the shipped
+    /// reach, not about the decoded radii.</summary>
+    public static IDisposable AtShippedSoundRadii() =>
+        new SoundRangeScope(Mech3.SoundFalloff.ShippedRangeScale);
 
     /// <summary>Records a check. A false verdict fails the suite but does not stop it, the rest of
     /// the checks still run, so one report names every broken thing rather than the first.</summary>
@@ -1020,6 +1034,7 @@ public sealed class TestContext
                 SoundsPath, ZrdrPath, Mute, _decode);
             using var textures = archives.Textures;
             using var sounds = archives.Sounds;
+            var ambience = Ambience;
 
             var session = WorldSession.Build(
                 new WorldSession.Options
@@ -1030,14 +1045,15 @@ public sealed class TestContext
                     ZrdrPath = ZrdrPath,
                     InterpPath = InterpPath,
                     MissionZrdrPath = SessionPaths.MissionZrdr(DataRoot, chapter, mission),
+                    ChapterZrdrPath = SessionPaths.ChapterZrdr(DataRoot, chapter),
                     EffectsParent = stage,
                     PlayerPosition = () => Camera.GlobalPosition,
                     Collision = collision,
                     RuntimeSeed = Rng.IntSeedFor(Rng.Anim),
                     EmitterFactory = EmitterFactory,
-                    Ambience = Ambience,
+                    ArchiveEmitterFactory = (tex, parent) => new PufferEmitterFactory(tex, parent, ambience),
                     ExtraPrewarmNames = ExtraPrewarmSoundNames,
-                    CutsceneRoots = CutsceneRoots,
+                    Cutscenes = CutsceneRoots ? CSVM.Session.Launch.GameSession.CutsceneWorldNames : null,
                     LandingTriggers = CutsceneRoots,
                     PlanesGamezPath = PlanesGamezPath,
                     Decode = _decode,
@@ -1069,6 +1085,26 @@ public sealed class TestContext
             WorldBuildPhases += PhaseAttribution.Categorize(profile.Phases, buildWatch.Elapsed.TotalMilliseconds);
             WorldBuildSeconds += buildWatch.Elapsed.TotalSeconds;
             WorldsBuilt++;
+        }
+    }
+
+    // Holds SoundFalloff at one factor for a suite's duration and puts the session's own back.
+    // Disposing twice restores nothing a second time, so a nested scope cannot outlive its owner.
+    private sealed class SoundRangeScope : IDisposable
+    {
+        private readonly float _previous = Mech3.SoundFalloff.RangeScale;
+        private bool _restored;
+
+        internal SoundRangeScope(float scale) => Mech3.SoundFalloff.SetRangeScale(scale);
+
+        public void Dispose()
+        {
+            if (_restored)
+            {
+                return;
+            }
+            _restored = true;
+            Mech3.SoundFalloff.SetRangeScale(_previous);
         }
     }
 }

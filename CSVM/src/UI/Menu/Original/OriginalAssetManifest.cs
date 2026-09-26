@@ -116,7 +116,7 @@ public sealed class OriginalAssetManifest
     /// <summary>The extraction stamp schema Original refuses to read a tree below: the loaders'
     /// own expectation, which the decoded menu layout's first reader raised, so a tree extracted
     /// before that decode is refused with the re-extract instruction rather than read as empty.</summary>
-    public const int StampSchema = CSVM.Session.ExtractionStamp.Schema;
+    public const int StampSchema = CSVM.Session.Launch.ExtractionStamp.Schema;
 
     /// <summary>The layout sections Original composes screens from. Every other section's art is
     /// optional, since nothing Original draws reads it.</summary>

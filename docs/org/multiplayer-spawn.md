@@ -90,7 +90,7 @@ The remake's Dogfight is the un-teamed match, so it takes the opening rule and t
 throttle and speed (`SpawnPicker.LoadSpawnList` and `SpawnPicker.StartState`, over
 `SpawnPoints.LoadNetFreeForAll`). It does **not** take the respawn rule: a centroid displacement
 puts a returning pilot next to the pack, which is the camping problem
-`Flight/VersusSpawnRotation.cs` exists to solve, and that rotation stays as it is. The stunt
+`Flight/Modes/VersusSpawnRotation.cs` exists to solve, and that rotation stays as it is. The stunt
 race's abreast starting grid is selected only when a race exists and never touches a Dogfight:
 four dogfighters 60 m apart on one heading is a head-on merge every round.
 

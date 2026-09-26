@@ -6,7 +6,7 @@ an instant-action mission is configured:
 own zrdr archive** (`<chapter>/<mission>/zrdr.zbd`, a different archive than the shared
 top-level zrdr). Spawn positions and headings are verified byte-exact
 against the data for C1/IA1 `zeppelin_run` and side-by-side in-game for C3/M01. Consumed
-by `CSVM/src/Flight/SpawnPoints.cs`.
+by `CSVM/src/Flight/Modes/SpawnPoints.cs`.
 
 ## Instant Action spawns
 

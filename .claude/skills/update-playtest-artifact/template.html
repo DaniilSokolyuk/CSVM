@@ -431,7 +431,7 @@
 
   const ptState = { chapters: new Set(), tagTypes: new Set(), query: "" };
   const PT_CHAPTERS = [...new Set(PT_DATA.map(p => p.chapter))];
-  const PT_TAG_TYPES = ["A/B", "Own"];
+  const PT_TAG_TYPES = [...new Set(["A/B", "Own", ...PT_DATA.flatMap(p => p.items.map(i => i.tag.type))])];
 
   buildChips(document.getElementById("pt-chapter-filters"), PT_CHAPTERS, ptState.chapters, renderFlights);
   buildChips(document.getElementById("pt-tag-filters"), PT_TAG_TYPES, ptState.tagTypes, renderFlights);
@@ -465,7 +465,7 @@
 
   function renderPtItem(item) {
     const tagClass = item.tag.type === "A/B" ? "tag-ab" : "tag-own";
-    const tagText = item.tag.type === "A/B" ? `A/B: ${item.tag.ref}` : "Own";
+    const tagText = item.tag.type === "A/B" ? `A/B: ${item.tag.ref}` : item.tag.type;
     const bodyParts = [];
     if (item.context) bodyParts.push(`<p class="context">${formatInline(item.context)}</p>`);
     if (item.lookFor && item.lookFor.length) {

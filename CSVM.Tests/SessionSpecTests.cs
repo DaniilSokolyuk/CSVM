@@ -1,5 +1,7 @@
 using System.Linq;
 using CSVM;
+using CSVM.Effects;
+using CSVM.Mech3;
 using CSVM.Utils;
 using Godot;
 using Xunit;
@@ -634,7 +636,7 @@ public class SessionSpecTests
 
     [Fact]
     public void ThePlayerCountIsClampedToTheRigsCapacity()
-        => Assert.Equal(UI.SplitScreen.MaxPlayers, S("--fly", "--players=9").Players);
+        => Assert.Equal(UI.Boards.SplitScreen.MaxPlayers, S("--fly", "--players=9").Players);
 
     /// <summary>Splitscreen is a flight mode: it needs planes to fly.</summary>
     [Fact]
@@ -707,11 +709,11 @@ public class SessionSpecTests
     public void TheViewFlagAlsoSelectsCockpitAndNose()
     {
         var cockpit = S("--fly", "--view=cockpit");
-        Assert.Equal(CSVM.Flight.PilotViewMode.Cockpit, cockpit.ViewMode);
+        Assert.Equal(CSVM.Flight.Camera.PilotViewMode.Cockpit, cockpit.ViewMode);
         Assert.Equal(0, cockpit.View);
         Assert.Empty(cockpit.Warnings);
-        Assert.Equal(CSVM.Flight.PilotViewMode.Nose, S("--fly", "--view=nose").ViewMode);
-        Assert.Equal(CSVM.Flight.PilotViewMode.Chase, S("--fly", "--view=2").ViewMode);
+        Assert.Equal(CSVM.Flight.Camera.PilotViewMode.Nose, S("--fly", "--view=nose").ViewMode);
+        Assert.Equal(CSVM.Flight.Camera.PilotViewMode.Chase, S("--fly", "--view=2").ViewMode);
     }
 
     /// <summary>Same rule as the numpad digits: the first-person modes sit on a flown aircraft's
@@ -720,7 +722,7 @@ public class SessionSpecTests
     public void TheSelectedViewModesAreDroppedOutsideFlight()
     {
         var s = S("--viewer", "--view=cockpit");
-        Assert.Equal(CSVM.Flight.PilotViewMode.Chase, s.ViewMode);
+        Assert.Equal(CSVM.Flight.Camera.PilotViewMode.Chase, s.ViewMode);
         Assert.Contains(s.Warnings, w => w.Category == "core" && w.Message.Contains("flight camera"));
     }
 
@@ -919,9 +921,13 @@ public class SessionSpecTests
     }
 
     [Fact]
-    public void TheSoundRangeScaleDefaultsToTheAuthoredRadii()
+    public void TheSoundRangeScaleDefaultsToTheShippedFactor()
     {
-        Assert.Equal(1f, S("--fly").SoundRangeScale);
+        // The one assertion of the shipped departure's value: a session nobody passes the flag to
+        // plays every positional voice at 2.5 times its authored radii.
+        Assert.Equal(2.5f, SoundFalloff.ShippedRangeScale);
+        Assert.Equal(SoundFalloff.ShippedRangeScale, S("--fly").SoundRangeScale);
+        Assert.Equal(1f, S("--sound-range-scale=1").SoundRangeScale);
         Assert.Equal(2f, S("--sound-range-scale=2").SoundRangeScale);
         Assert.Equal(0.5f, S("--sound-range-scale=0.5").SoundRangeScale);
         Assert.Empty(S("--sound-range-scale=4").Warnings);
@@ -933,15 +939,15 @@ public class SessionSpecTests
         foreach (string bad in new[] { "0", "-1", "far", "2,5" })
         {
             var s = S($"--sound-range-scale={bad}");
-            Assert.Equal(1f, s.SoundRangeScale);
+            Assert.Equal(SoundFalloff.ShippedRangeScale, s.SoundRangeScale);
             Assert.Contains(s.Warnings, w => w.Category == "core" && w.Message.Contains("not a positive number"));
         }
     }
 
     [Fact]
-    public void TheCloudJitterDefaultsToTheDecodedLattice()
+    public void TheCloudJitterDefaultsToTheShippedOffset()
     {
-        Assert.Equal(0f, S("--fly").CloudJitter);
+        Assert.Equal(FogVolumeClutter.ShippedJitter, S("--fly").CloudJitter);
         Assert.Equal(40f, S("--cloud-jitter=40").CloudJitter);
         Assert.Equal(0f, S("--cloud-jitter=0").CloudJitter);
         Assert.Empty(S("--cloud-jitter=12.5").Warnings);
@@ -953,7 +959,7 @@ public class SessionSpecTests
         foreach (string bad in new[] { "-1", "wide", "2,5", "NaN" })
         {
             var s = S($"--cloud-jitter={bad}");
-            Assert.Equal(0f, s.CloudJitter);
+            Assert.Equal(FogVolumeClutter.ShippedJitter, s.CloudJitter);
             Assert.Contains(s.Warnings, w => w.Category == "core" && w.Message.Contains("--cloud-jitter"));
         }
     }

@@ -110,7 +110,7 @@ public sealed class ClutterKindProps
     public IReadOnlyList<string> AuthoredKeys { get; init; } = Array.Empty<string>();
 
     /// <summary>Keys this block carried that the reader does not model. Empty for every shipped
-    /// file, the same unhandled-key assertion <c>Flight.WeaponDefs</c> makes, kept because the one
+    /// file, the same unhandled-key assertion <c>Flight.Weapons.WeaponDefs</c> makes, kept because the one
     /// thing a reader over authored data must never do quietly is skip a key.</summary>
     public IReadOnlyList<string> UnknownKeys { get; init; } = Array.Empty<string>();
 

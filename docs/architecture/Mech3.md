@@ -38,7 +38,7 @@ trimesh per surface class and soil and by sidedness, both halves on one body reg
 `WorldCollision`; `MissionStructureTeamMeta` is the channel `DestructibleRegistry` reads a pool's
 team through. A textured surface takes `csky_world_light` on its `lighting` flag alone, and every
 mip-mapped arm fetches through `SampleAlbedo`, the one `csky_sample_albedo` carrying the chapter's
-LOD bias, reused by `Clutter` and `MeshLab`. A `sunVertexLit` builder (the in-flight aircraft) draws original mode's shaded arm unshaded, with the original's per-vertex sun term, whose ambient half is the Danger Zone photograph's fill at an armed `PhotoEyeParam` eye. Arms and selection: [Root.md](Root.md), [../formats/gotchas.md](../formats/gotchas.md), [../org/vertexLighting.md](../org/vertexLighting.md), [../org/textures.md](../org/textures.md).
+LOD bias, reused by `Clutter` and `MeshLab`. `AlphaOf` reads back the transparency verdict a built material's shader was generated for, the registry `HiddenAlpha` (`--hide-alpha`) drops a class by, dropping the surface rather than the instance so the classes isolate from each other. A `sunVertexLit` builder (the in-flight aircraft) draws original mode's shaded arm unshaded, with the original's per-vertex sun term, whose ambient half is the Danger Zone photograph's fill at an armed `PhotoEyeParam` eye. Arms and selection: [Root.md](Root.md), [../formats/gotchas.md](../formats/gotchas.md), [../org/vertexLighting.md](../org/vertexLighting.md), [../org/textures.md](../org/textures.md).
 
 ## src/Mech3/ZoneGate.cs
 The original's per-node visibility gate (`FUN_0056c430`). `FUN_004d62d0` arms the camera each frame
@@ -83,7 +83,7 @@ under the body the round struck, hands the carve to `TerrainCarve` and the decor
 ages one out, so what bounds a mission's count is the refusal alone. `TryCarve` is the sink shape
 `ProjectilePool` holds, true only when the carve landed. The pool asks it only for a collider
 stamped `SceneBuilder.CanModifyMeta`, which no shipped node carries, so a played round never reaches
-it and only a direct caller (the `crater-carve` suite, an enhanced option) carves.
+it and only a direct caller (the `crater-carve` suite, the hand-armed carve option) carves.
 
 ## src/Mech3/TerrainCarve.cs
 The mesh and collider surgery one carve performs on one world node. The ring is subtracted from
@@ -108,8 +108,8 @@ re-liveries the built plane in place, `BuildDestroyed` builds the wreck subtree 
 plane-root to destroyed transform chain baked in, and `WingFlares`, `DamagePanels` and
 `CockpitDamagePanels` expose the nodes the build collected. A caller building a second aeroplane of one airframe and livery passes the
 `painter` the first composed, so those skins are composed once (PERF-22). `spinningProps` selects the flight propeller set
-(`PropParts.cs`); `Build` also reads `CockpitCameraOffset` off the `cockpit_camera` marker for `CameraController`. `cockpitInterior`
-mounts `cockpit1` hidden at that offset under `InteriorScale` and the fixed head-pitch tilt, then `ParkInteriorStates` walks it, darkening exactly what `reset_bulletholes` does (the `bulNx` hole quads, never the meshless `bulletN` groups over them) plus the two warning lamps. Camera decode: [../org/cameraViews.md](../org/cameraViews.md).
+(`PropParts.cs`); `Build` also reads `CockpitCameraOffset` off the `cockpit_camera` marker, which the flight camera mounts at with the decoded `HeadPitchOffsetRad` tilt this file also owns. `cockpitInterior`
+mounts `cockpit1` hidden at that offset under `InteriorScale` and that same tilt, then `ParkInteriorStates` walks it, darkening exactly what `reset_bulletholes` does (the `bulNx` hole quads, never the meshless `bulletN` groups over them) plus the two warning lamps. Camera decode: [../org/cameraViews.md](../org/cameraViews.md).
 
 ## src/Mech3/PaintScheme.cs
 One aircraft livery: the pattern name, three colours and three decal indices of the `paint_*`
@@ -189,10 +189,10 @@ measurements: [../formats/world-structure.md](../formats/world-structure.md). Re
 Stamps the boot-script clutter templates across placed polygons carrying the template's ground texture,
 one stamp per integer UV repeat of the polygon's UV lattice: sprites become one fullbright billboard
 MultiMesh per kind, turned toward the camera as that kind's own `FacadeMode` says, solids go through
-`SceneBuilder.SharedMesh`, `ClassifyBillboard` the split. A card blends or scissors on the archive's own alpha verdict, one shader variant each, and the blended variant writes its body's depth through a prepass: a kind is one MultiMesh, a single draw in buffer order that sorts nothing, so a card writing no depth at all is painted over by every later card and kind whatever their distances. Every stamp carries its far fade as MultiMesh custom
+`SceneBuilder.SharedMesh`, `ClassifyBillboard` the split. A card blends or scissors on the archive's own alpha verdict, one shader variant each, and the blended variant writes its body's depth through a prepass: a kind is one MultiMesh, a single draw in buffer order that sorts nothing, so a card writing no depth at all is painted over by every later card and kind whatever their distances. `BlendCardKinds`/`ScissorCardKinds` count the kinds each way, the census an `--hide-alpha` isolation is read against, and a hidden class builds no MultiMesh for its kinds. Every stamp carries its far fade as MultiMesh custom
 data under `EffectsLevel`, and samples through `SceneBuilder.SampleAlbedo` for the chapter's mip bias. `TemplateNames` reads `AddClutterTemplates` unfiltered, the per-polygon `no_clutter` gate deciding
 which patch a district dresses; `OverrideTemplateNames` is `--clutter-templates=`'s replacement.
-A decoration is a node chain, and `FirstWithMesh` hands back the translation down to the node carrying the mesh, so a stamp lands where the chain puts the drawn card: C5's lamp glow rides 4.75 m up its post.
+A decoration is a node chain, and `FirstWithMesh` hands back the translation down to the node carrying the mesh, so a stamp lands where the chain puts the drawn card: C5's lamp glow rides 4.75 m up its post. A solid decoration's chain carries SEVERAL meshes, which `ExtraMeshes` collects (nearest LOD only, each in the drawn mesh's frame) so `Kind.ExtraParts` draws and collides the whole building: 12 of C5's city blocks hold two street walls and a roof cap on further nodes, and drawing the first mesh alone leaves them open on two sides.
 Placement runtime: [../org/clutter.md](../org/clutter.md); authored side: [../formats/clutter.md](../formats/clutter.md), [../formats/templates.md](../formats/templates.md).
 
 ## src/Mech3/ClutterTemplates.cs
@@ -217,11 +217,11 @@ arm the row. `Resolve` drops a row whose animation the mission does not carry, w
 original's own load-time rejection and why an Instant Action mission arms none of them. Each
 resolved row holds its volume in the approach node's own frame, its attitude cone and its speed
 band, and the geodesic attitude test beside them; the geometry is engine-free and
-`Session/LandingApproachRuntime.cs` flies a player against it. Decode: [../formats/anim-definitions/cutscenes.md](../formats/anim-definitions/cutscenes.md).
+`Session/Campaign/LandingApproachRuntime.cs` flies a player against it. Decode: [../formats/anim-definitions/cutscenes.md](../formats/anim-definitions/cutscenes.md).
 
 ## src/Mech3/Pickups.cs
 A mission's compact `pickups.zrd` sensor table as `PickupSpec` (node name, radius in metres): the
-spheres `Session/LadderSwitchRuntime.cs` tests the player against every frame. An absent or
+spheres `Session/Campaign/LadderSwitchRuntime.cs` tests the player against every frame. An absent or
 unreadable file resolves to an empty list rather than throwing. Nothing here starts the pickup
 timing; the train's own `train_on_track` definition calls `pickup_timing` at mission load. Decode:
 [../org/ladderSwitch.md](../org/ladderSwitch.md).
@@ -242,7 +242,7 @@ tags, the trailer attach target, and the net's own three volumes (`Volumes`, rec
 as an `AiVolumeSet`). Plus the lookups both ways the data references nets:
 `ById` (aiv field 0), `ByName` (egen/zeppelins/objectives, case-insensitive), `Resolve` (either
 spelling), and `ChapterFirst` (the net an Instant Action actor is given). Consumers:
-`UI/AiNetsOverlay.cs` and `Flight/AiNetFollower.cs`. Golden counts asserted in
+`UI/Overlays/AiNetsOverlay.cs` and `Flight/Ai/AiNetFollower.cs`. Golden counts asserted in
 `CSVM.Tests/AiNetsTests.cs`.
 
 ## src/Mech3/Maneuvers.cs
@@ -251,7 +251,7 @@ entries as `Maneuver` (name, `natural_touch` difficulty, timed attitude steps, t
 autogyro/relative/nitro/bias flags), plus the selection cull (`EligibleFor`: difficulty ≤ the
 pilot's 1–9 `natural_touch`, with no interpolation table, the stat having no `ai_skill_parameters`
 entry by design) and the roster `signature_maneuvers` bitmask decode (`SignatureNames`, over
-`ExeTableOrder`). Consumers: `Flight/ManeuverExecutor.cs`; goldens in `ManeuversTests`.
+`ExeTableOrder`). Consumers: `Flight/Ai/ManeuverExecutor.cs`; goldens in `ManeuversTests`.
 
 ## src/Mech3/EnemyGenerators.cs
 The mission `egen.zrd.json` reader ([../formats/mission-entities.md](../formats/mission-entities.md)): the enemy generators that
@@ -266,7 +266,7 @@ The mission `zeppelins.zrd.json` reader ([../formats/mission-entities.md](../for
 instances typed as `ZeppelinDef`: motion limits, net name, targets, healthy zones plus
 `num_healthy_required` (defaulted to 1 and clamped to the healthy count, the decoded load
 rule), engines, gasbags, cannons and `cannon_health`. Motion keys feed
-`Flight/ZeppelinMotion` (F17); the damage half feeds `Flight/ZeppelinDamage` +
+`Flight/Airframe/ZeppelinMotion` (F17); the damage half feeds `Flight/Airframe/ZeppelinDamage` +
 `Session/ZeppelinRuntime.WireDamage` (F18). Fixture units + install goldens
 in `CSVM.Tests/ZeppelinsTests.cs`.
 
@@ -277,8 +277,8 @@ the launchscreen's Instant Action wizard. The first two funnel through one priva
 `BuildDef(ZrdrDict)`, `LoadFromJson` doing nothing but mapping a JSON object onto the same
 key/[values] shape `ZrdrDict` already wraps, so a hand-authored mission parses through exactly the
 path a real chapter's does; the wizard overlays only the fields a pilot can configure onto the
-chosen environment's own `Load` result. `spawn_points` and `dzones` stay in `Flight/SpawnPoints`
-and `Flight/StuntMission`. Every optional key's default: [../formats/instant-action.md](../formats/instant-action.md).
+chosen environment's own `Load` result. `spawn_points` and `dzones` stay in `Flight/Modes/SpawnPoints`
+and `Flight/Modes/StuntMission`, and the wingmen's fit rides beside the def (`SessionSpec.IaWingmanLoadout`) since it is a flight type. Every optional key's default: [../formats/instant-action.md](../formats/instant-action.md).
 
 ## src/Mech3/AiSkills.cs
 The AI pilot-skill constants from `player.json`: the `ai_skill_parameters` block as
@@ -296,8 +296,8 @@ both authors of an AI's range volumes are read into, a roster block's twelve slo
 (`FromRosterSlots`, three named per volume plus a flag no block authors) and a net record's nine
 floats at elements 2–10 (`FromNetRecord`). `Overlaid` is the engine's per-field non-zero test, so
 `net.Overlaid(block)` is the decoded order ([../org/aiPilot.md](../org/aiPilot.md), "Net assignment"); the
-`min_ai_active_dist` floor is `Session/CampaignRoster.cs`'s `ApplyVolumes`. The altitude bands are
-read and carried but have no consumer: `Flight/AiModeMachine.cs` gates on radii alone.
+`min_ai_active_dist` floor is `Session/Campaign/CampaignRoster.cs`'s `ApplyVolumes`. The altitude bands are
+read and carried but have no consumer: `Flight/Ai/AiModeMachine.cs` gates on radii alone.
 
 ## src/Mech3/RosterMarkers.cs
 Grafts a roster block's authored marker scaffolding onto the rig its spawn built. A chapter's own
@@ -310,13 +310,13 @@ index-addressed definition a node to write and a condition volume that moves wit
 aeroplane the mission actually spawned. Read `LandingApproaches.cs` next.
 
 ## src/Mech3/VehicleDefs.cs
-The `vehicle.json` def table as an index, next to `Flight/PlaneStats.cs`'s full read of one def:
+The `vehicle.json` def table as an index, next to `Flight/Airframe/PlaneStats.cs`'s full read of one def:
 `DefForBlock` strips a block name's trailing `_N` ordinals until a def matches, `ModeOf` walks
 `kind_of` to the nearest authored `mode` (`jet` at the root, the engine's zero default),
 `AirframeFor` finds the player airframe node an AI def's model is built from (the `p`-prefixed twin
 of the nearest ancestor, else of the chain's `nodename`), `BaseDefForPlayerNode` is its inverse and
 `DerivesFrom` is the variant test `PlaneStats.LoadForAi` enforces. `StartAnimsOf`, `InjureAnimsOf`,
-`WeaponsOf` and `AttackOf` return the nearest authored value up that chain, the last two arming a hull with its def's own gun and giving it the radius its scorer admits candidates inside, `DefaultAttackRadiusM` the decoded 400 m both surface defs fall to for want of an authored `attack` ([../org/aiPilot.md](../org/aiPilot.md)).
+`WeaponsOf` and `AttackOf` return the nearest authored value up that chain, the last two arming a hull with its def's own gun (an `AiWeaponSlot`, defined here) and giving it the radius its scorer admits candidates inside, `DefaultAttackRadiusM` the decoded 400 m both surface defs fall to for want of an authored `attack` ([../org/aiPilot.md](../org/aiPilot.md)).
 Pure over `FromRoot`, pinned in `CampaignRosterPlanTests`.
 
 ## src/Mech3/FogVolumes.cs
@@ -368,7 +368,7 @@ screen names the file the extraction ships and stops caring what format it is. A
 decoder here covers returns null, and so does a file the decoder it has cannot read; null is the
 correct answer, since a stand-in picture on a fidelity screen reads as a verdict about the
 original. The JPEG pictures a screen wants are board pictures, read through the shell's own loader
-in `UI/ComposedBoardView.cs`, which is why no JPEG decoder belongs here.
+in `UI/Boards/ComposedBoardView.cs`, which is why no JPEG decoder belongs here.
 
 ## src/Mech3/MarkerRig.cs
 A player airframe's weapon marker rig read from the planes.zbd GameZ: `Extract` walks a `player_*`
@@ -376,7 +376,7 @@ root, accumulating locals down to each `firepoint*`/`pylon*`/`target`, and repor
 positions plus co-located groups (two gun groups on one mount). `Format` prints one dump block per
 plane and `PlayerAirframes` is the model to display list; together they are the instrument
 [../formats/markers.md](../formats/markers.md) regenerates from and the source `--dump-markers` and
-`UI/MarkerOverlay.cs` share. `FindNamedMarker` is the sibling read for one non-weapon node by name,
+`UI/Overlays/MarkerOverlay.cs` share. `FindNamedMarker` is the sibling read for one non-weapon node by name,
 skipping the alternate-state subtrees so a plane whose interior or wreck carries a same-named node
 still resolves to the authored one in the top-level `markers` group.
 
@@ -425,7 +425,7 @@ following its host's pose each frame. `PlayOneShot(name, worldPos, rng)` is the 
 `SOUND` half, fire-and-forget destruction and impact audio on Effects, resolving a `SOUND_GROUPS`
 name to a member first. Radio lines, combat voice included, never come here: they are flat and
 belong to `MissionRadio.cs`. `HasStream` answers availability after the prewarm, `OneShotsStarted` that a cue fired. `LateBy`, set only during a guest's catch-up, starts a one-shot that far in and skips one already over. Who hears
-an emitter is `UI/SplitScreen.cs`'s per-pane model, fed by `SetListeners`: `Tick` measures to the
+an emitter is `UI/Boards/SplitScreen.cs`'s per-pane model, fed by `SetListeners`: `Tick` measures to the
 nearest and levels every player from `SoundFalloff.cs`, never Godot's. Next: `SoundFalloff.cs`.
 
 ## src/Mech3/SoundFalloff.cs
@@ -433,10 +433,10 @@ The original's positional gain law, engine-free: what a listener distance, a def
 pair and its `VOLUME` come to in decibels. `AttenuationDb` is the distance term alone, `VolumeDb`
 the linear-gain conversion (ten decibels per doubling, not `20 log10`), `GainDb` the sum with the
 silence floor. No Godot attenuation model expresses the shape, since the ramp is measured from the
-full-volume radius. `SessionGainDb` is what the play paths call: the law at the session's
-`--sound-range-scale` diagnostic, the one piece of state here. The decode and its addresses are
-[../formats/sounds.md](../formats/sounds.md). Callers: `WorldSounds`, `Flight/GunVoice.cs`,
-`Flight/AiWeaponAudio.cs`.
+full-volume radius. `SessionGainDb` is what the play paths call: the law at `RangeScale`, the one
+piece of state here, shipping at the remake-only `ShippedRangeScale` (`--sound-range-scale=`). The
+decode and its addresses are [../formats/sounds.md](../formats/sounds.md). Callers: `WorldSounds`,
+`Flight/Audio/GunVoice.cs`, `Flight/Ai/AiWeaponAudio.cs`.
 
 ## src/Mech3/WorldLights.cs
 Packs the `LIGHT_STATE` point lights, each as colour times ambient + diffuse, into the 2xN texture
@@ -490,7 +490,7 @@ purely for file size: `IAnimMotion` (`ScriptPlayback`/`SpinMotion`/`FromToMotion
 Not an independently owned subsystem; `AnimRuntime` drives all of it. `MotionSet`, `EmitterDirector`,
 `SoundChannel`, `LightChannel`, `PoseChannel`, `NameResolver` and `TemplateStage` share the
 namespace and ARE owned in their own right, each with its entry below. `SpinMotion.ComposeSpin` is
-the one member reached from outside without `AnimRuntime` at all, by `Flight/PropAnimator.cs`. The
+the one member reached from outside without `AnimRuntime` at all, by `Flight/Airframe/PropAnimator.cs`. The
 motion decode, both contact tiers and the readings they supersede: [../org/objectMotion.md](../org/objectMotion.md).
 
 ## src/Mech3/Anim/MotionSet.cs
@@ -548,10 +548,9 @@ Name to node resolution as one public module, generic over the node type (`NameR
 the index, the wildcard `Matcher`, the memoized `FindAll`, the scoped tier chain
 (`Resolve`/`ResolveScoped`), the symbol authority (`SymbolClaims`/`NarrowToSymbolRoot`), `Anchors`
 (NAME match, symbol narrowing, root lift) and the bind census. Node identity is
-constructor-supplied, never the node type's inherited `Equals`, and `DropFreed` retires the rows
-naming a freed node. Every tier is filtered by `AdmissibleStaging`, the owner's verdict on one
-pooled copy; that filter and its limits are on the members. Decode:
-[../org/sequences.md](../org/sequences.md), "The definition owns a private copy of its subtree".
+constructor-supplied, never the node type's inherited `Equals`; `DropFreed` retires the rows naming a freed node and `DropNodes` those naming a live subtree a second staging replaces, since a name resolves to whichever claimant was indexed first. `AdmissibleStaging` filters every tier, the owner's verdict on one pooled
+copy, and `RefusesGlobalTier` withholds the last tier from a plain name written by a definition
+the world holds several instances of. Decode: [../org/sequences.md](../org/sequences.md).
 
 ## src/Mech3/Anim/CutsceneFastForward.cs
 The rate one cutscene episode's own definitions run at while the player holds a key through a scene
@@ -559,7 +558,7 @@ that offers no skip: the target, the ramp, the scoped definition set and `RateFo
 owned by nobody but `CutsceneController`, which scopes it per episode and hands it to
 `AnimRuntime.FastForward`; the runtime multiplies each definition's dt by it and spends a raised
 rate as repeated passes of the instance walk. A remake-only rule, so both constants are design
-choices rather than decoded figures. Read `Session/CutsceneController.cs` next; the reasoning is
+choices rather than decoded figures. Read `Session/World/CutsceneController.cs` next; the reasoning is
 docs/formats/anim-definitions/cutscenes.md, "Handoff and skip".
 
 ## src/Mech3/Anim/TemplateStage.cs
@@ -652,7 +651,7 @@ id pool, to clip defs. `PlayableFor(voId, family)` returns the one name to hand
 `MissionRadio.Speak`: the shipped `snd_<FAMILY>-A_id<N>_random` variant group where one is
 authored, else the bare def. `SessionPrewarmNames` is the flight session's mission-roster prewarm
 set, reached through `WorldSession.Options.VoiceClipNames` with CLI and Instant Action accents joined in. Dispatch
-sits above this seam, in `Flight/AiVoiceDispatcher.cs` (the rules) and `Session/AiVoiceRuntime.cs`
+sits above this seam, in `Flight/Ai/AiVoiceDispatcher.cs` (the rules) and `Session/Roster/AiVoiceRuntime.cs`
 (the wiring), never in it. Decode: docs/formats/combat-voice.md.
 
 ## src/Mech3/MissionCutscenes.cs
@@ -671,19 +670,30 @@ one's storage address (world folder, mission folder, `Persist.NNN`/`Mission.NNN`
 whether it flies with a wingman. `PreviousInSameChapter` is the engine's own backwards walk to the
 last earlier mission of the same world folder, which is what cross-mission persistence is scoped
 by. There is no branch, no predicate and no alternate; the only selection rule is "the next `seq`",
-which is why `Session/CampaignProgression.cs` models a single integer position. The three
+which is why `Session/Campaign/CampaignProgression.cs` models a single integer position. The three
 numberings one mission carries, and the folder-number-is-not-the-act rule, are on their own members; `ChapterNumber` inverts `ChapterFolder`, which is the environment digit an Instant Action pause dialog is keyed by.
 Decode: docs/formats/campaign-sequence.md.
 
 ## src/Mech3/WorldSession.cs
 Builds one chapter world and binds its `AnimProgram`, the world+anim half of a session build:
 `Build` returns Root, Runtime, Program, Builder, Clutter, CloudDeck and Lights, and stops before
-the per-view steps the caller drives. `Options` is the whole seam: the shared `DecodeCache`, the
-emitter factory a suite substitutes, the session ambience its emitters read, the clutter debug
-switches, the sound-group prewarm names, the callback and trigger hosts, and the cutscene gate
-building `camera1`, the letterbox bars, the composition frames and the `AircraftStage`. It stands
-up the staged props a definition reparents onto placed content, and `ResolveLibraryRoot` is the
-lazy pool behind a call naming a library root, keyed on anchor and event. Read `WorldBuilder.cs`.
+the per-view steps the caller drives. `Options` is the whole seam, and everything above Mech3 comes
+in through it: the chapter zrdr path, the shared `DecodeCache`, the emitter factory a suite
+substitutes and the archive factory that builds the real one, the clutter debug switches, the
+sound-group prewarm names, the callback and trigger hosts, and `CutsceneNames` (the session's
+camera, bars and intro names), whose presence gates `camera1`, the letterbox bars, the composition
+frames and the `AircraftStage`. It stands up the staged props a definition reparents onto placed content, and `ResolveLibraryRoot` is the lazy pool behind a call naming a library root, keyed on anchor and event. Read `WorldBuilder.cs`.
+
+## src/Mech3/PufferState.cs
+One decoded `PUFFER_STATE` block: emission mode and cadence, velocity, size, lifetime, the texture
+flipbook and the fade bands, read by `Load` from an effects reader or by `FromAnimEvent` from a
+compiled anim event. Data only, so the animation layer can carry it across the `IEmitterFactory`
+seam without naming the renderer; `Effects/Puffer.cs` integrates it. Keys: [../formats/effects.md](../formats/effects.md).
+
+## src/Mech3/SubtreeBounds.cs
+A built subtree's world-space extent, the union of its own mesh boxes (`WorldAabb`), skipping any
+node marked `OverlayMeta` so a tool's drawing parked on an object never grows its box. Shared by
+`AnimRuntime`'s effect siting and the inspect tools behind `UI/Screens/SelectionService.cs`.
 
 ## src/Mech3/AircraftStage.cs
 The aircraft-archive subtrees a story-mission intro, a hangar or chuteman drop, or a wing-walk
@@ -692,7 +702,7 @@ the bodiless `player` marker the flown aircraft is posed onto, `chuteman`'s para
 `balmoral`, and the `FigureNodes`/`PropNodes` groups. Each node's shipped active state and the
 holder it hangs under are on its own member, which decide whether it draws in a mission that never
 names it. All carry a rebased gamez index (`PointerBaseOf`) a compiled cross-archive symbol table
-binds; `StageFlown` adds the flown airframe and parks its hook. A skinned subtree gets its own
+binds; `StageFlown` puts the one flown airframe in the node table and parks its hook, taking the airframe it replaces back out so a second human's aeroplane cannot answer for the first's name. A skinned subtree gets its own
 builder, so `Paint` gives it its stand-in's livery. Decode: docs/formats/anim-definitions/cutscenes.md.
 
 ## src/Mech3/SessionArchives.cs

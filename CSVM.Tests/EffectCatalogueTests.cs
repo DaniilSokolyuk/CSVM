@@ -2,9 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using CSVM.Flight;
+using CSVM.Flight.Airframe;
 using CSVM.Mech3;
-using CSVM.Session;
 using Xunit;
 
 namespace CSVM.Tests;

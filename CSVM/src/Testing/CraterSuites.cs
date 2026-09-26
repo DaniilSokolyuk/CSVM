@@ -1,20 +1,20 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using CSVM.Flight;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
 using Godot;
 
 namespace CSVM.Testing;
 
-/// <summary>One crater dropped on a known point of C1's own ground, over the built world. The
-/// carve is measured where it lands rather than in the abstract: the node the round struck gets a
-/// private mesh one surface longer, the column over the bowl drops by about the decoded floor, the
-/// decorations inside the radius stop standing, and a second request beside the first is refused by
-/// the clearance rule. Those requests go to the field directly, since a played round never reaches
-/// it on the original's own rule: the round's gate is the struck node's can_modify flag, which no
-/// shipped node carries. The Enhanced Graphics page's Rocket Craters row is the remake's second
-/// door, read here as a live rocket dropped on untouched ground with the option off and then on.
+/// <summary>One crater dropped on a known point of C1's own ground, over the built world, and
+/// measured where it lands. The struck node's mesh grows a private surface, the column over the
+/// bowl drops to the decoded floor, and the decorations inside the radius fall. A second request
+/// beside the first is refused by the clearance rule. Those requests go to the field directly,
+/// since the original's own gate, the struck node's can_modify flag, stands on no shipped node.
+/// The remake's carve option is the second door, read here as a live rocket on untouched ground
+/// with the option off and then on.
 /// The world is private, because a carved chapter must not ride into a later suite's census.</summary>
 internal static class CraterSuites
 {
@@ -41,7 +41,7 @@ internal static class CraterSuites
         "decoration inside the radius destroyed, and a second crater inside the 5 m clearance " +
         "refused while the first one stays carved; a live wep_12 on the same ground first carves " +
         "nothing and plays its default scatter_effect, since no C1 node carries can_modify, and a " +
-        "live rocket on untouched ground carves nothing with the Rocket Craters option off and a " +
+        "live rocket on untouched ground carves nothing with the carve option off and a " +
         "bowl with it on, its burst playing the same row either way")]
     internal static void CraterCarve(TestContext ctx)
     {
@@ -184,11 +184,11 @@ internal static class CraterSuites
         ctx.Note($"C1: one crater carved on {owner.Name}, {census} decorations flattened, the clearance refusing the repeat");
     }
 
-    // The Enhanced Graphics page's Rocket Craters row, read where it decides: a live rocket warhead
-    // dropped on untouched C1 ground with the option off, which is what every shipped run and every
-    // pinned golden sees, and the same round with it on. The second one carves although the struck
-    // node carries no can_modify stamp, which is the whole of the option, and still plays its burst,
-    // because only the original's own AND suppresses a weapon's impact row (docs/org/craters.md).
+    // The carve option read where it decides: a live rocket warhead on untouched C1 ground, once
+    // with it off and once on. The off leg is what every shipped run and every pinned golden sees.
+    // The on leg carves although the struck node carries no can_modify stamp, which is the whole
+    // of the option. It still plays its burst, because only the original's own AND suppresses a
+    // weapon's impact row (docs/org/craters.md).
     private static void OptionalCarve(TestContext ctx, TestWorld world, (Vector3 At, StaticBody3D Body) spot,
         CraterField field, PhysicsDirectSpaceState3D space, StringBuilder report)
     {

@@ -78,7 +78,8 @@ authored defaults, not signal.
 Across all 53 `aiv.zrd.json` files (414 blocks), `netids` is `-1` on exactly 106 of
 them and every one is the player or a wingman. ⚠ One more block is netless without authoring `-1`:
 C1/M04's `blakepeace_2_2` authors an empty list, zero volumes and a spawn at the origin, and the
-spawn reader resolves it to `-1` as well, which gives the only netless `jet` in the shipped data
+spawn reader resolves it to `-1` as well, which gives the only netless `jet` in the shipped data.
+The original builds it dead at spawn, so it never flies, and CSVM does not spawn it
 ([`org/aiPilot.md`](../org/aiPilot.md), the headline).
 
 | node name | blocks | `netids` |
@@ -97,8 +98,9 @@ graph like everything else. [`org/aiPilot.md`](../org/aiPilot.md) has the mechan
 constants.
 
 **What CSVM reads of this.** A campaign session initially spawns every enabled non-`player` block
-of the mission's roster (`Session/CampaignRoster.cs` plans it, `CampaignDirector.BuildRoster`
-places it). Disabled blocks remain generator templates: `egen.json`'s `vehicle.params` selects one
+of the mission's roster (`Session/Campaign/CampaignRoster.cs` plans it, `CampaignDirector.BuildRoster`
+places it), except a block with no net that is not a `mode wingman`, which the plan lists as
+skipped because the original builds it dead. Disabled blocks remain generator templates: `egen.json`'s `vehicle.params` selects one
 by its positional header label when the mission later credits that generator. The block
 name resolves to its `vehicle.json` def by stripping trailing `_N` ordinals (`blakepeace_2_1` →
 `blakepeace_2`), and the def's `mode` plus slot 0 decide the fork above. Read at spawn: slots 0–7,
@@ -107,7 +109,7 @@ the twelve volume slots 8–19 (over the net's own, see [ai-nets.md](ai-nets.md)
 block spawns as (`CampaignRosterPlan.SpawnFor` into `AiSpawn`, resolved and applied by
 `AiFlightAssembler`), so the block's own ordinary vehicle candidate carries the marker: one target,
 under the block's slot-20 name, ranked Objective ahead of every Enemy Target, and gated on the
-aeroplane's own wake and death. `Session/ObjectiveSites.cs` collects world sites only, and
+aeroplane's own wake and death. `Session/Objectives/ObjectiveSites.cs` collects world sites only, and
 `CampaignDirector` owns the label after the spawn: a completing objective's
 `REMOVE_OBJECTIVE_TARGET` clears the stamp and its `SET_HELP_LABEL` rewrites the category over slot
 39, keyed by the same name the roster books the aircraft under (a bay launch by its launch name,
@@ -121,7 +123,7 @@ the difficulty scale and the per-spawn jitter, the engine's own order
 (docs/org/vehicleDamage.md). A surface vehicle (`mode ship`: `patrolboat_N`, `t_truck_N`) has no
 player airframe and is built as a hull instead, a copy of the chapter's library-root model of the
 def placed on the water at the block's spot and driven along its net by the scripted-path law
-(`Session/SurfaceVehicleRuntime.cs`); C1B/M03's four `patrolboat_1..4` are the shipped roster case,
+(`Session/World/SurfaceVehicleRuntime.cs`); C1B/M03's four `patrolboat_1..4` are the shipped roster case,
 C2/M01's `patrolboat_eg0` the generator-template one.
 
 ### `group` is a cohort id, not a formation

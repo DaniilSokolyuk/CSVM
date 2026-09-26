@@ -1,4 +1,4 @@
-using CSVM.Flight;
+using CSVM.Flight.Hud;
 using Godot;
 using Xunit;
 
@@ -10,7 +10,7 @@ namespace CSVM.Tests;
 /// back as "AI1", and the off-screen marker's decoded geometry
 /// (<see cref="TargetHud.ArrowHead"/>, <see cref="TargetHud.EdgeLabelAnchor"/>). The selection
 /// itself (<see cref="TargetHud.NearestHostile"/>) filters on live
-/// <see cref="FlightController"/> sources, which are engine nodes, so its pins live in the
+/// <see cref="Flight.Airframe.FlightController"/> sources, which are engine nodes, so its pins live in the
 /// <c>hostile-marker-hud</c> in-engine suite instead.
 /// </summary>
 public class HostileTagTests

@@ -1,4 +1,4 @@
-using CSVM.Flight;
+using CSVM.Flight.Hud;
 using Godot;
 using Xunit;
 

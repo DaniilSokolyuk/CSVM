@@ -1,5 +1,6 @@
 using System;
-using CSVM.Flight;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Modes;
 using Xunit;
 
 namespace CSVM.Tests;

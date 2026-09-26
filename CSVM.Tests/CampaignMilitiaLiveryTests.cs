@@ -3,16 +3,17 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using CSVM;
-using CSVM.Flight;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
-using CSVM.Session;
+using CSVM.Session.Campaign;
+using CSVM.Session.Roster;
 using Xunit;
 
 namespace CSVM.Tests;
 
 /// <summary>
 /// Which militia def each campaign enemy block resolves to, and the livery that def authors. The
-/// spawner loads <see cref="PlaneStats.LoadForAi"/> with the block's own def name. This table
+/// spawner loads <see cref="Flight.Airframe.PlaneStats.LoadForAi"/> with the block's own def name. This table
 /// therefore decides the enemy's damage model, its <c>weapons</c> fit, its pilot vector and its
 /// paint (docs/org/paint.md, docs/formats/vehicle.md). The resolution is a function of the
 /// mission and the block alone: nothing here reads a spawn order or a running count.
@@ -33,7 +34,7 @@ public class CampaignMilitiaLiveryTests
         ("C1C/M01", "bsfury:blckswan x1, rusdevastator:cccp x4"),
         ("C1/M02", "blakepeace_2:blake x4, bloodhawk:- x1"),
         ("C1B/M03", "blakepeace_2:blake x4"),
-        ("C1/M04", "blakebloodhawk:blake x9, blakepeace_2:blake x5"),
+        ("C1/M04", "blakebloodhawk:blake x9, blakepeace_2:blake x4"),
         ("C1/M05", "bhatbrigand_2:blackhat x6"),
         ("C2/M02", "hkfirebrand:hollywd x5, secfury:studio x6, secgyro:studio x4"),
         ("C2/M01", "hkfirebrand:hollywd x4, secfury:studio x4, secgyro:studio x4"),

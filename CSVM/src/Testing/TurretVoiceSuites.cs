@@ -1,9 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using CSVM.Flight;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Audio;
+using CSVM.Flight.Camera;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
-using CSVM.Session;
+using CSVM.Session.InstantAction;
+using CSVM.Session.World;
 using CSVM.Utils;
 using Godot;
 
@@ -59,6 +63,10 @@ internal static class TurretVoiceSuites
         ctx.RequireData(ctx.PlanesGamezPath, $"planes gamez");
         string texturesPath = SessionPaths.ChapterTextures(ctx.DataRoot, VoiceChapter);
         ctx.RequireData(texturesPath, $"{VoiceChapter} textures");
+
+        // Every distance below is the cue's own authored one. This suite reads at 1, not at the
+        // reach the session ships.
+        using var authored = TestContext.AtAuthoredSoundRadii();
 
         var turretDefs = TurretDefs.Load(ctx.ZrdrPath);
         var weapons = WeaponDefs.Load(ctx.ZrdrPath, null);

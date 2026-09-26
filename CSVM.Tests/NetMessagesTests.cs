@@ -500,9 +500,9 @@ public class NetMessagesTests
     [Fact]
     public void NameKeyIsCaseBlindFnv1a()
     {
-        Assert.Equal(unchecked((int)0xE40C292Cu), CSVM.Session.NetWorldLink.NameKey("a"));
-        Assert.Equal(CSVM.Session.NetWorldLink.NameKey("patrolboat_1"), CSVM.Session.NetWorldLink.NameKey("PatrolBoat_1"));
-        Assert.NotEqual(CSVM.Session.NetWorldLink.NameKey("patrolboat_1"), CSVM.Session.NetWorldLink.NameKey("patrolboat_2"));
+        Assert.Equal(unchecked((int)0xE40C292Cu), CSVM.Session.World.NetWorldLink.NameKey("a"));
+        Assert.Equal(CSVM.Session.World.NetWorldLink.NameKey("patrolboat_1"), CSVM.Session.World.NetWorldLink.NameKey("PatrolBoat_1"));
+        Assert.NotEqual(CSVM.Session.World.NetWorldLink.NameKey("patrolboat_1"), CSVM.Session.World.NetWorldLink.NameKey("patrolboat_2"));
     }
 
     // A take-off run carries a lever and no carrier drop; a zeppelin drop carries a velocity.

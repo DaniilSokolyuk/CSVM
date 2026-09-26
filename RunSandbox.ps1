@@ -23,6 +23,10 @@
 .PARAMETER NoVGpu
     Disable the virtual GPU, putting the machine below the renderer floor.
 
+.PARAMETER Networking
+    Give the sandbox a network. Off by default; a run that records SmartScreen needs it,
+    because the verdict on an unknown download is fetched rather than decided locally.
+
 .PARAMETER MemoryMB
     Guest memory. It matters below the floor, where Direct3D 12's software rasterizer
     allocates its buffers out of system memory rather than out of a card.
@@ -39,6 +43,7 @@ param(
     [string]$Driver = (Join-Path $PSScriptRoot 'sandbox\RendererFloor.ps1'),
     [string[]]$MapReadOnly = @(),
     [switch]$NoVGpu,
+    [switch]$Networking,
     [int]$MemoryMB = 8192,
     [int]$TimeoutMinutes = 25,
     [switch]$KeepOpen
@@ -76,9 +81,12 @@ Write-Host "Sandbox run $runName" -ForegroundColor Cyan
 Write-Host "  zip    $Zip"
 Write-Host "  driver $Driver"
 Write-Host "  vGPU   $vGpu"
+Write-Host "  network $network"
 
 Copy-Item $Zip -Destination $inDir
 Copy-Item $Driver -Destination (Join-Path $inDir 'Driver.ps1')
+# The drivers share their helpers through a file beside them, dot-sourced by name.
+Copy-Item (Join-Path $PSScriptRoot 'sandbox\SandboxCommon.ps1') -Destination $inDir
 $spec = [ordered]@{
     vGpu              = $vGpu
     zip               = [IO.Path]::GetFileName($Zip)
@@ -110,10 +118,11 @@ foreach ($folder in $MapReadOnly) {
 "@
 }
 
+$network = if ($Networking) { 'Enable' } else { 'Disable' }
 $wsb = @"
 <Configuration>
   <vGPU>$vGpu</vGPU>
-  <Networking>Disable</Networking>
+  <Networking>$network</Networking>
   <MemoryInMB>$MemoryMB</MemoryInMB>
   <MappedFolders>
     <MappedFolder>

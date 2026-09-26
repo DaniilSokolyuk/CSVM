@@ -9,7 +9,7 @@ the addresses are given so any claim can be re-checked at source.
 
 **Where the other halves live.** The authored side is `extracted/zrdr/Loading.zrd.json`, whose
 container format is [`formats/zrdr.md`](../formats/zrdr.md); the artwork is `extracted/rimage/`,
-already read by `HudFont` and `ImpactReticle`. Our own load screen is `CSVM/src/UI/LoadBoard.cs`,
+already read by `HudFont` and `ImpactReticle`. Our own load screen is `CSVM/src/UI/Screens/LoadBoard.cs`,
 whose entry in [`architecture.md`](../architecture.md) carries the plumbing and the traps. This page
 is the original's runtime: how it picks a screen, what fills its bar, and how it keeps drawing while
 the mission loads.
@@ -227,7 +227,7 @@ the load straight through on one thread and yields a rate-limited repaint from i
 
 ## Where CSVM differs
 
-`UI/LoadScreens.cs` composes the screen above at its authored coordinates and `UI/LoadBoard.cs`
+`UI/Screens/LoadScreens.cs` composes the screen above at its authored coordinates and `UI/Screens/LoadBoard.cs`
 hangs it over the build, through the campaign boards' own surface (`docs/org/campaign-board.md`):
 the chart sheet for a campaign launch, the blackboard with its three centred photographs for
 everything else. An Instant Action launch reads `loading_i1<letter>` and writes its four texts at
@@ -236,7 +236,7 @@ selects nothing bar the `loading_i6a` heading. The multiplayer family has no cal
 
 **The campaign sheet is the mission's own dialog and nothing of ours.** `UI/Menu/EscapeDialog.cs`
 reads `Loading.zrd` the way it reads `escape.zrd`, `LoadSheet` resolves the launch's dialog key,
-its mission's objectives and the profile's memento, and `UI/MissionMap.cs` draws the chart at its
+its mission's objectives and the profile's memento, and `UI/Overlays/MissionMap.cs` draws the chart at its
 source crop with what the script placed on it. A launch takes the dialog its `cm_sequence` position
 names, so the chart, the flags, the icons and the parchment rows are the mission being built.
 The script is run out rather than played, the way the pause sheet's is, which is what releases the
@@ -275,7 +275,7 @@ fraction the bar already stood at, which is what holds the propeller to its rate
 moved on draws whatever the clock says. That is a deliberate departure: the original's phases are
 slow enough that its throttle never swallows a milestone, while ours can cross ten of them inside
 one 0.1 s window, and a throttled build shows its first fraction and then the mission.
-`UI/LoadBoard.cs` installs the repaint while it is in the tree and presents through
+`UI/Screens/LoadBoard.cs` installs the repaint while it is in the tree and presents through
 `ComposedBoardView.PresentMoving`, which issues the fill and the propeller frame to a canvas item of
 the view's own and calls `RenderingServer.ForceDraw()`. Going through the Control's own `_Draw` does
 not work: `QueueRedraw` defers the callback through the MessageQueue, which only the main loop
@@ -283,7 +283,7 @@ flushes, and the build owns that loop until it returns, so a forced frame would 
 canvas commands every time. `--debug-load[=dir]` stands this screen over a CLI launch and
 photographs each presented frame, which is how the bar is read back with nobody at the menu.
 The build stays one
-synchronous block: `Session/Launcher.cs`, `Session/GameSession.cs` and `Mech3/WorldSession.cs`
+synchronous block: `Session/Launch/Launcher.cs`, `Session/Launch/GameSession.cs` and `Mech3/WorldSession.cs`
 report each phase boundary they cross, taking the fraction the table authors for it and never one
 derived from how long the phase took. The fill is the repaint's own pixel clip,
 `floor(fillWidth * fraction)` of `prog_red` over `prog_blk` on the blackboard and `prog_redload`

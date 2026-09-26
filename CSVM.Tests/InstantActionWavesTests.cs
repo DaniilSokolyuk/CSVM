@@ -1,6 +1,6 @@
 using System.Collections.Generic;
-using CSVM.Flight;
-using CSVM.Session;
+using CSVM.Flight.Modes;
+using CSVM.Session.InstantAction;
 using Godot;
 using Xunit;
 

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
-using CSVM.UI;
+using CSVM.UI.Boards;
+using CSVM.UI.Campaign;
 using Xunit;
 
 namespace CSVM.Tests;
@@ -329,7 +330,10 @@ public class ScrapbookCompositionTests
         Assert.Equal(60f, family!.Value.TitleX);
         Assert.Equal(25f, family.Value.TitleY);
         Assert.Equal(525f, family.Value.TitleWidth);
+        Assert.Equal(85f, family.Value.TitleHeight);
+        Assert.Equal(550f, family.Value.CaptionHeight);
         Assert.Equal(525f, family.Value.TextWidth);
+        Assert.Equal(487f, family.Value.TextHeight);
     }
 
     [Fact]

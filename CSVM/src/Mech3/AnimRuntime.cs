@@ -613,6 +613,10 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
 
     private int _opsApplied, _opsUnresolved;
 
+    // Cap on the per-write lines Targets logs when a shared definition's name misses its own
+    // instance. A world holds hundreds of such instances, and the first few name the definition.
+    private int _instanceMissesLogged;
+
     private int _hookSeeds, _hookSeedsBound;
 
     // Whether the ambient passes have already run, set when Bootstrap runs them inline
@@ -1267,6 +1271,26 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
         _resolver.ClearFindCache();
     }
 
+    /// <summary>Takes a subtree <see cref="IndexRebasedStage"/> put in the node table back out,
+    /// for an owner staging another over the same names while this one lives. Two live aircraft
+    /// under one airframe name leave the compiled symbol table's claim on whichever was indexed
+    /// first. A subtree whose nodes have been FREED is <see cref="RetireFreedNodes"/>'s instead.
+    /// Returns the rows dropped.</summary>
+    public int UnstageRebased(Node3D subtree)
+    {
+        ArgumentNullException.ThrowIfNull(subtree);
+        var nodes = new List<Node3D>();
+        void Walk(Node3D n)
+        {
+            nodes.Add(n);
+            for (int i = 0, count = n.GetChildCount(); i < count; i++)
+                if (n.GetChild(i) is Node3D c)
+                    Walk(c);
+        }
+        Walk(subtree);
+        return _resolver.DropNodes(nodes);
+    }
+
     /// <summary>How many rows of the resolver's node table name a node that has since been freed.
     /// Zero right after <see cref="IndexRebasedStage"/>, which retires them. A suite reads it to
     /// assert that, because the fault a stale row causes needs a hash collision and so shows on
@@ -1903,7 +1927,7 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
     /// real transform keeps its origin exactly, and a meshless node has no bounds.</summary>
     internal static Vector3 VisualOriginOf(Node3D node)
     {
-        var box = UI.SelectionService.SubtreeWorldAabb(node);
+        var box = SubtreeBounds.WorldAabb(node);
         if (box.Size.LengthSquared() <= 1e-9f)
             return node.GlobalPosition;
         return box.Grow(1f).HasPoint(node.GlobalPosition) ? node.GlobalPosition : box.GetCenter();
@@ -4681,7 +4705,13 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
         if (targets.Count == 0)
         {
             _opsUnresolved++;
-            _resolver.RecordMissingTarget(def, string.Join("/", path), "name-no-match");
+            string named = string.Join("/", path);
+            bool confined = anchor != null && _resolver.RefusesGlobalTier(def, path);
+            _resolver.RecordMissingTarget(def, named, confined ? "outside-own-instance" : "name-no-match");
+            // The original's own no-op, logged: a shared definition's name that its instance does
+            // not carry must not be searched for in the world (docs/org/sequences.md).
+            if (confined && _instanceMissesLogged++ < 12)
+                Log.Info("anim", $"anim: '{def.AnimName ?? def.Name}' names '{named}', which its own instance under '{NameOf(anchor!)}' does not carry; the write is a no-op");
         }
         return targets;
     }

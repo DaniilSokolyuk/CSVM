@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using CSVM.UI.Boards;
+using CSVM.UI.Campaign;
 
 namespace CSVM.UI.Menu.Original;
 

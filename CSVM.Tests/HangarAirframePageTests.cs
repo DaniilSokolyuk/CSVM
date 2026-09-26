@@ -1,8 +1,10 @@
 using System;
 using System.IO;
-using CSVM.Flight;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Hangar;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
-using CSVM.UI;
+using CSVM.UI.Hangar;
 using Xunit;
 
 namespace CSVM.Tests;

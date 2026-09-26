@@ -22,8 +22,8 @@
     {
       "name": "c1b-night-sea",
       "frame": 120,
-      "hash": "3fab45b9d4a18f588efbd0ee37751ee9",
-      "exercises": "night lighting, skydome, islands, coastline sheets dimmed by the 0.426 world light like every lit surface, the placed cloud-puff facades on their own arc pose; static at 120 vs 121, 0.13 % at 120 vs 360 (puff drift).",
+      "hash": "ae38fc1df48ff3a6218e8ac21ef0b84d",
+      "exercises": "night lighting, skydome, islands, coastline sheets dimmed by the 0.426 world light like every lit surface, the placed cloud-puff facades on their world-up look-at pose; static at 120 vs 121, 0.13 % at 120 vs 360 (puff drift).",
       "args": ["--freecam", "--chapter=C1B", "--pos=-6748,300,-8885", "--direction=0.242,-0.25,0.970", "--det", "--mute"]
     },
     {
@@ -36,8 +36,8 @@
     {
       "name": "c2-city",
       "frame": 120,
-      "hash": "4ab41f8a924153903edd3aead1c01bc5",
-      "exercises": "C2's solid 3D city blocks, backlot geometry, daylight fog, wake spray with far puffs culled, the placed cloud-puff facades on their arc pose, Eiffel lattice and bridge cables blended not cut, two mesh point lights; near-static, 51 px at 120 vs 121.",
+      "hash": "a0eb28f41ff605c82d171e3583519879",
+      "exercises": "C2's solid 3D city blocks, backlot geometry, daylight fog, wake spray with far puffs culled, the cloud-puff facades on the world-up look-at, Eiffel lattice and bridge cables blended not cut, two mesh point lights; near-static, 51 px at 120 vs 121.",
       "args": ["--freecam", "--chapter=C2", "--pos=-5722,186,-3457", "--direction=-0.438,-0.15,-0.899", "--det", "--mute"]
     },
     {
@@ -57,15 +57,15 @@
     {
       "name": "c5-city-night",
       "frame": 120,
-      "hash": "ce0f82251259d5b22d4be878a8879505",
-      "exercises": "the night city: LIGHT_STATE point lights in csky_light_data, 51 beacons on their authored periods, lit window skins, the star field, the -0.8 mip LOD bias on every sampling arm, and torch puffs culled past their far band; one beacon toggles.",
+      "hash": "fe22ec505f0d04097dd6af297738e61b",
+      "exercises": "the night city: LIGHT_STATE point lights in csky_light_data, 51 beacons on their authored periods, lit window skins, city blocks drawing every mesh of their decoration chain, the star field, the -0.8 mip LOD bias, and culled torch puffs.",
       "args": ["--freecam", "--chapter=C5", "--pos=-9256,178,-3155", "--direction=-0.588,-0.1,-0.809", "--det", "--mute"]
     },
     {
       "name": "c1-cloud-field",
       "frame": 120,
-      "hash": "8f7a5c0098cfa117ad4b3b07fae60be1",
-      "exercises": "the fvol cloud field along its own deck: cards on the staggered lattice of each authored face, turned by the facade arc, each fading between both far_fade_range pairs against its own face's normal, and the deck sheet past the field's edge.",
+      "hash": "1e44a69daa996260f0942a5a6e519642",
+      "exercises": "the fvol cloud field along its own deck: cards on each authored face's staggered lattice plus the shipped 30 m X/Z offset, on the world-up look-at, fading between both far_fade_range pairs against their own face normal, over the deck sheet.",
       "args": ["--freecam", "--chapter=C1", "--pos=-6144,1208,-6144", "--direction=0,0,-1", "--det", "--mute"]
     },
     {
@@ -85,21 +85,21 @@
     {
       "name": "c1-flight-kill",
       "frame": 280,
-      "hash": "8cca0770cf63b3057daf9137f96b0dce",
+      "hash": "a2ab6e0017d18664c921dffa535c60f0",
       "exercises": "Chase-camera flight firing at two AIs then banking: one shot down 3 s earlier, its fireball and kill line up, the live one bracketed, the gun's smoke, tracers and shot light drawn on this frame's poses, exhaust, shadow; frame-sensitive 78.07 %.",
       "args": ["--chapter=C1", "--plane=player_bhawk", "--ai=player_kestrel,player_fury", "--ai-damage=0.02", "--target=ai2_player_fury", "--debug-markers", "--fire", "--hold=0,0,0,1@2.5;0.05,0.1,0,1", "--det", "--mute"]
     },
     {
       "name": "c1-cockpit",
       "frame": 120,
-      "hash": "2f28cec82f88f86266a803bdf3fe18fd",
+      "hash": "bbd61fd608f320559e7bd7dee45c12b4",
       "exercises": "Held pitch-and-roll flight from the pilot's seat: the cockpit1 interior in its own SubViewport world, its needles, drum, horizon glass, belt lights and readouts blended in gamma space, canopy and gunsight over world-lit C1; frame-sensitive 43.35 %.",
       "args": ["--chapter=C1", "--plane=player_bhawk", "--view=cockpit", "--hold=0.2,0.1,0,1", "--det", "--mute"]
     },
     {
       "name": "c1-destroy-effects",
       "frame": 120,
-      "hash": "bfe578360e1fa0708da75004587d8df7",
+      "hash": "ebbff400514e55d08f8d13804f435a4c",
       "exercises": "Neutral-control player flight beside a killed ap_radiotwr: great_balls_of_fire on the world-effects stage riding its death site, the SpeedCue wisps spread across a 16:9 pane, seeded puffers, world-lit alpha scenery over water; frame-sensitive.",
       "args": ["--chapter=C1", "--plane=player_bhawk", "--destroy=radiotwr.flt", "--pos=-6350,250,-4144", "--direction=1,-0.1,0", "--hold=0,0,0,0.5", "--det", "--mute"]
     },
@@ -113,7 +113,7 @@
     {
       "name": "c1-debris-rest",
       "frame": 360,
-      "hash": "9c1cced8de649d143e09412a3c2c3649",
+      "hash": "6bb8f41740e41248c7b0a89852da2dd3",
       "exercises": "the two-ray column ground-contact tier, blind to each piece's own colliders: a killed hangar's flung debris resting on terrain, their landings' spark puffers on the mission wind as the visible signal, over C1 ground and cutouts under one world light.",
       "args": ["--freecam", "--chapter=C1", "--collision", "--destroy=m_build03", "--pos=-6104,230,-4200", "--direction=0,-0.55,-0.83", "--det", "--mute"]
     },
@@ -127,7 +127,7 @@
     {
       "name": "campaign-4p-grid",
       "frame": 120,
-      "hash": "583149ed10962b0eea767ded709274c0",
+      "hash": "4f823db495d8f66d8884fd9e527b28e0",
       "exercises": "Four humans launch a co-op campaign mission on StartGrid with no profile to load, so no director: four render targets, HUDs, gauges and target labels, the lit C1 world, the player-shaped shadow under each pane's own pilot; frame-sensitive 73.79%.",
       "args": ["--campaign=csvm-golden:6", "--players=4", "--plane=player_bhawk,player_bhawk,player_bhawk,player_bhawk", "--det", "--mute"]
     },
@@ -141,8 +141,8 @@
     {
       "name": "menu-original-flag",
       "frame": 120,
-      "hash": "600a0201f1619d804f6a809a5e2559a3",
-      "exercises": "The Original top level: the CrimFlag movie decoded from the install's MPEG-1 as the backmost layer at 250 percent, the logo, frame and every plaque live over it, Multiplayer included, and the build stamp.",
+      "hash": "97ed30d2dafa2845d41db88ddc5b3651",
+      "exercises": "The Original top level: the CrimFlag movie decoded from the install's MPEG-1 as the backmost layer at 250 percent, the logo, frame and every plaque live over it, Multiplayer and the join board door included, and the build stamp.",
       "args": ["--menu", "--presentation=original", "--det", "--mute"]
     }
   ]

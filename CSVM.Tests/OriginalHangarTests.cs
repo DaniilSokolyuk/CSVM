@@ -4,9 +4,11 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using CSVM.Flight;
+using CSVM.Flight.Hangar;
 using CSVM.Mech3;
-using CSVM.UI;
+using CSVM.UI.Boards;
+using CSVM.UI.Campaign;
+using CSVM.UI.Hangar;
 using CSVM.UI.Menu;
 using CSVM.UI.Menu.Original;
 using Xunit;
@@ -610,6 +612,41 @@ public class OriginalHangarTests : IDisposable
 
         Click(host, OriginalHangarScreen.InventoryDoneKey);
         Assert.Equal(OriginalScreen.HangarAirframe, host.Screen);
+    }
+
+    /// <summary>The inventory's plane line stands on the row <c>HANGAR.SCRIPT</c> binds,
+    /// <c>HA_T_PLANE</c> at the box's own left edge with no width. It is centred on that box, off
+    /// the authored 108 whose baseline lands on the box's bottom rule. The wide
+    /// <c>HA_T_PILOTPLANE</c> the shipped build authors and never draws stays empty.</summary>
+    [Fact]
+    public void TheInventoryWritesThePlaneLineOnTheRowTheScriptBinds()
+    {
+        _store.Save(new CustomPlaneDef { Name = "Old", Airframe = 2, Engine = 1 });
+        var host = Host(out _);
+        OpenHub(host, "Ace");
+
+        Click(host, OriginalHangarScreen.SellPlanesKey);
+        var board = Compose(host);
+        var line = board.Lines.Single(l => l.Text == "Old   Airframe 2");
+        Assert.Equal((138f, OriginalHangarScreen.InventoryPlaneRow, 0f), (line.X, line.Y, line.Width));
+        Assert.True(line.Y + line.Size < OriginalHangarScreen.InventoryPlaneBoxBottom);
+        Assert.DoesNotContain(board.Lines, l => l.X == 236f && l.Y == 110f);
+    }
+
+    /// <summary>A plane named for its airframe is one fact: the row writes the name once rather
+    /// than the doubled title the concatenated line read.</summary>
+    [Fact]
+    public void TheInventoryWritesAPlaneNamedForItsAirframeOnce()
+    {
+        _store.Save(new CustomPlaneDef { Name = "Airframe 3", Airframe = 3, Engine = 1 });
+        var host = Host(out _);
+        OpenHub(host, "Ace");
+
+        Click(host, OriginalHangarScreen.SellPlanesKey);
+        var board = Compose(host);
+        var line = board.Lines.Single(l => l.X == 138f && l.Y == OriginalHangarScreen.InventoryPlaneRow);
+        Assert.Equal("Airframe 3", line.Text);
+        Assert.DoesNotContain(board.Lines, l => l.Text.Contains("Airframe 3   Airframe 3", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CSVM;
-using CSVM.Flight;
-using CSVM.UI;
+using CSVM.Flight.Hangar;
+using CSVM.UI.Boards;
+using CSVM.UI.Hangar;
 using CSVM.UI.Menu;
+using CSVM.UI.Screens;
 using Xunit;
 
 namespace CSVM.Tests;

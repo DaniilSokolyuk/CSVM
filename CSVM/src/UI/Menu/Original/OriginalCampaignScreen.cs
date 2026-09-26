@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using CSVM.Mech3;
 using CSVM.Net;
 using CSVM.Session;
+using CSVM.Session.Campaign;
+using CSVM.UI.Boards;
+using CSVM.UI.Campaign;
 
 namespace CSVM.UI.Menu.Original;
 
@@ -39,11 +42,11 @@ public sealed class OriginalCampaignScreen : IOriginalScreenModule
 
     private readonly CampaignFeature? _campaign;
     private readonly PlayerSetupFeature _setup;
-    private readonly CSVM.Flight.CustomPlaneStore? _planes;
+    private readonly CSVM.Flight.Hangar.CustomPlaneStore? _planes;
     private readonly CampaignLayout _layout;
     private readonly IOriginalScreenHost _host;
     private readonly Func<CampaignProfileStore>? _profiles;
-    private readonly Func<CSVM.Flight.StockLoadouts?>? _stock;
+    private readonly Func<CSVM.Flight.Weapons.StockLoadouts?>? _stock;
     private readonly Func<PlayerSeat, IReadOnlyList<int>> _flightDevices;
     private readonly string? _dataRoot;
     private readonly Func<NetPlayFeature?> _net;
@@ -78,11 +81,11 @@ public sealed class OriginalCampaignScreen : IOriginalScreenModule
     public OriginalCampaignScreen(
         CampaignFeature? campaign,
         PlayerSetupFeature setup,
-        CSVM.Flight.CustomPlaneStore? planes,
+        CSVM.Flight.Hangar.CustomPlaneStore? planes,
         CampaignLayout layout,
         IOriginalScreenHost host,
         Func<CampaignProfileStore>? profiles = null,
-        Func<CSVM.Flight.StockLoadouts?>? stock = null,
+        Func<CSVM.Flight.Weapons.StockLoadouts?>? stock = null,
         Func<PlayerSeat, IReadOnlyList<int>>? flightDevices = null,
         string? dataRoot = null,
         // The network door the cabin's Host Co-op opens; null, or a door answering null, hides it.
@@ -145,7 +148,7 @@ public sealed class OriginalCampaignScreen : IOriginalScreenModule
     internal UiStrings? Strings => _campaign?.Strings;
 
     /// <summary>The campaign's own build store, where a purchase over the cabin's wallet writes.</summary>
-    internal CSVM.Flight.CustomPlaneStore? Planes => _campaign?.Planes;
+    internal CSVM.Flight.Hangar.CustomPlaneStore? Planes => _campaign?.Planes;
 
     /// <summary>The airframe a default-configuration build inherits from the cabin's door: the
     /// seated pilot's own aircraft, or null with nobody seated.</summary>
@@ -217,7 +220,7 @@ public sealed class OriginalCampaignScreen : IOriginalScreenModule
     /// the way <c>CAMPAIGN.SCRIPT</c> pre-fills it from the registry. The store
     /// <paramref name="planes"/> stands in for the shell's build store while this campaign is
     /// open, which is how an aid's EXPORT writes into a scratch store.</summary>
-    public void OpenCampaignOver(CampaignProfileStore store, CSVM.Flight.CustomPlaneStore? planes = null)
+    public void OpenCampaignOver(CampaignProfileStore store, CSVM.Flight.Hangar.CustomPlaneStore? planes = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         if (_campaign == null)

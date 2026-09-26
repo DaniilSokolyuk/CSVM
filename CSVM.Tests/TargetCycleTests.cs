@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using CSVM.Flight;
+using CSVM.Flight.Weapons;
 using Godot;
 using Xunit;
 

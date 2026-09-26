@@ -32,14 +32,21 @@ public static class SoundFalloff
     /// cut.</summary>
     public const float EdgeDb = -30f;
 
+    /// <summary>The factor every positional <c>RANGE</c> pair ships multiplied by, unless
+    /// <c>--sound-range-scale=</c> says otherwise. It is a remake-only departure with nothing
+    /// decoded behind it. The decode found no listener-side distance term, and at the authored
+    /// radii the world emitters come in far closer than the original's. ⚠ Do not move the law's
+    /// own numbers to chase it. The reading is in docs/formats/sounds.md.</summary>
+    public const float ShippedRangeScale = 2.5f;
+
     // The quietest linear gain that is not simply silence, three doublings below the floor's ten.
     private const float QuietestVolume = 1f / 1024f;
 
-    /// <summary>The session's diagnostic multiplier on both <c>RANGE</c> radii,
-    /// <c>--sound-range-scale</c>; 1, the data's own radii, unless that flag says otherwise.
-    /// ⚠ Do not default it to anything but 1: the decode found no listener-side distance term
-    /// (docs/formats/sounds.md), so any other value is a picked factor.</summary>
-    public static float RangeScale { get; private set; } = 1f;
+    /// <summary>The session's multiplier on both <c>RANGE</c> radii and the cull that follows them,
+    /// <see cref="ShippedRangeScale"/> unless <c>--sound-range-scale=</c> asks for another value.
+    /// A suite or probe that pins a level at the data's own radii sets it to 1 for its own
+    /// duration.</summary>
+    public static float RangeScale { get; private set; } = ShippedRangeScale;
 
     /// <summary>A definition's linear <c>VOLUME</c> as decibels on the original's own scale. Not
     /// the usual 20 log10: the original's converter is ten decibels per doubling, so 0.5 is 10 dB down
@@ -97,9 +104,9 @@ public static class SoundFalloff
     }
 
     /// <summary>Sets <see cref="RangeScale"/> for the session. A value that is not a finite
-    /// positive number leaves the radii as authored.</summary>
+    /// positive number leaves the shipped factor in place.</summary>
     public static void SetRangeScale(float scale) =>
-        RangeScale = float.IsFinite(scale) && scale > 0f ? scale : 1f;
+        RangeScale = float.IsFinite(scale) && scale > 0f ? scale : ShippedRangeScale;
 
     /// <summary><see cref="GainDb(float, float, float, float)"/> with both radii multiplied by
     /// <paramref name="rangeScale"/>, the cull and the tail moving with them. 1 is the identity.</summary>

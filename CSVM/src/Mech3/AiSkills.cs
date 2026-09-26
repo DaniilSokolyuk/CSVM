@@ -323,7 +323,7 @@ public sealed class AiSkills
 
     /// <summary>Reads a roster block's <c>ace</c> flag (slot 67): true on the 26 blocks a mission
     /// script singles out. It exempts the block's skill ratings from the difficulty offset
-    /// (<see cref="Flight.Difficulty.SkillRatingForSpawn"/>) and sends its kill to the debrief's
+    /// (<c>Flight.Hangar.Difficulty.SkillRatingForSpawn</c>) and sends its kill to the debrief's
     /// starred tally (docs/org/debrief.md#what-the-tallies-count).</summary>
     public static bool RosterAce(IReadOnlyList<object?> fields) =>
         fields.Count > AceSlot && fields[AceSlot] is float f && f >= 1f;
@@ -411,7 +411,7 @@ public sealed class AiSkills
     /// <summary>The stat parameter at a 0–9 rating: the engine's own formula, <c>lo + (hi-lo) ·
     /// rating/9</c>, the pair's endpoints sit at rating 0 and 9, not 1 and 9, so a rating of 1
     /// reads <c>lo + (hi-lo)/9</c> rather than <c>lo</c> outright. ⚠ The floor is 0, not 1: the
-    /// difficulty offset reaches rating 0 (<see cref="Flight.Difficulty.SkillRatingForSpawn"/>)
+    /// difficulty offset reaches rating 0 (<c>Flight.Hangar.Difficulty.SkillRatingForSpawn</c>)
     /// and the engine clamps there too.</summary>
     public float At(string key, float rating)
     {

@@ -41,15 +41,26 @@ templateRoot (parentless Object3d, e.g. terpat02)
    │             •   position is normalised against — never a metric
    │             •   spacing (see "no world grid" below)
    └─ decoration nodes — one local transform each (position within the patch),
-      └─ decoration mesh, exactly one level below: either a single vertical
+      └─ decoration mesh, one level below: either a single vertical
          one-sided quad (tree/bush billboard, e.g. firtree1.tif) or a 3D
          building/vehicle mesh (e.g. cb02a.flt, resbuild11.flt, c_studebaker2.flt)
+         └─ further meshes of the SAME decoration, on sibling and child nodes
+            (`o2`, and a `g8` under an `l2` LOD whose range starts at 0):
+            the rest of a city block, not an alternate of it
 ```
 
-**The chain is always exactly two nodes deep, and only the decoration node carries a
-transform.** Across every decoration of every template in C2 and C5:
-`deco → mesh` in 249 of 249 cases, and 0 of them put a non-identity transform on the mesh
-node. So one node's local transform is the whole placement.
+**Only the decoration node carries a transform.** Across every decoration of every
+template in C2 and C5: 0 of 249 mesh nodes put a non-identity transform on the mesh node.
+So one node's local transform is the whole placement.
+
+**A decoration's geometry is not always one mesh.** 12 of the install's 175 template
+decorations, all of them C5 city blocks (`cb04a`, `cb12a`, `cb13a`, `cb15a`, `cb16a`,
+`cb21a`, `cb22a`, `cb23a`, `cb24a`), carry 15 further mesh nodes holding 88 polygons: a
+street wall or two and a roof cap that the node reached first does not contain. C1 to C4
+carry none. Every one of those further meshes sits in the first mesh's own frame (identity
+to within 0.06°), and the `g8` ones hang under an `l2` LOD node whose range starts at 0,
+which is the nearest level and is drawn, not a far silhouette. A consumer that renders the
+first mesh under a decoration and stops leaves those blocks open on two sides.
 
 **Authored orientation is identity, the variety is in the model list, not in rotation.**
 Same survey: every 3D decoration's local basis is identity to within **0.108°**, and the

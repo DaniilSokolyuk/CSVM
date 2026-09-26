@@ -1,16 +1,17 @@
-using CSVM.Flight;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Weapons;
 using Xunit;
 
 namespace CSVM.Tests;
 
 /// <summary>
 /// <see cref="CraterGate.For"/>, the decision "does this ground strike ask for a crater", taken
-/// apart from the scene that would answer it. Two rules meet here: the original's own, the struck
+/// apart from the scene that would answer it. Two rules meet here. The original's own is the struck
 /// node's <c>CAN_MODIFY</c> flag over a <c>CRATER</c> weapon, which no shipped node ever satisfies
-/// (docs/org/craters.md), and the Enhanced Graphics page's Rocket Craters row, under which any
-/// rocket warhead's ground burst carves. The cases are the four corners of that pair plus the one
-/// that decides which of them a strike goes through, because only the faithful rule suppresses the
-/// weapon's impact row and the option must never take a burst away.
+/// (docs/org/craters.md). The remake's own carve option is the other, under which any rocket
+/// warhead's ground burst carves. The cases are the four corners of that pair, plus the one that
+/// decides which of them a strike goes through. That one matters because only the faithful rule
+/// suppresses the weapon's impact row, and the option must never take a burst away.
 /// </summary>
 public class CraterGateTests
 {

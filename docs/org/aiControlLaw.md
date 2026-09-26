@@ -6,7 +6,7 @@ throttle lever. Decoded 2026-08-15 (plan item `D31`). Companion pages:
 it), [../formats/ai-rosters.md](../formats/ai-rosters.md) (the roster and skill data this law reads),
 [../formats/vehicle.md](../formats/vehicle.md) (the per-airframe keys).
 
-**Nothing on this page is implemented.** `Flight/AiPilot.cs` still flies the invented placeholder
+**Nothing on this page is implemented.** `Flight/Ai/AiPilot.cs` still flies the invented placeholder
 law; the port is plan item `E41`.
 
 ## Address map

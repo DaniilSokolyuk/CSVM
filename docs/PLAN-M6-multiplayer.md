@@ -1,6 +1,6 @@
 # Milestone 6, Multiplayer
 
-**ACTIVE PLAN** (written 2026-09-19). It sits in `docs/`, which by this repo's convention makes it
+**ACTIVE PLAN**. It sits in `docs/`, which by this repo's convention makes it
 a live plan; PROJECT_CONTEXT.md's "Current status" names it. When every item lands, the closing
 commit deletes this file, records the completion in its message, and clears the "Current status"
 pointer; any live prose linking this file by path is unlinked in the same commit.
@@ -13,9 +13,9 @@ match clock, scores, spawns, the AI, the zeppelins, the turrets, the destructibl
 mission director), and every discrete event crosses the wire as a typed message in the shape the
 executable already uses. Two modes ship: the Dogfight deathmatch that splitscreen already plays, and
 campaign co-op in the shape the local splitscreen campaign already has, the host's campaign with
-guests flying as the human field. The plan draws one item from `backlog.md`, `BL-951` (the local
-multiplayer door and join board), which was not re-verified still-open in the session that wrote
-this plan.
+guests flying as the human field. The plan builds on the local join board already on the main menu
+(`CSVM/src/UI/Menu/Original/OriginalJoinBoard.cs`), which signs the pads at one machine onto their
+seats; the network door and a remote guest's entry on the same manifest are this plan's own work.
 
 Out of scope, deliberately: the flag and zeppelin match modes (decoded on the scoring side only,
 they follow Dogfight once the carrier works), a dedicated headless host (a listen server is the
@@ -44,7 +44,7 @@ extraction, so the only bytes sent are pilot states, fire and hit events, AI spa
 destructible deaths, mission director transitions, the match clock and the seat roster. A design
 that finds itself replicating a mesh, a node or an animation has left this plan.
 
-## Decisions (2026-09-19)
+## Decisions
 
 | # | Question | Decision |
 |---|---|---|
@@ -126,14 +126,14 @@ the Connection page and games list, and F52 (`BL-1022`) the lobby.
 `FUN_00498bf0`, carrying a killer id at `+4` and a cause at `+0xc`; the cause table and the three
 Dogfight scoring events (suicide, kill, turret kill) are in `docs/org/multiplayer-scoring.md`. The
 per-mission spawn table `net.zrd` (45 files install-wide, four floats per node) is read by
-`SpawnPoints.LoadNetFreeForAll` in `CSVM/src/Flight/SpawnPoints.cs`, and what the executable does
+`SpawnPoints.LoadNetFreeForAll` in `CSVM/src/Flight/Modes/SpawnPoints.cs`, and what the executable does
 with a picked entry is `docs/org/multiplayer-spawn.md`.
 
-**The seams the code already has.** `CSVM/src/Flight/IFlightInputSource.cs:10` is the one place a
+**The seams the code already has.** `CSVM/src/Flight/Airframe/IFlightInputSource.cs:10` is the one place a
 sim step reads pilot intent, resolved once at `FlightController.cs:1006` from three arms (scripted,
 AI, keyboard). `FlightController` keeps `_simPrev`, `_simCurr` and `_renderPose`
 (`FlightController.cs:1260`), the slot an interpolated remote pose lands in.
-`CSVM/src/Session/SessionSimulation.cs:8` names every simulation phase as a method on
+`CSVM/src/Session/World/SessionSimulation.cs:8` names every simulation phase as a method on
 `ISessionSimulationRuntime`, which makes the host-or-guest ownership rule mechanical. The
 splitscreen seat index is already the player id through `VersusMatch.PlayerCount`
 (`GameSession.cs:2613`, `GameSession.cs:2673`) and `SpawnPicker.cs:92`'s `playerCount`. The seeded
@@ -142,7 +142,7 @@ splitscreen seat index is already the player id through `VersusMatch.PlayerCount
 ## Ground rules
 
 - **Original-game data drives everything.** Read the reader/compiled JSON before writing a handler;
-  never guess a value. Inventing content is the trap this project falls into most often.
+  never guess a value. Inventing content is the mistake this project makes most often.
 - **Evidence is a lead to verify, not a finding to implement.** Confirm every claim against the
   data/code before building on it; **a correct disproof that lands no code is a success here**, not a
   failure. Mark each item's Evidence with its confidence (traced-to-code / direction-sound-magnitude-
@@ -178,7 +178,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 12. ☑ Fire, hit, damage and death events in the decoded order, scored by the host
 13. ☑ Host-owned spawn and respawn from `net.zrd` and the rotation, applied by guests
 14. ☑ Match state: clock, limits, end and scoreboard replicated
-15. ☑ The ENet transport, host and join by direct IP with UPnP, and the multiplayer door's join board (`BL-951`)
+15. ☑ The ENet transport, host and join by direct IP with UPnP, and the multiplayer door on the join board
 
 ### Wave C, campaign co-op
 
@@ -302,8 +302,9 @@ what carries them, and a test can run two sessions against each other in one pro
 latency, jitter and loss.
 
 **Evidence (confidence: lead-only).** Nothing under `CSVM/` touches the network today;
-`docs/PLAN-public-release.md` greps `System.Net`, `ENetMultiplayerPeer` and `MultiplayerApi` to
-prove it, and that grep becomes a claim to retire when this lands. The interface shape (a peer id
+`PLAN-public-release` D33 grepped `System.Net`, `ENetMultiplayerPeer` and `MultiplayerApi` to
+prove it, and `.github/SECURITY.md` states it, so that statement becomes a claim to retire when
+this lands. The interface shape (a peer id
 list, send unreliable, send reliable, a receive callback) is this plan's design, not a decode.
 The grep survives A1 unchanged: the namespace opens no socket and names no Godot type, which
 `NetNamespaceDependencyTests` now asserts mechanically rather than by grep. B15 is still the item
@@ -461,7 +462,7 @@ interpolated between the last two and extrapolated past the newest, while everyt
 (guns, rockets, damage visuals, engine audio, HUD markers, collision hulls) works unchanged.
 
 **Evidence (confidence: traced for the seam, lead-only for the arm).**
-`CSVM/src/Flight/IFlightInputSource.cs:10` is the one input seam and its comment says the arm
+`CSVM/src/Flight/Airframe/IFlightInputSource.cs:10` is the one input seam and its comment says the arm
 cannot change after `Bind`. `FlightController.cs:1006` resolves the three existing arms;
 `FlightController.cs:1260` and `FlightController.cs:1405` are where `_simPrev`, `_simCurr` and
 `_renderPose` are set from the model, the slot a received pose replaces. `PilotInputSource` shows
@@ -837,7 +838,7 @@ guest's own respawn is requested from the host, not taken.
 
 **Evidence (confidence: traced).** `SpawnPoints.LoadNetFreeForAll` reads the table
 (`docs/formats/net-spawns.md`); `docs/org/multiplayer-spawn.md` is what the executable does with a
-pick; `VersusSpawnRotation` (`CSVM/src/Flight/VersusSpawnRotation.cs`) is the remake's rotation
+pick; `VersusSpawnRotation` (`CSVM/src/Flight/Modes/VersusSpawnRotation.cs`) is the remake's rotation
 with one living seat per point and the roomiest-entry respawn; the 16-entry block quantisation is
 in this plan's data survey.
 
@@ -879,7 +880,7 @@ slew's own `SettledSeconds`. Live reading from the harness: over a match the gue
 target of **6.000 s and `Snaps == 1`** on both, against the 6.000 s the host's clock was wound on
 by. ⚠ Both readings are 6 s and not a walk because a suite drives `_PhysicsProcess` alone and
 `GameClock.Time` advances in `BeginFrame`, so the only clock that moves is the one the suite calls
-`_Process` on (`docs/verification.md` INSTR-92).
+`_Process` on (`docs/verification.md` INSTR-93).
 `Observe` reads each tick forward by half the round trip `NetClockPing` measures (C21's
 **Landed (the round trip).**), so the tick no longer holds the offset one latency short. In the
 harness the frozen clocks give a round trip of zero and the 6.000 s reading stands.
@@ -937,7 +938,7 @@ winner. ⚠ Nothing may be sent from `WireNetMatch` itself; the join is counted 
 payloads. ⚠ A guest's rematch must not restart anything locally, or it flies a round nobody else
 is in.
 
-## B15 ☑ The ENet transport, host and join by direct IP with UPnP, and the multiplayer door's join board (`BL-951`)
+## B15 ☑ The ENet transport, host and join by direct IP with UPnP, and the multiplayer door on the join board
 
 **Landed (the transport).** `CSVM/src/Net/EnetTransport.cs` implements A1's `INetTransport` over
 Godot's `ENetMultiplayerPeer`, and is the only file under `CSVM/` that names a Godot networking
@@ -980,15 +981,15 @@ waits on the gateway search; the unmap does not, since a mapping left behind is 
 open in the player's router. `BuildLaunch` hands the open wire out as a `MenuNetLaunch` and keeps
 nothing but the mapping, which `Close` gives back.
 
-**Landed (the board and the wiring).** `CSVM/src/UI/LaunchMenu.cs` draws the board: a Multiplayer
+**Landed (the board and the wiring).** `CSVM/src/UI/Screens/LaunchMenu.cs` draws the board: a Multiplayer
 row at the end of the Mode screen opens a five-row Network screen (port, address, Host a match,
 Join by address, Continue) whose status line reports the port, the link state, the joined count and
 the external address once the router has named one. `PlayerSetupFeature.Refusal`/`CanLaunch` and
 the static `LaunchMenu.CanLaunch` take an optional `networked` flag, so a networked Dogfight no
-longer asks for a second local pilot. `CSVM/src/Session/Launcher.cs` registers the door with the
+longer asks for a second local pilot. `CSVM/src/Session/Launch/Launcher.cs` registers the door with the
 real carrier and router calls, carries `LaunchExit.Net` into the one `LauncherContext` it builds
 (`NetTransport`, `NetHost`, `NetSeats` and `NetAirframes` over
-`UI/PlanePickerRoster.StockAirframes`, which A5's suite builds its seats the same way from), and
+`UI/Hangar/PlanePickerRoster.StockAirframes`, which A5's suite builds its seats the same way from), and
 closes the launch at `ReturnToMenu` and at the quit. `CSVM/src/SessionSpec.cs` parses
 `--net-host[=port|address:port]` and `--net-join=address[:port]` through public `ParseHost` and
 `ParseJoin`, and a CLI guest holds at the launch until the link stands or 30 seconds pass.
@@ -1026,8 +1027,9 @@ proves the highest one carries. The evidence stops at one process: two real ENet
 **Owed.** A host and a guest agree on the map, the match rules and the aircraft by hand: nothing is
 exchanged before the session is built, so each end picks its own and a disagreement is silent, and
 a host's roster gives every remote seat the local pilot's airframe (`BL-1022`, F52). The Original
-presentation has no board over the shared door (`BL-1021`, F51). `BL-951`'s local join board is
-untouched and stays open. LAN and WAN play, and the firewall and router behaviour that comes with
+presentation has no board over the shared door (`BL-1021`, F51). The local join board
+(`CSVM/src/UI/Menu/Original/OriginalJoinBoard.cs`) is a separate board the network door does not
+touch. LAN and WAN play, and the firewall and router behaviour that comes with
 them, need two machines and a friend.
 
 **Original approach (kept for reference).**
@@ -1037,16 +1039,14 @@ that plays as it does on the harness.
 
 **Evidence (confidence: lead-only).** Godot's `ENetMultiplayerPeer` carries reliable, unreliable and
 unreliable-ordered channels over UDP and its `UPNP` class maps a port on the host's router; both
-untested here. `BL-951` (`backlog.md`, the local multiplayer door and join board) describes the
-board this item widens with network seats; it was not re-verified still-open in the scoping
-session. Re-verified open: `git log --grep=BL-951` finds only the retag that moved it from
-`[Next: decide]` to `[Next: code]` and the merge carrying it, no closing commit, and
-`git log -S"JoiningOpen"` and `-S"ClaimP1Pad"` show the scattered per-screen join the item
-describes still in place. The network door landed here is a separate board and leaves it open.
+untested here. The local join board (`CSVM/src/UI/Menu/Original/OriginalJoinBoard.cs`) is the board
+this item widens with network seats: its crew manifest already holds four entries signed on by the
+pads at one machine, and a remote guest is another entry on it. The network door landed here is a
+separate board beside it.
 
 **Approach.** `EnetTransport` implements A1's interface and is the only file under `CSVM/` naming a
-Godot networking type. The menu door opens the join board from `BL-951` with a host and a join
-action; a joined guest appears as a seat on every peer's board. UPnP is attempted and reported, never
+Godot networking type. The menu door opens the local join board with a host and a join action
+beside its manifest; a joined guest appears as an entry on every peer's board. UPnP is attempted and reported, never
 required.
 
 **Model recommendation.** A top-tier model. The item spans four namespaces at once (the carrier,
@@ -1087,7 +1087,7 @@ transition (it retired an objective silently, so a guest would later complete it
 rule), and the ending sounds moved into `End`, which raises the new `EndingDecided` with a
 `MissionEnding(Outcome, ObjectivesSound)`.
 `CSVM/src/Net/NetMessages.cs` adds `NetDirectorEvent`, the eleven codes and their id layouts.
-`CSVM/src/Session/NetDirectorLink.cs` is new: `Publish(net, graph)` subscribes to the host's
+`CSVM/src/Session/Objectives/NetDirectorLink.cs` is new: `Publish(net, graph)` subscribes to the host's
 `Transitioned`, `Completed` (sent as `Settled`, after the chain), `TimerExpired`, `EndingDecided`
 and `MissionEnded` and broadcasts each on `NetChannels.Events`; `Follow(net, graph)` replicates the
 graph and registers the one handler that replays arrivals.
@@ -1107,7 +1107,7 @@ the replay and derive mapping; the Session and Net architecture entries and one 
 guest that learns of one late starts what it started as far along as the host's copy is.
 `DirectorTransitionMessage` grows a `float HostClock` after the id and is 16 bytes (a 12-byte
 payload is refused). `NetDirectorLink.Publish(net, graph, hostClock)` stamps every event it sends;
-`Follow(net, graph, catchUp)` hands arrivals to the new `CSVM/src/Session/NetDirectorCatchUp.cs`,
+`Follow(net, graph, catchUp)` hands arrivals to the new `CSVM/src/Session/Objectives/NetDirectorCatchUp.cs`,
 which reads the lateness as the guest's shared clock minus the stamp (never negative), applies the
 event with it, and advances what it started:
 - `ObjectiveGraph.ApplyTransition(..., late)`: a replayed wake starts the private timer at the
@@ -1237,7 +1237,7 @@ sharpened markers below.
   health).
 - `CSVM/src/Net/NetWorldMessages.cs` (new): the four structs. `AiStateMessage.AsAircraftState`
   feeds the existing `RemotePoseBuffer`.
-- `CSVM/src/Session/NetWorldLink.cs` (new): the host broadcasts each AI's pose at the seat cadence,
+- `CSVM/src/Session/World/NetWorldLink.cs` (new): the host broadcasts each AI's pose at the seat cadence,
   its fire, hull and death, and every destructible stage change and kill; a guest flies each AI
   from samples (`RemotePoses`), spawns its rounds from fire events, claims its own seat's hits on an
   AI with `0x47`, and applies pool health. AIs are named by admission ordinal in the roster's
@@ -1733,7 +1733,7 @@ montage them for the user, never park them on a measurement.
   (landing row, ladder holder, auto-land held) and its `ReliabilityOf` arm.
 - `CSVM/src/Net/NetPositionalMessages.cs` (new): `PositionalStartMessage`, 12 bytes, reliable
   (kind, seat, flags with bit 0 held, pad, `i32` row index in the bound table).
-- `CSVM/src/Session/NetPositionalStartLink.cs` (new): on the host, `Started` and `HolderChanged` go
+- `CSVM/src/Session/Campaign/NetPositionalStartLink.cs` (new): on the host, `Started` and `HolderChanged` go
   out as broadcasts, and a guest's `AutoLandHeld` sets `RemoteAutoLand` on the host's copy of that
   seat, accepted only from the peer owning it. On a guest, both runtimes are replicated, a landing
   row is started for the named seat's rig through `StartRow`, the holder is taken through
@@ -1871,7 +1871,7 @@ worst cell drops and its deaths reach the shooter later than the clean cell's; a
 respawn for a flying seat moves the order counter by exactly one). `NetCombatSuites`' `Ambient`
 and `Ends` are internal so the soak reuses the rig.
 `--debug-net` (`CSVM/src/SessionSpec.cs`) makes `CSVM/src/Session/Launcher.cs` build a
-`CSVM/src/UI/NetReadout.cs` and, once a wall second, log `Describe`'s line under `core` and show
+`CSVM/src/UI/Overlays/NetReadout.cs` and, once a wall second, log `Describe`'s line under `core` and show
 it in the top-left corner on `HudLayers.Debug`, the tallies summed over every seat's buffer. It
 reads `GameSession.NetLink` and `SeatRigs`, which already exist, so no hook in `GameSession` was
 needed. Units: `CSVM.Tests/NetInstrumentsTests.cs` (new), and additions to
@@ -2135,7 +2135,7 @@ does not run there. By file:
 - `CSVM/src/Session/GameSession.cs`: the generator spawner returns `Refusal` for an airframe or
   roster-template launch while `RefusesOwnAircraft` holds (surface hulls untouched);
   `WireNetWorld` calls `FollowGenerators`; `Generators` accessor for the harness.
-- `CSVM/src/Session/NetWorldLink.cs`: `FollowGenerators`. The host admits the launched aircraft at
+- `CSVM/src/Session/World/NetWorldLink.cs`: `FollowGenerators`. The host admits the launched aircraft at
   once and broadcasts its ordinal; a guest builds it only when that ordinal is its next, else drops
   it (`SpawnsSent`, `SpawnsTaken`, `SpawnsRefused`). The host sends `AiPresence` on every
   `InertChanged` outside a cutscene park; a guest applies it.
@@ -2196,7 +2196,7 @@ unguaranteed to all; `0x1c` bytes per zeppelin (position, speed `zep+0xa4`, pitc
 `zep+0x2c`, a part-state word, an event count) and a cannon-shot tail; receiver `FUN_0049b0b0` sets a
 target, and the guest law `FUN_00470550` replaces the path step with an `e^(-2 dt)` chase onto a
 dead-reckoned target. By file:
-- `CSVM/src/Flight/ZeppelinReplica.cs` (new): that guest law, with a per-zeppelin sequence that drops
+- `CSVM/src/Flight/Airframe/ZeppelinReplica.cs` (new): that guest law, with a per-zeppelin sequence that drops
   a stale sample, `Reseat` for a scripted motion's hand-back, and the two decoded constants
   (`ChaseRatePerS = 2`, `SendSeconds = 0.5`).
 - `CSVM/src/Flight/ZeppelinMotion.cs`: `Follow`, which takes a pose and speed from outside the law.
@@ -2205,7 +2205,7 @@ dead-reckoned target. By file:
 - `CSVM/src/Net/NetMessages.cs`, `CSVM/src/Net/NetWorldMessages.cs`: `ZeppelinStateMessage`, id
   **`0x4B`**, 32 bytes, plain unreliable on `NetChannels.Events`, the original record's first `0x18`
   bytes in its order, named by placement index.
-- `CSVM/src/Session/NetWorldLink.cs`: `FollowZeppelins(ZeppelinRuntime)`; the host's `StepSends`
+- `CSVM/src/Session/World/NetWorldLink.cs`: `FollowZeppelins(ZeppelinRuntime)`; the host's `StepSends`
   samples every moving hull each `ZeppelinSendSteps` (30 steps); a guest replicates and takes them.
 - `CSVM/src/Testing/NetZeppelinSuites.cs` (new): the `net-zeppelin-path` suite.
 - Tests: `ZeppelinReplicaTests` (6) and a `0x4B` round trip in `NetMessagesTests`.
@@ -2263,7 +2263,7 @@ not re-spawn or re-arm them.
 - `CSVM/src/Session/CampaignDirector.cs`: `WarpDrawn` (the host's pick), `TakeWarpsFromHost` and
   `TakeHostWarp`. A guest's directive queues until the pick arrives, or places at once when the pick
   came first; the placement body is `PlaceWarp`, shared by both.
-- `CSVM/src/Session/NetWorldLink.cs`: `FollowVehicles(SurfaceVehicleRuntime?, CampaignDirector?)`,
+- `CSVM/src/Session/World/NetWorldLink.cs`: `FollowVehicles(SurfaceVehicleRuntime?, CampaignDirector?)`,
   `SurfaceSendSteps` (the zeppelin's 30 steps), `NameKey` (the FNV-1a that `PoolKey` now calls), and
   the counters `SurfaceSamplesSent` and `SurfaceSamplesTaken`.
 - `CSVM/src/Testing/NetSurfaceVehicleSuites.cs` (new): `net-surface-patrol`.
@@ -2330,7 +2330,7 @@ injure ladder, which plays its anims at health fractions independent of the stag
 (`AnimRuntime.HealthOf`). By file:
 - `CSVM/src/Mech3/AnimRuntime.cs`: `DestructibleChipped`, raised by `SpendHealth` when a spend
   lowers health without moving the stage or killing; `DestructibleDamaged` is unchanged.
-- `CSVM/src/Session/NetWorldLink.cs`: the host marks each chipped pool once, and `StepSends`
+- `CSVM/src/Session/World/NetWorldLink.cs`: the host marks each chipped pool once, and `StepSends`
   flushes them on the seat stream's cadence (`AircraftStateCadence.SendStepInterval`, three steps),
   one sample per pool however many hits landed. A stage change or kill sends at once and drops the
   pool's waiting chip, since it carries the same health. `ChipSamplesSent` counts them. A guest
@@ -2639,7 +2639,7 @@ is silent, and a host's roster gives every remote seat the local pilot's airfram
 
 **What exists to build on.**
 - `BL-1022`'s fix shape: the host announces the chapter and the match rules and each guest answers
-  with its airframe index into `UI/PlanePickerRoster.StockAirframes`, which both ends read in one
+  with its airframe index into `UI/Hangar/PlanePickerRoster.StockAirframes`, which both ends read in one
   order, applied before the session is built; the index is the wire contract.
 - B14's match state: `MatchStateMessage` (the time limit and score target) and the scoreboard, which the
   Game Scores tab shows. `Launcher.cs`'s net roster (`NetSeats`, `NetAirframes` over

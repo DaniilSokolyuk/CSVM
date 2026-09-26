@@ -232,8 +232,8 @@ direction factor, which the look-behind arm hard-codes to `−1`, so a slam push
 
 ## Engine-read fields
 
-`CSVM/src/Flight/CamParams.cs` parses the whole file and exposes every field;
-`CSVM/src/Flight/CameraController.cs` applies:
+`CSVM/src/Flight/Camera/CamParams.cs` parses the whole file and exposes every field;
+`CSVM/src/Flight/Camera/CameraController.cs` applies:
 
 - `dist` + `dist_factor`, the dynamic chase radius (shared by the numpad fixed views, so both
   cameras move together, dynamics included).

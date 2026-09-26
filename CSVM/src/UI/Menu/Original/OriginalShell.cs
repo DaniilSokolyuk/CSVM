@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using CSVM.UI.Boards;
+using CSVM.UI.Campaign;
+using CSVM.UI.Screens;
 
 namespace CSVM.UI.Menu.Original;
 
@@ -51,6 +54,10 @@ public enum OriginalScreen
     /// <summary>The decoded <c>[@Credits@]</c> screen: the background pane the credit names are
     /// painted into, ABOUT drawn disabled and the DONE plaque.</summary>
     Credits,
+
+    /// <summary>The remake-only join board, the one screen a pad signs onto a seat from
+    /// (<see cref="OriginalJoinBoard"/>).</summary>
+    JoinBoard,
 
     /// <summary>The decoded <c>[@InstantAction@]</c> setup screen: the Table of Contents, the
     /// dropdowns, the paged enemy rows, the radio pair and its buttons.</summary>
@@ -227,6 +234,9 @@ public sealed partial class OriginalShell : IOriginalScreenHost
     /// <summary>The Free Flight door's key on the top level.</summary>
     public const string FreeFlightKey = "FREEFLIGHT";
 
+    /// <summary>The join board's door on the top level.</summary>
+    public const string JoinBoardKey = "JOINBOARD";
+
     /// <summary>The Free Flight screen's leave button.</summary>
     public const string BackKey = "BACK";
 
@@ -255,6 +265,9 @@ public sealed partial class OriginalShell : IOriginalScreenHost
     // column is full, so the door stands in the clear left margin at the row pitch's height.
     private const float DoorX = 42f;
     private const float DoorY = 293f;
+
+    // The join board's door, a third plaque under the two sortie doors.
+    private const float JoinBoardDoorY = DoorY + 72f;
 
     // The remake-only screens' list geometry. It is two columns under the logo, one authored text
     // height (STDTEXTH, 16) plus air per row, and the two plaques on the bottom margin.
@@ -321,10 +334,10 @@ public sealed partial class OriginalShell : IOriginalScreenHost
     private readonly BoardArt _activePointer;
     private readonly BoardArt _passivePointer;
     private readonly ControlsFeature? _controls;
-    private readonly CSVM.Flight.CustomPlaneStore? _planes;
+    private readonly CSVM.Flight.Hangar.CustomPlaneStore? _planes;
     // The stock loadouts reader, shared. The campaign opens over it, the Instant Action module
     // holds it, and the per-seat aircraft screen reads a stock fit's ratings off it.
-    private readonly Func<CSVM.Flight.StockLoadouts?>? _stock;
+    private readonly Func<CSVM.Flight.Weapons.StockLoadouts?>? _stock;
     private readonly CampaignLayout _campaignLayout;
     private readonly InstantActionFeature _instantAction;
     // The screen modules this shell stands over, each asked which screens it owns. One dispatch
@@ -368,10 +381,10 @@ public sealed partial class OriginalShell : IOriginalScreenHost
         IReadOnlyList<OriginalChapter>? chapters = null,
         InstantActionFeature? instantAction = null,
         HangarFeature? hangar = null,
-        CSVM.Flight.CustomPlaneStore? planes = null,
+        CSVM.Flight.Hangar.CustomPlaneStore? planes = null,
         CampaignFeature? campaign = null,
-        Func<CSVM.Session.CampaignProfileStore>? profiles = null,
-        Func<CSVM.Flight.StockLoadouts?>? stock = null,
+        Func<CSVM.Session.Campaign.CampaignProfileStore>? profiles = null,
+        Func<CSVM.Flight.Weapons.StockLoadouts?>? stock = null,
         string? dataRoot = null,
         // Reads the saved options the Options screen shows back; null opens it on the defaults,
         // which is what an engine-free test wants. The shell never writes them.
@@ -386,6 +399,9 @@ public sealed partial class OriginalShell : IOriginalScreenHost
         // The shared rebinding feature the CONTROLS door stands over; null draws that door
         // disabled and leaves the two pages behind it unreachable.
         ControlsFeature? controls = null,
+        // The pad roster the join board signs pads onto; null draws four open entries and answers
+        // no gesture, which is what an engine-free test sees.
+        IJoinRoster? joinRoster = null,
         // The network door the Multiplayer plaque and the cabin's Host Co-op stand over; null
         // draws the plaque disabled and hides the cabin's button.
         NetPlayFeature? net = null)
@@ -408,14 +424,15 @@ public sealed partial class OriginalShell : IOriginalScreenHost
             campaign, _setup, planes, _campaignLayout, this, profiles, _stock, _flightDevices, dataRoot, () => _net);
         Hangar = hangar != null ? new OriginalHangarScreen(hangar, planes, layout, measure, this) : null;
         Wrapup = new OriginalWrapupScreen(_campaignLayout, measure, this, InstantAction.OpenInstantAction);
+        JoinBoard = new OriginalJoinBoard(layout, this, joinRoster);
         Lobby = new OriginalLobbyScreen(
             () => _net, this, dataRoot, _stock,
             () => _setup.Seats.Count > 0 ? _flightDevices(_setup.Seats[0]) : Array.Empty<int>(),
             () => profiles?.Invoke().LastPlayedPilotName);
         Connection = new OriginalConnectionScreen(() => _net, this, dataRoot, Lobby.OpenHost);
         _modules = Hangar != null
-            ? new IOriginalScreenModule[] { InstantAction, Options, Campaign, Hangar, Wrapup, Connection, Lobby }
-            : new IOriginalScreenModule[] { InstantAction, Options, Campaign, Wrapup, Connection, Lobby };
+            ? new IOriginalScreenModule[] { InstantAction, Options, Campaign, Hangar, Wrapup, JoinBoard, Connection, Lobby }
+            : new IOriginalScreenModule[] { InstantAction, Options, Campaign, Wrapup, JoinBoard, Connection, Lobby };
         var plaqueRow = layout.Screen("FlightCheck")?.Widget("FC_B_CHANGEPLANE");
         _plaque = plaqueRow is { Art.Count: > 0 } ? new BoardArt(BoardArtLibrary.Ui, plaqueRow.Art[0], plaqueRow.Frames) : null;
         Inks = ReadInks(layout, plaqueRow);
@@ -535,6 +552,10 @@ public sealed partial class OriginalShell : IOriginalScreenHost
     /// <summary>The module behind the Instant Action wrap-up page, holding the final numbers one
     /// ended mission handed over. It stands empty until a session hands one in.</summary>
     public OriginalWrapupScreen Wrapup { get; }
+
+    /// <summary>The module behind the join board, the one screen a pad signs onto a seat from.
+    /// </summary>
+    public OriginalJoinBoard JoinBoard { get; }
 
     /// <summary>The module behind the Multiplayer Connection page and its games list. It stands on
     /// a shell built without a network door too, with the Multiplayer plaque disabled.</summary>
@@ -1466,6 +1487,9 @@ public sealed partial class OriginalShell : IOriginalScreenHost
                     case DogfightKey:
                         Open(OriginalScreen.Dogfight);
                         break;
+                    case JoinBoardKey:
+                        JoinBoard.Open();
+                        break;
                     case CampaignKey:
                         Campaign.OpenCampaign();
                         break;
@@ -1569,6 +1593,7 @@ public sealed partial class OriginalShell : IOriginalScreenHost
             case OriginalScreen.TopLevel:
                 rows.Add(TextButton(FreeFlightKey, "FREE FLIGHT", DoorX, DoorY, true, 0));
                 rows.Add(TextButton(DogfightKey, "DOGFIGHT", DoorX, DogfightDoorY, true, 0));
+                rows.Add(TextButton(JoinBoardKey, "JOIN BOARD", DoorX, JoinBoardDoorY, true, 0));
                 var main = _layout.Screen(OriginalAvailability.MainMenuSection);
                 foreach (string key in TopLevelButtons)
                 {
@@ -1799,7 +1824,7 @@ public sealed partial class OriginalShell : IOriginalScreenHost
 
     (float X, float Y)? IOriginalScreenHost.Pointer => _pointer;
 
-    CSVM.Flight.CustomPlaneStore? IOriginalScreenHost.CampaignPlanes => Campaign.Planes;
+    CSVM.Flight.Hangar.CustomPlaneStore? IOriginalScreenHost.CampaignPlanes => Campaign.Planes;
 
     CSVM.Mech3.UiStrings IOriginalScreenHost.MenuStrings => MenuStrings;
 

@@ -3,9 +3,15 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using CSVM.Flight;
+using CSVM.Flight.Hud;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
 using CSVM.Net;
 using CSVM.Session;
+using CSVM.Session.Campaign;
+using CSVM.Session.Launch;
+using CSVM.Session.Objectives;
+using CSVM.Session.Roster;
 using CSVM.UI.Menu;
 using CSVM.Utils;
 using Godot;
@@ -344,12 +350,12 @@ internal static class NetCoopMissionSuites
     {
         var launch = door.BuildLaunch()!;
         var own = CampaignLoadout.For(CoopFit.Of(ammo, null), stock);
-        var planes = new[] { UI.PlanePickerRoster.AirframeNode(NetPlayFeature.StarterAirframe) };
+        var planes = new[] { UI.Hangar.PlanePickerRoster.AirframeNode(NetPlayFeature.StarterAirframe) };
         (var roster, seatFits) = Launcher.CoopLaunchField(door, launch.Transport, planes, new[] { own }, stock);
         door.TellSeatFits(seatFits);
         var fits = seatFits;
         return NetCombatSuites.Ends.Open(ctx, Spec(mission, own), launch.Transport, isHost: true, HostSeed,
-            roster, UI.PlanePickerRoster.StockAirframes, seat => Launcher.CoopSeatFitFor(seat, fits, null, stock));
+            roster, UI.Hangar.PlanePickerRoster.StockAirframes, seat => Launcher.CoopSeatFitFor(seat, fits, null, stock));
     }
 
     // A guest's launch: its door waits for the host's opener while the host flies. It then builds a
@@ -371,7 +377,7 @@ internal static class NetCoopMissionSuites
         ctx.Check(door.CoopLaunchDue, $"a guest's door hears the host's opener");
         var launch = door.BuildLaunch()!;
         return NetCombatSuites.Ends.Open(ctx, Spec(mission, CampaignLoadout.For(fit, stock)), launch.Transport,
-            isHost: false, HostSeed + 1, null, UI.PlanePickerRoster.StockAirframes,
+            isHost: false, HostSeed + 1, null, UI.Hangar.PlanePickerRoster.StockAirframes,
             seat => Launcher.CoopSeatFitFor(seat, null, door, stock));
     }
 
@@ -379,7 +385,7 @@ internal static class NetCoopMissionSuites
     // is too, so the suite writes nothing to the user's store.
     private static SessionSpec Spec(CampaignMission mission, LoadoutChoice? fit) =>
         SessionSpec.FromCampaign(SessionSpec.Parse(new[] { "--mute", "--no-pads" }), "", mission.Seq,
-            new[] { UI.PlanePickerRoster.AirframeNode(NetPlayFeature.StarterAirframe) }, 1, new[] { fit });
+            new[] { UI.Hangar.PlanePickerRoster.AirframeNode(NetPlayFeature.StarterAirframe) }, 1, new[] { fit });
 
     // The host's boards on the flight check of the suite's mission, with the starter offered.
     private static void Select(NetPlayFeature host, CampaignMission mission) =>

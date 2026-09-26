@@ -134,6 +134,12 @@ public sealed class SceneBuilder
     /// and every generated shader exactly as they are.</summary>
     public bool DebugClutterFlag;
 
+    /// <summary>Which transparency classes this builder leaves unbuilt (<c>--hide-alpha</c>,
+    /// <c>docs/cli.md</c>). Set by the caller before building, like <see cref="DebugClutterFlag"/>,
+    /// because a hidden class is dropped at the surface rather than switched off at runtime. Empty
+    /// in every ordinary run, so nothing but an isolation capture sees it.</summary>
+    public TransparencyClass HiddenAlpha;
+
     /// <summary>Where a material's own texture flipbook (the gamez `cycle` block) is delivered.
     /// Set by the caller before building; null leaves cycling materials static.</summary>
     public TextureCycler? Cycler;
@@ -176,7 +182,7 @@ public sealed class SceneBuilder
     /// is everywhere, so only the term marks a shader that reads opacity.</summary>
     internal const string OpacityTerm = " * csky_opacity";
 
-    /// <summary>The debug overlays' per-instance tint (<see cref="UI.ClassOverlay"/>), the LAST
+    /// <summary>The debug overlays' per-instance tint (<c>UI.Overlays.ClassOverlay</c>), the LAST
     /// write fragment() makes to ALBEDO, so a tinted object reads as its class colour at any
     /// distance. <c>mix(x, t, 0.0)</c> is exactly <c>x</c>, so the line changes no pixel while the
     /// overlay is off. ⚠ Do not move this into a <c>MaterialOverride</c>/<c>MaterialOverlay</c>.
@@ -384,6 +390,10 @@ void fragment() {
     // and swaps each material's albedo in place, instead of rebuilding the whole aircraft
     // for every slider pixel). Only shader materials carrying an `albedo_tex` are listed.
     private readonly List<(ShaderMaterial Material, string TextureName)> _texturedMaterials = new();
+    // A built world material against the verdict its shader was generated for. The verdict is a
+    // shader variant rather than a parameter, so by the time a surface is committed it is reachable
+    // nowhere else. The material cache also hands one object back for every surface sharing it.
+    private readonly Dictionary<Material, TransparencyClass> _materialAlpha = new();
     private Shader? _lightShader;
 
     /// <param name="fullbright">Render unshaded, like the original's world pass: texture × baked
@@ -416,6 +426,19 @@ void fragment() {
     /// (a light-source glow), or about one fixed axis (an upright tree card, a flame on a
     /// horizontal pipe). This is the gamez model's OWN classification, not a guess of ours.</summary>
     public enum BillboardKind { None, Spherical, CylindricalY, CylindricalX }
+
+    /// <summary>What a drawn thing does with its texture's alpha, split by what draws it. A world
+    /// surface and a clutter card at the same verdict still take different shaders and different
+    /// depth modes. An isolation capture therefore has to name the two separately.</summary>
+    [Flags]
+    public enum TransparencyClass
+    {
+        None = 0,
+        BlendSurface = 1,
+        ScissorSurface = 2,
+        BlendCard = 4,
+        ScissorCard = 8,
+    }
 
     // The rendering-side spelling of ClassifyBillboard's two cylindrical cases: the mesh
     // spins about one fixed world axis to face the camera on the other two, so a tree card or
@@ -454,6 +477,14 @@ void fragment() {
     public int OverlayPassSurfaceCount { get; private set; }
 
     public int OverlayPassDeclinedCount { get; private set; }
+
+    /// <summary>World surfaces committed per transparency class, the census an isolation capture
+    /// (<see cref="HiddenAlpha"/>) is read against. Counts SURFACES, not materials: one cached
+    /// material skins as many surfaces as the world has groups for it.</summary>
+    public int BlendSurfaceCount { get; private set; }
+
+    /// <inheritdoc cref="BlendSurfaceCount"/>
+    public int ScissorSurfaceCount { get; private set; }
 
     /// <summary>Polygons dropped because their material names a texture the retail data lacks and
     /// the original draws nothing for (<see cref="TextureArchive.IsAbsentAndUndrawn"/>). Expected
@@ -562,6 +593,13 @@ void fragment() {
             if (Resolve(texName) is { } tex)
                 mat.SetShaderParameter("albedo_tex", tex);
     }
+
+    /// <summary>The transparency verdict a world material was generated for. The verdict is a
+    /// shader variant rather than a parameter, so this registry is the only way back to it. A
+    /// material this builder did not make reads as <see cref="TransparencyClass.None"/>.</summary>
+    public TransparencyClass AlphaOf(Material? material) =>
+        material != null && _materialAlpha.TryGetValue(material, out var known)
+            ? known : TransparencyClass.None;
 
     /// <summary>The one biased albedo fetch every mip-mapped arm emits, defined in
     /// <c>csky_mip_bias.gdshaderinc</c> beside the global it reads.
@@ -1297,9 +1335,19 @@ void fragment() {
             // The glow/cylindrical paths take only the full clamp: their quads' UVs are
             // authored inside the unit square, so the partial case cannot arise there. They also
             // carry no clutter fade: no 3D decoration in the install is a glow or a facade.
-            st.SetMaterial(glowSprite ? GetGlowMaterial(materialIndex, fogged, clampUv)
+            var surfaceMaterial = glowSprite ? GetGlowMaterial(materialIndex, fogged, clampUv)
                 : cylAxis != CylAxis.None ? GetCylindricalMaterial(materialIndex, cylAxis, lit, fogged, clampUv)
-                : GetMaterial(materialIndex, priority, rank, noClutter, doubleSided, scroll, clampUv, lit, fogged, pass, edgeClamp, clutterFade));
+                : GetMaterial(materialIndex, priority, rank, noClutter, doubleSided, scroll, clampUv, lit, fogged, pass, edgeClamp, clutterFade);
+            var alpha = _materialAlpha.TryGetValue(surfaceMaterial, out var known) ? known : TransparencyClass.None;
+            if (alpha == TransparencyClass.BlendSurface)
+                BlendSurfaceCount++;
+            else if (alpha == TransparencyClass.ScissorSurface)
+                ScissorSurfaceCount++;
+            // ⚠ Drop the surface, never hide the instance. The group is one of several on a shared
+            // mesh, and the classes are isolated from each other, not from the world.
+            if (alpha != TransparencyClass.None && HiddenAlpha.HasFlag(alpha))
+                continue;
+            st.SetMaterial(surfaceMaterial);
             st.Commit(arrayMesh);
         }
         return arrayMesh;
@@ -1522,6 +1570,13 @@ void fragment() {
         return mat;
     }
 
+    // Records the verdict a world material's shader was generated for. Every constructor that can
+    // make a blended or scissored surface calls it. The depth_draw_never variants live on the
+    // billboard shaders, so a census reaching only the bias path would call them opaque.
+    private void NoteAlpha(Material mat, bool blend, bool scissor) =>
+        _materialAlpha[mat] = blend ? TransparencyClass.BlendSurface
+            : scissor ? TransparencyClass.ScissorSurface : TransparencyClass.None;
+
     // A ShaderMaterial that mirrors NewStandard's look but pulls the geometry toward the
     // eye (or pushes it away, negative priority) by a fraction of its view distance.
     // The per-node draw-order term is added at instance level (see BuildSubtree).
@@ -1538,6 +1593,7 @@ void fragment() {
             Shader = GetBiasShader(shaded: !_fullbright, textured: tex != null, blend, scissor, doubleSided,
                 scrolls, clampUv && tex != null, lit, fogged, edgeClamp, clutterFade, water),
         };
+        NoteAlpha(mat, blend, scissor);
         float bias = Mathf.Clamp(priority * DepthBiasPerLevel, -0.05f, 0.05f) + rank * SurfaceRankBias;
         if (noClutter)
             bias += NoClutterLayerBias;
@@ -1804,6 +1860,7 @@ void fragment() {{");
     {
         var mat = new ShaderMaterial { Shader = GetBillboardShader(blend, scissor, glow, lit, fogged, clampUv) };
         mat.SetShaderParameter("albedo_tex", tex);
+        NoteAlpha(mat, blend, scissor);
         return mat;
     }
 
@@ -1901,6 +1958,7 @@ void fragment() {{
     {
         var mat = new ShaderMaterial { Shader = GetCylindricalShader(axis, blend, scissor, glow, lit, fogged, clampUv) };
         mat.SetShaderParameter("albedo_tex", tex);
+        NoteAlpha(mat, blend, scissor);
         return mat;
     }
 

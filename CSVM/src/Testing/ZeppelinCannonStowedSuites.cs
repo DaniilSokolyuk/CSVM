@@ -1,8 +1,8 @@
 using System.Linq;
 using System.Text;
-using CSVM.Flight;
+using CSVM.Flight.Airframe;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
-using CSVM.Session;
 using Godot;
 
 namespace CSVM.Testing;
@@ -99,9 +99,9 @@ internal static class ZeppelinCannonStowedSuites
             }
 
             var barrel = runtime.FindNodes("turret", cannon).FirstOrDefault() ?? gunback;
-            var hatchAt = UI.OrbitCamera.MergedAabb(hatch).GetCenter();
+            var hatchAt = UI.Overlays.OrbitCamera.MergedAabb(hatch).GetCenter();
             report.AppendLine(RayLine("shut hatch", hatchAt, Outward(hatchAt)));
-            report.AppendLine(RayLine("stowed gun", UI.OrbitCamera.MergedAabb(barrel).GetCenter(), Vector3.Down));
+            report.AppendLine(RayLine("stowed gun", UI.Overlays.OrbitCamera.MergedAabb(barrel).GetCenter(), Vector3.Down));
             ctx.Check(RayAt(hatchAt, Outward(hatchAt)).Pool == null,
                 $"a ray onto the shut hatch belongs to no HP pool");
 
@@ -147,7 +147,7 @@ internal static class ZeppelinCannonStowedSuites
                 report.AppendLine($"deployed: gunback visible={gunback.Visible} hatch rot={hatch.Rotation}");
                 ctx.Check(gunback.Visible, $"the authored {DeployAnim} brings gunback into the world");
 
-                var gunAt = UI.OrbitCamera.MergedAabb(barrel).GetCenter();
+                var gunAt = UI.Overlays.OrbitCamera.MergedAabb(barrel).GetCenter();
                 report.AppendLine(RayLine("deployed gun", gunAt, Vector3.Down));
                 var (gunOwner, gunPool) = RayAt(gunAt, Vector3.Down);
                 ctx.Check(gunOwner != null && gunPool == pool

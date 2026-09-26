@@ -1,8 +1,9 @@
 using System.Collections.Generic;
 using System.Linq;
-using CSVM.Flight;
+using CSVM.Flight.Ai;
+using CSVM.Flight.Airframe;
 using CSVM.Mech3;
-using CSVM.Session;
+using CSVM.Session.Campaign;
 using Godot;
 using Xunit;
 
@@ -14,7 +15,7 @@ namespace CSVM.Tests;
 /// and slot 66 <c>armor</c>, applied whenever authored zero or greater. Pins the two gates, the
 /// absent-slot case (blocks are not fixed-width; 33 of 414 stop at 66 fields), and the seam that
 /// carries both from the roster block through <see cref="RosterSpawnPlan"/> and
-/// <see cref="CampaignRosterPlan.SpawnFor"/> to <see cref="AiSpawn"/>, where
+/// <see cref="CampaignRosterPlan.SpawnFor"/> to <see cref="Session.Roster.AiSpawn"/>, where
 /// <see cref="PlaneStats.WithRosterDurability"/> applies them before the difficulty scale.
 /// </summary>
 public class RosterDurabilityOverrideTests

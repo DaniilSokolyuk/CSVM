@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using CSVM.Bindings;
-using CSVM.Flight;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
-using CSVM.Session;
-using CSVM.UI;
+using CSVM.Session.Campaign;
+using CSVM.UI.Hangar;
 using CSVM.UI.Menu;
 using CSVM.UI.Menu.BuiltIn;
+using CSVM.UI.Screens;
 
 namespace CSVM.Testing;
 

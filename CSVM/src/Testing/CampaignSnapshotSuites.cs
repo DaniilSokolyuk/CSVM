@@ -2,10 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
-using CSVM.Flight;
+using CSVM.Flight.Modes;
 using CSVM.Mech3;
-using CSVM.Session;
-using CSVM.UI;
+using CSVM.Session.Campaign;
+using CSVM.Session.Objectives;
+using CSVM.UI.Boards;
+using CSVM.UI.Campaign;
 using Godot;
 
 namespace CSVM.Testing;
@@ -31,15 +33,29 @@ internal static class CampaignSnapshotSuites
     private const float ZoomInsetDx = 10f;
     private const float ZoomInsetDy = 8f;
 
+    // The photographed pane, a 32:9 one like the reported flight's.
+    private const int PaneWidth = 1280;
+    private const int PaneHeight = 360;
+
     // Well outside every stunt marker's radius, so the control run's latch is a crossing.
     private static readonly Vector3 Elsewhere = new(0f, 60000f, 0f);
+
+    // The centred 4:3 window a 640x480 file frames of that pane. Written out rather than taken
+    // from the writer's own rule, so the check stands on its own.
+    private static readonly Rect2I PaneWindow = new(400, 0, 480, 360);
+
+    // The window's colour and the flanks', far enough apart that an 8-bit round trip cannot
+    // confuse them.
+    private static readonly Color Print = new(0.3f, 0.5f, 0.2f);
+    private static readonly Color Flank = new(0.9f, 0.1f, 0.8f);
 
     [Suite("campaign-danger-zone-snapshot",
         "the campaign Danger Zone photograph over C3/M01's own dzpath1 gates: the mission's "
         + "dzones.zrd binds the zone to the objective number SCRAPBOOK.CSV's Snap_1_18 row names, "
         + "a crossing of the authored gates stages the pilot's photograph under that name in a scratch "
         + "profile directory, winning the mission keeps it at the row's own name and sets the "
-        + "zone's mask bit, the written file is the 640x480 every retail photograph is, the "
+        + "zone's mask bit, the written file is the 640x480 every retail photograph is and frames "
+        + "the wide pane's centred 4:3 window rather than squeezing the whole pane into it, the "
         + "scrapbook forces the print into its 164x123 page region and draws it under its "
         + "photo-corner mount with the zoom's torn mount over it, a spread composed without the file on disk "
         + "skips the row, a stunt Instant Action run writes its own shots and no Snap_ file, and a "
@@ -143,6 +159,9 @@ internal static class CampaignSnapshotSuites
         {
             ctx.Same(CampaignSnapshot.Width, written.GetWidth(), $"the file is the written width every retail photograph is");
             ctx.Same(CampaignSnapshot.Height, written.GetHeight(), $"…and its height");
+            string? off = OffThePrint(written);
+            ctx.Check(off == null,
+                $"…and holds the {PaneWidth}x{PaneHeight} pane's centred 4:3 window alone, neither the whole pane squeezed into it nor a letterbox{off}");
         }
 
         Draws(ctx, store, profile, mission, row, kept, report);
@@ -395,12 +414,34 @@ internal static class CampaignSnapshotSuites
         return null;
     }
 
-    // The pane both halves photograph: a solid frame, so the verdict rests on which file is
-    // written rather than on what a headless host happened to render.
+    // The pane both halves photograph: a 32:9 frame whose centred 4:3 window is one flat colour
+    // and whose flanks are another. The verdict then rests on which file is written and on what
+    // the writer framed, not on what a headless host happened to render.
     private static Image Pane()
     {
-        var img = Image.CreateEmpty(320, 240, false, Image.Format.Rgba8);
-        img.Fill(new Color(0.3f, 0.5f, 0.2f));
+        var img = Image.CreateEmpty(PaneWidth, PaneHeight, false, Image.Format.Rgba8);
+        img.Fill(Flank);
+        img.FillRect(PaneWindow, Print);
         return img;
+    }
+
+    // Every pixel of the written print is the pane's centred window. A wide pane squeezed whole
+    // into the file carries the flank colour at the sides, and a letterbox its bars.
+    private static string? OffThePrint(Image written)
+    {
+        for (int y = 1; y < written.GetHeight(); y += 37)
+        {
+            for (int x = 1; x < written.GetWidth(); x += 37)
+            {
+                var pixel = written.GetPixel(x, y);
+                if (Mathf.Abs(pixel.R - Print.R) > 0.02f || Mathf.Abs(pixel.G - Print.G) > 0.02f
+                    || Mathf.Abs(pixel.B - Print.B) > 0.02f)
+                {
+                    return $", {x},{y} is {pixel}";
+                }
+            }
+        }
+
+        return null;
     }
 }

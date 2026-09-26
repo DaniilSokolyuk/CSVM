@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using CSVM.Effects;
+using CSVM.Mech3;
 using CSVM.Mech3.Anim;
 using Godot;
 

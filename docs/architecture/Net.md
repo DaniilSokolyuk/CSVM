@@ -61,7 +61,7 @@ will not open, so a Steam build reaches a board as a line of text rather than a 
 
 ## src/Net/NetCarrier.cs
 Which carrier a match runs over, chosen once: the menu door's registration in
-`Session/Launcher.cs` and the command line's own open both come through `Host` and `Join` here, so
+`Session/Launch/Launcher.cs` and the command line's own open both come through `Host` and `Join` here, so
 a build changes carrier without an edit above the seam. `UsesSteam` is the switch and `Name` is
 the word for a log line. `PortMap` and `PortUnmap` are the router door a direct-IP host asks for,
 and are null for a carrier that is reachable without one, which a door shows as no mapping.

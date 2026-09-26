@@ -7,7 +7,7 @@ namespace CSVM.Mech3;
 /// The <c>vehicle.json</c> def table read for what a roster spawn needs to know about a block
 /// before an airframe is built: whether the def exists, which <c>mode</c> it resolves through
 /// <c>kind_of</c>, which player airframe node its model is, and whether it derives from that
-/// airframe's base def. <see cref="Flight.PlaneStats"/> is the full read of one def; this is the
+/// airframe's base def. <c>Flight.Airframe.PlaneStats</c> is the full read of one def; this is the
 /// index over all of them (docs/formats/vehicle.md "<c>mode</c>", docs/org/aiPilot.md).
 /// </summary>
 public sealed class VehicleDefs
@@ -113,7 +113,7 @@ public sealed class VehicleDefs
     }
 
     /// <summary>The player airframe node an AI def's model is built from, resolved the way
-    /// <see cref="Flight.PlaneStats.LoadForAi"/> wants it named: the first ancestor whose
+    /// <c>Flight.Airframe.PlaneStats.LoadForAi</c> wants it named: the first ancestor whose
     /// <c>p</c>-prefixed twin is a player def (<c>wingman</c> → <c>devastator</c> →
     /// <c>pdevastator</c> → <c>player_pfighter</c>), else the nearest <c>nodename</c> up the chain
     /// mapped the same way (<c>bswingman</c> names <c>fury</c> → <c>pfury</c>). Null for a def
@@ -195,20 +195,20 @@ public sealed class VehicleDefs
     /// (docs/org/aiPilot/aiWeapons.md, "The weapon list, and who builds it"). ⚠ That builder runs
     /// for EVERY vehicle the def parser sees, a hull as much as an aeroplane, which is why this
     /// lives here and not on the aircraft path. Empty when nothing up the chain authors one.</summary>
-    public IReadOnlyList<Flight.AiWeaponSlot> WeaponsOf(string def)
+    public IReadOnlyList<AiWeaponSlot> WeaponsOf(string def)
     {
         foreach (var d in Chain(def))
         {
             if (d.List("weapons") is not { } list)
                 continue;
-            var slots = new List<Flight.AiWeaponSlot>();
+            var slots = new List<AiWeaponSlot>();
             foreach (var entry in list)
             {
                 if (entry is List<object?> { Count: >= 5 } w && w[0] is string id
                     && w[1] is float rounds && w[2] is float refire
                     && w[3] is float minRange && w[4] is float maxRange)
                 {
-                    slots.Add(new Flight.AiWeaponSlot
+                    slots.Add(new AiWeaponSlot
                     {
                         WeaponId = id,
                         Rounds = (int)rounds,
@@ -220,7 +220,7 @@ public sealed class VehicleDefs
             }
             return slots;
         }
-        return Array.Empty<Flight.AiWeaponSlot>();
+        return Array.Empty<AiWeaponSlot>();
     }
 
     /// <summary>The def's <c>attack</c>, the nearest authored one up the <c>kind_of</c> chain: the
@@ -258,4 +258,21 @@ public sealed class VehicleDefs
             cur = d.Str("kind_of");
         }
     }
+}
+
+/// <summary>One entry of an AI vehicle def's <c>weapons</c> block: the authored 5-tuple
+/// <c>[weapon_id, rounds_carried, refire_interval_s, min_range_m, max_range_m]</c>, decoded from the
+/// builder <c>FUN_004b59b0</c> (docs/org/aiPilot/aiWeapons.md). Guns and ordnance share the block;
+/// nothing separates them but the weapon def's own <c>CANNON</c> flag.
+/// ⚠ Five base defs author <see cref="RefireSeconds"/> and <see cref="MinRangeM"/> transposed
+/// against the militia variants, so they run a 200-second ordnance refire (the list is in
+/// docs/org/aiPilot/aiWeapons.md). That is shipped data: the
+/// original's reader takes element 3 as the interval in every case, and so does this.</summary>
+public sealed class AiWeaponSlot
+{
+    public string WeaponId = "";
+    public int Rounds;
+    public float RefireSeconds;
+    public float MinRangeM;
+    public float MaxRangeM;
 }

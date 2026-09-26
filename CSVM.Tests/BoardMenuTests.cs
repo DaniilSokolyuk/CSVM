@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using CSVM.UI;
+using CSVM.UI.Boards;
 using Xunit;
 
 namespace CSVM.Tests;

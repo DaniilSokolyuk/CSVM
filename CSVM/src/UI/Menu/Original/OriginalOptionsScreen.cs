@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using CSVM.Bindings;
+using CSVM.UI.Boards;
 
 namespace CSVM.UI.Menu.Original;
 
@@ -95,10 +96,6 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
 
     /// <summary>The VIDEO page's enhanced-graphics checkbox.</summary>
     public const string GraphicsKey = "GRAPHICS";
-
-    /// <summary>The VIDEO page's rocket-crater checkbox, over the row the Clutter Detail tier
-    /// stood on.</summary>
-    public const string RocketCratersKey = "ROCKETCRATERS";
 
     /// <summary>The Options hub's fourth door, onto the CONTROLS page.</summary>
     public const string ControlsDoorKey = "PF_B_CONTROLS";
@@ -312,19 +309,19 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
     // The three IDS_DIFFICULTY rows as the campaign selector labels them.
     private static readonly string[] DifficultyWords =
     {
-        CSVM.Flight.Difficulty.Label(CSVM.Flight.Difficulty.Normal),
-        CSVM.Flight.Difficulty.Label(CSVM.Flight.Difficulty.Hard),
-        CSVM.Flight.Difficulty.Label(CSVM.Flight.Difficulty.Hardest),
+        CSVM.Flight.Hangar.Difficulty.Label(CSVM.Flight.Hangar.Difficulty.Normal),
+        CSVM.Flight.Hangar.Difficulty.Label(CSVM.Flight.Hangar.Difficulty.Hard),
+        CSVM.Flight.Hangar.Difficulty.Label(CSVM.Flight.Hangar.Difficulty.Hardest),
     };
 
     // The Default View dropdown's own three items, the words and the order the original's list
-    // carries. They come from CSVM.Flight.PilotView.Selectable and .Label, decoded from uiData 2127
+    // carries. They come from CSVM.Flight.Camera.PilotView.Selectable and .Label, decoded from uiData 2127
     // in crimson.exe (docs/org/menu-inventory.md holds the addresses).
     private static readonly string[] DefaultViewWords =
     {
-        CSVM.Flight.PilotView.Label(CSVM.Flight.PilotView.Selectable[0]),
-        CSVM.Flight.PilotView.Label(CSVM.Flight.PilotView.Selectable[1]),
-        CSVM.Flight.PilotView.Label(CSVM.Flight.PilotView.Selectable[2]),
+        CSVM.Flight.Camera.PilotView.Label(CSVM.Flight.Camera.PilotView.Selectable[0]),
+        CSVM.Flight.Camera.PilotView.Label(CSVM.Flight.Camera.PilotView.Selectable[1]),
+        CSVM.Flight.Camera.PilotView.Label(CSVM.Flight.Camera.PilotView.Selectable[2]),
     };
 
     // The checkbox's two words, in the order its eight-frame strip reads them: index 0 unchecked,
@@ -342,13 +339,13 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
     {
         new(DifficultyKey, "Difficulty", _ => "Select the difficulty level for a solo campaign.",
             OriginalRowKind.Dropdown, DifficultyWords,
-            s => CSVM.Flight.Difficulty.Clamp(s._difficulty),
-            (s, i) => s._difficulty = CSVM.Flight.Difficulty.Clamp(i)),
+            s => CSVM.Flight.Hangar.Difficulty.Clamp(s._difficulty),
+            (s, i) => s._difficulty = CSVM.Flight.Hangar.Difficulty.Clamp(i)),
         new(DefaultViewKey, "Default View", _ => "Select your default view.",
             OriginalRowKind.Dropdown, DefaultViewWords,
             s => IndexOfView(s._defaultView),
-            (s, i) => s._defaultView = CSVM.Flight.PilotView.Name(
-                CSVM.Flight.PilotView.Selectable[Math.Clamp(i, 0, CSVM.Flight.PilotView.Selectable.Count - 1)])),
+            (s, i) => s._defaultView = CSVM.Flight.Camera.PilotView.Name(
+                CSVM.Flight.Camera.PilotView.Selectable[Math.Clamp(i, 0, CSVM.Flight.Camera.PilotView.Selectable.Count - 1)])),
         new(AutoHeadTurnKey, "Auto Head Turn",
             _ => "Select to turn your head automatically as your aircraft turns.",
             OriginalRowKind.Radio, NearestAfterKillWords,
@@ -424,11 +421,6 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
             OriginalRowKind.Dropdown, _ => DisplaySettingRows.VSyncLabels,
             s => DisplaySettingRows.WordIndex(CSVM.Utils.DisplayWords.VSyncChoices, s._vsync, CSVM.Utils.VSyncSetting.Default),
             (s, i) => s._vsync = CSVM.Utils.DisplayWords.VSyncChoices[i]),
-        new(RocketCratersKey, "Rocket Craters", "VP_T_ClutterTitle", "VP_B_CLUTTER", "VP_T_ClutterDESC",
-            _ => "Let a rocket's ground burst dig a crater and flatten what stood in it. The original digs none.",
-            OriginalRowKind.Radio, _ => NearestAfterKillWords,
-            s => s._rocketCraters == true ? 1 : 0,
-            (s, i) => s._rocketCraters = i == 1),
         new(GraphicsKey, "Enhanced Graphics", "VP_T_ShadowsTitle", "VP_B_SHADOWS", "VP_T_ShadowsDESC",
             s => s.GraphicsDescription(), OriginalRowKind.Radio, _ => GraphicsWords,
             s => s._graphics == CSVM.Utils.GraphicsMode.EnhancedWord ? 1 : 0,
@@ -512,10 +504,7 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
     private int _keysTab;
     private int _keysTop;
     private string _graphics = CSVM.Utils.GraphicsMode.Default;
-    // The rocket carve as saved, held nullable for the reason the targeting setting is, and read as
-    // off while never set: the original carves nothing in play, so nobody gets a bowl unasked.
-    private bool? _rocketCraters;
-    private int _difficulty = CSVM.Flight.Difficulty.Normal;
+    private int _difficulty = CSVM.Flight.Hangar.Difficulty.Normal;
     // The targeting setting as saved, null while never set, which the consumer reads as off. It is
     // held nullable rather than as the checkbox's own 0/1. A page that never showed it then hands
     // back "never set" instead of writing a choice the player did not make.
@@ -616,9 +605,6 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
     /// <summary>The graphics mode word the VIDEO page would apply.</summary>
     public string GraphicsChoice => _graphics;
 
-    /// <summary>Whether the VIDEO page would apply the rocket carve, null while never set.</summary>
-    public bool? RocketCratersChoice => _rocketCraters;
-
     /// <summary>The screen index (<see cref="CSVM.Utils.MonitorSetting.Word"/>'s spelling) the
     /// VIDEO page would apply, or null while nothing has been saved and no row has been
     /// touched.</summary>
@@ -651,7 +637,7 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
     /// <summary>The Voice level the AUDIO page would apply, or null while never set.</summary>
     public int? AudioVoiceChoice => _audioVoice;
 
-    /// <summary>The difficulty tier (<see cref="CSVM.Flight.Difficulty"/>) the Game Options page
+    /// <summary>The difficulty tier (<see cref="CSVM.Flight.Hangar.Difficulty"/>) the Game Options page
     /// would apply.</summary>
     public int DifficultyChoice => _difficulty;
 
@@ -664,7 +650,7 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
     public bool? RumbleChoice => _rumble;
 
     /// <summary>The opening view the Game Options page would apply, a
-    /// <see cref="CSVM.Flight.PilotView.Name"/> word, or null while nothing has been saved and no
+    /// <see cref="CSVM.Flight.Camera.PilotView.Name"/> word, or null while nothing has been saved and no
     /// row has been touched.</summary>
     public string? DefaultViewChoice => _defaultView;
 
@@ -969,8 +955,7 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
     {
         var saved = _options?.Invoke();
         _graphics = saved?.GraphicsMode ?? CSVM.Utils.GraphicsMode.Default;
-        _rocketCraters = saved?.RocketCraters;
-        _difficulty = CSVM.Flight.Difficulty.Parse(saved?.Difficulty) ?? CSVM.Flight.Difficulty.Normal;
+        _difficulty = CSVM.Flight.Hangar.Difficulty.Parse(saved?.Difficulty) ?? CSVM.Flight.Hangar.Difficulty.Normal;
         _nearestAfterKill = saved?.NearestAfterKill;
         _rumble = saved?.Rumble;
         _defaultView = saved?.DefaultView;
@@ -990,10 +975,10 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
     // page writes the ones it shows and hands the rest back as ReadSavedOptions read them. That
     // keeps Launcher.ApplyOptions the options file's one writer.
     private OptionsApplyExit AppliedOptions() =>
-        new(_graphics, CSVM.Flight.Difficulty.Word(_difficulty),
+        new(_graphics, CSVM.Flight.Hangar.Difficulty.Word(_difficulty),
             _monitorIndex, _resolution, _displayMode, _vsync,
             _audioMaster, _audioMusic, _audioEffects, _audioVoice, _nearestAfterKill, _rumble,
-            _defaultView, _autoHeadTurn, _rocketCraters);
+            _defaultView, _autoHeadTurn);
 
     // Back from a page: the saved settings are read again, so an edit the player declined is gone.
     private void BackToPreferences()
@@ -1371,6 +1356,7 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
             dropHeight,
             box != null ? box.Int("X") - titleX : GameOptionCheckDx,
             checkDy,
+            checkHeight,
             description?.Int("X", (int)GameOptionDescX) ?? GameOptionDescX,
             descDy,
             description?.Int("Width", (int)GameOptionDescWidth) ?? GameOptionDescWidth,
@@ -1508,10 +1494,10 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
     // not carry, and a never-set field, read as Chase, which is what an unset opening view flies.
     private static int IndexOfView(string? word)
     {
-        var mode = CSVM.Flight.PilotView.Parse(word ?? string.Empty) ?? CSVM.Flight.PilotViewMode.Chase;
-        for (int i = 0; i < CSVM.Flight.PilotView.Selectable.Count; i++)
+        var mode = CSVM.Flight.Camera.PilotView.Parse(word ?? string.Empty) ?? CSVM.Flight.Camera.PilotViewMode.Chase;
+        for (int i = 0; i < CSVM.Flight.Camera.PilotView.Selectable.Count; i++)
         {
-            if (CSVM.Flight.PilotView.Selectable[i] == mode)
+            if (CSVM.Flight.Camera.PilotView.Selectable[i] == mode)
             {
                 return i;
             }
@@ -1635,9 +1621,8 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
         for (int i = 0; i < GameOptions.Length; i++)
         {
             var option = GameOptions[i];
-            layers.Lines.Add(new BoardLine(option.Title, page.TitleX, page.RowY(i), page.TitleWidthFor(option.Kind),
-                GameOptionTitleFont, BoardInk.Row, -1, false,
-                option.Kind == OriginalRowKind.Radio ? BoardJustify.Center : BoardJustify.Left));
+            layers.Lines.Add(new BoardLine(option.Title, page.TitleX, page.TitleYFor(i, option.Kind),
+                page.TitleWidthFor(option.Kind), GameOptionTitleFont, BoardInk.Row));
             layers.Lines.Add(new BoardLine(option.Description(this), page.DescX, page.DescY(i), page.DescWidth,
                 GameOptionDescFont, BoardInk.Row));
         }
@@ -2887,12 +2872,12 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
 
     // The Game Options page's row shape in authored pixels, every number off the section's own
     // widgets. It is the title column, the first row's line and every row's own line. The
-    // dropdown box, the checkbox's offset from its row, the description column and the two
-    // controls' strips follow.
+    // dropdown box, the checkbox's offset from its row and its own height, the description column
+    // and the two controls' strips follow.
     private sealed record GameOptionsPage(
         float TitleX, float TitleWidth, float CheckTitleWidth, float FirstY, IReadOnlyList<float> Lines,
         float DropX, float DropDy, float DropWidth, float ItemHeight,
-        float CheckDx, float CheckDy, float DescX, float DescDy, float DescWidth,
+        float CheckDx, float CheckDy, float CheckHeight, float DescX, float DescDy, float DescWidth,
         BoardArt? Arrow, BoardArt? Box, int ExtraRows)
     {
         // How far the plate's growth took the two plaques and everything else standing on its
@@ -2913,6 +2898,17 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
                 ? first
                 : MathF.Floor(first + ((last - first) * Math.Clamp(row, 0, Lines.Count - 1) / (Lines.Count - 1)));
         }
+
+        // Where a row's own words stand. A dropdown row's title keeps the row's line, its box
+        // opening under it. A checkbox row's title stands on its box's centre line instead, the box
+        // being taller than the face and standing beside the words. That is what the VIDEO section
+        // authors for the same pair, its clutter title seven pixels under a 29-pixel box against a
+        // 14-pixel face. A line is drawn from the top of its own em box, so half the difference
+        // between the two centres it.
+        public float TitleYFor(int row, OriginalRowKind kind) =>
+            kind == OriginalRowKind.Radio
+                ? RowY(row) + CheckDy + MathF.Floor((CheckHeight - GameOptionTitleFont) / 2f)
+                : RowY(row);
 
         // A checkbox row takes the head-turn row's own narrower title box, which leaves the box
         // beside it clear of the words. A dropdown row takes the wide one.

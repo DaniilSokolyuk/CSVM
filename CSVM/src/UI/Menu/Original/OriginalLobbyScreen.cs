@@ -2,9 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using CSVM.Flight;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
 using CSVM.Net;
 using CSVM.Session;
+using CSVM.Session.Campaign;
+using CSVM.UI.Boards;
+using CSVM.UI.Campaign;
+using CSVM.UI.Hangar;
 
 namespace CSVM.UI.Menu.Original;
 

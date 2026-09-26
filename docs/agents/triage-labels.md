@@ -12,10 +12,10 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
 
-The internal tracker is markdown, not a labelled issue system, so there is nothing
-there to apply a label *to*: record the role inline in the `backlog.md` entry as a
-`Status: <role>` line. A public GitHub issue does carry real labels, and the strings
-above are the ones to create and use there; the bug form applies `bug` by itself.
-See `issue-tracker.md`.
+All five labels exist on `Laeresh/CSVM`, alongside the `backlog`, `playtest` and
+`capture` category labels that `issue-tracker.md` defines. Apply a triage role with
+`gh issue edit <number> --add-label <role>`. The bug form applies `bug` by itself, so a
+fresh public report gets `needs-triage` at triage time, not from the form. A `backlog.md`
+entry that has not moved to an issue yet records its role inline as a `Status: <role>` line.
 
 Edit the right-hand column to match whatever vocabulary you actually use.

@@ -283,18 +283,20 @@ underside and the walls too and place several times the field.
 `FogVolumeClutter` and its generated card shader carry the pose, the colour path and the alpha path
 above.
 
-- **The pose is the shortest arc, taken from the card's authored facing.** `csky_facade_spherical`
+- **The pose is a world-up look-at standing in for the tracker.** `csky_facade_spherical`
   in [`../../CSVM/shaders/csky_facade.gdshaderinc`](../../CSVM/shaders/csky_facade.gdshaderinc)
-  builds the rotation that carries local `+Z` onto the direction from the card to the eye with no
-  twist about it, in closed form, and every `SphericalY` population takes it: the `fvol` deck
-  cards, the `cloudparent` facades, and the glow sprites that share their dispatch. The eye's basis
-  is not read, so the camera's roll cannot reach a card, which is the property the decode above
-  turns on. Two differences from the original remain, both structural: a shader holds no state, so
-  the arc is taken from the authored facing every frame instead of accumulating from the previous
-  one (the same pose the original shows on its first frame, differing afterwards only by the twist
-  a looping camera path would have transported), and the singularity therefore sits at a fixed
-  `f = -Z` rather than following the tracker. For a deck card, whose authored normal points up,
-  that direction lies inside the set the view-angle term has already culled.
+  points the card's `+Z` at the eye and takes its `+Y` as the world's up projected off that line,
+  and every `SphericalY` population takes it: the `fvol` deck cards, the `cloudparent` facades,
+  the stamped clutter glows, and the glow sprites that share their dispatch. The eye's basis is
+  not read, so the camera's roll cannot reach a card, which is the property the decode above turns
+  on, and the up hint is constant, so translating past a card cannot roll it either. A shader
+  holds no state, so the tracker itself is not reproduced; each of its steps is twist-free and
+  keeps the roll a card started with, so away from the pole this look-at is the pose it settles
+  into. ⚠ A closed-form shortest arc from a fixed axis is not that pose: its twist depends on
+  where the eye stands, and sliding sideways past a card that lies behind the axis rolls it
+  through most of a half turn. The one direction this look-at is degenerate in is the eye straight
+  above or below a card, where the up hint falls back to the world's `+Z`; a round puff seen face
+  on hides the roll it takes there.
 - **The colour is the authored 240, unscaled, and the only thing that ever multiplies it is the
   original's own per-vertex directional term.** A chapter authoring its card `lighting: true` (C1C,
   C2B and C5) takes `AMBIENT + DIFFUSE · max(N·L, 0)` per corner on the card's three authored
@@ -326,11 +328,15 @@ The perturbation itself is the original's to the constant: one magnitude, then `
 axis. Fixing either difference moves the placed field and every cloud golden, and is a separate
 change.
 
-**`--cloud-jitter=<m>` is a remake-only departure, default 0.** Because the original's own ±10 m on
-a 130 m lattice leaves its rows standing, a regular lattice seen along the deck can read as rows in
-either build. The knob adds a uniform X/Z offset of up to `m` metres per axis to each lattice card
-after every decoded draw, off its own `cloudjitter` stream, so every value lays the same seeded
+**The shipped field is the decoded lattice plus a remake-only 30 m offset** (`--cloud-jitter=<m>`,
+default 30, `FogVolumeClutter.ShippedJitter`). Because the original's own ±10 m on a 130 m lattice
+leaves its rows standing, a regular lattice seen along the deck reads as rows in either build. At
+30 m the rows stop reading along the C1 and C1C decks at the controls, which is what sets the
+value. The offset is uniform on X/Z, up to `m` metres per axis, applied to each lattice card after
+every decoded draw off its own `cloudjitter` stream, so every value of the knob lays the same seeded
 field; the map-edge ring, whose cards are already uniform in their cells, is left alone.
+`--cloud-jitter=0` renders the decoded lattice itself, which is the control a cloud render is
+differenced against.
 
 ⚠ **Two quantities are still inferred.** The per-volume reference point the perpendicular offset
 runs away from is taken as the volume's own bounds centre, which gives the direction the decode

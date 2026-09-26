@@ -29,10 +29,10 @@ internal static class DisplaySettingsSuites
     // it, so the check reads the same on the hidden test desktop and at the controls.
     private const string CustomSize = "640x480";
 
-    // Where the size row stands on the built-in Options screen, under difficulty, the opening
-    // view, the automatic head turn, the targeting switch, the rumble toggle, the graphics mode,
-    // the rocket carve and the monitor.
-    private const int BuiltInResolutionRow = 8;
+    // Where the size row stands on the built-in Options screen. Seven rows stand over it:
+    // difficulty, the opening view, the automatic head turn, the targeting switch, the rumble
+    // toggle, the graphics mode and the monitor.
+    private const int BuiltInResolutionRow = 7;
 
     // Every field OptionsDef carries, with a value the store validates and whether it is a display
     // setting, which is what makes it something no deterministic run may read. The list is compared
@@ -44,7 +44,7 @@ internal static class DisplaySettingsSuites
     {
         ("MenuPresentation", "original", false),
         ("GraphicsMode", GraphicsMode.EnhancedWord, false),
-        ("Difficulty", Flight.Difficulty.Word(Flight.Difficulty.Hard), false),
+        ("Difficulty", Flight.Hangar.Difficulty.Word(Flight.Hangar.Difficulty.Hard), false),
         ("NearestAfterKill", true, false),
         ("Rumble", false, false),
         ("DefaultView", "cockpit", false),
@@ -581,7 +581,7 @@ internal static class DisplaySettingsSuites
     private static void BuiltInCustomSizeRow(TestContext ctx)
     {
         var host = MenuSuiteHost.Bare(new List<MenuExit>(), ctx.DataRoot, out var seat);
-        var menu = CSVM.UI.LaunchMenu.Build(ctx.ZrdrPath, ctx.DataRoot, host, seat.Input);
+        var menu = CSVM.UI.Screens.LaunchMenu.Build(ctx.ZrdrPath, ctx.DataRoot, host, seat.Input);
         ctx.Host.AddChild(menu);
         try
         {

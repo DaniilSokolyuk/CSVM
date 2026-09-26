@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using CSVM.Flight;
+using CSVM.Flight.Weapons;
 using CSVM.Mech3;
 using CSVM.Utils;
 
@@ -195,6 +195,12 @@ public sealed class InstantActionFeature : IMenuFeature
     /// <summary>The one fit every wingman flies (the original's Player/Wingman radio is not per
     /// wingman), edited in place by a presentation's loadout screen; stock until it is.</summary>
     public LoadoutChoice WingmanFit { get; private set; } = new();
+
+    /// <summary>The fit a launch hands the wingmen: <see cref="WingmanFit"/> once it is edited, and
+    /// null for the stock fit. Also null when no wingmen fly (none set, or the ace duel), so a stale
+    /// pick cannot outlive the count going to 0.</summary>
+    public LoadoutChoice? LaunchWingmanFit =>
+        IsAceDuel || NumWingmen <= 0 || WingmanFit.IsStock ? null : WingmanFit;
 
     /// <summary>The player's airframe row, as the presets and a single-seat presentation pick it.
     /// A presentation with its own roster passes the flown name to <see cref="BuildExit"/> instead.</summary>
@@ -470,11 +476,10 @@ public sealed class InstantActionFeature : IMenuFeature
             NumWingmen,
             WingmanPlane.Name,
             BuildWaves(),
-            Lives,
-            WingmanFit.IsStock ? null : WingmanFit);
+            Lives);
 
-    /// <summary>The typed exit for the confirmed seats, in seat order: the environment's chapter,
-    /// the seats, the Instant Action mode and the built def. Throws when the gate is closed or a
+    /// <summary>The typed exit for the confirmed seats, in seat order. It carries the environment's
+    /// chapter, the seats, the mode, the built def and <see cref="LaunchWingmanFit"/>. Throws when the gate is closed or a
     /// seat names no plane, so a half-built launch cannot leave the menu.</summary>
     public LaunchExit BuildExit(IReadOnlyList<MenuSeatChoice> seats, string? playerPlane = null)
     {
@@ -492,7 +497,8 @@ public sealed class InstantActionFeature : IMenuFeature
             }
         }
 
-        return new LaunchExit(Environment.Code, seats, Mode, BuildDef(playerPlane));
+        return new LaunchExit(Environment.Code, seats, Mode, BuildDef(playerPlane),
+            WingmanLoadout: LaunchWingmanFit);
     }
 
     /// <summary>Puts every field back to the screen's opening state: the first environment, the

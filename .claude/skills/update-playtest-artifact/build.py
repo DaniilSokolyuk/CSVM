@@ -1,11 +1,14 @@
-# Regenerate the playtest Artifact page from playtest.md.
+# Regenerate the playtest Artifact page from playtest.md and the GitHub issue tracker.
 #
-#   python build.py <output.html>
+#   python build.py [--no-issues] <output.html>
 #
 # Parses section 0 into CAP_DATA (themed capture tables) and section 1 into
-# PT_DATA (flight profiles with their PT items), and injects both as JSON in
-# place of the template's __CAP_DATA__ / __PT_DATA__ placeholders. The plane
-# code->name map is read live from the file's "Plane model names" line.
+# PT_DATA (flight profiles with their PT items), then appends the open
+# `capture`-labelled issues as one more CAP theme and the open `playtest`-labelled
+# issues as one more profile (both named "GitHub issues", ids "#N"), read through
+# `gh issue list`, and injects both as JSON in place of the template's
+# __CAP_DATA__ / __PT_DATA__ placeholders. The plane code->name map is read live
+# from the file's "Plane model names" line. --no-issues skips the tracker.
 #
 # This file is UTF-8 and contains the separators playtest.md itself uses; all
 # file I/O is explicit UTF-8. Edit it with the Read/Edit/Write tools only - a
@@ -16,6 +19,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -227,11 +231,111 @@ def parse_profiles(block, planes):
     return profiles
 
 
+ISSUE_THEME = "GitHub issues"
+HEADING = re.compile(r"^##\s+(.+?)\s*$", re.M)
+CODE_SPAN = re.compile(r"`([^`\n]*RunGame\.ps1[^`\n]*)`")
+CODE_BLOCK = re.compile(r"```(?:powershell)?\s*\n(.*?)\n```", re.S)
+REF = re.compile(r"\bBL-\d+\b|(?<![\w/])#\d+\b")
+
+
+def gh_issues(label):
+    """Open issues carrying one label, as gh's JSON. Raises on a gh failure."""
+    cmd = ["gh", "issue", "list", "--state", "open", "--label", label, "--limit", "500",
+           "--json", "number,title,body"]
+    out = subprocess.run(cmd, capture_output=True, cwd=REPO, shell=(os.name == "nt"))
+    if out.returncode != 0:
+        raise RuntimeError(out.stderr.decode("utf-8", "replace").strip() or "gh issue list failed")
+    return sorted(json.loads(out.stdout.decode("utf-8")), key=lambda i: i["number"])
+
+
+def sections(body):
+    """An issue body -> (lead paragraph, {heading: text}) on its `## ` headings."""
+    body = (body or "").replace("\r\n", "\n")
+    parts = HEADING.split(body)
+    lead = parts[0].strip()
+    named = {}
+    for k in range(1, len(parts) - 1, 2):
+        named[parts[k].strip().lower()] = parts[k + 1].strip()
+    return lead, named
+
+
+def find(named, *words):
+    """The first section whose heading contains one of the words, else ''."""
+    for heading, text in named.items():
+        if any(w in heading for w in words):
+            return text
+    return ""
+
+
+def bullets(text):
+    """A section's prose (one entry, if any) then its '- ' bullets, each collapsed."""
+    text = text.strip()
+    if not text:
+        return []
+    first = re.search(r"^\s*-\s", text, re.M)
+    if not first:
+        return [collapse(text)]
+    items = [collapse(text[:first.start()])] if text[:first.start()].strip() else []
+    items += [collapse(m.group(1))
+              for m in re.finditer(r"^\s*-\s+(.+?)(?=\n\s*-\s|\n\n|\Z)", text[first.start():], re.S | re.M)]
+    return items
+
+
+def issue_captures():
+    """`capture` issues -> one CAP theme, or None when there are none."""
+    rows = []
+    for issue in gh_issues("capture"):
+        lead, named = sections(issue["body"])
+        detail = find(named, "in frame", "audible", "what to")
+        unblocks = find(named, "unblock")
+        if not unblocks:
+            unblocks = ", ".join(sorted(set(REF.findall(issue["body"] or "")) - {"#%d" % issue["number"]}))
+        rows.append({"id": "#%d" % issue["number"], "capture": issue["title"].strip(),
+                     "detail": collapse(detail or lead), "unblocks": collapse(unblocks)})
+    if not rows:
+        return None
+    return {"theme": ISSUE_THEME, "detailLabel": "What must be in frame", "rows": rows}
+
+
+def issue_profile(planes):
+    """`playtest` issues -> one profile, or None when there are none.
+
+    An issue carries its own launch line, so the profile's command is the first
+    one found and each item's own line goes in its notes when it differs.
+    """
+    items, commands = [], []
+    for issue in gh_issues("playtest"):
+        lead, named = sections(issue["body"])
+        launch = find(named, "launch", "command", "how to")
+        cm = CODE_SPAN.search(launch) or CODE_SPAN.search(issue["body"] or "") \
+            or CODE_BLOCK.search(launch) or CODE_BLOCK.search(issue["body"] or "")
+        command = cm.group(1).strip() if cm else ""
+        if command:
+            commands.append(command)
+        notes = collapse(re.sub(r"`[^`]*`", "", launch)) if launch else ""
+        if command:
+            notes = collapse("Launch: `%s`. %s" % (command, notes))
+        items.append({"id": "#%d" % issue["number"], "tag": {"type": "Issue"},
+                      "title": issue["title"].strip(), "context": collapse(lead),
+                      "lookFor": bullets(find(named, "look for", "watch")),
+                      "notes": notes, "blocks": collapse(find(named, "block")) or "nothing stated",
+                      "variations": collapse(find(named, "variation"))})
+    if not items:
+        return None
+    command = commands[0] if commands else ""
+    menu = menu_for(command, planes) if command else {"chapter": None, "plane": None, "notes": []}
+    return {"heading": ISSUE_THEME, "chapter": menu["chapter"] or "",
+            "planeOrPilots": "see each item", "situation": "filed on the tracker",
+            "command": command, "menu": menu, "items": items}
+
+
 def main():
-    if len(sys.argv) != 2:
-        sys.stderr.write("usage: build.py <output.html>\n")
+    args = [a for a in sys.argv[1:] if a != "--no-issues"]
+    with_issues = "--no-issues" not in sys.argv
+    if len(args) != 1:
+        sys.stderr.write("usage: build.py [--no-issues] <output.html>\n")
         return 2
-    out_path = sys.argv[1]
+    out_path = args[0]
 
     src = io.open(SOURCE, encoding="utf-8").read()
     lines = src.split("\n")
@@ -252,6 +356,21 @@ def main():
                          % (n_caps, raw_caps, n_items, raw_items))
         return 1
 
+    n_issue_caps = n_issue_items = 0
+    if with_issues:
+        try:
+            cap_theme = issue_captures()
+            profile = issue_profile(planes)
+        except Exception as e:  # noqa: BLE001 - any gh failure is fatal, named
+            sys.stderr.write("ISSUES: %s (pass --no-issues to build from playtest.md alone)\n" % e)
+            return 1
+        if cap_theme:
+            caps.append(cap_theme)
+            n_issue_caps = len(cap_theme["rows"])
+        if profile:
+            profiles.append(profile)
+            n_issue_items = len(profile["items"])
+
     tpl = io.open(TEMPLATE, encoding="utf-8").read()
     if "__CAP_DATA__" not in tpl or "__PT_DATA__" not in tpl:
         sys.stderr.write("template.html is missing a data placeholder\n")
@@ -260,8 +379,10 @@ def main():
     tpl = tpl.replace("__PT_DATA__", json.dumps(profiles, ensure_ascii=False))
     io.open(out_path, "w", encoding="utf-8").write(tpl)
 
-    sys.stderr.write("%d CAP rows in %d themes, %d PT items in %d profiles -> %s\n"
-                     % (n_caps, len(caps), n_items, len(profiles), out_path))
+    sys.stderr.write("%d CAP rows in %d themes, %d PT items in %d profiles "
+                     "(GitHub issues: %d captures, %d playtests) -> %s\n"
+                     % (n_caps + n_issue_caps, len(caps), n_items + n_issue_items, len(profiles),
+                        n_issue_caps, n_issue_items, out_path))
     return 0
 
 

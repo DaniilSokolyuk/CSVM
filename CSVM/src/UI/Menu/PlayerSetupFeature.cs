@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
-using CSVM.Flight;
+using CSVM.Flight.Hangar;
+using CSVM.Flight.Weapons;
 
 namespace CSVM.UI.Menu;
 

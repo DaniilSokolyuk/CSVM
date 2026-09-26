@@ -1,6 +1,6 @@
 ---
 name: close-worktree
-description: Close out the current worktree — commit outstanding work, close its BL-NNN if eligible, merge main in and back out, then remove the worktree. Use when a worktree's work is finished and ready to land on main.
+description: Close out the current worktree — commit outstanding work, close its BL-NNN or GitHub issue if eligible, merge main in and back out, then remove the worktree. Use when a worktree's work is finished and ready to land on main.
 ---
 
 Streamlines the repeat closing procedure for a `.claude/worktrees/` branch: commit, gate on backlog
@@ -27,13 +27,16 @@ Note the resulting commit hash for the final report.
 
 ## 2. Gate on backlog closure
 
-Extract a `BL-NNN`-shaped token from the worktree's branch name (case-insensitive, digits directly
-after `bl`, ignoring surrounding prefixes like `worktree-` or trailing description words — e.g.
-`worktree-bl394-ai-identity` → `BL-394`, `bl343-impact-force-gate` → `BL-343`).
+Extract an item token from the worktree's branch name (case-insensitive, ignoring surrounding
+prefixes like `worktree-` or trailing description words): a `BL-NNN` shape, digits directly after
+`bl` (`worktree-bl394-ai-identity` → `BL-394`, `bl343-impact-force-gate` → `BL-343`), or a GitHub
+issue shape, digits directly after `issue` or `gh` (`worktree-issue12-session-split` → `#12`,
+`gh7-utils-leaf` → `#7`).
 
 **No token found** → this worktree isn't for a backlog item. Skip to step 3.
 
-**Token found** → read that entry's full text in `backlog.md`, in particular its goal and its
+**Token found** → read the item's full text: the entry in `backlog.md`, or the issue's thread with
+`gh issue view N --comments` (`docs/agents/issue-tracker.md`), in particular its goal and its
 *"how you'd know it worked"* line. Diff the worktree branch against `main`
 (`git diff main...HEAD`) and judge, on the entry's own terms, whether that bar is actually met —
 not just touched.
@@ -47,11 +50,13 @@ point it identifies instead.
 - **Not met** → state plainly which part of the entry's bar the diff doesn't satisfy (missing
   verification, partial fix, wrong symptom addressed, etc.), then **stop the entire skill here**.
   The step-1 commit stands; nothing merges; the worktree stays open for you to keep working in.
-- **Met** → invoke the `close-backlog-item` skill for this BL-NNN now, inline, in this worktree.
-  Let it make its doc/playtest edits and draft its closing commit message. Then commit those edits
-  as their **own commit** (separate from step 1's), using `close-backlog-item`'s own subject
-  convention: `Close BL-NNN: <what is now true>`, via `git commit -F <file>`. Run whatever
-  verification `close-backlog-item`'s own step 6 calls for given what it touched.
+- **Met** → invoke the `close-backlog-item` skill for this BL-NNN or #N now, inline, in this
+  worktree. Let it make its doc/playtest edits and draft its closing commit message. Then commit
+  those edits as their **own commit** (separate from step 1's), using `close-backlog-item`'s own
+  subject convention: `Close BL-NNN: <what is now true>` or `Close #N: <what is now true>`, via
+  `git commit -F <file>`. Run whatever verification `close-backlog-item`'s own step 6 calls for
+  given what it touched. For an issue, the `gh issue close` it drafted is **not** run here: the
+  closing comment names a commit that is not on main yet, so it runs in step 5, after the merge.
 
 Note this commit hash too, if made.
 
@@ -197,10 +202,14 @@ as a signal something upstream of this step went wrong, not something to force p
 remove` likewise refuses on uncommitted changes; there should be none left, and if there are,
 something after step 1 was never committed — go back and fix that rather than forcing.
 
+If step 2 closed a GitHub issue, post its close now that the closing commit is on main:
+`gh issue close N --comment-file <the drafted comment>` (or `--comment "..."` for a short one),
+with the merge-back commit's hash added to the comment.
+
 ## Report
 
 One final message: what got committed in steps 1-2 (hashes + one-line subjects, or "nothing to
-commit"), the BL-NNN outcome (closed / not applicable / aborted-with-reason), whether main had
+commit"), the BL-NNN or #N outcome (closed / not applicable / aborted-with-reason), whether main had
 moved and whether it was merged in or rebased onto (say which, and why, when it was a rewrite),
 what verification ran, the merge-back commit, and confirmation the worktree and branch
 are gone. If the skill stopped early (steps 2 or 3's abort paths), say so clearly and name exactly

@@ -1,4 +1,5 @@
-using CSVM.Flight;
+using CSVM.Flight.Camera;
+using CSVM.Flight.Hud;
 using CSVM.Mech3;
 using Xunit;
 

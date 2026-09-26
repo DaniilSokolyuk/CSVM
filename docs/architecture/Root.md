@@ -35,7 +35,7 @@ and every splitscreen pane pick up the same settings and the same per-zone updat
 duplicate or share the session's own sun and Environment (`CockpitOverlay.cs`, `SplitScreen.cs`).
 
 One drawing runs in **original mode alone**, the only difference in that direction: the aircraft's
-projected ground shadow (`Flight/GroundShadowPass.cs`, decoded in `../org/shadows.md`). It is the
+projected ground shadow (`Flight/Airframe/GroundShadowPass.cs`, decoded in `../org/shadows.md`). It is the
 original's own substitute for shadow mapping, so under enhanced mode, where the sun casts real
 shadow maps, the pass is not built at all and the aircraft's own shadow is the mapped one.
 

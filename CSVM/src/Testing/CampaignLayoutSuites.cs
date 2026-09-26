@@ -1,8 +1,10 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
-using CSVM.UI;
+using CSVM.UI.Boards;
+using CSVM.UI.Campaign;
 using CSVM.UI.Menu;
+using CSVM.UI.Screens;
 
 namespace CSVM.Testing;
 

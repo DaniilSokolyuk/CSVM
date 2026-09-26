@@ -1,8 +1,8 @@
 using System;
 using System.Linq;
 using CSVM.Mech3;
-using CSVM.UI;
 using CSVM.UI.Menu;
+using CSVM.UI.Screens;
 using Xunit;
 
 namespace CSVM.Tests;
@@ -237,7 +237,7 @@ public class InstantActionFeatureTests
         Assert.Equal(new InstantActionWave(2, "Black Swan Fury", "Fury", "ace", 1), def.Waves[1]);
         Assert.Equal(InstantAction.EmptyWave, def.Waves[2]);
         Assert.Equal(2, def.Lives);
-        Assert.Null(def.WingmanLoadout);
+        Assert.Null(exit.WingmanLoadout);
         Assert.Equal("Test Ace", def.AceName);
 
         // Without a player name the feature's own pick is the def's aircraft.
@@ -258,6 +258,27 @@ public class InstantActionFeatureTests
         Assert.Equal(0, def.NumWingmen);
         Assert.All(def.Waves, w => Assert.Equal(InstantAction.EmptyWave, w));
         Assert.Equal(InstantAction.Defaults().AceName, new InstantActionFeature(_ => InstantAction.Defaults()).BuildDef().AceName);
+    }
+
+    /// <summary>The wingman fit is dropped wherever no wingmen carry it (the ace duel, a count of
+    /// 0). Stale wizard state therefore cannot arm a flight that does not exist. It is one
+    /// fit for the whole flight, the original's Player/Wingman radio, never one per wingman.</summary>
+    [Fact]
+    public void TheWingmanFitIsDroppedWhenNoWingmenFly()
+    {
+        var ia = Feature();
+        ia.ConfirmEnvironment();
+        ia.WingmanFit.SetPylon(1, "wep_14");
+
+        ia.SelectMissionType(1);
+        ia.SetWingmen(2);
+        Assert.Equal("wep_14", ia.LaunchWingmanFit!.PylonFor(1));
+        ia.SetWingmen(0);
+        Assert.Null(ia.LaunchWingmanFit);
+        ia.SetWingmen(3);
+        ia.SelectMissionType(0);
+        Assert.True(ia.IsAceDuel);
+        Assert.Null(ia.LaunchWingmanFit);
     }
 
     [Fact]

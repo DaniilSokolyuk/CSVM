@@ -5,6 +5,8 @@ using System.Linq;
 using System.Threading;
 using CSVM.Net;
 using CSVM.Session;
+using CSVM.Session.Launch;
+using CSVM.Tooling;
 using CSVM.Utils;
 using Godot;
 
@@ -279,7 +281,7 @@ internal static class NetEnetSessionSuites
             CaptureDirector = new CaptureDirector(spec),
             MasterSeed = seed,
             Camera = camera,
-            Orbit = new UI.OrbitCamera(camera),
+            Orbit = new UI.Overlays.OrbitCamera(camera),
             Sun = sun,
             Env = new Godot.Environment(),
             MenuDriven = false,

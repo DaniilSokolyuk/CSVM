@@ -369,17 +369,17 @@ ground digs a crater and, through that same AND, loses its whole burst. The carv
 complete and callable directly (`CraterField.Request`, which the `crater-carve` suite drives), and
 what it builds when asked, below, is what the original's own debug key builds.
 
-**The Rocket Craters row is the remake's own door, and nothing in the original answers to it.** The
-Enhanced Graphics (VIDEO) page carries a checkbox, off in a shipped default and off wherever nothing
-is saved, under which every rocket warhead's ground burst carves whatever the struck node's flag
-says. It is remake-only chrome: the original never pits the ground in play, so a run that leaves the
-row alone behaves exactly as the paragraphs above describe, which is also what keeps every pinned
-golden clear of a bowl (`--det` reads no saved option, and `--craters` is the one source that
-survives it). The ask is typed rather than boolean (`CraterAsk`) so the option's carve stays purely
-additive: the burst plays its own row over the new bowl, where the faithful path's AND drops both
-animation slots. An aircraft's ground crash carving the same way is the next step if it is wanted;
-it is deliberately not built, because the crash fireball authors a scorch of its own and the two
-would have to be judged together.
+**The remake's own carve has exactly two doors, and no menu row is one of them.** The options file's
+`rocketCraters` key, set by hand, and the `--craters` flag each arm `CraterGate.Enabled` at boot,
+under which every rocket warhead's ground burst carves whatever the struck node's flag says. ⚠ **No
+screen offers it, deliberately**: the carve is remake-only chrome the original never shows in play,
+so it is kept testable rather than advertised, and a build with no row is what leaves the default
+behaving exactly as the paragraphs above describe. That is also what keeps every pinned golden clear
+of a bowl (`--det` reads no saved option, and the flag is the one source that survives it). The ask
+is typed rather than boolean (`CraterAsk`) so the option's carve stays purely additive: the burst
+plays its own row over the new bowl, where the faithful path's AND drops both animation slots. An
+aircraft's ground crash carving the same way is unjudged: it is deliberately not built, because the
+crash fireball authors a scorch of its own and the two would have to be judged together.
 
 What is faithful:
 

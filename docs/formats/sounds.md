@@ -113,7 +113,7 @@ model and no `MaxDistance`, since either would multiply a second curve onto the 
 
 ⚠ **No listener-side term scales the reach: the distance the curve reads is the raw world distance
 from the camera to the emitter, and the radii are the authored ones.** Each place such a term could
-sit has been read and holds none:
+sit in the retail build has been read and holds none:
 
 - **DirectSound's 3D listener.** The software path `FUN_00597c20` touches only the voice buffer
   (`SetVolume` `+0x3c`, `SetPan` `+0x40`, `GetFrequency`/`SetFrequency` `+0x20`/`+0x44`); no
@@ -134,8 +134,13 @@ sit has been read and holds none:
   none of them can lift a distant voice.
 
 The distance itself is the bit-hack square root at `0x00597dac`, which reads long rather than short
-between powers of four, so it cannot add reach either. `--sound-range-scale` (`docs/cli.md`)
-multiplies both radii at every positional path as a diagnostic; it stands for no decoded constant.
+between powers of four, so it cannot add reach either. CSVM nevertheless ships a factor of **2.5**
+on both radii and on the cull that follows them (`SoundFalloff.ShippedRangeScale`, overridden by
+`--sound-range-scale=`, `docs/cli.md`): at the authored radii the world emitters, the C1 police
+siren and the track train among them, are heard from far closer in than the original's are at the
+controls, and 2.5 is the reach that matched. Nothing above stands behind that factor, so it is a
+remake-only departure; `--sound-range-scale=1` reads the radii as authored, which is what the
+suites pinning this law read at.
 
 ⚠ **`VOLUME` converts on the same ten-decibels-per-doubling scale, not the usual `20 log10`.**
 `FUN_00593620` returns 0 at or above 1, `-10000` at or below `2^-10`, and `1000 log2(gain)`
@@ -185,12 +190,12 @@ and the only divergence that favours the retail build is three of those.
 | write | `IDirectSoundBuffer::SetVolume`, vtable `+0x3c`, floored at `-10000` | `AudioStreamPlayer3D.VolumeDb`, the level at the listener while the attenuation model is `Disabled` and `MaxDistance` is 0 |
 | stereo | `SetPan`, vtable `+0x40`, `1600 x (offset . listener right axis) / dist` (`0x00597df8`, scale at `0x00609428`): the FAR channel loses up to 16 dB and the near one loses nothing, so a voice dead ahead drives both channels at the level above | the engine's own stereo law, cosine of half the azimuth at `panning_strength` 1, which is constant power: both channels 3.01 dB down dead ahead and astern, the near channel at the full level abeam and the far one silent |
 
-⚠ **No term in that chain is worth the reach a `--sound-range-scale` above 1 buys, so the factor
-stands as a remake-only departure rather than a ported constant.** The police siren
+⚠ **No term in that chain is worth the reach the shipped 2.5 factor buys, so it stands as a
+remake-only departure rather than a ported constant.** The police siren
 (`RANGE [200, 1200]`, no `VOLUME` key) with both mixers at their maximum, in decibels at the near
 channel:
 
-| distance | retail | CSVM, dead ahead | CSVM, abeam | CSVM at 2.5 x the radii |
+| distance | retail | CSVM at 1, dead ahead | CSVM at 1, abeam | CSVM at the shipped 2.5 |
 |---|---|---|---|---|
 | 250 m, inside the shelf | 0.00 | -3.01 | 0.00 | 0.00 |
 | 700 m, mid band | -20.00 | -23.01 | -20.00 | 0.00 |
