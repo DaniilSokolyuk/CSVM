@@ -271,6 +271,19 @@ read from that file, never written into it, and never stamped into the preset du
 The zip is built through `System.IO.Compression`, since `Compress-Archive` reports success after
 writing nothing when a single file is locked.
 
+**Which number to bump** is decided per release, against what changed since the last tag
+(`git log v<last>..HEAD`), in the commit that is about to be published; builds between releases
+keep stating the last released version, and `BUILD-INFO.txt` names the exact commit. The **patch**
+number is for a release that only fixes, including a fix that brings behaviour closer to the
+original; a player finds nothing new in it. The **minor** number is for a release that adds
+something a player can see (a mode, a screen, an input device, a mechanic), which is where a
+milestone lands; fixes shipped alongside a feature do not make it a patch. The **major** number is
+the author's call that the remake stands in for the original end to end; until then the version
+stays `0.x`, and afterwards a major bump is reserved for a change that breaks saved profiles or
+replaces a subsystem wholesale. ⚠ A patch release never changes the format of anything written to
+`user://` and never changes the network protocol, so builds that differ only in the patch number
+read each other's profiles and can play in the same session.
+
 The payload is `packaging/MANIFEST.md`'s table, copied from its repo sources on every export, which
 keeps it byte-identical.
 
