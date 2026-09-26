@@ -24,6 +24,7 @@ public sealed class GenericStickDefaultTests
         """;
 
     private static readonly StickModel VkbR = new(0x231D, 0x0200);
+    private static readonly StickModel VkbL = new(0x231D, 0x0201);
     private static readonly StickModel Tartarus = new(0x1532, 0x022B);
     private static readonly StickModel Generic = new(0x044F, 0xB10A);
     private static readonly StickModel Pedals = new(0x044F, 0xB679);
@@ -232,6 +233,32 @@ public sealed class GenericStickDefaultTests
 
             Assert.True(set.Active[Tartarus].Profile.Ignore);
             Assert.Equal(StickProfileSource.Generic, set.Active[Generic].Source);
+        }
+    }
+
+    [Fact]
+    public void TheShippedVkbPairFliesAsHosasAndEachStickAloneStillFlies()
+    {
+        var (_, pair) = Roster((1, VkbR), (2, VkbL));
+        using (pair)
+        {
+            var set = Set(pair, shipped: ShippedProfiles);
+
+            Assert.Equal("231D-0200.json", set.Active[VkbR].FileName);
+            Assert.Equal("231D-0201+231D-0200.json", set.Active[VkbL].FileName);
+            Assert.DoesNotContain(set.Active.Values, f => f.Source == StickProfileSource.Generic);
+        }
+
+        var (_, right) = Roster((1, VkbR));
+        using (right)
+        {
+            Assert.Equal("231D-0200.json", Set(right, shipped: ShippedProfiles).Active[VkbR].FileName);
+        }
+
+        var (_, left) = Roster((2, VkbL));
+        using (left)
+        {
+            Assert.Equal(StickProfileSource.Generic, Set(left, shipped: ShippedProfiles).Active[VkbL].Source);
         }
     }
 

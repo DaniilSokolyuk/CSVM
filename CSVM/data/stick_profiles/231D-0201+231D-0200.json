@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "model": "231D/0201",
+  "name": "L",
+  "companions": ["231D/0200"],
+  "ignore": false,
+  "contexts": {
+    "flight": {
+      "ThrottleUp": [
+        "fullaxis:1-@0.08"
+      ],
+      "ThrottleLever": [
+        "fullaxis:2-@0.02"
+      ],
+      "FireGuns": [
+        "button:#0"
+      ],
+      "FireRockets": [
+        "button:#1"
+      ],
+      "Nitro": [
+        "button:#2"
+      ],
+      "TargetNextEnemy": [
+        "button:#5"
+      ],
+      "TargetNextAlly": [
+        "button:#8"
+      ],
+      "TargetNextNonAircraft": [
+        "button:#6"
+      ],
+      "TargetNearest": [
+        "button:#7"
+      ],
+      "TargetClear": [
+        "button:#9"
+      ],
+      "TrackTarget": [
+        "button:#3"
+      ]
+    },
+    "menu": {},
+    "camera": {}
+  }
+}

@@ -185,7 +185,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 ### Wave E, shipped profiles
 
-13. ◐ The user binds VKB solo-R and HOSAS in-game; commit the files as shipped profiles
+13. ☑ The user binds VKB solo-R and HOSAS in-game; commit the files as shipped profiles
 
 ## Dependency and parallelism notes
 
@@ -1423,15 +1423,31 @@ row is bound on either screen; E13's shipped profiles should carry it.
 
 # Wave E, shipped profiles
 
-## E13 ◐ The user binds VKB solo-R and HOSAS in-game; commit the files as shipped profiles
+## E13 ☑ The user binds VKB solo-R and HOSAS in-game; commit the files as shipped profiles
 
-**Solo R landed.** `CSVM/data/stick_profiles/231D-0200.json` is the user's own R file, bound on
-the screens and flown. In the file's 0-based numbers: X roll, Y pitch, twist yaw (read through the
-axis 5 flip), Z the lever inverted, `#0` guns, `#2` rockets, the mini-stick (axes 3 and 4) as
-look-around, `#5` to `#8` for targeting in flight and for menu navigation, `#0` accepting and
-skipping cutscenes, `#2` backing out. It names no companions, so it also applies to R when L
-is plugged in with no HOSAS file; L then takes the generic default and both sticks fly roll and
-pitch until the HOSAS pair ships. **Left open:** the HOSAS pair.
+**Landed.** Two shipped files, both the user's own, bound on the screens and flown. In their
+0-based numbers:
+
+- `CSVM/data/stick_profiles/231D-0200.json`, R: X roll, Y pitch, twist yaw (read through the
+  axis 5 flip), Z the lever inverted, `#0` guns, `#2` rockets, the mini-stick (axes 3 and 4) as
+  look-around, `#5` to `#8` for targeting in flight and for menu navigation, `#0` accepting and
+  skipping cutscenes, `#2` backing out. It names no companions, so R flies the same layout alone
+  and beside L.
+- `CSVM/data/stick_profiles/231D-0201+231D-0200.json`, L as R's companion: Y a ThrottleUp/Down
+  rate at 0.08, Z the lever inverted, `#0` guns, `#1` rockets, `#2` nitro, `#5` to `#9` targeting,
+  `#3` track target. No menu or camera rows, so menus stay on R. L alone matches no file and
+  takes the generic default.
+
+One stick is enough for this game at the controls, so the pair ships as R's full layout plus a
+companion L that duplicates throttle and targeting, rather than a split of the controls between
+the hands.
+
+**Verified.** `GenericStickDefaultTests.TheShippedVkbPairFliesAsHosasAndEachStickAloneStillFlies`
+resolves the committed folder over the fake stick library: the pair takes both shipped files with
+no generic default, R alone takes its file, L alone takes the generic default. Reading the folder from an exported pck is still
+unexercised (see C8).
+
+**Original approach (kept for reference).**
 
 **Goal.** Two shipped example profiles: VKB solo R (R flies pitch, roll, yaw on twist, throttle and
 weapons alone) and VKB HOSAS (an R file naming L as a companion, and an L file naming R, with L's Y
