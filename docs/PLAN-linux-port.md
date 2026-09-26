@@ -82,7 +82,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 1. ☐ Extraction decoders move into `CSVM/src/Extraction/`, engine-side and platform-neutral
 2. ☐ `unzbd` runner: per-archive modes, messages, MPG copy, incremental skip, VERSION.json stamp
-3. ☐ Install discovery and case-insensitive install lookup, remembered path in `app_userdata`
+3. ☑ Install discovery and case-insensitive install lookup, remembered path in `app_userdata`
 4. ☐ Headless `--extract=<install>` and its development options
 5. ☐ Extraction UI: Extract button, picker, progress, and the out-of-date-data screen
 6. ☐ Retire the scripts: `Extract.ps1` wrapper, one stamp constant, release payload, docs, bug form
@@ -181,7 +181,35 @@ the engine, which is what keeps the EUPL-1.2 tool separate from the GPL engine. 
 unpacked sibling folder over its zip (`SessionPaths.cs:28`), so a dev tree extracted with
 `--extract-unzip` and then re-extracted without it can mix vintages; test with `--zip-assets`.
 
-## A3 ☐ Install discovery and case-insensitive install lookup, remembered path in `app_userdata`
+## A3 ☑ Install discovery and case-insensitive install lookup, remembered path in `app_userdata`
+
+**Landed.** `CSVM/src/Extraction/InstallLocator.cs` holds the lookup, engine-free.
+`ResolveDirectory(root, rel)` and `ResolveFile(root, rel)` walk each segment of a `/`- or
+`\`-separated path by enumerating the folder, answer the disk's spelling (an exact match wins over a
+case-folded one), and return null when a segment is absent. `IsInstall(folder)` is Decision 5's rule.
+`Check(picked)` returns an `InstallCheck` (`Kind`, `Folder`, `InstallRoot`, `Message`): `Install`,
+`Missing`, `InsideInstall` and `HoldsInstall` (both name the install found, searched up the ancestors
+and two levels down), `NoZbd`, `NoAssets`, and `EmptyZbd` (no `.zbd` under `ZBD`, the incomplete-install
+check `packaging\Extract.ps1` makes). Every message ends on "the folder that holds the ZBD and GOSDATA
+folders side by side". `Candidates(InstallSearchRoots, remembered)` returns valid installs in order:
+the remembered path; on Windows `<Program Files>\Microsoft Games\Crimson Skies` for each of
+`ProgramFiles`, `ProgramFiles(x86)`, `ProgramW6432`, then `Microsoft Games\Crimson Skies`,
+`Games\Crimson Skies` and `Crimson Skies` on each ready fixed drive; on Linux
+`~/.wine/drive_c/Program Files*/Microsoft Games/Crimson Skies`, then the same under every
+`pfx/drive_c` in `~/.local/share/Steam/steamapps/compatdata` and `~/.steam/steam/steamapps/compatdata`.
+Duplicates fold through links (`ResolveLinkTarget` per segment). `InstallSearchRoots.ForThisMachine()`
+is the production set; tests pass their own. The remembered path is the new `OptionsDef.InstallPath`
+in `user://options.json` (dropped on load unless fully qualified), read and written through
+`CSVM/src/Extraction/RememberedInstall.cs`. `CSVM.Tests/InstallLocatorTests.cs` covers the walk over
+`Gosdata/assets`, `zbd`, `BINARIES/LANGUI.DLL`, exact-over-folded in a case-sensitive folder
+(`fsutil file setCaseSensitiveInfo`, which works under `%TEMP%` on the dev machine's C: drive and is
+refused on Z:), both mis-picks, the Windows order, a fake home with two Proton prefixes, and the two
+Steam roots folded through a junction.
+
+**Verified.** <pending orchestrator run>. Owed to A4: an extraction from a copy of the install with
+lower-cased folder names inside a case-sensitive folder, once `--extract` exists.
+
+**Original approach (kept for reference).**
 
 **Goal.** Given a folder, the engine decides whether it is a Crimson Skies install and finds every
 file extraction needs, whatever the case of the names. It offers a best-guess install folder and
@@ -199,14 +227,14 @@ Deck.
 **Approach.** One resolver that walks each path segment with a case-insensitive directory match, used
 for every install-side lookup. Candidate list per Decision 5. The remembered path goes into the user
 settings in `app_userdata`. Unit tests in `CSVM.Tests` with fixture folders spelled `Gosdata`, `zbd`,
-`LANGUI.DLL` and a fake home folder holding a Proton prefix (Decision 10).
-<TODO: which settings file holds the remembered path>
+`LANGUI.DLL` and a fake home folder holding a Proton prefix (Decision 10). The remembered path is
+`OptionsDef.InstallPath` in `user://options.json`.
 
-**Model recommendation.** <TODO: not settled in session>
+**Model recommendation.** Settled by landing.
 
 **Verify.** The unit tests above; then extraction from a copy of the install with its folder names
-lower-cased (on Windows, a case-sensitive directory set with `fsutil file setCaseSensitiveInfo`).
-<TODO: confirm the fsutil approach works on the dev machine>
+lower-cased (on Windows, a case-sensitive directory set with `fsutil file setCaseSensitiveInfo`,
+confirmed working under `%TEMP%` on C: and refused on Z:).
 
 **⚠ Traps.** Extraction output keeps the names the install spells (`ExtractRof.ps1:367-369` explains
 why the MPG names are not normalised); only the lookup is case-insensitive, never a rename.

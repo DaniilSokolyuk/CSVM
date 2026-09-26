@@ -685,6 +685,14 @@ It holds no engine type, so it runs in a plain unit test; formats and evidence a
 - `src/Video/MoviePlayback.cs`, a movie on a clock: the picture due now as RGBA, timed by the frames' own timestamps, looping endlessly on a play count of zero.
 - `src/Video/CinemaPlayback.cs`, a cinema playing with its sound: clamped PCM out, the picture clocked by what the device has played, the two streams' start times taken against each other.
 
+### `src/Extraction/`, in-engine asset extraction
+
+Finding the player's install and reading it, engine-free so it runs in a plain unit test; entries
+are in [`architecture/Extraction.md`](architecture/Extraction.md).
+
+- `src/Extraction/InstallLocator.cs`, the case-insensitive install lookup: the segment walk, the picked-folder check with its mis-pick messages, and the per-platform candidate list.
+- `src/Extraction/RememberedInstall.cs`, the last-used install folder, kept in `user://options.json` to pre-fill the next picker.
+
 ### Session root and tests
 
 - `src/Pads.cs`, single owner of "which gamepads exist": the phantom-device policy, the launch-time roster split, the focus gate and `--no-pads`.
