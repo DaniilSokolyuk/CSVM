@@ -40,6 +40,8 @@ public class FlightBindingMappingTests
         { Key.F7, InputAction.FlybyView },
         { Key.Kp0, InputAction.LookBack },
         { Key.Kp5, InputAction.LookCenter },
+        { Key.KpAdd, InputAction.ZoomIn },
+        { Key.KpSubtract, InputAction.ZoomOut },
     };
 
     /// <summary>The keyboard rows that carry a modifier, which are a control of their own rather
@@ -357,19 +359,30 @@ public class FlightBindingMappingTests
         Assert.True(padActions.Held(InputAction.SelectChaseView));
     }
 
-    /// <summary>The look-back site is the pad's stick click alone; the numpad-0 half of the same
-    /// action drives the external back camera through the fixed-view path instead.</summary>
-    [Fact]
-    public void TheLookBackSite_ReadsTheStickClickWithoutNumpadZero()
+    /// <summary>The camera reads Look Back and the zoom pair through the whole-seat reader. Giving
+    /// the shipped key to another action takes the camera action off it, and the new key drives it.
+    /// </summary>
+    [Theory]
+    [InlineData(InputAction.LookBack, Key.Kp0)]
+    [InlineData(InputAction.ZoomIn, Key.KpAdd)]
+    [InlineData(InputAction.ZoomOut, Key.KpSubtract)]
+    public void ARebindCameraKey_FollowsTheKeymap(InputAction action, Key shipped)
     {
-        var (state, padActions) = PadOnlySeat();
-        state.Keys.Add((int)Key.Kp0);
-        padActions.Poll(state);
-        Assert.False(padActions.Held(InputAction.LookBack));
+        var map = FlightMap();
+        map.Assign(InputAction.FireRockets, new Binding(DeviceId.Keyboard, BindingControl.Key((int)shipped)));
+        map.Assign(action, new Binding(DeviceId.Keyboard, BindingControl.Key((int)Key.B)));
+        var state = new FakeDevices();
+        var actions = new PlayerActions(map, true);
 
-        state.Buttons.Add((Pad, (int)JoyButton.RightStick));
-        padActions.Poll(state);
-        Assert.True(padActions.Held(InputAction.LookBack));
+        state.Keys.Add((int)shipped);
+        actions.Poll(state);
+        Assert.False(actions.Held(action));
+        Assert.True(actions.Held(InputAction.FireRockets));
+
+        state.Keys.Clear();
+        state.Keys.Add((int)Key.B);
+        actions.Poll(state);
+        Assert.True(actions.Held(action));
     }
 
     /// <summary>The dropped pad reads, recorded so a later change cannot restore them by accident.
