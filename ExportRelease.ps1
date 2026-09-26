@@ -34,21 +34,35 @@
 .EXAMPLE
     .\ExportRelease.ps1
     Build, import, export to .scratch\export\CSVM.exe, and stage the release files.
+
+.EXAMPLE
+    .\ExportRelease.ps1 -ToolsRoot Z:\CSVM
+    The same from a worktree, taking Godot, unzbd.exe and the mech3ax fork from the main
+    checkout's tools\, since tools\ is git-ignored and a worktree has none.
+
+.PARAMETER ToolsRoot
+    The checkout whose tools\ folder holds Godot and the mech3ax fork. Defaults to this
+    script's own folder. Only the tools move: the build, the payload and the recorded CSVM
+    commit stay this tree's own.
 #>
+param(
+    [string]$ToolsRoot = $PSScriptRoot
+)
 
 $ErrorActionPreference = "Stop"
 
 $RepoRoot   = $PSScriptRoot
+$ToolsRoot  = (Resolve-Path $ToolsRoot).Path
 $ProjectDir = Join-Path $RepoRoot "CSVM"
 $Sln        = Join-Path $ProjectDir "CSVM.sln"
-$GodotExe   = Join-Path $RepoRoot "tools\godot\Godot_v4.7-stable_mono_win64\Godot_v4.7-stable_mono_win64_console.exe"
+$GodotExe   = Join-Path $ToolsRoot "tools\godot\Godot_v4.7-stable_mono_win64\Godot_v4.7-stable_mono_win64_console.exe"
 
 $TemplateDir = Join-Path $env:APPDATA "Godot\export_templates\4.7.stable.mono"
 $ExportDir   = Join-Path $RepoRoot ".scratch\export"
 $ExportExe   = Join-Path $ExportDir "CSVM.exe"
-$UnzbdExe    = Join-Path $RepoRoot "tools\mech3ax\target\release\unzbd.exe"
+$UnzbdExe    = Join-Path $ToolsRoot "tools\mech3ax\target\release\unzbd.exe"
 $ProjectGodot = Join-Path $ProjectDir "project.godot"
-$Mech3axRepo  = Join-Path $RepoRoot "tools\mech3ax"
+$Mech3axRepo  = Join-Path $ToolsRoot "tools\mech3ax"
 $ThirdPartyNotices = Join-Path $RepoRoot "packaging\LICENSE-thirdparty.txt"
 $BuildInfo    = Join-Path $ExportDir "BUILD-INFO.txt"
 
