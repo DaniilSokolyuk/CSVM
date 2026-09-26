@@ -200,8 +200,16 @@ plaques and flowed list widgets, each in draw order. The backdrop is its own lay
 sit over the background and stay under the page's pictures, where a selection bar goes. `BoardNote`
 is a widget's entries plus its wrap box (cut at a word where the box has no room for the rest, shrunk
 to a face the whole list fits in, or no box at all where the widget's own list stops nowhere), its
-marks, and `BoardCaret` an edit box's cursor on the line it follows, all placed by a caller that can measure text. A `BoardLine` carrying a `Height` names the box its block is fitted to, the renderer stepping its face down until the block fits, since only the renderer can measure. `PlaqueFrame` and `PlaqueInk` are a plaque's states, and a plaque whose art leaves
+marks, and `BoardCaret` an edit box's cursor on the line it follows, all placed by a caller that can measure text. A `BoardLine` carrying a `Height` names the box its block is fitted to, the renderer stepping its face down until the block fits, since only the renderer can measure; one marked `Marquee` stays on one line and scrolls inside its width when wider. `PlaqueFrame` and `PlaqueInk` are a plaque's states, and a plaque whose art leaves
 part of its frame empty carries its label's own baseline. `BoardArt` names a file and its frame count and the renderer resolves it; one of its libraries is a movie, so a background film reaches the backdrop with no engine type here, and one is an image already in memory (`Held`), a stunt photograph's thumbnail. `BoardCrop` takes a region of the source instead of the whole frame, which is a chart sheet's own window. A `BoardLine` carrying a `Glyph` names the pad button drawn where `GlyphSlot` stands in its text, the renderer owning the gap after the picture since only it can measure one, and a `BoardFill` carrying an `Ink` takes the palette's colour instead of three bytes, which is what a seat chip paints with.
+
+## src/UI/Boards/BoardMarquee.cs
+The scroll of a one-line caption wider than its box, engine-free: `Offset` is how far it has moved
+at a clock reading, resting `HoldSeconds` at the start, scrolling at `PixelsPerSecond` until its end
+shows, resting and scrolling back, and 0 for a caption that fits. Both numbers are TUNE, chosen to
+read calmly on the KEYS AND BUTTONS page. `PinnedSeconds` holds every marquee at one phase: the
+launcher pins the start under `--det` and `--run-tests` and any phase for `--debug-marquee=`, so a
+capture never depends on how many frames ran. The renderer is `ComposedBoardView.cs`.
 
 ## src/UI/Campaign/CampaignBoards.cs
 The fixed chrome of all eight campaign screens, plus the composer that turns a page and a cursor
@@ -238,7 +246,7 @@ texture cache and the only art resolution there is, mission art and screen chrom
 extraction roots, and caches a miss so an absent extraction is probed once per name. A movie resolves
 to a `MovieSurface`, whose one texture the cache holds and the surface rewrites in place, so the
 picture animates with nothing invalidated; a held image gets one texture per image, dropped once a shown board stops drawing it; `AdvanceMovies` runs their clocks off the caller's own step and
-`AdvanceCaret` blinks a text cursor off it, each saying whether to repaint. A line naming a `LanguiFace` draws in that installed Windows face, cached per tag, and keeps the board's own where the machine lacks it; a pitched block honours authored line breaks and indents and justifies as a whole, its lines left-aligned under the widest. Supplies the font metric a flowed
+`AdvanceCaret` blinks a text cursor off it and `AdvanceMarquee` scrolls an overflowing marquee line, each saying whether to repaint; a marquee line is drawn through the text server with whole glyphs clipped to its box, so it keeps its place in the draw order under overlays and the pointer. A line naming a `LanguiFace` draws in that installed Windows face, cached per tag, and keeps the board's own where the machine lacks it; a pitched block honours authored line breaks and indents and justifies as a whole, its lines left-aligned under the widest. Supplies the font metric a flowed
 `BoardNote` and a caret cannot take, `Fitted` shrinking a note's face until its list fits its box rather than losing a row and stepping a `BoardLine` carrying a box height down a point at a time until its wrapped block fits, `Block` being that measurement on its own, the two-line hint band a pad needs, and `ArtSize` for a caller that must clip against a bitmap's own authored width. `PresentMoving` is the one repaint a caller holding the frame loop can still make: its pictures go on a canvas item of the view's own, fitted by the same maths and re-fitted on a resize, rather than through a queued redraw callback the blocked loop would never reach, so a load screen's build can move the bar it draws. A line carrying a glyph is drawn through `ControlLine`, the composition the flight prompts already use, so the picture and the gap around it are measured in one place and a board composer never spaces them itself.
 
 ## src/UI/Screens/CinemaScreen.cs
@@ -519,7 +527,7 @@ context (`src/Bindings/`) from three readings of one seat: keyboard live, keyboa
 typeable keys, and the pad alone. Its pad rows sit on the seat-local `SeatPads` identity, since a
 seat reads a set of pads and no binding may hold a connection index. `Typed` and `Erase` serve a
 text field, `PadMove`/`PadMoveX` are the axes such a screen reads instead, since W, A, S and D
-are letters there. `TypeableKeys` is deliberately wider than any box's accept rule, and Shift gives each key its US-layout shifted character. `Device` and `DeviceMoved` come from an `ActiveDevice` over a fourth reading, the keyboard half alone, so a board hint names the side the seat last used and knows the tick it changed; `Hint` composes one such line. Wrapped by `Menu/BuiltIn/BuiltInSeat.cs`, bound by `MenuSeatDevices`; it also serves the in-flight boards. Beside all of that stand three static raw pad reads, `JoinPressed`, `SignOnPressed` and `SignOffPressed` for Start, A and B: a pad no seat owns has no keymap, so nothing bound can answer for the join gesture or the join board's two.
+are letters there. `TypeableKeys` is deliberately wider than any box's accept rule, and Shift gives each key its US-layout shifted character. `Device` and `DeviceMoved` come from an `ActiveDevice` over a fourth reading, the keyboard half alone, so a board hint names the side the seat last used and knows the tick it changed; `Hint` composes one such line. Wrapped by `Menu/BuiltIn/BuiltInSeat.cs`, bound by `MenuSeatDevices`; it also serves the in-flight boards. Beside all of that stand three static raw pad reads, `JoinPressed`, `SignOnPressed` and `SignOffPressed` for Start, A and B: a pad no seat owns has no keymap, so nothing bound can answer for the join gesture or the join board's two. Player 1 also reads the flight sticks, and its menu stick rows follow the active profiles (`Sticks/StickProfileSet.cs`); a joined seat never reads a stick.
 
 ## src/UI/Boards/HudLayers.cs
 The canvas-layer ordering for everything drawn over the 3D view, in one place, so "does the collider
@@ -1087,7 +1095,7 @@ spent and activates nothing under it. A row declares its slider through `Origina
 `OriginalSlider`; this class knows a track and a value and nothing about the setting behind them.
 
 ## src/UI/Menu/Original/OriginalOptionsScreen.cs
-The five pages behind the Options hub's four doors as one standalone module over the decoded `[@GameOptions@]`, `[@Audio@]`, `[@Video@]`, `[@ControlsPrefs@]` and `[@Keys@]` sections; the hub itself stays the shell's. Game Options and VIDEO are one table shape: per row a key, the authored title, control and description widgets it stands on, and how the store field is read and written, so a further option is one entry plus its field and a layout that moves a row moves ours. Game Options is the original's own Difficulty, Default View and Auto Head Turn rows (the difficulty tiers, the three views its decoded `GO_D_VIEW` list names and the head-turn switch) plus the remake-only Next Target and Rumble rows; the plate grows one whole 62-pixel band per row past the three the art is painted with, tiled from the band between its own seams rather than stretched so the border art survives, the two plaques moving down with it; each row then stands on a band of the grown plate, a dropdown taking one to itself and the checkbox rows pairing from the top of their run where the canvas caps the growth short, each checkbox row's title on its own box's centre line in the dropdown rows' column (the placement the VIDEO section authors for the same pair), with the descriptions spread evenly down their own window and a single tightened pitch as the fallback where the rows outrun even the pairing; VIDEO is the monitor and Resolution rows enumerated per machine (`Utils/MonitorSetting.cs`, `Utils/ResolutionSetting.cs`, that row dead under borderless, which owns the size), Display Mode and V-Sync over `Utils/OptionsStore.cs`'s `DisplayWords`, and Enhanced Graphics on the Shadows checkbox whose gate it owns; the Graphics row's title and description are the page's own, the authored ones naming a 3D card this port has no answer to. AUDIO is four slider rows over `Utils/AudioMix.cs`'s 0..100 on the authored pitches 58, 57, 53 and 53, Master taking the In-Game Music row because a slider reaching zero is that checkbox in one fewer widget and Sound Quality left out; a slider answers no Accept (`SliderControl.cs`), `AudioPreviewMix` is the mix the open page stands at and `TakeAudioMoved` the level a frame moved, taken once, the host applying and sounding them. CONTROLS carries the seat chooser on the Controller Type row, the authored Mouse Sensitivity slider over `Bindings/SensitivityScale.cs`'s levels, the flying-scheme chooser on the Mouse panel's title line (the right half of the seat chooser's column, stopping above the slider's press region) and the KEYS AND BUTTONS door; KEYS carries seven category tabs, one action list under its heading in the listbox's own window, and each row's controls in the two authored columns (the first in Control A, the rest in Control B so nothing is hidden), a cell press arming a capture on that row's action and slot and the page swallowing the frame while one runs, all of it over the shared `ControlsFeature`.
+The five pages behind the Options hub's four doors as one standalone module over the decoded `[@GameOptions@]`, `[@Audio@]`, `[@Video@]`, `[@ControlsPrefs@]` and `[@Keys@]` sections; the hub itself stays the shell's. Game Options and VIDEO are one table shape: per row a key, the authored title, control and description widgets it stands on, and how the store field is read and written, so a further option is one entry plus its field and a layout that moves a row moves ours. Game Options is the original's own Difficulty, Default View and Auto Head Turn rows (the difficulty tiers, the three views its decoded `GO_D_VIEW` list names and the head-turn switch) plus the remake-only Next Target and Rumble rows; the plate grows one whole 62-pixel band per row past the three the art is painted with, tiled from the band between its own seams rather than stretched so the border art survives, the two plaques moving down with it; each row then stands on a band of the grown plate, a dropdown taking one to itself and the checkbox rows pairing from the top of their run where the canvas caps the growth short, each checkbox row's title on its own box's centre line in the dropdown rows' column (the placement the VIDEO section authors for the same pair), with the descriptions spread evenly down their own window and a single tightened pitch as the fallback where the rows outrun even the pairing; VIDEO is the monitor and Resolution rows enumerated per machine (`Utils/MonitorSetting.cs`, `Utils/ResolutionSetting.cs`, that row dead under borderless, which owns the size), Display Mode and V-Sync over `Utils/OptionsStore.cs`'s `DisplayWords`, and Enhanced Graphics on the Shadows checkbox whose gate it owns; the Graphics row's title and description are the page's own, the authored ones naming a 3D card this port has no answer to. AUDIO is four slider rows over `Utils/AudioMix.cs`'s 0..100 on the authored pitches 58, 57, 53 and 53, Master taking the In-Game Music row because a slider reaching zero is that checkbox in one fewer widget and Sound Quality left out; a slider answers no Accept (`SliderControl.cs`), `AudioPreviewMix` is the mix the open page stands at and `TakeAudioMoved` the level a frame moved, taken once, the host applying and sounding them. CONTROLS carries the seat chooser on the Controller Type row, the authored Mouse Sensitivity slider over `Bindings/SensitivityScale.cs`'s levels, the flying-scheme chooser on the Mouse panel's title line (the right half of the seat chooser's column, stopping above the slider's press region) and the KEYS AND BUTTONS door; KEYS carries seven category tabs, one action list under its heading in the listbox's own window, and each row's key and pad controls in the two authored columns (the first in Control A, the rest in Control B so nothing is hidden) with its stick controls in the port's Stick column between them (`KeysStickColumn.cs`), a cell press arming a capture on that row's action and slot (a Stick cell arming a stick-only capture that replaces that stick's own binding) and the page swallowing the frame while one runs, all of it over the shared `ControlsFeature`. The Throttle tab ends with the port's Throttle (lever) row after the original's eleven.
 An open list is windowed and drawn on `OriginalDropList.cs`'s rule. The module's own `ReadSavedOptions`/`AppliedOptions` pair is what every page reads and hands back through, so a page carries the settings it does not show; ACCEPT CHANGES leaves as the one `OptionsApplyExit` and only `Launcher.ApplyOptions` writes the store, while CANCEL CHANGES and Back drop the edits. It is one `IOriginalScreenModule` and reaches `OriginalShell` only through `IOriginalScreenHost` (`OriginalScreenHost.cs`), so `OriginalOptionsTests` drives it over a hand-written host with no shell at all; the shell dispatches to it through `ModuleFor` and exposes it whole as `Options`, the `*Choice` properties the presentation and the rebinding facts read included. Rows and readings: [../org/menu-inventory.md](../org/menu-inventory.md).
 
 ## src/UI/Menu/Original/OriginalCredits.cs
@@ -1099,6 +1107,16 @@ level, the plaque's own `ScriptToExe` and what `CREDITS.SCRIPT`'s `gui_char` doe
 no arm here. ABOUT raises the messagebox in its `ma_` set, centred on its own background and carrying
 langui 1301 over the product id; the script's hidden line shows while the pointer's secondary button
 is held in its region. The screen: [../org/menu-inventory.md](../org/menu-inventory.md).
+
+## src/UI/Menu/Original/KeysStickColumn.cs
+How the KEYS AND BUTTONS page splits a row's bindings: those on a stick model's identity go to the
+port's Stick column, the rest to the authored Control A and Control B. `SlotOfOther` maps Control A
+and Control B to the first and second non-stick binding, so a stick bound ahead of the keys never
+shifts which binding those cells replace. The Stick cell lists every stick binding's caption in the
+row's order, joined by `Separator` (" / ", which Control B shares), the first listed being the one
+the clear gesture drops; a line wider than its cell scrolls (`Boards/BoardMarquee.cs`). An unnamed
+stick's caption is its control alone (`Sticks/StickLabels.cs`'s `Column`). The page placing the column:
+`OriginalOptionsScreen.cs`; the stick-only capture it arms: `ControlsFeature.cs`.
 
 ## src/UI/Menu/Original/OriginalJoinBoard.cs
 The join board, one standalone module behind the top level's remake-only JOIN BOARD door and the only screen a pad signs onto a
@@ -1269,14 +1287,14 @@ roster, a lock or a store. Owned by the host's feature set and read out of it by
 `OriginalShell`. Off-engine coverage: `CSVM.Tests/FreeFlightFeatureTests.cs`.
 
 ## src/UI/Menu/ControlsFeature.cs
-The rebinding screen as a shared `IMenuFeature`, engine-free: which seat's keymap is being edited
-(one registered `BindingProfile` per seat), which of the three contexts, the row and slot cursors,
-the capture in progress over the seat's own `IDeviceState`, and the steal it is about to perform.
-A capture that lands on a free control binds it; one that lands on a held control raises `Pending`
-naming every action that would lose it and moves nothing until `ConfirmSteal`, which keeps the
-original's conflict rule from happening behind the player's back. `UnbindSlot`, `ResetContext`,
-`Save` and `Accepted` (each committed seat, for a host whose seats hold their own keymaps) are the
-rest. The seat's `MouseFlying` and `MouseSensitivity` are staged with the maps and written on accept. Editing is scoped to one seat's profile. Model: [../org/input.md](../org/input.md).
+The rebinding screen as a shared `IMenuFeature`, engine-free: one seat's keymap, the context, the
+row and slot cursors, the capture (given the focused row, so a stick axis binds a whole pair) and
+the pending steal, which names every loser but a full axis's pair partner and waits for
+`ConfirmSteal`. `BeginStickCapture`/`OfferStick` serve the original's Stick column, replacing only
+the same stick model's binding. `UnbindSlot`, `ResetContext`/`ResetSeat` (player 1's stick rows
+through the injected `IStickRows`), `OpenProfilesFolder`, the injected save (player 1's through
+`Sticks/StickScreens.cs`) and `Accepted` are the rest; mouse settings are staged with the maps.
+Model: [../org/input.md](../org/input.md).
 
 ## src/UI/Menu/PlayerSetupFeature.cs
 Player setup as a shared `IMenuFeature`, device-neutral and engine-free. `Seats` are `PlayerSeat`s
@@ -1299,14 +1317,14 @@ and `ScanJoins` are Built-in's join gesture, Start on an unclaimed pad while a s
 hand the feature's `Choices`. Read `src/UI/Menu/PlayerSetupFeature.cs` for the seats themselves.
 
 ## src/UI/Screens/MenuControlsSeats.cs
-The rebinding screen's seat bookkeeping, for any presentation. `Sync` takes this frame's pollers,
-one per joined seat in player order, and puts the shared `ControlsFeature`'s player rows in step
-with them: a registration is kept while the seat behind its number is the same poller, a number
-that changed hands is registered again, and a seat with nothing to press gets no row. `PadOf` is
-the identity a context's rows sit on, the one function the capture reader and the captured control
-both take, so neither can name a pad the other does not. The profile a seat is staged from is the
-menu poller's own live map plus the saved flight and camera maps, mouse scheme and sensitivity, so
-an accepted rebind is felt at once. Read `src/UI/Menu/ControlsFeature.cs` for the editing itself.
+The rebinding screen's seat bookkeeping, for any presentation. `Sync` keeps the shared
+`ControlsFeature`'s player rows in step with this frame's pollers: a registration stays while the
+same poller holds its number, and a seat with nothing to press gets no row. It also follows the
+stick profile set into seat 1's registration (`ControlsFeature.Follow`). `Forget` drops every row
+on a presentation's activation, since the pause leaf registers the same numbers. `PadOf` is the
+identity a context's rows sit on, for the capture reader and the captured control alike. A seat is
+staged from the menu poller's live map plus the saved flight and camera maps. Read
+`src/UI/Menu/ControlsFeature.cs` for the editing itself.
 
 ## src/UI/Menu/InstantActionFeature.cs
 Instant Action as a shared `IMenuFeature`, owned by the host's feature set and configured by both

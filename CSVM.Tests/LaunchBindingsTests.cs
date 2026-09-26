@@ -200,6 +200,31 @@ public sealed class LaunchBindingsTests : IDisposable
         Assert.Contains(kp7, live.Bindings(InputAction.LookLeft));
     }
 
+    /// <summary>Every stick belongs to seat 1, so only player 1's keymap is completed from the stick
+    /// profiles, with the gate open or shut.</summary>
+    [Fact]
+    public void StickRows_CompleteOnlyPlayerOnesKeymap()
+    {
+        var recorder = new RecordingStickRows();
+        var previous = LaunchBindings.StickRows;
+        LaunchBindings.StickRows = recorder;
+        try
+        {
+            var shut = LaunchBindings.Profile(1, default, readsKeyboard: true);
+            LaunchBindings.Configure(deterministic: false);
+            var open = LaunchBindings.Profile(1, default, readsKeyboard: true);
+            var two = LaunchBindings.Profile(2, default, readsKeyboard: false);
+
+            Assert.Contains(shut, recorder.Seen);
+            Assert.Contains(open, recorder.Seen);
+            Assert.DoesNotContain(two, recorder.Seen);
+        }
+        finally
+        {
+            LaunchBindings.StickRows = previous;
+        }
+    }
+
     private static string Rebound(InputContext context, InputAction action)
     {
         var profile = BindingProfile.Defaults(default, readsKeyboard: true);
@@ -224,4 +249,17 @@ public sealed class LaunchBindingsTests : IDisposable
 
     private void Save(int player, string json) =>
         File.WriteAllText(Path.Combine(_dir, BindingStore.FileNameFor(player)), json, new UTF8Encoding(false));
+
+    // Records the keymaps it is handed and changes none, so another class reading player 1's
+    // profile while this one is registered sees no difference.
+    private sealed class RecordingStickRows : IStickRows
+    {
+        public System.Collections.Concurrent.ConcurrentBag<BindingProfile> Seen { get; } = new();
+
+        public void MergeInto(BindingProfile keymap) => Seen.Add(keymap);
+
+        public void ResetInto(ActionMap reset, ActionMap staged, InputContext context)
+        {
+        }
+    }
 }

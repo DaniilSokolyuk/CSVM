@@ -47,7 +47,7 @@ internal static class SpectateHandoff
         var eye = rig.Camera.Position;   // where the death or crash camera left it (CameraController)
         var spectator = new SpectatorCamera(rig.Camera, eye,
             follow != null ? follow.WorldPosition : eye - rig.Camera.Basis.Z,
-            pilot.PadDevices, pilot.UseKeyboard)
+            pilot.PadDevices, pilot.UseKeyboard, pilot.PlayerIndex)
         {
             ShowReadout = false,   // the freecam's own label would sit over a splitscreen pane
             LockCandidates = lockCandidates,

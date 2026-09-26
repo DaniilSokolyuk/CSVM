@@ -94,6 +94,12 @@ public sealed partial class ComposedBoardView : Control
     private bool _caretLit = true;
     private bool _caretOnBoard;
 
+    // The marquee's clock, the captions it last started from, and whether the last draw scrolled
+    // any. The captions restart it, so a rebound cell is read from its start.
+    private double _marqueeClock;
+    private string _marqueeText = string.Empty;
+    private bool _marqueeMoving;
+
     private ComposedBoard? _board;
     private string _dataRoot = string.Empty;
     private string _detail = string.Empty;
@@ -250,6 +256,18 @@ public sealed partial class ComposedBoardView : Control
         return flipped && _caretOnBoard;
     }
 
+    /// <summary>Advances the marquee of every <see cref="BoardLine.Marquee"/> line by that many
+    /// seconds, answering whether a caption the last draw scrolled has moved. Takes its step from
+    /// the caller for the reason <see cref="AdvanceMovies"/> does, and holds still at
+    /// <see cref="BoardMarquee.PinnedSeconds"/> while that is set.</summary>
+    public bool AdvanceMarquee(double elapsedSeconds)
+    {
+        double next = BoardMarquee.PinnedSeconds ?? _marqueeClock + elapsedSeconds;
+        bool moved = _marqueeMoving && next != _marqueeClock;
+        _marqueeClock = next;
+        return moved;
+    }
+
     /// <summary>One bitmap's own size in its own pixels, or zero where the extraction does not
     /// carry it. The one measurement a composed board cannot make for itself: a progress fill is a
     /// pixel clip against the fill bitmap's own width.</summary>
@@ -296,6 +314,13 @@ public sealed partial class ComposedBoardView : Control
         }
 
         _caretOnBoard = caret;
+        string marquee = MarqueeText(board);
+        if (marquee != _marqueeText)
+        {
+            _marqueeText = marquee;
+            _marqueeClock = BoardMarquee.PinnedSeconds ?? 0d;
+        }
+
         ForgetHeld(board);
         _board = board;
         _palette = palette;
@@ -353,6 +378,7 @@ public sealed partial class ComposedBoardView : Control
         }
 
         var font = GetThemeDefaultFont();
+        _marqueeMoving = false;
         foreach (var line in board.Lines)
         {
             DrawText(fit, Face(font, line), line);
@@ -437,6 +463,21 @@ public sealed partial class ComposedBoardView : Control
         }
 
         return false;
+    }
+
+    // Every marquee caption on the board in order, what decides whether the scroll starts over.
+    private static string MarqueeText(ComposedBoard board)
+    {
+        var text = new StringBuilder();
+        foreach (var line in board.Lines)
+        {
+            if (line.Marquee)
+            {
+                text.Append(line.Text).Append('\n');
+            }
+        }
+
+        return text.ToString();
     }
 
     // One frame of a stacked strip, in texture pixels. A strip's frames divide its height evenly,
@@ -779,6 +820,11 @@ public sealed partial class ComposedBoardView : Control
             return;
         }
 
+        if (line.Marquee && DrawMarquee(fit, font, line, points, at))
+        {
+            return;
+        }
+
         // Wrapped, because a description panel's text is a block. A row's own text may still be
         // longer than the widget it sits in, and a single-line draw would run off the board.
         var justify = line.Justify switch
@@ -789,6 +835,46 @@ public sealed partial class ComposedBoardView : Control
         };
         DrawMultilineString(font, at, line.Text, justify, fit.Length(line.Width),
             points, -1, InkOf(line));
+    }
+
+    // A marquee line wider than its box is drawn on one line at the scroll's phase, answering true.
+    // One that fits answers false and draws as any other line. The text server clips whole
+    // glyphs, so the line keeps its place in the draw order and nothing drawn later is covered.
+    private bool DrawMarquee(BoardFit fit, Font font, BoardLine line, int points, Vector2 at)
+    {
+        float box = fit.Length(line.Width);
+        var server = TextServerManager.GetPrimaryInterface();
+        var shaped = server.CreateShapedText();
+        try
+        {
+            server.ShapedTextAddString(shaped, line.Text, font.GetRids(), points, font.GetOpentypeFeatures());
+            // Measured off the shaping that draws, and the overflow rounded UP to whole pixels. ⚠ The
+            // clip keeps only whole glyphs. A shift short of the overflow by a pixel fraction never
+            // shows the last glyph.
+            float wide = (float)server.ShapedTextGetSize(shaped).X;
+            if (wide <= box)
+            {
+                return false;
+            }
+
+            if (wide - box <= fit.Length(BoardMarquee.SlackPixels))
+            {
+                server.ShapedTextDraw(shaped, GetCanvasItem(), at, -1f, -1f, InkOf(line));
+                return true;
+            }
+
+            _marqueeMoving = true;
+            float overflow = Mathf.Ceil(wide - box);
+            // Whole window pixels, so a nearest-sampled face does not shimmer between two positions.
+            float shift = Mathf.Min(overflow, Mathf.Round(fit.Length(BoardMarquee.Offset(overflow / fit.Scale, _marqueeClock))));
+            server.ShapedTextDraw(shaped, GetCanvasItem(), new Vector2(at.X - shift, at.Y), shift, shift + box, InkOf(line));
+        }
+        finally
+        {
+            server.FreeRid(shaped);
+        }
+
+        return true;
     }
 
     // A line with a pad control in it, drawn through the composition the flight prompts use: words,

@@ -5,14 +5,12 @@ namespace CSVM.Bindings;
 
 /// <summary>The controls a rebinding screen can capture, and the scan that turns a press into a
 /// <see cref="Binding"/>. It reads the seat's own <see cref="IDeviceState"/>, so a captured pad
-/// control carries the identity that seat's map is authored on rather than a hardware GUID the
-/// seat would never resolve: a seat reads a SET of pads through a placeholder
-/// (<see cref="DefaultBindings.AnyPad"/> and its siblings), and a real GUID beside a placeholder
-/// row would be two controls to <see cref="ActionMap.SameControl"/> and one to the player.
-/// ⚠ Hats are deliberately not scanned, because no hat may be authored on this backend at all
-/// (<see cref="BindingControl.Hat"/>); a d-pad direction arrives as one of the buttons below and is
-/// captured as that button. An axis is scanned under the rest-then-move rule of
-/// <see cref="MoveThreshold"/>, since a resting stick drifts.</summary>
+/// control carries the placeholder identity the seat's map is authored on, never a hardware GUID.
+/// A GUID beside a placeholder row (<see cref="DefaultBindings.AnyPad"/>) would be two controls to
+/// <see cref="ActionMap.SameControl"/> and one to the player.
+/// ⚠ A pad's hat is not scanned: a d-pad direction arrives as a button and is captured as that.
+/// A pad axis is scanned rest-then-move (<see cref="MoveThreshold"/>), since a resting stick drifts.
+/// Sticks, hats included, are scanned by <see cref="StickCapture"/>.</summary>
 public sealed class ControlCapture
 {
     /// <summary>The key that cancels a capture instead of being captured. A screen with no way out
@@ -76,15 +74,21 @@ public sealed class ControlCapture
 
     private readonly DeviceId _pad;
     private readonly bool _readsKeyboard;
+    private readonly bool _sticksOnly;
+    private readonly StickCapture _sticks;
     private int _pendingModifier = -1;
 
-    /// <summary>A capture for one seat: <paramref name="pad"/> is the identity that seat's pad
-    /// bindings sit on, and <paramref name="readsKeyboard"/> is false for a pad-only splitscreen
-    /// seat, which must not bind the one shared keyboard.</summary>
-    public ControlCapture(DeviceId pad, bool readsKeyboard)
+    /// <summary>A capture for one seat, whose pad bindings sit on <paramref name="pad"/>. A pad-only
+    /// splitscreen seat passes <paramref name="readsKeyboard"/> false, so it never binds the shared
+    /// keyboard. The action being bound, <paramref name="row"/>, decides whether a stick axis becomes
+    /// a full axis. With <paramref name="sticksOnly"/> it captures nothing but stick controls, and
+    /// Escape and the pad's Back still cancel.</summary>
+    public ControlCapture(DeviceId pad, bool readsKeyboard, InputAction? row = null, bool sticksOnly = false)
     {
         _pad = pad;
         _readsKeyboard = readsKeyboard;
+        _sticksOnly = sticksOnly;
+        _sticks = new StickCapture(row);
     }
 
     /// <summary>Masks everything currently held, so a control still down from the press that opened
@@ -97,6 +101,7 @@ public sealed class ControlCapture
         _maskedMouse.Clear();
         _maskedAxes.Clear();
         _pendingModifier = -1;
+        _sticks.Arm(state);
         foreach (var axis in Axes)
         {
             if (!AtRest(state, axis))
@@ -133,12 +138,15 @@ public sealed class ControlCapture
     }
 
     /// <summary>The control the player pressed since <see cref="Arm"/>, or null while none has
-    /// been. Keys first, then pad buttons, then the mouse, then the axes, so a frame holding
-    /// several answers the same way twice and a button beats the stick a thumb rested on. A key
-    /// pressed under Shift, Ctrl or Alt carries them; a modifier alone is captured on its release.
+    /// been. The order is keys, pad buttons, stick buttons and hats, the mouse, pad axes, stick axes.
+    /// A frame holding several answers the same way twice, and a button beats an axis a hand rests on.
+    /// A key pressed under Shift, Ctrl or Alt carries them; a modifier alone is captured on release.
     /// </summary>
     public Binding? Poll(IDeviceState state)
     {
+        if (_sticksOnly)
+            return _sticks.PollPresses(state) ?? _sticks.PollAxes(state);
+
         var modifiers = HeldModifiers(state);
         foreach (var key in Keys)
         {
@@ -157,6 +165,9 @@ public sealed class ControlCapture
                 return new Binding(_pad, BindingControl.Button((int)button));
         }
 
+        if (_sticks.PollPresses(state) is { } press)
+            return press;
+
         foreach (var button in MouseButtons)
         {
             if (Fresh(_maskedMouse, (int)button, MouseDown(state, button)))
@@ -170,7 +181,7 @@ public sealed class ControlCapture
             return new Binding(_pad, BindingControl.Axis((int)axis, sign, CapturedDeadzone));
         }
 
-        return null;
+        return _sticks.PollAxes(state);
     }
 
     private static bool Fresh(HashSet<int> masked, int index, bool down)

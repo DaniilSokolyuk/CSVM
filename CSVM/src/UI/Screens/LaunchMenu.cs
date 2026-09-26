@@ -107,10 +107,10 @@ public sealed partial class LaunchMenu : CanvasLayer
     private const int ControlsPlayerRow = 0;
     private const int ControlsSensitivityRow = 1;
     private const int ControlsContextRow = 2;
-    // The three rows below the action list, in the original's own order: reset the whole keymap,
-    // abandon every staged edit, commit them. The original draws these as persistent buttons on
-    // every category page; here they are the tail of the one list this presentation has. TUNE.
-    private const int ControlsFooterRows = 3;
+    // The rows below the action list. First the stick profiles folder, then the original's three
+    // in its order: reset the keymap, abandon the staged edits, commit them. Accept stays last. TUNE.
+    private const int ControlsFooterRows = 4;
+    private const int ControlsFolderButton = 0;
     // The Options screen's stepper rows, above the Controls door and the apply row. The screen
     // is a form the cursor walks top to bottom. First the five gameplay settings: the three the
     // Original presentation's GAME OPTIONS page draws, in its order, then the targeting switch
@@ -649,6 +649,9 @@ public sealed partial class LaunchMenu : CanvasLayer
     /// <see cref="OpenHangarAid"/> and the campaign's by <see cref="OpenCampaignAid"/>.</summary>
     public void ShowMenu(string startScreen = "")
     {
+        // The pause leaf may have registered these player numbers during a flight. First, since the
+        // Controls aid below registers the seats again.
+        _controlsSeats?.Forget();
         _screen = startScreen switch
         {
             "chapter" or "dogfight" => Screen.Chapter,
@@ -1168,6 +1171,7 @@ public sealed partial class LaunchMenu : CanvasLayer
         p1.Back = frame.Back;
         p1.Loadout = frame.Loadout;
         p1.Presets = frame.Contents;
+        p1.Unbind = frame.Unbind;
         _slots[0].Frame = frame;
     }
 
@@ -2753,11 +2757,12 @@ public sealed partial class LaunchMenu : CanvasLayer
     }
 
     // The two gestures with no row of their own: unbind the highlighted control, and put this
-    // seat's whole context back to the shipped keymap.
+    // seat's whole context back to the shipped keymap. The unbind is MenuInput.Unbind, which the
+    // loadout's L key does not reach.
     private bool HandleControlsShortcuts(MenuInput p1)
     {
         bool dirty = false;
-        if (p1.Loadout && IsControlsActionRow(_controlsIndex))
+        if (p1.Unbind && IsControlsActionRow(_controlsIndex))
         {
             _controls.UnbindSlot();
             dirty = true;
@@ -2789,9 +2794,10 @@ public sealed partial class LaunchMenu : CanvasLayer
 
         switch (ControlsButton(_controlsIndex))
         {
-            case 0: _controls.ResetSeat(); break;
-            case 1: _controls.Cancel(); break;
-            case 2: CommitControls(p1); break;
+            case ControlsFolderButton: _controls.OpenProfilesFolder(); break;
+            case 1: _controls.ResetSeat(); break;
+            case 2: _controls.Cancel(); break;
+            case 3: CommitControls(p1); break;
             default: _controls.BeginCapture(); break;
         }
     }
@@ -2908,9 +2914,10 @@ public sealed partial class LaunchMenu : CanvasLayer
             return "Control set";
         return ControlsButton(index) switch
         {
-            0 => "Reset to default",
-            1 => "Cancel changes",
-            2 => "Accept changes",
+            ControlsFolderButton => "Open profiles folder",
+            1 => "Reset to default",
+            2 => "Cancel changes",
+            3 => "Accept changes",
             _ => BindingLabels.Name(_controls.Actions[index - ControlsHeaderRows]),
         };
     }
@@ -2925,6 +2932,8 @@ public sealed partial class LaunchMenu : CanvasLayer
             return SensitivityScale.Label(_controls.MouseSensitivity);
         if (index == ControlsContextRow)
             return ControlsContextLabel(_controls.Context);
+        if (ControlsButton(index) == ControlsFolderButton)
+            return CSVM.Sticks.StickProfiles.UserDirectory;
         if (ControlsButton(index) >= 0)
             return _controls.Dirty ? "changed" : string.Empty;
 
@@ -2957,9 +2966,11 @@ public sealed partial class LaunchMenu : CanvasLayer
             return "Which keymap: one control means different things flying, on a board and in the free camera.";
         return ControlsButton(focus) switch
         {
-            0 => "Puts every control set back to the shipped keymap. Cancel still undoes it.",
-            1 => "Throws away everything changed here, a reset included.",
-            2 => "Writes the changes to this seat's keymap and saves them.",
+            ControlsFolderButton => "Opens the folder holding player 1's stick layouts, one file per stick model. "
+                + "Deadzones are edited per binding there.",
+            1 => "Puts every control set back to the shipped keymap. Cancel still undoes it.",
+            2 => "Throws away everything changed here, a reset included.",
+            3 => "Writes the changes to this seat's keymap and saves them. Player 1's stick rows go to the stick profile files.",
             _ => "Enter / A rebinds the marked control; ←→ picks which one.",
         };
     }
@@ -2973,7 +2984,7 @@ public sealed partial class LaunchMenu : CanvasLayer
         if (!IsControlsActionRow(_controlsIndex))
             return "↑↓  Choose       ←→  Change       Enter / A  Do it       Esc / B  Back without saving";
         return "↑↓  Choose       ←→  Which control       Enter / A  Rebind"
-            + "       L / Y  Unbind       P / X  Defaults       Esc / B  Back without saving";
+            + "       Del / Backspace / Y  Unbind       P / X  Defaults       Esc / B  Back without saving";
     }
 
     // A three-way stepper with wrap, Normal / Hard / Hardest in the campaign selector's order.

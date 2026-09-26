@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using CSVM.Bindings;
+using CSVM.Flight.Airframe;
+using CSVM.Sticks;
 using CSVM.UI.Boards;
 using CSVM.Utils;
 using Godot;
@@ -86,6 +88,11 @@ public sealed class MenuInput
     /// one thing everywhere the menu offers a fit to edit.</summary>
     public bool Loadout;
 
+    /// <summary>Clear the highlighted control on a rebinding page (edge): Delete or Backspace, or the
+    /// loadout gesture from a pad or a stick. The loadout's own key is left out, since a letter is no
+    /// key a player reaches for to clear something.</summary>
+    public bool Unbind;
+
     /// <summary>Open the Instant Action Table of Contents (edge). INVENTED: the original picks a
     /// preset with a mouse on a list that shares its page with the dropdowns, so there is no
     /// decoded button here. X is the last free face button in menu context.</summary>
@@ -138,9 +145,16 @@ public sealed class MenuInput
     private readonly PlayerActions _keys;
     private readonly PlayerActions _padOnly;
 
-    // The keyboard half alone, over the pad-muted state, and which side the hints name.
+    // The keyboard half alone, over the pad-muted state, and which side the hints name. The flight
+    // sticks alone tell the hints a stick's press from a gamepad's.
     private readonly PlayerActions _keysOnly;
+    private readonly PlayerActions _sticksOnly;
+    private readonly StickSplit _sticksAlone;
     private readonly ActiveDevice _device = new();
+
+    // The stick profiles this seat's menu rows follow, asked per tick so a set started after this
+    // seat is still followed.
+    private readonly Func<StickProfileSet?> _stickProfiles;
 
     private PlayerActions _typingKeys;
 
@@ -152,12 +166,33 @@ public sealed class MenuInput
     private bool _typingStale;
 
     private bool _acceptPrev, _backPrev, _padBackPrev, _startPrev, _loadoutPrev, _presetsPrev;
-    private bool _erasePrev;
+    private bool _erasePrev, _unbindPrev;
     private int _dirPrev, _dirXPrev, _dirPadPrev, _dirPadXPrev;
 
+    // The stick profile revision this seat's menu rows were last merged from.
+    private int _stickRevision = -1;
+
+    // The player this seat loaded the keymap of, 0 until LoadSavedKeymap. Sticks read only for
+    // player 1, so a seat that never learns its player, or a joined one, reads none.
+    private int _player;
+
+    /// <summary>A seat over the live stick roster and profiles. Only player 1 reads the sticks, once
+    /// <see cref="LoadSavedKeymap"/> has named the player.</summary>
     public MenuInput()
+        : this(() => StickPump.Roster, () => StickProfiles.Live)
     {
-        _devices = new SeatDeviceState(SeatPads, () => Pads);
+    }
+
+    /// <summary>A seat over the stick roster and profile set given, for a suite with a fake stick.
+    /// The <paramref name="player"/> argument seats it without <see cref="LoadSavedKeymap"/>, which
+    /// would read the user's keymap folder.</summary>
+    public MenuInput(Func<StickRoster?> sticks, Func<StickProfileSet?> stickProfiles, int player = 0)
+    {
+        ArgumentNullException.ThrowIfNull(sticks);
+        _stickProfiles = stickProfiles ?? throw new ArgumentNullException(nameof(stickProfiles));
+        _player = player;
+        var stickState = new StickDeviceState(() => _player - 1, sticks);
+        _devices = new SeatDeviceState(SeatPads, () => Pads, sticks: stickState);
         _padMuted = new SeatDeviceState(SeatPads, () => Pads, readsPads: false);
         var map = DefaultBindings.MapFor(InputContext.Menu, SeatPads);
 
@@ -167,6 +202,8 @@ public sealed class MenuInput
         _typingKeys = new PlayerActions(TypingMap(map), true);
         _padOnly = new PlayerActions(map, false);
         _keysOnly = new PlayerActions(map, true);
+        _sticksOnly = new PlayerActions(map, false);
+        _sticksAlone = StickSplit.SticksOnly(_devices);
         _live = _keys;
     }
 
@@ -200,6 +237,23 @@ public sealed class MenuInput
                 return pads.Length == 0 ? "keyboard" : $"keyboard + {pads}";
             return pads.Length == 0 ? "no device" : pads;
         }
+    }
+
+    /// <summary>The board reader a flight session gives the player at zero-based
+    /// <paramref name="playerIndex"/>. It reads the keyboard for the first player only, the pads
+    /// <paramref name="pads"/> names, and that player's saved menu keymap. Loading the keymap is what
+    /// seats it, so the first player's pause menus read the sticks and follow the stick profiles.
+    /// </summary>
+    public static MenuInput ForSessionSeat(int playerIndex, int[]? pads) =>
+        ForSessionSeat(playerIndex, pads, () => StickPump.Roster, () => StickProfiles.Live);
+
+    /// <summary>The same seat over the stick roster and profile set given, for a suite.</summary>
+    public static MenuInput ForSessionSeat(
+        int playerIndex, int[]? pads, Func<StickRoster?> sticks, Func<StickProfileSet?> stickProfiles)
+    {
+        var input = new MenuInput(sticks, stickProfiles) { Keyboard = playerIndex == 0, Pads = pads };
+        input.LoadSavedKeymap(playerIndex + 1);
+        return input;
     }
 
     /// <summary>Whether an unbound pad is pressing Start, the join gesture. Static because the
@@ -313,14 +367,16 @@ public sealed class MenuInput
     /// words or as a glyph. Empty where this seat reaches none, which leaves the hint off rather
     /// than naming a control the player does not have.</summary>
     public ControlLine Hint(string template, InputAction action) =>
-        ControlLine.For(template, Map, action, _device.Side, Keyboard);
+        ControlLine.For(template, Map, action, _device.Side, Keyboard, _device.OnStick);
 
     /// <summary>Puts this seat on the menu keymap <paramref name="player"/> saved, in place, so the
     /// map this poller's readers hold is the one that changed. Anything the file does not carry
     /// stays at its shipped default, and under the launch gate no file is read at all
-    /// (<see cref="LaunchBindings"/>). Called once the seat knows which player it is.</summary>
+    /// (<see cref="LaunchBindings"/>). Called once the seat knows which player it is. Player 1 also
+    /// reads the sticks, and its stick rows follow the active stick profiles from then on.</summary>
     public void LoadSavedKeymap(int player)
     {
+        _player = player;
         Map.Fill(LaunchBindings.Map(player, InputContext.Menu, SeatPads, readsKeyboard: true));
         RebindsApplied();
     }
@@ -329,7 +385,7 @@ public sealed class MenuInput
     public void Poll(float dt)
     {
         ReadDevices();
-        DeviceMoved = _device.Observe(_keysOnly.Current, _padOnly.Current, Keyboard);
+        DeviceMoved = _device.Observe(_keysOnly.Current, _padOnly.Current, Keyboard, _sticksOnly.Current);
         Move = StepAxis(RawDir(), ref _dirPrev, _repeat, dt);
         MoveX = StepAxis(RawDirX(), ref _dirXPrev, _repeatX, dt);
         PadMove = StepAxis(RawPadDir(), ref _dirPadPrev, _repeatPad, dt);
@@ -360,6 +416,10 @@ public sealed class MenuInput
         Presets = presets && !_presetsPrev;
         _presetsPrev = presets;
 
+        bool unbind = RawUnbind();
+        Unbind = unbind && !_unbindPrev;
+        _unbindPrev = unbind;
+
         int active = ScanActivePad();
         if (active >= 0)
             LastActivePad = active;
@@ -376,6 +436,7 @@ public sealed class MenuInput
         _startPrev = RawStart();
         _loadoutPrev = RawLoadout();
         _presetsPrev = RawPresets();
+        _unbindPrev = RawUnbind();
         _dirPrev = RawDir();
         if (_dirPrev != 0)
             _repeat.Press();
@@ -392,8 +453,8 @@ public sealed class MenuInput
         PrimeText();
         // Seeds the handover's own counts too, so a button still held from whatever raised this
         // screen is not read as the press that hands the hints to the other device.
-        _device.Observe(_keysOnly.Current, _padOnly.Current, Keyboard);
-        Accept = Back = PadBack = Start = Loadout = Presets = DeviceMoved = false;
+        _device.Observe(_keysOnly.Current, _padOnly.Current, Keyboard, _sticksOnly.Current);
+        Accept = Back = PadBack = Start = Loadout = Presets = Unbind = DeviceMoved = false;
     }
 
     // The Key enum's letter, digit and punctuation values ARE their ASCII codes, so the unshifted
@@ -516,6 +577,7 @@ public sealed class MenuInput
     // taken from the live field because a caller sets it after construction.
     private void ReadDevices()
     {
+        FollowStickProfiles();
         if (_typingStale)
         {
             _typingKeys = new PlayerActions(TypingMap(_keys.Map), Keyboard);
@@ -531,6 +593,18 @@ public sealed class MenuInput
         _live.Poll(_devices);
         _padOnly.Poll(_devices);
         _keysOnly.Poll(_padMuted);
+        _sticksOnly.Poll(_sticksAlone);
+    }
+
+    // A plug, or a stick settling into the generic default, changes the active profiles. The menu
+    // rows are replaced in place, so every reader of Map sees them. Seat 1 only.
+    private void FollowStickProfiles()
+    {
+        if (_player == StickDeviceState.OwningSeat + 1 && _stickProfiles() is { } set
+            && set.MergeIfChanged(Map, InputContext.Menu, ref _stickRevision))
+        {
+            RebindsApplied();
+        }
     }
 
     private int RawPadDir() => Dir(_padOnly, InputAction.MenuUp, InputAction.MenuDown);
@@ -554,5 +628,8 @@ public sealed class MenuInput
     private bool RawLoadout() => _live.Held(InputAction.MenuLoadout);
 
     private bool RawPresets() => _live.Held(InputAction.MenuPresets);
+
+    private bool RawUnbind() =>
+        KeyDown(Key.Delete) || KeyDown(Key.Backspace) || _padOnly.Held(InputAction.MenuLoadout);
 
 }

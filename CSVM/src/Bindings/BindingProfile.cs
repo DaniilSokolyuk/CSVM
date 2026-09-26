@@ -98,6 +98,6 @@ public sealed class BindingProfile
     /// <summary>Hands <see cref="Device"/> this tick's keyboard-side and pad-side readings and
     /// answers whether the side moved. The keyboard gate is read off this seat rather than taken
     /// from the caller, so a pad-only seat cannot be switched to a key it never reads.</summary>
-    public bool ObserveDevice(ActionSnapshot keyboardSide, ActionSnapshot padSide) =>
-        Device.Observe(keyboardSide, padSide, ReadsKeyboard);
+    public bool ObserveDevice(ActionSnapshot keyboardSide, ActionSnapshot padSide, ActionSnapshot? stickSide = null) =>
+        Device.Observe(keyboardSide, padSide, ReadsKeyboard, stickSide);
 }
