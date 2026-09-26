@@ -160,10 +160,10 @@ before it knows which deserialiser to run. Read `NetMessageWriter.cs` next.
 ## src/Net/NetWorldMessages.cs
 The host-owned world's messages, beside the vocabulary rather than in it: `AiStateMessage`
 (an AI's pose by admission ordinal, plain unreliable because every AI shares one channel, with
-`AsAircraftState` for the pose buffer), `AiFireMessage`, `AiHitMessage` (a guest's claim on an AI,
-to the host alone), `ZeppelinStateMessage` (one zeppelin of the original's `0x1e`, by placement
-index), `AiSpawnMessage` (a host generator launch at the ordinal it claims, reliable and ordered),
-`SurfaceVehicleStateMessage` (one hull's patrol by spawn index and name hash) and
+`AsAircraftState` for the pose buffer), `AiFireMessage`, `AiHitMessage` and `DestructibleHitMessage`
+(a guest's claim on an AI or a pool, to the host alone), `ZeppelinStateMessage` (one zeppelin of the
+original's `0x1e`, by placement index), `AiSpawnMessage` (a host generator launch at the ordinal it
+claims), `SurfaceVehicleStateMessage` (one hull's patrol by spawn index and name hash) and
 `WorldEventMessage`, whose `NetWorldEvent` code says what its subject, argument and value carry.
 Ids and phase mapping: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
 

@@ -241,6 +241,10 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
     /// <see cref="ApplyReplicatedHealth"/>.</summary>
     public bool DamageReplicated;
 
+    /// <summary>Where a replicated world sends health damage it asks the owning machine to spend,
+    /// with the pool and the amount. Null off the wire and on the host.</summary>
+    public Action<DestructibleRegistry.Instance, float>? DamageClaim;
+
     /// <summary>The world velocity a <c>Callback 16</c> hands the running instance, which is how a
     /// wreck inherits the aircraft's motion (docs/org/vehicleDamage.md). Supplied by the rig,
     /// because only the rig knows which vehicle is dying and how fast; null leaves the code

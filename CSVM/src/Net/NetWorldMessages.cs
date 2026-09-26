@@ -193,6 +193,51 @@ public readonly record struct AiHitMessage(
 }
 
 /// <summary>
+/// A guest's claim of health damage on a destructible pool the host owns, the pool counterpart of
+/// <see cref="AiHitMessage"/>. A guest's rounds need none, since the host replays them into its own
+/// world. A pool is named by its registration index and guarded by its name key, as
+/// <see cref="NetWorldEvent.DestructibleHealth"/> names one. Reliable, sent to the host alone.</summary>
+public readonly record struct DestructibleHitMessage(ushort Pool, int Key, float Damage)
+    : INetMessage<DestructibleHitMessage>
+{
+    /// <summary>The fixed width of the message, header included.</summary>
+    public const int Size = 16;
+
+    /// <inheritdoc/>
+    public static NetMessageType Type => NetMessageType.DestructibleHit;
+
+    /// <inheritdoc/>
+    public static NetReliability Reliability => NetReliability.Reliable;
+
+    /// <inheritdoc/>
+    public static bool TryRead(ReadOnlySpan<byte> from, out DestructibleHitMessage message)
+    {
+        message = default;
+        var reader = new NetMessageReader(from);
+        if (!reader.Is(Size) || reader.Type != Type)
+            return false;
+
+        ushort pool = reader.ReadUInt16();
+        _ = reader.ReadUInt16();
+        int key = reader.ReadInt32();
+        float damage = reader.ReadSingle();
+        message = new DestructibleHitMessage(pool, key, damage);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public int Write(Span<byte> into)
+    {
+        var writer = new NetMessageWriter(into, Type);
+        writer.WriteUInt16(Pool);
+        writer.WriteUInt16(0);
+        writer.WriteInt32(Key);
+        writer.WriteSingle(Damage);
+        return writer.Close();
+    }
+}
+
+/// <summary>
 /// One zeppelin's path position as the host flies it, the original's <c>0x1e</c> record for one
 /// hull. It carries position, speed, pitch and yaw in that order, on the original's half second.
 /// A zeppelin is named by its placement index.

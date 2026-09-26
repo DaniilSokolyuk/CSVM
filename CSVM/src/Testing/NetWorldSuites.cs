@@ -61,7 +61,8 @@ internal static class NetWorldSuites
         + "admit the same AI in the same order, the guest's are replicated airframes that trace the "
         + "host's paths rather than their own placement, the host's AI gunfire is spawned on the "
         + "guest, a guest's hit on an AI spends nothing there and lands on the host, a host AI "
-        + "death reaches the guest, a destructible dies on the guest only when the host kills it, and "
+        + "death reaches the guest, the guest's debug kill key kills an AI and a pool on the host "
+        + "and nowhere first, a destructible dies on the guest only when the host kills it, and "
         + "a host burst that crosses no stage reaches the guest's pool as one sample")]
     internal static void TheHostOwnsTheWorld(TestContext ctx)
     {
@@ -118,6 +119,7 @@ internal static class NetWorldSuites
             Fire(ctx, host.Session, guest.Session);
             Hits(ctx, host.Session, guest.Session, gun);
             Deaths(ctx, host.Session, guest.Session);
+            DebugKills(ctx, host.Session, guest.Session);
             Destructibles(ctx, host.Session, guest.Session);
         }
         finally
@@ -244,6 +246,73 @@ internal static class NetWorldSuites
         Lockstep(SettleSteps, host, guest);
         ctx.Check(victim.Crashed && !other.Crashed,
             $"the host's AI kill reaches the guest as that AI's death and no other's (crashed {victim.Crashed}, the other {other.Crashed}; {guest.NetWorld.WorldEventsApplied - applied} world event(s) applied)");
+    }
+
+    // The guest's debug kill key reaches the host, which kills the AI and the pool itself. The
+    // guest's copies die from the host's broadcasts, never on the key press.
+    private static void DebugKills(TestContext ctx, GameSession host, GameSession guest)
+    {
+        var pilot = guest.SeatRigs[1].Controller!;
+        var key = new UI.Overlays.DebugKillTarget(() => pilot, () => guest.NetWorld!.World);
+        try
+        {
+            ctx.Check(UI.Overlays.DebugKillTarget.LethalWeapon(pilot) != null,
+                $"the guest's fit carries a weapon a lethal claim can name");
+            var owned = host.NetWorld!.AiAt(0)!;
+            var copy = guest.NetWorld!.AiAt(0)!;
+            int taken = host.NetWorld.AiHitsTaken;
+            key.KillSource(copy, "ai0", pilot.PlayerIndex);
+            // ABLE-TO-FAIL CONTROL. A key that crashed the guest's copy locally fails here, and the
+            // host's AI then flies on to fail the check after the settle.
+            ctx.Check(!copy.Crashed && !owned.Crashed,
+                $"ABLE-TO-FAIL CONTROL: the guest's key press crashes nothing on either end at once (guest copy {copy.Crashed}, host AI {owned.Crashed})");
+            Lockstep(SettleSteps, host, guest);
+            ctx.Check(owned.Crashed && host.NetWorld.AiHitsTaken == taken + 1,
+                $"a guest's debug kill reaches the host as one claim and kills the host's AI (crashed {owned.Crashed}, {host.NetWorld.AiHitsTaken - taken} claim(s))");
+            ctx.Check(copy.Crashed,
+                $"and the guest's copy dies from the host's death broadcast (crashed {copy.Crashed})");
+            DebugKillPool(ctx, host, guest, key, pilot.PlayerIndex);
+        }
+        finally
+        {
+            key.Free();
+        }
+    }
+
+    // The same key on a pool: the guest claims it, and the host's kill comes back as its health.
+    private static void DebugKillPool(TestContext ctx, GameSession host, GameSession guest,
+        UI.Overlays.DebugKillTarget key, int killer)
+    {
+        var mineWorld = host.NetWorld!.World;
+        var theirWorld = guest.NetWorld!.World;
+        if (mineWorld == null || theirWorld == null)
+        {
+            ctx.Check(false, $"both ends build a world runtime to hold the pools");
+            return;
+        }
+
+        int index = Enumerable.Range(0, Math.Min(mineWorld.Destructibles.All.Count, theirWorld.Destructibles.All.Count))
+            .Where(i => Standing(mineWorld.Destructibles.All[i]) && Standing(theirWorld.Destructibles.All[i])
+                        && NetWorldLink.PoolKey(mineWorld.Destructibles.All[i]) == NetWorldLink.PoolKey(theirWorld.Destructibles.All[i]))
+            .DefaultIfEmpty(-1).First();
+        if (index < 0)
+        {
+            ctx.Check(false, $"{ctx.Chapter}/{MpMission} registers a standing pool at a matching index on both ends");
+            return;
+        }
+
+        var owned = mineWorld.Destructibles.All[index];
+        var copy = theirWorld.Destructibles.All[index];
+        int taken = host.NetWorld!.DestructibleHitsTaken;
+        key.KillSource(copy, copy.Anchor.Name, killer);
+        // ABLE-TO-FAIL CONTROL. The guest's pool is untouched until the host's health arrives.
+        ctx.Check(copy.Status != DestructibleRegistry.State.Destroyed && owned.Status != DestructibleRegistry.State.Destroyed,
+            $"ABLE-TO-FAIL CONTROL: the key press on '{copy.Anchor.Name}' kills it on neither end at once ({copy.Status} on the guest, {owned.Status} on the host)");
+        Lockstep(SettleSteps, host, guest);
+        ctx.Check(owned.Status == DestructibleRegistry.State.Destroyed && host.NetWorld.DestructibleHitsTaken == taken + 1,
+            $"a guest's debug kill on a pool reaches the host as one claim and kills it there ({owned.Status}, {host.NetWorld.DestructibleHitsTaken - taken} claim(s))");
+        ctx.Check(copy.Status == DestructibleRegistry.State.Destroyed,
+            $"and the guest's pool dies from the host's event ({copy.Status}, HP {copy.Health:0})");
     }
 
     // A pool on the guest dies when the host kills it, and a guest's own hit spends nothing.

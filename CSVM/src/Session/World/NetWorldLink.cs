@@ -65,6 +65,7 @@ internal sealed class NetWorldLink
             {
                 world.DestructibleDamaged += SendDestructible;
                 world.DestructibleChipped += MarkChipped;
+                net.On<DestructibleHitMessage>((_, hit) => TakeDestructibleHit(hit));
             }
 
             return;
@@ -73,6 +74,7 @@ internal sealed class NetWorldLink
         if (world != null)
         {
             world.DamageReplicated = true;
+            world.DamageClaim = SendDestructibleClaim;
         }
 
         net.On<AiStateMessage>((_, state) => TakeAiState(state));
@@ -91,6 +93,9 @@ internal sealed class NetWorldLink
 
     /// <summary>AI hit claims the host has spent.</summary>
     internal int AiHitsTaken { get; private set; }
+
+    /// <summary>Destructible damage claims the host has spent.</summary>
+    internal int DestructibleHitsTaken { get; private set; }
 
     /// <summary>Zeppelin samples the host has put on the wire.</summary>
     internal int ZeppelinSamplesSent { get; private set; }
@@ -362,6 +367,27 @@ internal sealed class NetWorldLink
         var pose = new Transform3D(ai.Attitude, ai.WorldPosition);
         ai.TakeProjectileHit(weapon, pose * hit.LocalImpact, ai.Body?.PartName(hit.Part) ?? "center",
             shooter, hit.Damage);
+    }
+
+    private void SendDestructibleClaim(DestructibleRegistry.Instance inst, float damage)
+    {
+        int index = _world == null ? -1 : IndexOf(_world.Destructibles.All, inst);
+        if (index is < 0 or > ushort.MaxValue)
+        {
+            return;
+        }
+
+        _net.Send(_net.HostPeer, new DestructibleHitMessage((ushort)index, PoolKey(inst), damage), NetChannels.Events);
+    }
+
+    // Spent through DamageAt, so the stage change it causes goes back out to every guest.
+    private void TakeDestructibleHit(in DestructibleHitMessage hit)
+    {
+        if (_world != null && FindPool(_world.Destructibles.All, hit.Pool, hit.Key) is { } pool
+            && _world.DamageAt(pool.Anchor, hit.Damage))
+        {
+            DestructibleHitsTaken++;
+        }
     }
 
     private void SendAiFire(int ordinal, WeaponDef weapon, Vector3 origin, Vector3 direction)

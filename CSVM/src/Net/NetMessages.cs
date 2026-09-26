@@ -112,6 +112,9 @@ public enum NetMessageType : ushort
     /// <summary>A lobby's first word to a peer on connect: this build's MAJOR.MINOR version.
     /// </summary>
     BuildVersion = 0x0056,
+
+    /// <summary>A guest's claim of health damage on a host-owned destructible pool.</summary>
+    DestructibleHit = 0x0057,
 }
 
 /// <summary>Which board a co-op host stands on, the screen a <see cref="CoopFlowMessage"/> names.
@@ -1240,6 +1243,7 @@ public static class NetMessage
         NetMessageType.DogfightRoster => DogfightRosterMessage.Reliability,
         NetMessageType.LobbyChat => LobbyChatMessage.Reliability,
         NetMessageType.BuildVersion => BuildVersionMessage.Reliability,
+        NetMessageType.DestructibleHit => DestructibleHitMessage.Reliability,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "no such message type"),
     };
 

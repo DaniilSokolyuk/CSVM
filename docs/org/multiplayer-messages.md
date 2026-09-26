@@ -363,6 +363,7 @@ the list: they reactivate blocks built dormant, whose ordinals already stand.
 | `0x4B` | Zeppelin state | unreliable, host to all | placement index, per-zeppelin sequence, position, speed, pitch, yaw (32 bytes) |
 | `0x4C` | AI spawn | reliable, host to all | admission ordinal, launch counter, generator index, net index, flags, lever, position, drop direction, velocity (44 bytes) |
 | `0x4D` | Surface vehicle state | unreliable, host to all | spawn index, per-hull sequence, name hash, position, speed, yaw (32 bytes) |
+| `0x57` | Destructible hit | reliable, guest to host | registration index, name hash, health damage (16 bytes) |
 
 `0x4C` is one generator aircraft launch. The host admits the aircraft as it launches and sends the
 ordinal it got; the guest builds the launch only when that ordinal is its own next one, which
@@ -419,6 +420,13 @@ and by a guest for its own seat's rounds, which it claims with `0x47`. A world p
 on the host, which simulates every round, a guest's included, from the fire events; a guest's
 world runtime reports a struck pool as hit and spends nothing. A ram on an aeroplane flown
 elsewhere spends nothing on it either, since its owner's own sweep resolves that half.
+
+The debug kill key (F17) on a guest kills nothing locally. On an aeroplane it offers the victim's
+hit router one lethal round from the guest's own fit, so an AI is claimed with `0x47` and another
+seat's aeroplane with the seat hit `0x22`, and the owner's death reaches the guest as `0x48` code 1
+or `0x12`. On a pool it sends `0x57`, which names the pool as code 3 does; the host spends
+it through its own damage path, and the kill comes back as code 3. `0x57` has no counterpart in the
+original, and a guest's rounds never use it, since the host replays them from the fire events.
 
 Each simulation phase, as a guest runs it:
 

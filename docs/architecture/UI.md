@@ -701,9 +701,9 @@ The debug kill key (F17): kills player 1's currently selected target through its
 kill counts and objective bookkeeping see it exactly as a real shot would, never by freeing the
 node. It routes on the selection's source type, an aircraft through the attributed crash path and a
 zeppelin sub-part through the anim runtime's damage call, the same call a rocket makes; a turret
-selection is inert for a reason the member states. Player 1 only, the precedent the world damage lab
-and the weapon lab already set. `KillSource` is exposed so a suite can drive the routing against
-hand-built sources with no live candidate scan behind it.
+selection is inert for a reason the member states. Over the wire, a target another machine owns is
+claimed on its owner as one lethal hit (`../org/multiplayer-messages.md`). Player 1 only.
+`KillSource` is exposed so a suite can drive the routing against hand-built sources.
 
 ## src/UI/Overlays/TileGridOverlay.cs
 The map-edge tile-grid overlay, flag-only (`--debug-tilegrid`; no key is bound): every ground tile

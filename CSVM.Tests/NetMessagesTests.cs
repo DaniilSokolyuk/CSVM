@@ -812,6 +812,24 @@ public class NetMessagesTests
         Assert.False(BuildVersionMessage.TryRead(closed, out _));
     }
 
+    // A guest's claim on a host-owned pool: the index, the name key guarding it, and the damage.
+    [Fact]
+    public void ADestructibleHitRoundTripsReliablyInSixteenBytes()
+    {
+        Span<byte> buffer = stackalloc byte[DestructibleHitMessage.Size];
+        var sent = new DestructibleHitMessage(Pool: 65000, Key: -123456789, Damage: 1500.5f);
+        Assert.Equal(16, sent.Write(buffer));
+        Assert.True(DestructibleHitMessage.TryRead(buffer, out var got));
+        Assert.Equal(sent, got);
+        Assert.Equal(0x57, (int)NetMessageType.DestructibleHit);
+        Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.DestructibleHit));
+
+        // ABLE-TO-FAIL CONTROL: a world event of the same width is not a claim.
+        Span<byte> world = stackalloc byte[WorldEventMessage.Size];
+        new WorldEventMessage(3, 1, 2, 3f).Write(world);
+        Assert.False(DestructibleHitMessage.TryRead(world, out _));
+    }
+
     [Fact]
     public void ACoopSeatFitRoundTripsTheSeatAndItsFitInTwentyBytes()
     {
