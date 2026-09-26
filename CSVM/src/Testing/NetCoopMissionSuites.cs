@@ -30,6 +30,9 @@ internal static class NetCoopMissionSuites
     // Steps each end is given for a reliable word to land, on a link with 30 ms of latency.
     private const int SettleSteps = 30;
 
+    // A guest's skip crosses twice, the ask to the host and its word back, on the lossy link.
+    private const int SkipWindowSteps = 240;
+
     // The longest a doomed field is given to reach its ending, wrecks falling included.
     private const int EndingSteps = 60 * 90;
 
@@ -128,12 +131,9 @@ internal static class NetCoopMissionSuites
 
             var ends = new[] { hostEnd, lucyEnd, thirdEnd };
             var doors = new[] { host, lucy, third };
-            // The mission's opening film holds the world, and nothing in this rig plays it out.
-            foreach (var end in ends)
-            {
-                end.Session.Cutscene?.Skip();
-            }
-
+            // The mission's opening film holds the world, and nothing in this rig plays it out. Lucy
+            // skips it, and one guest's skip has to end it on every machine.
+            SkipAcross(ctx, "Lucy", lucyEnd, ends, doors);
             Fly(SettleSteps, ends, doors);
             Starts(ctx, ends);
             Names(ctx, ends);
@@ -178,6 +178,7 @@ internal static class NetCoopMissionSuites
 
             var ends = new[] { hostEnd, thirdEnd };
             var doors = new[] { host, third };
+            SkipAcross(ctx, "the host", hostEnd, ends, doors);
             Fly(SettleSteps, ends, doors);
             ctx.Check(third.Stage == NetDoorStage.Joined && !Launcher.CoopGuestFlightOver(third),
                 $"ABLE-TO-FAIL CONTROL: with the host on the wire the guest's flight goes on ({third.Stage})");
@@ -212,6 +213,27 @@ internal static class NetCoopMissionSuites
             $"every machine opens its three seats at least half a grid slot apart (closest pair {reading})");
         ctx.Check(ends.All(e => e.Session.SeatRigs.All(r => r.Controller is { InPlay: true })),
             $"and no human is down anywhere once the opening film is skipped");
+    }
+
+    // One machine's skip of the opening film, which every machine is playing. A guest's is an ask
+    // that ends nothing before the host's word returns. The host's ends its own at once and the
+    // guests' only over the link. Either way it has to end the film everywhere.
+    private static void SkipAcross(TestContext ctx, string who, Ends skipper, Ends[] ends, NetPlayFeature[] doors)
+    {
+        bool allPlaying = ends.All(e => e.Session.Cutscene is { Playing: true });
+        bool skipped = skipper.Session.Cutscene?.Skip() == true;
+        var still = ends.Where(e => e.Session.Cutscene is { Playing: true }).ToArray();
+        bool isHost = ReferenceEquals(skipper, ends[0]);
+        ctx.Check(allPlaying && skipped && still.Length == (isHost ? ends.Length - 1 : ends.Length),
+            $"ABLE-TO-FAIL CONTROL: every machine plays the opening film and {who}'s skip leaves {still.Length} of {ends.Length} still playing before the link carries it");
+        int steps = 0;
+        for (; steps < SkipWindowSteps && ends.Any(e => e.Session.Cutscene is { Playing: true }); steps++)
+        {
+            FlyOnce(ends, doors);
+        }
+
+        ctx.Check(ends.All(e => e.Session.Cutscene is not { Playing: true }),
+            $"{who}'s skip ends the opening film on all {ends.Length} machines ({steps} step(s))");
     }
 
     private static float Gap(Ends end, int a, int b) =>

@@ -162,9 +162,9 @@ The host-owned world's messages, beside the vocabulary rather than in it: `AiSta
 (an AI's pose by admission ordinal, plain unreliable because every AI shares one channel, with
 `AsAircraftState` for the pose buffer), `AiFireMessage`, `AiHitMessage` and `DestructibleHitMessage`
 (a guest's claim on an AI or a pool, to the host alone), `ZeppelinStateMessage` (one zeppelin of the
-original's `0x1e`, by placement index), `AiSpawnMessage` (a host generator launch at the ordinal it
-claims), `SurfaceVehicleStateMessage` (one hull's patrol by spawn index and name hash) and
-`WorldEventMessage`, whose `NetWorldEvent` code says what its subject, argument and value carry.
+original's `0x1e`, by placement index), `AiSpawnMessage` (a host generator launch at its ordinal),
+`SurfaceVehicleStateMessage` (a hull's patrol), `CutsceneSkipMessage` (one episode's skip, by name
+key and ordinal) and `WorldEventMessage`, whose `NetWorldEvent` code says what its fields carry.
 Ids and phase mapping: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
 
 ## src/Net/NetCoopMessages.cs

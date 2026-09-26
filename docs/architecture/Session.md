@@ -220,6 +220,14 @@ placement index, `FollowVehicles` its hulls by spawn index and `NameKey` hash pl
 host's ordinals. Pools go out off `DestructibleDamaged` at once and `DestructibleChipped` once per
 seat tick, and apply through `ApplyReplicatedHealth`. Layouts: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
 
+## src/Session/World/NetCutsceneLink.cs
+The cutscene skip over the wire, one per network session with a cutscene host. On the host it
+broadcasts every skip `CutsceneController.Skipped` reports, its own and the guests' asks it took,
+and takes an ask only from the machine that owns the seat. On a guest it binds `SkipAsked`, so a
+skip input sends the ask and ends nothing locally, and hands each skip the host sends to
+`TakeSkip`, which ends only the episode the key and ordinal name. Layout and episode naming:
+[../org/multiplayer-messages.md](../org/multiplayer-messages.md).
+
 ## src/Session/Campaign/NetPositionalStartLink.cs
 The landing rows and the ladder switch over the wire, one per network session with either runtime
 bound. On the host it sends each row start and holder change from `LandingApproachRuntime.Started`

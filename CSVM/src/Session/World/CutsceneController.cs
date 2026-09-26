@@ -94,6 +94,17 @@ public sealed partial class CutsceneController : Node
     /// path"). Unbound, every episode hands off at its definition's end.</summary>
     public Func<bool>? EndingLanded;
 
+    /// <summary>Raised after a skip ends an episode on this end. It carries the skipper, the
+    /// episode's <see cref="EpisodeKey"/> and <see cref="EpisodeOrdinal"/>, and whether the skip
+    /// came through <see cref="TakeSkip"/>. The skipper is then a seat, else a local pane index.
+    /// A network host announces the skip to its guests from here; unbound everywhere else.</summary>
+    public Action<int, int, int, bool>? Skipped;
+
+    /// <summary>Set on a network guest only, where the host decides every skip. A skip input sends
+    /// the ask (skipper, key, ordinal) through this and ends nothing here. The episode ends when the
+    /// host's decision reaches <see cref="TakeSkip"/>.</summary>
+    public Action<int, int, int>? SkipAsked;
+
     // The rest of the mission-script host's codes the intro definitions author. Each is the whole
     // message: the definition it sits in never qualifies it
     // (docs/formats/anim-definitions/cutscenes.md).
@@ -139,6 +150,12 @@ public sealed partial class CutsceneController : Node
     // otherwise leave the picture running at the raised rate for the rest of the episode.
     private readonly HashSet<Key> _keysDown = new();
     private readonly HashSet<(int Device, JoyButton Button)> _padsDown = new();
+    // Episodes each definition has owned on this end, by name key. An episode's ordinal counts
+    // these, so every end names the same episode the same way.
+    private readonly Dictionary<int, int> _episodesByKey = new();
+    // The host's skip for an episode this end has not armed yet, applied once it does. A guest's
+    // replay can start an episode after the host's skip of it arrives.
+    private (int Key, int Ordinal, int Skipper)? _pendingSkip;
     private bool _scriptedHold;
     // The stick's skip, re-read through its own reader each tick like the keys above; null while
     // no stick is holding the fast-forward.
@@ -251,6 +268,15 @@ public sealed partial class CutsceneController : Node
     /// always the raiser: CM06's docking row raises no code itself and calls the definitions that
     /// do, and the first of those ends with the aeroplane still on the hook.</summary>
     public string? Anim { get; private set; }
+
+    /// <summary>The current (or last) episode's definition as a wire key: the name key of
+    /// <see cref="Anim"/>. Zero before any episode.</summary>
+    public int EpisodeKey { get; private set; }
+
+    /// <summary>How many episodes the current (or last) episode's definition has owned on this end,
+    /// this one included. With <see cref="EpisodeKey"/> it names one episode on every machine.
+    /// </summary>
+    public int EpisodeOrdinal { get; private set; }
 
     /// <summary>The human this episode belongs to: the one whose mission trigger started it
     /// (<see cref="Own"/>), or the scripted player where no trigger named one, which is every
@@ -498,6 +524,9 @@ public sealed partial class CutsceneController : Node
             // lost its claim on the episode's owner too, and an unclaimed episode is the scripted
             // player's.
             _episodeOwner = slotWins ? _ownerRig : null;
+            EpisodeKey = Anim == null ? 0 : NetWorldLink.NameKey(Anim);
+            _episodesByKey.TryGetValue(EpisodeKey, out int seen);
+            EpisodeOrdinal = _episodesByKey[EpisodeKey] = seen + 1;
             _owner = null;
             _ownerRig = null;
             // The owner's own aeroplane into the node table as the episode takes the session, not
@@ -549,7 +578,7 @@ public sealed partial class CutsceneController : Node
     public void Tick()
     {
         LiftMissionStartPark();
-        if (!Playing)
+        if (!Playing || TakePendingSkip())
         {
             return;
         }
@@ -586,14 +615,36 @@ public sealed partial class CutsceneController : Node
             return false;
         }
 
-        Log.Info("anim", $"cutscene '{Anim}' skipped by P{playerIndex + 1}");
-        if (Anim != null)
+        if (SkipAsked != null)
         {
-            _runtime?.Stop(Anim);
+            Log.Info("anim", $"cutscene '{Anim}' #{EpisodeOrdinal}: P{playerIndex + 1} asks the host to skip");
+            SkipAsked(playerIndex, EpisodeKey, EpisodeOrdinal);
+            return true;
         }
 
-        Restore("skipped");
+        EndBySkip(playerIndex, false);
         return true;
+    }
+
+    /// <summary>A skip decided elsewhere, for the episode named by <paramref name="key"/> and
+    /// <paramref name="ordinal"/>: the host taking a guest's ask, or a guest taking the host's
+    /// decision. True when it ended the playing episode. A skip of an episode this end has not
+    /// armed yet is held until it is. One for an episode already over is dropped, so a late or
+    /// repeated skip can never end the next film.</summary>
+    public bool TakeSkip(int key, int ordinal, int playerIndex)
+    {
+        _pendingSkip = (key, ordinal, playerIndex);
+        if (TakePendingSkip())
+        {
+            return true;
+        }
+
+        if (_pendingSkip != null)
+        {
+            Log.Info("anim", $"cutscene: a skip of episode {key:x8} #{ordinal} by P{playerIndex + 1} held until it can take");
+        }
+
+        return false;
     }
 
     /// <summary>Takes an input the session offered the skip and the skip declined, and holds the
@@ -925,6 +976,52 @@ public sealed partial class CutsceneController : Node
         return true;
     }
 
+    // Ends the playing episode for a held skip once that episode has armed one. Drops the skip
+    // once its episode is over: an ordinal at or below the count started, not the one playing.
+    private bool TakePendingSkip()
+    {
+        if (_pendingSkip is not { } skip)
+        {
+            return false;
+        }
+
+        bool current = Playing && skip.Key == EpisodeKey && skip.Ordinal == EpisodeOrdinal;
+        _episodesByKey.TryGetValue(skip.Key, out int started);
+        if (!current)
+        {
+            if (skip.Ordinal <= started)
+            {
+                Log.Info("anim", $"cutscene: a skip of episode {skip.Key:x8} #{skip.Ordinal} dropped, that episode is over");
+                _pendingSkip = null;
+            }
+
+            return false;
+        }
+
+        if (!Skippable || KeepsTheShot())
+        {
+            return false;
+        }
+
+        _pendingSkip = null;
+        EndBySkip(skip.Skipper, true);
+        return true;
+    }
+
+    private void EndBySkip(int playerIndex, bool decidedElsewhere)
+    {
+        int key = EpisodeKey;
+        int ordinal = EpisodeOrdinal;
+        Log.Info("anim", $"cutscene '{Anim}' skipped by P{playerIndex + 1}");
+        if (Anim != null)
+        {
+            _runtime?.Stop(Anim);
+        }
+
+        Restore("skipped");
+        Skipped?.Invoke(playerIndex, key, ordinal, decidedElsewhere);
+    }
+
     private void Act(int code)
     {
         switch (code)
@@ -1177,9 +1274,18 @@ public sealed partial class CutsceneController : Node
             ? AnimRuntime.WorldTransform(_playerMarker, out _)
             : (Transform3D?)null;
         var owner = OwnerPilot;
+        bool ownerIsPane = false;
         foreach (var pilot in Pilots())
         {
+            ownerIsPane |= ReferenceEquals(pilot, owner);
             pilot.StageAt(ReferenceEquals(pilot, owner) ? pose : null);
+        }
+
+        // A networked owner flying on another machine. This end's copy of that seat is in no pane.
+        // The film is about that aeroplane on every end, so it rides the marker here too.
+        if (!ownerIsPane)
+        {
+            owner?.StageAt(pose);
         }
     }
 

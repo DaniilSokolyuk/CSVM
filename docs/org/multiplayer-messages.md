@@ -231,7 +231,7 @@ score, `0x17` match state, `0x22` hit and `0x27` seat roster. Damage, spawn, the
 director transition, the join handshake and a seat's ask to be spawned again have no
 counterpart, so they are minted at `0x40`, `0x41`, `0x42`, `0x43` and `0x44`, above the ceiling
 above. The host-owned world's four (AI state, AI fire, a guest's hit claim on an AI, and a world
-event) are minted at `0x45` to `0x48`, below, the clock ping at `0x49`, the lobby's session advert at `0x4A`, the zeppelin path at `0x4B`, a generator's AI launch at `0x4C`, the surface-vehicle patrol at `0x4D`, a positional start at `0x4E`, the lobby's session closed at `0x4F`, and the lobby's co-op flow, co-op pick and co-op seat fit at `0x50` to `0x52`, the Dogfight lobby's options, roster and chat at `0x53` to `0x55`, and the lobby's build version at `0x56`. The handshake carries the master seed, the host's clock and the seat the joining peer was
+event) are minted at `0x45` to `0x48`, below, the clock ping at `0x49`, the lobby's session advert at `0x4A`, the zeppelin path at `0x4B`, a generator's AI launch at `0x4C`, the surface-vehicle patrol at `0x4D`, a positional start at `0x4E`, the lobby's session closed at `0x4F`, and the lobby's co-op flow, co-op pick and co-op seat fit at `0x50` to `0x52`, the Dogfight lobby's options, roster and chat at `0x53` to `0x55`, the lobby's build version at `0x56`, a guest's destructible hit at `0x57`, and a cutscene skip at `0x58`. The handshake carries the master seed, the host's clock and the seat the joining peer was
 given; the original needs none of the three, because it draws from no shared stream and hands
 out no seat. The ask carries a seat and nothing else: the original's client takes its own
 respawn, while here the host owns every placement and answers the ask with a spawn event.
@@ -486,6 +486,40 @@ belongs to, is the host's first seat.
 
 The `PlayerRange` conditions are not sent: each end tests them over the whole field, so a range
 start can differ between ends by the link delay.
+
+Every end draws the episode owner on the staged `player` marker, the owner's own machine and every
+other one alike. On an end where that seat is a copy fed by samples, the copy is in no pane, and
+the cutscene host poses it on the marker each frame over the pose its samples write, then hands it
+back to its feed at the handoff. A guest's docking therefore shows the guest's aeroplane on the
+host, and the host's docking shows the host's on each guest.
+
+## Cutscene skip
+
+Every end plays each shared episode (an intro, a landing row, a director-started film), and any
+player's skip ends it on every machine: the splitscreen rule, where any seat's skip ends the one
+film for every pane, carried across the link. The original has no counterpart, since it runs no
+campaign across a link and its cutscene code 914 is the one it skips in multiplayer. The host
+decides (`Session/World/NetCutsceneLink.cs`).
+
+| Id | Message | Class | Carries |
+|---|---|---|---|
+| `0x58` | Cutscene skip | reliable, guest to host (an ask) and host to all (the skip) | skipper's seat, a reserved byte, the episode's ordinal, the episode's key (12 bytes) |
+
+A guest's skip input ends nothing locally: it sends the ask and the guest plays on. The host takes
+an ask only from the machine that owns the seat, skips its own episode and broadcasts the skip,
+and a host's own skip is broadcast the same way. The asking guest ends its episode on that
+broadcast like every other guest.
+
+An episode is named by its definition's name key (the FNV-1a hash the world messages use) and by
+how many episodes of that definition this end has played, counting this one. Both ends play the
+same episodes of a definition in the same order, so the pair names one film on every machine, and
+a late or repeated skip names an episode that is already over there and is dropped rather than
+ending the next one. A skip for an episode an end has not started yet, or has started but not yet
+armed for skipping, is held and applied the frame that episode can take it, since a guest's replay
+can start a film after the host's skip of it arrives.
+
+The skip notice (`SplitScreen.NoteSkip`) is the pressing machine's own: it names the local skipper
+on the machine where the input landed, and no machine names a skipper from another.
 
 ## The lobby
 

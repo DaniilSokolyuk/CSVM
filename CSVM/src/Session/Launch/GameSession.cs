@@ -3494,6 +3494,7 @@ public partial class GameSession : Node3D
         WireNetDirector();
         WireNetWorld(state.WorldRuntime);
         WireNetPositionalStarts();
+        WireNetCutscenes();
 
         // F15 / --debug-targets: who is aiming at whom. Reads the live gunners through closures
         // rather than a snapshot, waves activate, AI planes spawn and emplacements die long
@@ -4466,6 +4467,19 @@ public partial class GameSession : Node3D
 
         _netStarts = NetPositionalStartLink.Open(net, () => _seatRigs, _landings, _ladder);
         Log.Info("core", $"net positional starts: {(net.IsHost ? $"host (landing rows and the ladder decided over {_seatRigs.Count} seats)" : "guest (replaying the host's row starts and holder, reporting its own auto-land button)")}");
+    }
+
+    // The cutscene skip over the wire: any player's skip ends the shared episode on every machine,
+    // with the host deciding. Offline and splitscreen sessions never open it.
+    private void WireNetCutscenes()
+    {
+        if (_net is not { } net || _netSeats.Count == 0 || _cutscene == null)
+        {
+            return;
+        }
+
+        NetCutsceneLink.Open(net, _cutscene, pane => pane < _rigs.Count ? _rigs[pane].Index : pane);
+        Log.Info("core", $"net cutscenes: {(net.IsHost ? "host (a skip by any seat ends the episode, announced to every guest)" : "guest (a skip asks the host, the episode ends on its word)")}");
     }
 
     // The host-owned world over the wire, once the pools and the combat catalogue stand. AI

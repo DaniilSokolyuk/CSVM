@@ -830,6 +830,24 @@ public class NetMessagesTests
         Assert.False(DestructibleHitMessage.TryRead(world, out _));
     }
 
+    // One shared cutscene's skip: the skipper, the episode's ordinal and its definition's key.
+    [Fact]
+    public void ACutsceneSkipRoundTripsReliablyInTwelveBytes()
+    {
+        Span<byte> buffer = stackalloc byte[CutsceneSkipMessage.Size];
+        var sent = new CutsceneSkipMessage(Seat: 3, Episode: 65000, Key: -123456789);
+        Assert.Equal(12, sent.Write(buffer));
+        Assert.True(CutsceneSkipMessage.TryRead(buffer, out var got));
+        Assert.Equal(sent, got);
+        Assert.Equal(0x58, (int)NetMessageType.CutsceneSkip);
+        Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.CutsceneSkip));
+
+        // ABLE-TO-FAIL CONTROL: a clock ping of the same width is not a skip.
+        Span<byte> ping = stackalloc byte[ClockPingMessage.Size];
+        new ClockPingMessage(1f, 2f).Write(ping);
+        Assert.False(CutsceneSkipMessage.TryRead(ping, out _));
+    }
+
     [Fact]
     public void ACoopSeatFitRoundTripsTheSeatAndItsFitInTwentyBytes()
     {

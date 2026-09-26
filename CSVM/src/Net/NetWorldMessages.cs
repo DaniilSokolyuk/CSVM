@@ -238,6 +238,51 @@ public readonly record struct DestructibleHitMessage(ushort Pool, int Key, float
 }
 
 /// <summary>
+/// A skip of one cutscene episode every machine is playing. A guest sends it to the host as an
+/// ask; the host skips and sends it to every guest as the decision. The episode is named by its
+/// definition's name key and that definition's episode count on the sender's end. A late or
+/// repeated skip therefore never ends the next one. Reliable.</summary>
+public readonly record struct CutsceneSkipMessage(byte Seat, ushort Episode, int Key)
+    : INetMessage<CutsceneSkipMessage>
+{
+    /// <summary>The fixed width of the message, header included.</summary>
+    public const int Size = 12;
+
+    /// <inheritdoc/>
+    public static NetMessageType Type => NetMessageType.CutsceneSkip;
+
+    /// <inheritdoc/>
+    public static NetReliability Reliability => NetReliability.Reliable;
+
+    /// <inheritdoc/>
+    public static bool TryRead(ReadOnlySpan<byte> from, out CutsceneSkipMessage message)
+    {
+        message = default;
+        var reader = new NetMessageReader(from);
+        if (!reader.Is(Size) || reader.Type != Type)
+            return false;
+
+        byte seat = reader.ReadByte();
+        _ = reader.ReadByte();
+        ushort episode = reader.ReadUInt16();
+        int key = reader.ReadInt32();
+        message = new CutsceneSkipMessage(seat, episode, key);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public int Write(Span<byte> into)
+    {
+        var writer = new NetMessageWriter(into, Type);
+        writer.WriteByte(Seat);
+        writer.WriteByte(0);
+        writer.WriteUInt16(Episode);
+        writer.WriteInt32(Key);
+        return writer.Close();
+    }
+}
+
+/// <summary>
 /// One zeppelin's path position as the host flies it, the original's <c>0x1e</c> record for one
 /// hull. It carries position, speed, pitch and yaw in that order, on the original's half second.
 /// A zeppelin is named by its placement index.
