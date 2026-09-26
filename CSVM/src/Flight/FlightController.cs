@@ -487,6 +487,10 @@ public partial class FlightController : Node3D
     /// here; this node holds no mission state and decides no rule.</summary>
     public bool Spectating;
 
+    /// <summary>The living aircraft an out-of-lives Dogfight pilot watches in chase view, or null
+    /// to hold the crash camera. Picked by the session (<see cref="VersusMatch.NextWatched"/>).</summary>
+    public FlightController? Watching;
+
     /// <summary>Whether R and pad Y respawn a LIVE aircraft. False wherever the mission counts: in
     /// a campaign mission and in Instant Action a respawn taken while flying is a free repair,
     /// restock and refuel, so those two pin it and the button is read only from
@@ -594,6 +598,7 @@ public partial class FlightController : Node3D
     private bool _deathCamera;                   // the pilot's own destruction holds the view; the
                                                  // one camera that keeps writing while crashed,
                                                  // since it re-aims at the falling wreck
+    private FlightController? _watchedPrev;      // the aircraft last frame's spectating view held
     private Camera3D? _viewCamera;
     private CanvasLayer? _hudCanvas;             // the whole HUD layer; hidden while crashed (the
                                                  // original's crash camera shows no HUD, footage);
@@ -898,6 +903,14 @@ public partial class FlightController : Node3D
     {
         get => _lifecycle.AutoRespawnAfter;
         set => _lifecycle.AutoRespawnAfter = value;
+    }
+
+    /// <summary>Whether the crash, once <see cref="AutoRespawnAfter"/> has run, waits for a Fire
+    /// Guns press, the lobby's Auto Respawn off. R still respawns at any time.</summary>
+    public bool RespawnOnFire
+    {
+        get => _lifecycle.RespawnOnFire;
+        set => _lifecycle.RespawnOnFire = value;
     }
 
     /// <summary>Whether this plane is crashed, frozen at the impact, airframe hidden, waiting
@@ -1957,7 +1970,7 @@ public partial class FlightController : Node3D
             // A remote wreck flies again when its owner's spawn says so, never on a button or a
             // timer here.
             if (!RemoteOwned
-                && (RespawnPressed() || _lifecycle.TickAutoRespawn(dt, _holdSegments != null)))
+                && (RespawnPressed() || _lifecycle.TickAutoRespawn(dt, _holdSegments != null, FirePressed)))
             {
                 // In a match the placement is granted, not taken: the ask goes out and the
                 // aeroplane stays down until the answer places it.
@@ -2304,13 +2317,19 @@ public partial class FlightController : Node3D
         }
         else if (Crashed)
         {
-            // The authored crash camera holds the pose Crash() cut to, the original's camera does
-            // not move after the cut (footage). The DEATH camera is the exception: its spot is
-            // fixed but its aim is not, so it is stepped to keep the falling wreck framed.
-            if (_deathCamera)
+            // The crash camera holds the pose Crash() cut to, except the DEATH camera, which is
+            // stepped to keep the falling wreck framed. A spent pilot watches a living aircraft.
+            var watched = Spectating && Watching is { } w && IsInstanceValid(w) && !w.Crashed ? w : null;
+            if (watched != null)
+            {
+                _cam.Watch(simDt, watched.GlobalTransform, !ReferenceEquals(watched, _watchedPrev));
+            }
+            else if (_deathCamera)
             {
                 StepDeathView();
             }
+
+            _watchedPrev = watched;
         }
         else
         {

@@ -2874,11 +2874,23 @@ public sealed partial class LaunchMenu : CanvasLayer
         }
 
         var exit = _setup.BuildExit(CurrentChapters[_chapterIndex].Code, _mode, _devices.FlightPads);
+        if (Networked() && HostLobbyRefusal(exit) is { } refusal)
+        {
+            _error = refusal;
+            return;
+        }
 
         // The open wire rides out with the launch, and the door keeps nothing: from here the
         // session owns the transport, steps it and closes it.
         _host.Exit(Networked() ? exit with { Net = _net!.BuildLaunch() } : exit);
     }
+
+    // An Original guest in this host's lobby waits on its Ready and flies the host's map and rules,
+    // which the launch writes into the lobby. Null when the launch may go.
+    private string? HostLobbyRefusal(LaunchExit exit) =>
+        _net?.Dogfight is { IsHost: true } lobby && exit.Mode == MenuMode.Versus
+            ? lobby.CheckBuiltInLaunch(exit.Chapter, exit.Match ?? new VersusRules(0, 0))
+            : null;
 
     // Every joined seat's pick as the typed seat choice, built by the setup: the roster row's
     // node, the pads the seat joined on (the device bookkeeping's answer), its fit edits (null for

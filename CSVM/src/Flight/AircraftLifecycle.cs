@@ -1,3 +1,4 @@
+using System;
 using CSVM.Session;
 
 namespace CSVM.Flight;
@@ -107,6 +108,11 @@ public sealed class AircraftLifecycle
     /// regardless.</summary>
     public float? AutoRespawnAfter { get; set; }
 
+    /// <summary>Whether a crash waits for the pilot's Fire Guns press once
+    /// <see cref="AutoRespawnAfter"/> has run. It is the lobby's Auto Respawn turned off
+    /// (docs/org/multiplayer-scoring.md).</summary>
+    public bool RespawnOnFire { get; set; }
+
     /// <summary>Frozen at the impact point, waiting for a respawn.</summary>
     public bool Crashed => _crashed;
 
@@ -162,15 +168,19 @@ public sealed class AircraftLifecycle
         _postDropGroundBlow -= dt;
     }
 
-    /// <summary>Drains the crash's respawn timer by one step and answers whether it is due.
-    /// <paramref name="scriptedRun"/> is what makes an unattended run respawn with no session
-    /// timer armed; a run with neither never counts down at all.</summary>
-    public bool TickAutoRespawn(float dt, bool scriptedRun)
+    /// <summary>Drains the crash's respawn timer by one step and answers whether it is due. An
+    /// unattended run respawns with no session timer armed, which is what
+    /// <paramref name="scriptedRun"/> says. A run with neither never counts down at all. Under
+    /// <see cref="RespawnOnFire"/> a run-down timer waits on <paramref name="firePressed"/>. That
+    /// press is read only once the timer has run down.</summary>
+    public bool TickAutoRespawn(float dt, bool scriptedRun, Func<bool>? firePressed = null)
     {
         if (!scriptedRun && AutoRespawnAfter == null)
             return false;
         _autoRespawnIn -= dt;
-        return _autoRespawnIn <= 0f;
+        if (_autoRespawnIn > 0f)
+            return false;
+        return scriptedRun || !RespawnOnFire || firePressed?.Invoke() == true;
     }
 
     /// <summary>The DEATH transition: whole-vehicle health has reached zero.

@@ -557,6 +557,21 @@ public sealed class CameraController
         _camera.Basis = new Basis(current.Slerp(desired.GetRotationQuaternion(), tRot));
     }
 
+    /// <summary>The chase view of another aircraft, the out-of-lives pilot's spectating camera. A
+    /// <paramref name="fresh"/> target is taken at its settled pose, so a switch cuts rather than
+    /// sweeping across the field.</summary>
+    public void Watch(float dt, in Transform3D pose, bool fresh)
+    {
+        if (fresh)
+        {
+            Head.Reset();
+            RestoreExternalFov();
+        }
+
+        // A step long enough that both smoothings land in one go is the settled pose.
+        Chase(fresh ? 10f : dt, pose.Origin, pose.Basis);
+    }
+
     /// <summary>Place the camera at its settled pose immediately, spawn, respawn and the weapon
     /// lab's re-park, where there is nothing to interpolate from. Re-bases the dynamic radius on
     /// the given speed with the transient zeroed: a teleport is not an acceleration.</summary>

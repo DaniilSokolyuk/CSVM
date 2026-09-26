@@ -109,6 +109,14 @@ public class OriginalCoverageTests : IDisposable
         new("multiplayer-games", OriginalScreen.ConnectionGames,
             new[] { OriginalShell.MultiplayerKey, OriginalConnectionScreen.ConnectKey },
             new[] { OriginalConnectionScreen.CancelKey, OriginalConnectionScreen.ExitKey }),
+        new("multiplayer-lobby", OriginalScreen.Lobby, new[] { OriginalShell.MultiplayerKey, OriginalConnectionScreen.HostKey },
+            new[] { OriginalLobbyScreen.LeaveKey, OriginalConnectionScreen.ExitKey }),
+        new("multiplayer-lobby-plane", OriginalScreen.Lobby,
+            new[] { OriginalShell.MultiplayerKey, OriginalConnectionScreen.HostKey, OriginalLobbyScreen.PlaneTabKey },
+            new[] { OriginalLobbyScreen.LeaveKey, OriginalConnectionScreen.ExitKey }),
+        new("multiplayer-lobby-rockets", OriginalScreen.Lobby,
+            new[] { OriginalShell.MultiplayerKey, OriginalConnectionScreen.HostKey, OriginalLobbyScreen.AmmoTabKey, OriginalLobbyScreen.RocketsTabKey },
+            new[] { OriginalLobbyScreen.LeaveKey, OriginalConnectionScreen.ExitKey }),
         new("campaign-roster", OriginalScreen.CampaignRoster, new[] { OriginalShell.CampaignKey }, new[] { "CancelProfile" }),
         new("campaign-cabin", OriginalScreen.CampaignCabin, Cabin, new[] { "ReturnToMainMenu" }),
         new("campaign-memento", OriginalScreen.CampaignMemento, Then(Cabin, "ChangeMemento"), new[] { "CancelMemento", "ReturnToMainMenu" }),
@@ -740,11 +748,11 @@ public class OriginalCoverageTests : IDisposable
         // door is live and the walk edits a copy nothing writes back.
         var controls = new ControlsFeature();
         controls.AddSeat(1, ControlsProfile(), new SeatCaptureDevices(MenuControlsSeats.PadOf, Array.Empty<int>), true);
-        // A network door over a carrier that opens nothing and an in-process LAN nobody answers
-        // on, so the games list stands on its Searching box.
+        // A network door that hosts on a lone in-process wire and joins nothing. Nobody answers on
+        // its in-process LAN, so the games list stands on its Searching box.
         var lan = new CSVM.Net.LoopbackLan();
         var net = new NetPlayFeature(
-            (_, _, _) => throw new InvalidOperationException("the walk hosts nothing"),
+            (_, _, _) => CSVM.Net.LoopbackTransport.Mesh(1, CSVM.Net.LoopbackConditions.Perfect, new Random(1))[0],
             (_, _) => throw new InvalidOperationException("the walk joins nothing"),
             lan: lan.Bind);
         return new OriginalShell(layout, new FreeFlightFeature(), setup, measure,

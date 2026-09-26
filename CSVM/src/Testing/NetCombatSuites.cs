@@ -58,6 +58,11 @@ internal static class NetCombatSuites
     private const int GuestKillTarget = 9;
     private const int GuestTimeMinutes = 9;
 
+    // The lives suite's limit, and how long a seat with no respawn timer is watched: a second past
+    // the match's own three-second crash camera.
+    private const int MatchLives = 2;
+    private const int WaitSteps = 240;
+
     // Steps that span a whole match-state tick whatever step the window opens on.
     private const int TickSteps = MatchStateCadence.TickStepInterval + 1;
 
@@ -281,6 +286,132 @@ internal static class NetCombatSuites
             ambient.Restore();
         }
     }
+
+    [Suite("net-versus-lives",
+        "two pairs of sessions in one process on the lobby's lives rules: with two lives a guest's "
+        + "seat comes back after its first death and stays down after its second on both machines, "
+        + "the host refusing its ask, the spent seat watching the host's aircraft and the match "
+        + "ending on reason 4 with the lives and ending lines in the guest's pane, and with Auto "
+        + "Respawn off a downed seat stays down past the crash camera until its pilot presses Fire "
+        + "Guns, then comes back through the host's grant")]
+    internal static void TheLobbysLivesRule(TestContext ctx)
+    {
+        var limited = MatchSpec(ctx, out _, $"--vs-lives={MatchLives}");
+        var pressed = MatchSpec(ctx, out _, "--vs-no-respawn");
+        var ambient = Ambient.Save();
+        var ends = new List<Ends>();
+        try
+        {
+            var spent = Pair(ctx, limited, 6101, ends);
+            if (spent != null)
+            {
+                LastLife(ctx, spent);
+            }
+
+            var waiting = Pair(ctx, pressed, 6203, ends);
+            if (waiting != null)
+            {
+                WaitsForThePilot(ctx, waiting);
+            }
+        }
+        finally
+        {
+            foreach (var end in Enumerable.Reverse(ends))
+            {
+                end.Close();
+            }
+
+            ambient.Restore();
+        }
+    }
+
+    // One host and one guest on the same launch, settled; null when either failed to build.
+    private static GameSession[]? Pair(TestContext ctx, SessionSpec spec, int seed, List<Ends> ends)
+    {
+        var mesh = LoopbackTransport.Mesh(2, LoopbackConditions.Perfect, new Random(seed));
+        var host = Ends.Open(ctx, spec, mesh[0], isHost: true, HostSeed, Roster(2));
+        ends.Add(host);
+        var guest = Ends.Open(ctx, spec, mesh[1], isHost: false, HostSeed + 1, null);
+        ends.Add(guest);
+        ctx.Check(host.Built && guest.Built, $"both sessions build ({host.Built}, {guest.Built})");
+        if (!host.Built || !guest.Built)
+        {
+            return null;
+        }
+
+        var peers = new[] { host.Session, guest.Session };
+        Lockstep(SettleSteps, peers);
+        return peers;
+    }
+
+    // The guest's seat, downed by the host's twice. The first death returns it, which is the
+    // control for the second: the same path, refused only because the lives are spent.
+    private static void LastLife(TestContext ctx, GameSession[] peers)
+    {
+        foreach (var rig in peers.SelectMany(p => p.SeatRigs))
+        {
+            if (rig.Controller is { } pilot)
+            {
+                pilot.AutoRespawnAfter = QuickRespawn;
+            }
+        }
+
+        ctx.Check(peers.All(p => p.Versus!.Lives == MatchLives), $"both machines run {MatchLives} lives ({string.Join(", ", peers.Select(p => p.Versus!.Lives))})");
+        var guest = peers[1];
+        guest.SeatRigs[1].Controller!.DebugForceCrash(guest.SeatRigs[0].Controller!.PlayerIndex);
+        Lockstep(GrantSteps, peers);
+        ctx.Check(peers.All(p => p.SeatRigs[1].Controller is { Crashed: false, Spectating: false }),
+            $"ABLE-TO-FAIL CONTROL: after one death of {MatchLives} the seat comes back on both machines ({Downs(peers)})");
+        ctx.Check(peers.All(p => !p.Versus!.Completed && p.MatchEnd == NetMatchEnd.Running)
+                  && guest.SeatRigs[1].Controller!.Watching == null,
+            $"ABLE-TO-FAIL CONTROL: with a life left the match runs and the seat watches nobody ({string.Join(", ", peers.Select(p => p.MatchEnd))})");
+
+        int grants = peers[0].SpawnsTaken;
+        guest.SeatRigs[1].Controller!.DebugForceCrash(guest.SeatRigs[0].Controller!.PlayerIndex);
+        Lockstep(GrantSteps, peers);
+        ctx.Check(peers.All(p => p.Versus!.OutOfLives(1)),
+            $"the second death spends the last life on both machines ({string.Join(", ", peers.Select(p => p.Versus!.DeathsOf(1)))} deaths)");
+        ctx.Check(peers.All(p => p.SeatRigs[1].Controller is { Crashed: true, Spectating: true }),
+            $"and the seat stays down, watching, on both machines ({Downs(peers)})");
+        ctx.Check(peers[0].SpawnsTaken == grants, $"the host granted it no return ({peers[0].SpawnsTaken - grants} grant(s))");
+        ctx.Check(peers.All(p => p.SeatRigs[0].Controller is { Crashed: false, Spectating: false }),
+            $"while the host's own seat flies on ({Downs(peers)})");
+        ctx.Check(ReferenceEquals(guest.SeatRigs[1].Controller!.Watching, guest.SeatRigs[0].Controller),
+            $"and the spent seat watches the host's aircraft, the one still flying ({guest.SeatRigs[1].Controller!.Watching?.PlayerIndex})");
+        ctx.Check(peers.All(p => p.Versus!.Completed && p.MatchEnd == NetMatchEnd.NobodyLeft),
+            $"one pilot with lives left ends the match on reason 4 on both machines ({string.Join(", ", peers.Select(p => p.MatchEnd))})");
+        string lines = guest.SeatRigs[1].Controller!.MessageStack is { } stack
+            ? string.Join(" / ", Enumerable.Range(0, HudMessages.Slots).Select(stack.LineAt))
+            : "no stack";
+        ctx.Check(lines.Contains("Out of Lives", StringComparison.Ordinal) && lines.Contains("No Enemies Left", StringComparison.Ordinal),
+            $"and the guest's pane reads its last life and the ending ({lines})");
+    }
+
+    // Auto Respawn off: the crash camera's three seconds pass and the seat stays down. Its pilot's
+    // Fire Guns press is what brings it back, through the host like any other return.
+    private static void WaitsForThePilot(TestContext ctx, GameSession[] peers)
+    {
+        var guest = peers[1];
+        var pilot = guest.SeatRigs[1].Controller!;
+        ctx.Check(pilot.RespawnOnFire && pilot.AutoRespawnAfter != null,
+            $"the launch arms the crash camera and then the wait for Fire Guns ({pilot.AutoRespawnAfter}, {pilot.RespawnOnFire})");
+        pilot.DebugForceCrash(guest.SeatRigs[0].Controller!.PlayerIndex);
+        Lockstep(WaitSteps, peers);
+        ctx.Check(peers.All(p => p.SeatRigs[1].Controller is { Crashed: true }),
+            $"the seat is still down {WaitSteps * GameClock.FixedDt:0.0} s later on both machines ({Downs(peers)})");
+
+        // The suites' held trigger stands in for the pilot's own press.
+        pilot.AutoFire = true;
+        Lockstep(2, peers);
+        pilot.AutoFire = false;
+        Lockstep(GrantSteps, peers);
+        ctx.Check(peers.All(p => p.SeatRigs[1].Controller is { Crashed: false }),
+            $"ABLE-TO-FAIL CONTROL: the pilot's Fire Guns press brings it back on both machines ({Downs(peers)})");
+    }
+
+    private static string Downs(GameSession[] peers) =>
+        string.Join(" | ", peers.Select(p => string.Join(",", p.SeatRigs.Select(r =>
+            r.Controller is { } c ? $"{(c.Crashed ? "down" : "up")}{(c.Spectating ? "/out" : "")}" : "-"))));
 
     // Both limits are the host's lobby rows on every machine, and only the host holds a match it
     // may write. A guest was launched on other rows, so what it shows came off the wire.

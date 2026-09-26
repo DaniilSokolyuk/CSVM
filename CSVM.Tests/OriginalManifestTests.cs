@@ -96,7 +96,10 @@ public class OriginalManifestTests : IDisposable
                 "activepointerz.png", "passivepointerz.png", "arial8.tga", "PX_B_ReadyToExport.png", "PX_B_CancelExport.png",
                 "MP_OPTIONSBACKGROUND.JPG", "MP_GAMESBACKGROUND.JPG", "MP_ERRORMESSAGEBACKGROUND.JPG", "MP_GAMESALPHA.PNG",
                 "MP_B_RADIO.PNG", "MP_B_SMALL.PNG", "MP_B_MEDIUM.PNG", "MP_B_LARGE.PNG", "MP_B_EXITMULTIPLAYER.PNG",
-                "MP_B_CHECKBOXLARGE.PNG",
+                "MP_B_CHECKBOXLARGE.PNG", "MP_LOBBY_BACKGROUND.JPG", "MP_LOBBY_MISSION.PNG", "MP_LOBBY_PLANE.PNG",
+                "MP_LOBBY_AMMO.PNG", "MP_LOBBY_STATSCREEN.PNG", "MP_LOBBY_TABLARGE.PNG", "MP_LOBBY_TABSMALL.PNG",
+                "MP_B_RADIO8STATESSM.PNG", "MP_B_CHECKBOX8STATES.PNG", "MP_B_CHECKBOX.PNG", "MP_B_LISTBOXARROW.PNG",
+                "MP_PLANEICONSTOPFRONT.PNG",
             },
             Names(manifest, OriginalAssetNeed.Required));
         Assert.Equal(
@@ -124,7 +127,7 @@ public class OriginalManifestTests : IDisposable
         var report = OriginalAssetManifest.Derive(MenuLayout.Parse(LayoutJson)).Check(_root);
 
         Assert.True(report.Complete, report.Reason);
-        Assert.Equal(19, report.RequiredCount);
+        Assert.Equal(31, report.RequiredCount);
         Assert.Equal(5, report.OptionalCount);
         Assert.Null(report.Reason);
         Assert.Null(report.Degraded);

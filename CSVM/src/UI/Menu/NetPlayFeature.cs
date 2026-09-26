@@ -87,6 +87,7 @@ public sealed class NetPlayFeature : IMenuFeature
     private readonly Dictionary<int, CoopFlowMessage> _flowSent = new();
 
     private NetLobby? _transport;
+    private DogfightLobby? _dogfight;
     private NetCoopScreen _coopScreen = NetCoopScreen.Cabin;
     private byte _coopSeq;
     private byte _epoch = 1;
@@ -104,6 +105,11 @@ public sealed class NetPlayFeature : IMenuFeature
     // A guest back from a flight while its host still names that flight. Cleared once the host
     // names any other board, so only a flight launched after that can seat it again.
     private bool _flownFlow;
+
+    // A Dogfight guest back from a match: the round it launched under, until the host names a new
+    // one. Until then, whatever arrives is the old match's tail and never a launch.
+    private byte? _flownEpoch;
+    private byte _launchEpoch;
     private NetLobby? _closing;
     private double _lingered;
     private LanResponder? _responder;
@@ -228,6 +234,18 @@ public sealed class NetPlayFeature : IMenuFeature
     /// <summary>Whether this door is a guest linked to a host holding a campaign mission open.
     /// </summary>
     public bool IsCoopGuest => Stage == NetDoorStage.Joined && Advert is { Kind: NetSessionKind.CampaignCoop };
+
+    /// <summary>Whether this door is a guest linked to a host holding a Dogfight open.</summary>
+    public bool IsDogfightGuest => Stage == NetDoorStage.Joined && Advert is { Kind: NetSessionKind.Dogfight };
+
+    /// <summary>The Multiplayer Lobby this door stands in, or null. A host has one once
+    /// <see cref="OpenDogfightHost"/> opened it. A Dogfight guest has one once linked.</summary>
+    public DogfightLobby? Dogfight => _dogfight;
+
+    /// <summary>Whether this Dogfight guest's host has launched from its lobby: the options are
+    /// heard and the session's opener is waiting here.</summary>
+    public bool DogfightLaunchDue =>
+        IsDogfightGuest && !_released && _flownEpoch == null && _dogfight is { HasOptions: true } && _transport!.Held > 0;
 
     /// <summary>The host's word about its session as this guest last heard it, or null while
     /// none has arrived. A join board names the session from this.</summary>
@@ -381,17 +399,17 @@ public sealed class NetPlayFeature : IMenuFeature
     }
 
     /// <summary>Sends every seated guest each seat's fit, <paramref name="bySeat"/> indexed by
-    /// seat. A co-op host calls this at its launch, before the session's opener, so a guest has
+    /// seat. A host calls this at its launch, before the session's opener, so a guest has
     /// every fit in hand when it builds the field.</summary>
     public void TellSeatFits(IReadOnlyList<CoopFit> bySeat)
     {
         ArgumentNullException.ThrowIfNull(bySeat);
-        if (_transport == null || !IsCoopHost)
+        if (_transport == null || !IsHost)
         {
             return;
         }
 
-        foreach (int peer in _admitted)
+        foreach (int peer in IsCoopHost ? _admitted : _transport.AllPeers)
         {
             for (int seat = 0; seat < bySeat.Count && seat <= byte.MaxValue; seat++)
             {
@@ -400,9 +418,9 @@ public sealed class NetPlayFeature : IMenuFeature
         }
     }
 
-    /// <summary>Takes back the wire a co-op launch carried away once its flight ends. The door then
-    /// holds the link through the debrief and the next briefing. False when this door no longer
-    /// holds that wire, in which case the caller disposes it.</summary>
+    /// <summary>Takes back the wire a co-op or lobby launch carried away once its flight ends. The
+    /// door then holds the link through the debrief or the lobby that follows. False when this door
+    /// no longer holds that wire, in which case the caller disposes it.</summary>
     public bool Reclaim()
     {
         if (!_released || _transport == null)
@@ -414,6 +432,7 @@ public sealed class NetPlayFeature : IMenuFeature
         _released = false;
         _flowSent.Clear();
         _flownFlow = IsCoopGuest;
+        _flownEpoch = IsDogfightGuest ? _launchEpoch : null;
         return true;
     }
 
@@ -461,7 +480,30 @@ public sealed class NetPlayFeature : IMenuFeature
     /// <summary>Opens a listen server for <paramref name="maxGuests"/> guests on
     /// <see cref="BindAddress"/> and asks the router for the port. A socket that will not open
     /// leaves the door shut with the reason on <see cref="Fault"/>.</summary>
-    public void OpenHost(int maxGuests) => OpenHost(maxGuests, NetSessionKind.Dogfight);
+    /// <remarks>The lobby's host side runs behind it unshown, so an Original guest can pick, chat
+    /// and ready up against a Built-in host.</remarks>
+    public void OpenHost(int maxGuests)
+    {
+        OpenHost(maxGuests, NetSessionKind.Dogfight);
+        if (_transport != null && Stage == NetDoorStage.Hosting)
+        {
+            _dogfight = new DogfightLobby(_transport, () => PlayerName);
+        }
+    }
+
+    /// <summary>Opens a listen server with the Multiplayer Lobby standing on it, the Connection
+    /// page's Host. It is <see cref="OpenHost(int)"/> with the lobby shown, whose environment the
+    /// advert names. The host's pilot goes by <see cref="PlayerName"/>.</summary>
+    public void OpenDogfightHost(int maxGuests)
+    {
+        OpenHost(maxGuests);
+        if (_transport != null && _dogfight != null)
+        {
+            _hostName = PlayerName;
+            _dogfight.Show();
+            _transport.Advertise(CurrentAdvert());
+        }
+    }
 
     /// <summary>Opens a listen server for a campaign mission flown together, the campaign
     /// boards' own door. It is <see cref="OpenHost(int)"/> with the advert naming the campaign;
@@ -596,6 +638,7 @@ public sealed class NetPlayFeature : IMenuFeature
                 SendFlows();
             }
 
+            _dogfight?.Step();
             var advert = CurrentAdvert();
             _transport.Advertise(advert);
             _responder?.Poll(advert, Port);
@@ -621,6 +664,19 @@ public sealed class NetPlayFeature : IMenuFeature
             if (IsCoopGuest)
             {
                 FollowHost();
+            }
+            else if (IsDogfightGuest)
+            {
+                _dogfight ??= new DogfightLobby(_transport, () => PlayerName, _hostPeer);
+                if (_flownEpoch is { } flown)
+                {
+                    // The host names a new round only once its own match is freed, so everything
+                    // held up to that word is the old match's.
+                    _transport.DropHeld();
+                    _flownEpoch = _dogfight.Options.Epoch == flown ? flown : null;
+                }
+
+                _dogfight.Step();
             }
 
             return;
@@ -663,6 +719,19 @@ public sealed class NetPlayFeature : IMenuFeature
             _transport.Disconnect(peer);
         }
 
+        if (_dogfight is { } lobby)
+        {
+            // A host's options and list go out ahead of the session's opener, so a guest launches
+            // on what the host flies. The list is kept to name the seats on Game Scores.
+            if (IsHost)
+            {
+                lobby.Step();
+            }
+
+            lobby.Launched();
+            _launchEpoch = lobby.Options.Epoch;
+        }
+
         _released = true;
         if (IsCoopHost)
         {
@@ -702,6 +771,8 @@ public sealed class NetPlayFeature : IMenuFeature
         _released = false;
         _admitted.Clear();
         _refused.Clear();
+        _dogfight = null;
+        _flownEpoch = null;
         ForgetCoop();
         _hostPeer = -1;
         _kind = NetSessionKind.Dogfight;
@@ -817,7 +888,8 @@ public sealed class NetPlayFeature : IMenuFeature
     {
         int players = Math.Min(_localPlayers + Peers, byte.MaxValue);
         bool coop = _kind == NetSessionKind.CampaignCoop;
-        byte seq = coop ? _missionSeq : SessionAdvertMessage.NoMission;
+        // A Built-in host picks its map after the lobby opened, so its advert names none.
+        byte seq = coop ? _missionSeq : _dogfight is { Shown: true } lobby ? lobby.Options.Environment : SessionAdvertMessage.NoMission;
         int cap = coop ? CoopHumans : NetSeats.MaxPlayers;
         var status = players >= cap
             ? NetSessionStatus.Full
@@ -1134,6 +1206,8 @@ public sealed class NetPlayFeature : IMenuFeature
         _released = false;
         _admitted.Clear();
         _refused.Clear();
+        _dogfight = null;
+        _flownEpoch = null;
         ForgetCoop();
         _hostPeer = -1;
         Fault = why;

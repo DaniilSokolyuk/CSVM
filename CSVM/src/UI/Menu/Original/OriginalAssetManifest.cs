@@ -111,7 +111,7 @@ public sealed class OriginalAssetManifest
     /// <summary>The manifest schema. Bump it when the derivation changes what Original needs: the
     /// composed-section table, the rows Original does not draw or draws optionally, the
     /// script-named files, or what <see cref="Check"/> accepts as a readable file.</summary>
-    public const int Schema = 9;
+    public const int Schema = 10;
 
     /// <summary>The extraction stamp schema Original refuses to read a tree below: the loaders'
     /// own expectation, which the decoded menu layout's first reader raised, so a tree extracted
@@ -138,7 +138,10 @@ public sealed class OriginalAssetManifest
         "activepointerz.png", "passivepointerz.png", "arial8.tga", "PX_B_ReadyToExport.png", "PX_B_CancelExport.png",
         "MP_OPTIONSBACKGROUND.JPG", "MP_GAMESBACKGROUND.JPG", "MP_ERRORMESSAGEBACKGROUND.JPG", "MP_GAMESALPHA.PNG",
         "MP_B_RADIO.PNG", "MP_B_SMALL.PNG", "MP_B_MEDIUM.PNG", "MP_B_LARGE.PNG", "MP_B_EXITMULTIPLAYER.PNG",
-        "MP_B_CHECKBOXLARGE.PNG",
+        "MP_B_CHECKBOXLARGE.PNG", "MP_LOBBY_BACKGROUND.JPG", "MP_LOBBY_MISSION.PNG", "MP_LOBBY_PLANE.PNG",
+        "MP_LOBBY_AMMO.PNG", "MP_LOBBY_STATSCREEN.PNG", "MP_LOBBY_TABLARGE.PNG", "MP_LOBBY_TABSMALL.PNG",
+        "MP_B_RADIO8STATESSM.PNG", "MP_B_CHECKBOX8STATES.PNG", "MP_B_CHECKBOX.PNG", "MP_B_LISTBOXARROW.PNG",
+        "MP_PLANEICONSTOPFRONT.PNG",
     };
 
     // Rows of a composed section whose art Original never draws, each with why. The keys are

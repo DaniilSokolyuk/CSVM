@@ -21,7 +21,7 @@ public sealed record IaWrapupSnapshot(
 /// screen. Each presentation maps a destination into its own graph on
 /// <see cref="IMenuPresentation.Activate"/>, so two presentations may land the same destination on
 /// entirely different screens. A destination a graph lacks maps to the nearest one it has.
-/// The hierarchy is closed: only these six destinations exist.
+/// The hierarchy is closed: only these seven destinations exist.
 /// </summary>
 public abstract record MenuReturnDestination
 {
@@ -82,3 +82,9 @@ public sealed record DebriefReturn(string Profile, int MissionSeq, bool MissionW
 /// the guest's own attempt for the host's debrief, or null when it flew nothing. A guest
 /// whose link to the host has ended lands on the Connection page instead, which says why.</summary>
 public sealed record CoopGuestReturn(CSVM.Session.MissionAttempt? Attempt) : MenuReturnDestination;
+
+/// <summary>Back into the Multiplayer Lobby a Dogfight was launched from, on its Game Scores page. It
+/// carries the match's final lines, best first, because the session that counted them is freed
+/// before the page draws. A lobby whose link has ended lands on the Connection page instead.
+/// </summary>
+public sealed record LobbyReturn(IReadOnlyList<DogfightScore> Scores) : MenuReturnDestination;

@@ -28,7 +28,7 @@ Names only, deliberately: a gloss here would be a second description of the same
 exactly how `PROJECT_CONTEXT.md`'s day-to-day table drifted from this page. One flag, one description.
 
 **Modes and content, what gets built**
-`--viewer` · `--fly` · `--stunt` · `--vs` · `--vs-kills` · `--vs-time` · `--coop` · `--freecam` · `--anim-lab` · `--menu` · `--skip-intro` · `--intro` · `--chapter` · `--stage` · `--node` · `--plane` · `--players` · `--mission` · `--scenario` · `--ia` · `--campaign` · `--play-anim` · `--movie` · `--presentation` · `--force-builtin`
+`--viewer` · `--fly` · `--stunt` · `--vs` · `--vs-kills` · `--vs-time` · `--vs-lives` · `--vs-no-respawn` · `--coop` · `--freecam` · `--anim-lab` · `--menu` · `--skip-intro` · `--intro` · `--chapter` · `--stage` · `--node` · `--plane` · `--players` · `--mission` · `--scenario` · `--ia` · `--campaign` · `--play-anim` · `--movie` · `--presentation` · `--force-builtin`
 
 **Multiplayer, the wire a match flies over**
 `--net-host` · `--net-join`
@@ -166,6 +166,12 @@ lines**.
   condition, accepted, not guarded against, since the mode's win/lose flow is a later item. The
   built-in menu's Dogfight map screen carries this as a row too, under the same rule, each flag
   beating only the row it names)
+- `--vs-lives=N` (with `--vs`, how many deaths a pilot has before it stays down and watches the
+  rest of the match, on every machine. Default `0`, no limit. The Multiplayer Lobby's Limited Lives
+  box carries the same setting, and spelling this flag out beats it)
+- `--vs-no-respawn` (with `--vs`, a downed pilot stays on the crash camera until it presses the
+  respawn key itself, rather than coming back on the timer. The Multiplayer Lobby's Auto Respawn box
+  unchecked is the same rule, and spelling this flag out beats the box)
 - `--net-host[=port]`, `--net-host=address:port` (open a listen server and fly this session as its
   host, the scripted twin of the menu's multiplayer door over the same socket. A bare flag takes
   the default port 47500 on every interface, a numeric value sets the port, and an `address:port`

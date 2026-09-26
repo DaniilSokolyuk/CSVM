@@ -205,7 +205,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 ### Wave F, the Original presentation's multiplayer screens
 
 51. ☑ The network doors in the Original presentation: the cabin's Host Co-op button, and the Connection page with LAN discovery and the games list (`BL-1021`)
-52. ☐ The Multiplayer Lobby rebuilt in the original's layout, with Dogfight live (`BL-1022`)
+52. ☑ The Multiplayer Lobby rebuilt in the original's layout, with Dogfight live (`BL-1022`)
 
 ## Dependency and parallelism notes
 
@@ -2547,7 +2547,89 @@ shell's first live multiplayer edge, and screens the user judges against the ori
 - `docs/org/menu-inventory.md` counts `MM_B_MULTIPLAYER` as the one disabled plaque in several
   places; update every count in the landing commit.
 
-## F52 ☐ The Multiplayer Lobby rebuilt in the original's layout, with Dogfight live (`BL-1022`)
+## F52 ☑ The Multiplayer Lobby rebuilt in the original's layout, with Dogfight live (`BL-1022`)
+
+**Landed.** The Connection page's Host and the games list's Create Game open
+`UI/Menu/Original/OriginalLobbyScreen.cs`, the Multiplayer Lobby's four tabs in the scripts' own
+placements and the twelve lobby art files (now required, manifest schema 10). Under it,
+`UI/Menu/DogfightLobby.cs` is the lobby's state for both ends over the door's `NetLobby`, and
+`Net/NetDogfightMessages.cs` holds its three messages: `0x53` Dogfight options (12 bytes, under a
+round), `0x54` the roster (328 bytes, the reader's own row marked) and `0x55` one chat line (104
+bytes, relayed by the host). A guest's stock plane, fit and Ready ride `0x51` `CoopPickMessage`.
+`NetPlayFeature` gains `OpenDogfightHost`, `Dogfight`, `IsDogfightGuest` and `DogfightLaunchDue`,
+and the advert's mission sequence carries a Dogfight's environment, so the games list reads
+Dogfight, the map, `n/16` and Waiting, In mission or Full. LAUNCH! waits for every row's Ready and
+hands a Versus `LaunchExit` on the environment's chapter; `Launcher.VersusLaunchField` builds every
+guest's seat from the lobby's picks instead of the local pilot's airframe, and a guest follows its
+host's session opener through `OriginalLobbyScreen.GuestLaunch`. `VersusRules` gains `Lives` and
+`AutoRespawn` (`--vs-lives=N`, `--vs-no-respawn`): `VersusMatch.OutOfLives` holds a spent pilot
+spectating and refuses its respawn, and with Auto Respawn off a respawn waits for the pilot's own
+ask. The shell follows a Dogfight guest from the Connection page into the lobby and back when the
+link ends. The Built-in Dogfight door (B15) is unchanged. Aid: `lobby[:host|guest|waiting[:tab]]`;
+the aids' sample Dogfight game now names Manhattan.
+
+A guest's plane, gun ammo and rocket picks stay live at all times, and a changed pick clears that
+guest's own Ready on both ends. After a match every player lands back in the same lobby on the Game
+Scores tab (the user's decision, "Lobby, Game Scores tab"): `Launcher.LobbyLanding` builds a
+`MenuReturnDestination.LobbyReturn` off each end's own `VersusMatch`, the door reclaims its wire,
+`DogfightLobby.Land` fills the scores and clears Ready, and the host's next round lets it launch
+again with nobody rejoining. A payload left over from the match is dropped by epoch.
+
+An Original guest can join a Built-in (B15) host: `NetPlayFeature.OpenHost` runs the lobby's host
+side unshown behind the Built-in board, and the Built-in LAUNCH goes through
+`DogfightLobby.CheckBuiltInLaunch`, which waits on every guest that sent a pick and writes the
+launch's map and rules into the options. The Built-in board's look and flow are unchanged.
+
+The lives rule is the decoded one (`docs/org/multiplayer-scoring.md`). Limited Lives defaults off
+and its count box is greyed until ticked; the count clamps to 1..99, and the ticked default of 3 is
+the one invented number. Auto Respawn defaults on; off, a downed pilot respawns on Fire Guns once
+the crash sequence has run. A pilot out of lives never respawns, stays on the scoreboard and watches
+the next flying aircraft in the chase view. HUD lines 209, 210 and 211 post for 5 s after each
+death. The host ends the match on reason 4, "No Enemies Left", once fewer than two pilots with
+lives remain, checked after each death and each drop, beside the Time and Score limits. The respawn
+delay is kept and marked undecoded (`RESET_TIME`). Suites: `menu-original-lobby` (the live picks,
+the landing, the second launch), `menu-original-builtin-host`, and `net-versus-lives`.
+
+**Verified.** The complete battery on the merged tree (F52 over C24 and everything before it)
+passed: units 5023/0/2, engine 404, goldens 19 hash-identical. The engine stage ran over its 140 s
+budget, which is awareness only; `net-versus-lives` adds about 18 s and other sessions' processes
+shared the machine. The user approved the lobby's tabs, the live guest picks, Game Scores after a
+match and the Limited Lives box at the look. Owed: one Dogfight from the lobby to the match's end on
+two machines at the controls.
+
+**Judgement calls.**
+- A guest's pick reuses `0x51` rather than minting a fourth message. Any host option change starts
+  a new round and clears every Ready, the host's own included, and the host must be Ready too.
+- The environment to chapter map is Clouds C2B, Hawaii C3, Hollywood C2, Manhattan C5, Northwest
+  Boeing C1, Northwest Lighthouse C1B and Sky Haven C4; the Lighthouse chapter is the least sure.
+- The ticked Limited Lives count of 3 is invented; the rest of the lives rule is decoded.
+- Reason 4 applies to every `VersusMatch` of two or more pilots, splitscreen included. The R key
+  still respawns at any time and its prompt stays. A guest counts its lives from the host's score
+  messages. The chase view uses the spectator's own camera radius, and Fire Guns includes auto fire.
+- The match lands in the lobby only on the Exit of a completed match; a match left early lands as
+  before. Hits % on Game Scores is blank, since nothing counts hits.
+- A Built-in host writes the launch's map and rules into the options without starting a new round,
+  so the guests' Ready marks survive the launch.
+- The original's host box (game name, player cap) is skipped; Host opens the lobby at once with a
+  cap of 16 and the pilot's name.
+- Rockets map to the eight wing cells in order. The own name is red in the player list and the
+  chat, others black; the chat's line column stands 100 px right of the name.
+- Leave Game always lands on the Connection page (the original returns a joined guest to the games
+  list). The player list shows its first eleven rows with no scroll bar.
+- The host's options lock while it is Ready, and a guest's Ready box is greyed until it has heard
+  the options, since a Ready under round 0 would be cleared at once.
+- The option boxes' fills draw over the tab page, which is why the page is backdrop.
+
+**Owed.**
+- The user's look judgement on `.scratch/m6/F52/montage-host.png`, `montage-guest.png`,
+  `montage-scores.png`, `montage-lives.png` and `montage-connection.png` beside the four
+  `OriginalScreenshots/Multiplayer Lobby *.png` shots. Known differences: no spinners on the teams
+  range, and the Time, Score and Lives boxes are plain fields.
+- The original's respawn delay (`RESET_TIME` on the crash def) is undecoded.
+- Boot and the password (GitHub issue #24).
+- At the controls: two machines, one Dogfight from the lobby to the match end.
+
+**Original approach (kept for reference).**
 
 **Goal.** The Connection page's Host opens the original's Multiplayer Lobby, where the host sets
 the match and every pilot picks a plane and ammo, presses Ready, chats, and launches a network

@@ -13,8 +13,8 @@ namespace CSVM.UI.Menu.Original;
 /// widgets inline, so every corner here is the scripts' own, not the layout's
 /// (<c>docs/org/menu-inventory.md</c>). Only LAN TCP/IP, which searches, and Internet, which joins
 /// the typed address, are offered; the original's other three ways are left off the page. Build
-/// Custom Plane, Host and Create Game draw greyed. A join started here is followed on a
-/// messagebox over the page until it ends.
+/// Custom Plane draws greyed, and Host and Create Game open the Multiplayer Lobby as a Dogfight's
+/// host. A join started here is followed on a messagebox over the page until it ends.
 /// </summary>
 public sealed class OriginalConnectionScreen : IOriginalScreenModule
 {
@@ -30,7 +30,7 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
     /// <summary>Build Custom Plane, greyed while guests fly stock planes.</summary>
     public const string BuildKey = "MP_B_BUILD";
 
-    /// <summary>Host, the Dogfight lobby's door, greyed until that lobby exists.</summary>
+    /// <summary>Host, which opens the Multiplayer Lobby as a Dogfight's host.</summary>
     public const string HostKey = "MP_B_HOST";
 
     /// <summary>Connect, by the way the radios name.</summary>
@@ -42,7 +42,7 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
     /// <summary>The games list's auto refresh checkbox.</summary>
     public const string RefreshKey = "MPG_C_REFRESH";
 
-    /// <summary>Create Game, the games list's Host, greyed with it.</summary>
+    /// <summary>Create Game, the games list's Host.</summary>
     public const string CreateKey = "MPG_B_CREATE";
 
     /// <summary>Join Game, live once a joinable row is picked.</summary>
@@ -146,6 +146,7 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
     private readonly Func<NetPlayFeature?> _net;
     private readonly IOriginalScreenHost _host;
     private readonly string? _dataRoot;
+    private readonly Action _openLobby;
     private UiStrings? _strings;
     private (string Address, int Port)? _picked;
     private double _sinceAsk;
@@ -157,9 +158,11 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
 
     /// <summary>A Connection module over the door <paramref name="net"/> answers, which is null on
     /// a shell with no multiplayer door. It reads its words from the string table under
-    /// <paramref name="dataRoot"/> and calls back into <paramref name="host"/>.</summary>
-    public OriginalConnectionScreen(Func<NetPlayFeature?> net, IOriginalScreenHost host, string? dataRoot)
+    /// <paramref name="dataRoot"/> and calls back into <paramref name="host"/>. Host and Create Game
+    /// call <paramref name="openLobby"/>.</summary>
+    public OriginalConnectionScreen(Func<NetPlayFeature?> net, IOriginalScreenHost host, string? dataRoot, Action? openLobby = null)
     {
+        _openLobby = openLobby ?? (() => { });
         _net = net ?? throw new ArgumentNullException(nameof(net));
         _host = host ?? throw new ArgumentNullException(nameof(host));
         _dataRoot = dataRoot;
@@ -274,6 +277,10 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
                 break;
             case ExitKey:
                 Leave();
+                break;
+            case HostKey:
+            case CreateKey:
+                _openLobby();
                 break;
             case RefreshKey:
                 AutoRefresh = !AutoRefresh;
@@ -503,7 +510,7 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
         }
 
         rows.Add(Strip(BuildKey, BuildArt, 117f, 468f, false, 0, 200f, 32f));
-        rows.Add(Strip(HostKey, SmallArt, 514f, 424f, false, 1, 74f, 37f));
+        rows.Add(Strip(HostKey, SmallArt, 514f, 424f, _net() != null, 1, 74f, 37f));
         rows.Add(Strip(ConnectKey, MediumArt, 610f, 424f, true, 1, 96f, 37f));
         rows.Add(Strip(ExitKey, ExitArt, 514f, 559f, true, 1, 200f, 32f));
     }
@@ -524,7 +531,7 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
 
         rows.Add(new OriginalRow(RefreshKey, string.Empty, OriginalRowKind.Radio, 47f, ButtonLineY, 200f, 37f, true, 0,
             new BoardArt(BoardArtLibrary.Ui, CheckboxArt, 8)));
-        rows.Add(Strip(CreateKey, LargeArt, 394f, ButtonLineY, false, 1, 131f, 37f));
+        rows.Add(Strip(CreateKey, LargeArt, 394f, ButtonLineY, _net() != null, 1, 131f, 37f));
         rows.Add(Strip(JoinKey, LargeArt, 529f, ButtonLineY, PickedGame() is { } game && CoopDoorText.Joinable(game.Advert), 1, 131f, 37f));
         rows.Add(Strip(GamesExitKey, SmallArt, 665f, ButtonLineY, true, 1, 74f, 37f));
     }

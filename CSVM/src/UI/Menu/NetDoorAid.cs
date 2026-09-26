@@ -36,7 +36,7 @@ public static class NetDoorAid
         new LanGame("192.0.2.12", NetPlayFeature.DefaultPort, new SessionAdvertMessage(
             NetSessionKind.CampaignCoop, 30, 3, "Sheila", NetSessionStatus.InMission, NetPlayFeature.CoopHumans)),
         new LanGame("192.0.2.13", NetPlayFeature.DefaultPort, new SessionAdvertMessage(
-            NetSessionKind.Dogfight, SessionAdvertMessage.NoMission, 5, "Lucy", NetSessionStatus.Waiting, NetSeats.MaxPlayers)),
+            NetSessionKind.Dogfight, 3, 5, "Lucy", NetSessionStatus.Waiting, NetSeats.MaxPlayers)),
     };
 
     /// <summary>A shut door whose host opens onto a loopback wire with <paramref name="guests"/>
@@ -85,6 +85,101 @@ public static class NetDoorAid
         new CoopPickMessage(host.CoopEpoch, true, (byte)airframe).Write(bytes);
         guest.Send(guest.Peers[0], bytes, NetReliability.Reliable);
         host.Step(0.0);
+    }
+
+    /// <summary>A shut Dogfight host door and two shut guest doors, all on one loopback wire. The
+    /// guests go by Nathan and Sheila, and the host by <see cref="HostName"/> until a lobby names it.
+    /// </summary>
+    public static (NetPlayFeature Host, IReadOnlyList<NetPlayFeature> Guests) DogfightDoors()
+    {
+        var mesh = LoopbackTransport.Mesh(3, LoopbackConditions.Perfect, new Random(1));
+        var host = new NetPlayFeature(
+            (port, maxGuests, bind) => mesh[0],
+            (address, port) => throw new InvalidOperationException("the aid's host door joins nothing"),
+            port => new UpnpPortMapResult(UpnpPortMapOutcome.Mapped, port, ExternalAddress, "aid"),
+            port => { })
+        { PlayerName = HostName };
+        string[] names = { "Nathan", "Sheila" };
+        var guests = new List<NetPlayFeature>();
+        for (int i = 0; i < names.Length; i++)
+        {
+            var end = mesh[i + 1];
+            guests.Add(new NetPlayFeature(
+                (port, maxGuests, bind) => throw new InvalidOperationException("the aid's guest door hosts nothing"),
+                (address, port) => end)
+            { PlayerName = names[i] });
+        }
+
+        return (host, guests);
+    }
+
+    /// <summary>Poses an open Dogfight lobby with Time 5 and Limited Lives on the Hawaii map. The first
+    /// guest is Ready on its third stock plane, and the host and that guest have each said one line.
+    /// </summary>
+    public static void PoseDogfight(NetPlayFeature host, IReadOnlyList<NetPlayFeature> guests)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        ArgumentNullException.ThrowIfNull(guests);
+        SettleDogfight(host, guests);
+        if (host.Dogfight is not { } lobby || guests.Count == 0 || guests[0].Dogfight is not { } first)
+        {
+            return;
+        }
+
+        // Each guest's own lobby screen would show its lobby, which is what sends its name.
+        foreach (var guest in guests)
+        {
+            guest.Dogfight?.Show();
+        }
+
+        lobby.SetEnvironment(1);
+        lobby.SetVictory(DogfightVictory.Time);
+        lobby.SetTimeMinutes(5);
+        lobby.SetLimitedLives(true);
+        SettleDogfight(host, guests);
+        first.Pick(2, first.Fit);
+        first.SetReady(true);
+        lobby.Say("Five minutes, three lives each.");
+        SettleDogfight(host, guests);
+        first.Say("Ready when you are.");
+        SettleDogfight(host, guests);
+    }
+
+    /// <summary>The Game Scores lines of a finished three-pilot match on a posed lobby, named from
+    /// its player list. The first guest leads on two kills, the host has one, and the second guest
+    /// also crashed once.</summary>
+    public static DogfightScore[] PlayedScores(NetPlayFeature host)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        var names = new List<string>();
+        foreach (var player in host.Dogfight?.Players ?? Array.Empty<DogfightLobbySeat>())
+        {
+            names.Add(player.Name);
+        }
+
+        var match = new CSVM.Flight.VersusMatch(3, killTarget: 0, timeLimit: 300f);
+        match.RegisterKill(1, 0);
+        match.RegisterKill(1, 2);
+        match.RegisterKill(0, 1);
+        match.RegisterDeath(2);
+        match.Advance(300f);
+        return DogfightLobby.ScoresOf(match.Standings(), names);
+    }
+
+    /// <summary>Steps every door of a posed lobby until what each sent has landed on the others.
+    /// </summary>
+    public static void SettleDogfight(NetPlayFeature host, IReadOnlyList<NetPlayFeature> guests)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        ArgumentNullException.ThrowIfNull(guests);
+        for (int round = 0; round < 4; round++)
+        {
+            host.Step(0.0);
+            foreach (var guest in guests)
+            {
+                guest.Step(0.0);
+            }
+        }
     }
 
     /// <summary>A shut door whose LAN search hears <see cref="SampleGames"/>, answered at once

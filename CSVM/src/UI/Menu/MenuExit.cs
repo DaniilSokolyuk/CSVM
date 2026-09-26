@@ -61,10 +61,12 @@ public sealed record OptionsApplyExit(
     bool? AutoHeadTurn,
     bool? RocketCraters) : MenuExit;
 
-/// <summary>Dogfight's two match rules as a screen set them: the kill target that ends a match
-/// early and the match clock in MINUTES, 0 on either disabling that limit. The consumer applies
-/// them under the command line, so an explicit <c>--vs-kills=</c>/<c>--vs-time=</c> still wins.</summary>
-public sealed record VersusRules(int KillTarget, int TimeLimitMinutes);
+/// <summary>Dogfight's match rules as a screen set them. The kill target ends a match early and the
+/// match clock runs in MINUTES. A 0 on either disables that limit. The lives are the deaths a pilot
+/// has before it stays down, 0 for no limit. Without auto-respawn a downed pilot waits for its own
+/// press. The consumer applies them under the command line, so an
+/// explicit flag still wins.</summary>
+public sealed record VersusRules(int KillTarget, int TimeLimitMinutes, int Lives = 0, bool AutoRespawn = true);
 
 /// <summary>The open wire a network launch carries: the transport the door opened and whether
 /// this machine owns the match. The consumer takes it over whole, stepping and closing it from

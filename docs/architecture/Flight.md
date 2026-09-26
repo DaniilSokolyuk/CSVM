@@ -726,9 +726,9 @@ and `SuicideScore` per death with no killer to the pilot who died, the original'
 report those facts, `Advance(dt)` is the host-fed match clock, `MatchCompleted` fires once on a score reaching the target or
 on the time-out (leader wins, equal top scores draw), `Standings()` ranks by score with ties sharing a rank and carries kills
 and deaths for display, and `Restart()` zeroes everything and re-arms completion. `ApplyScore` writes a seat's row as the host reports it,
-which is how a guest mirrors the host's board instead of scoring the same kill again. `Replicate()` hands the clock, both limits and the
-ending to that host as well: `Advance` then moves nothing, no score completes the match, and `ApplyState` is the only thing that ends or
-re-arms one. Off-engine coverage: `CSVM.Tests/VersusMatchTests.cs`. Read `VersusHud` and `VersusBoard` for what it feeds, and `docs/org/multiplayer-scoring.md` for the decode.
+so a guest mirrors the host's board. `Replicate()` hands the clock, both limits and the ending to that host too: `Advance` then moves
+nothing and only `ApplyState` ends or re-arms a match. `OutOfLives` holds a spent pilot down, `Leave` marks a dropped one, fewer than two
+pilots with lives end the match as `AllAlone` (reason 4), and `NextWatched` picks the seat a spent pilot watches. Read `VersusMatchTests.cs`, `VersusHud`, `VersusBoard` and `docs/org/multiplayer-scoring.md`.
 
 ## src/Flight/VersusSpawnRotation.cs
 Where a Dogfight seat comes back, engine-free: it owns the per-seat spawn-list ledger the opening
@@ -1359,7 +1359,7 @@ no node, so the whole table runs in a unit test. Every transition reports what h
 performing it, answering one outcome value carrying everything the caller owes.
 `FlightController` forwards the flags and keeps the events the session subscribes to. That a
 crashed aircraft cannot crash again is a transition rule here, with the falling wreck's own
-landing as the single exception.
+landing as the single exception. `RespawnOnFire` (Auto Respawn off) waits on Fire Guns.
 
 ## src/Flight/GroundShadowLaw.cs
 The original's aircraft ground shadow as a rule, engine-free and pure: the projection direction

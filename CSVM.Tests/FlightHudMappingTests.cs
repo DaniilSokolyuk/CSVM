@@ -443,6 +443,23 @@ public class FlightHudMappingTests
         Assert.Equal(2, hud.ComposeTextLines(in state, mph: 0f, ft: 0f, wide: true).Count);
     }
 
+    [Fact]
+    public void ALimitedLivesDeathPicksItsLineByTheLivesLeft()
+    {
+        var strings = Messages.Parse(
+            "{\"language_id\":1033,\"entries\":["
+            + "{\"key\":\"MSG_NO_LIVES\",\"id\":209,\"value\":\"You Are Out of Lives!\"},"
+            + "{\"key\":\"MSG_NUM_LIVES\",\"id\":210,\"value\":\"You Have %1!d! Lives Left!\"},"
+            + "{\"key\":\"MSG_ONE_LIFE\",\"id\":211,\"value\":\"You Have ONE Life Left!\"}]}");
+
+        Assert.Equal("You Have 4 Lives Left!", HudMessages.LivesLine(strings, 4));
+        Assert.Equal("You Have ONE Life Left!", HudMessages.LivesLine(strings, 1));
+        Assert.Equal("You Are Out of Lives!", HudMessages.LivesLine(strings, 0));
+
+        // ABLE-TO-FAIL CONTROL: two left is still the counted line, not the one-life line.
+        Assert.Equal("You Have 2 Lives Left!", HudMessages.LivesLine(strings, 2));
+    }
+
     // The two rows the prompt reads, as messages.json carries them (ids 181 and 182).
     private static Messages AutoLandMessages() => Messages.Parse(
         "{\"language_id\":1033,\"entries\":["

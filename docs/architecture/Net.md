@@ -97,8 +97,8 @@ host's `Advertise` sends a `SessionAdvertMessage` to every peer on connect and o
 guest keeps the latest arrival in `Advert`, and the host's closing word in `Closed`, and never
 passes either on. The co-op boards' messages stay here too: a host sends `CoopFlow` per guest and
 keeps each guest's latest `CoopPick`, a guest keeps the latest flow and `SeatFits`. Others are held
-(up to `HeldPayloads`) until a session binds, then replayed behind the peer announcement, so `Held`
-is how a guest's board learns that the host's session has answered. Read `NetLobbyTests.cs`.
+(up to `HeldPayloads`) until a session binds, then replayed behind the peer announcement (`Held`); a
+guest's pick drops what is still held from it, a finished match's tail. Read `NetLobbyTests.cs`.
 
 ## src/Net/LanDiscovery.cs
 The LAN search's datagram pair, apart from the carrier: `LanDiscovery` writes and reads a query
@@ -159,6 +159,14 @@ the round of picks (`Epoch`), the guest's player number, the Ready mask, the han
 on the debrief, the host's result. `CoopPickMessage` is a guest's airframe, `CoopFit`, name, Ready
 and Left under the round it answers, so a Ready from an earlier round never launches the next
 mission. `CoopSeatFitMessage` tells every guest one seat's fit before the session opener. Layout:
+[../org/multiplayer-messages.md](../org/multiplayer-messages.md).
+
+## src/Net/NetDogfightMessages.cs
+The Multiplayer Lobby's three messages, all reliable and all kept in `NetLobby` rather than a
+session. `DogfightOptionsMessage` is the host's Mission Options under the round they belong to,
+`DogfightRosterMessage` is the whole player list with the reading guest's own row marked, and
+`LobbyChatMessage` is one typed line under its speaker's name, which the host relays. A guest's
+plane and Ready ride `CoopPickMessage`. Layout:
 [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
 
 ## src/Net/NetPositionalMessages.cs

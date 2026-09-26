@@ -303,6 +303,7 @@ The launchscreen and splitscreen rig, plus the interactive debug labs. Every lab
 - `src/UI/Menu/FreeFlightFeature.cs`, Free Flight as a shared feature: the chapter roster, the pick, the launch gate and the typed exit.
 - `src/UI/Menu/InstantActionFeature.cs`, Instant Action as a shared feature: the decoded option sets, the typed setup state, the built def.
 - `src/UI/Menu/NetPlayFeature.cs`, the multiplayer door as a shared feature: the port and address, the socket, the link readouts, the session advert, the wire a launch takes.
+- `src/UI/Menu/DogfightLobby.cs`, the Multiplayer Lobby's state over the network lobby: the host's options and rounds, the player list, picks and Ready, chat, and the launch gate.
 - `src/UI/Menu/CoopDoorText.cs`, the words the campaign's network door is drawn in: the host's band, the advertised session's name, the join and waiting boards' status lines.
 - `src/UI/Menu/NetDoorAid.cs`, the loopback multiplayer doors the screenshot aids stand on: no socket, no router, a campaign host already advertising.
 - `src/UI/Menu/Original/OriginalShell.cs`, the Original presentation's screen graph over the decoded layout, and its five partials below.
@@ -322,6 +323,7 @@ The launchscreen and splitscreen rig, plus the interactive debug labs. Every lab
 - `src/UI/Menu/Original/OriginalHangarScreen.cs`, the hangar as one standalone module: the name screen, the tabbed hub, the totals page, the inventory.
 - `src/UI/Menu/Original/OriginalCampaignScreen.cs`, the campaign as one standalone module: the ten decoded screens over the shared board component.
 - `src/UI/Menu/Original/OriginalConnectionScreen.cs`, the Multiplayer Connection page and the LAN games list as one standalone module over the network door: the ways, the search, a join followed on a messagebox.
+- `src/UI/Menu/Original/OriginalLobbyScreen.cs`, the Multiplayer Lobby as one standalone module: its four tabs, the player list and Ready, chat, LAUNCH! and Leave Game.
 - `src/UI/Menu/Original/OriginalPresentation.cs`, the Original presentation node: the shell drawn through `ComposedBoardView`, seats polled.
 - `src/UI/Menu/Original/OriginalArtSizes.cs`, the art measurer every `OriginalShell` host hands it: one art name answered with its pixel size, cached, a movie's read off its sequence header.
 - `src/UI/Menu/Original/OriginalAvailability.cs`, Original's availability answer before entry: a refusal reason, or the loaded layout.
@@ -636,6 +638,7 @@ original's own message set, with ids and guarantees, is in [`org/multiplayer-mes
 - `src/Net/NetMessages.cs`, the message vocabulary: one struct per message, each declaring its type word and reliability class, over a shared four-byte header.
 - `src/Net/NetWorldMessages.cs`, the host-owned world's messages: an AI's pose, fire and hit claim, a generator launch, a zeppelin's and a surface vehicle's path sample, and the world event.
 - `src/Net/NetCoopMessages.cs`, the co-op boards' lobby messages: the host's flow one guest follows (screen, mission, round, Ready mask, hangar, result) and a guest's pick and Ready under a round.
+- `src/Net/NetDogfightMessages.cs`, the Multiplayer Lobby's messages: the host's options under a round, the player list, and one chat line.
 - `src/Net/NetPositionalMessages.cs`, the positional start: a landing row the host started and for which seat, the ladder holder, and a guest's held auto-land button.
 - `src/Net/NetMessageWriter.cs`, the writer and reader cursors every message is packed and unpacked through: little-endian primitives, quantised unit fields, fixed-width text.
 - `src/Net/NetClockSlew.cs`, a guest's offset onto host time, walked to each fresh reading over a bounded window rather than written, with one-way readings read forward by half the measured round trip.

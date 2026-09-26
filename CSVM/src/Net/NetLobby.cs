@@ -7,8 +7,8 @@ namespace CSVM.Net;
 /// A carrier's first listener, standing between a socket and the session that later binds it.
 /// A carrier binds once, and the menu reads the host's advert before any session exists. So this
 /// binds the carrier at once and is itself the transport the session binds.
-/// <see cref="Advertise"/> reaches every peer on connect and on each change. An arriving advert,
-/// close notice, co-op flow, pick or seat fit is kept here and never passed on. Any other payload is
+/// <see cref="Advertise"/> reaches every peer on connect and on each change. A lobby message that
+/// arrives, from the advert to a chat line, is kept here and never passed on. Any other payload is
 /// held until a listener binds, then replayed behind the roster announcement. A bound session sees
 /// only the peers present when it bound, and <see cref="Unbind"/> frees the carrier for the next.
 /// </summary>
@@ -25,8 +25,10 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
     private readonly Dictionary<int, CoopPickMessage> _picks = new();
     private readonly Dictionary<int, CoopFit> _seatFits = new();
 
-    // Wide enough for the widest lobby message with room to spare.
-    private readonly byte[] _scratch = new byte[CoopPickMessage.Size + SessionAdvertMessage.Size];
+    private readonly List<(int Peer, LobbyChatMessage Line)> _chat = new();
+
+    // Wide enough for the widest lobby message, the Dogfight player list.
+    private readonly byte[] _scratch = new byte[DogfightRosterMessage.Size];
     private INetTransportListener? _listener;
     private SessionAdvertMessage? _advertising;
 
@@ -61,6 +63,12 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
     /// seat again, so an entry from an earlier flight is always overwritten before it is read.
     /// </summary>
     public IReadOnlyDictionary<int, CoopFit> SeatFits => _seatFits;
+
+    /// <summary>The Dogfight host's latest Mission Options, or null while none has arrived.</summary>
+    public DogfightOptionsMessage? DogfightOptions { get; private set; }
+
+    /// <summary>The Dogfight host's latest player list, or null while none has arrived.</summary>
+    public DogfightRosterMessage? DogfightRoster { get; private set; }
 
     /// <summary>The advert this end hands out, or null while it hands out none.</summary>
     public SessionAdvertMessage? Advertising => _advertising;
@@ -135,6 +143,20 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
         _held.Clear();
     }
 
+    /// <summary>Hands over every chat line that arrived since the last call, with the peer that
+    /// sent it, and forgets them.</summary>
+    public IReadOnlyList<(int Peer, LobbyChatMessage Line)> TakeChat()
+    {
+        if (_chat.Count == 0)
+        {
+            return Array.Empty<(int, LobbyChatMessage)>();
+        }
+
+        var lines = _chat.ToArray();
+        _chat.Clear();
+        return lines;
+    }
+
     /// <summary>Drops every held payload. A guest does this whenever the host names a board. What
     /// trails in from a flight that ended is not the next flight's join answer.</summary>
     public void DropHeld() => _held.Clear();
@@ -202,13 +224,20 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
 
         if (CoopPickMessage.TryRead(payload, out var pick))
         {
+            // A guest picks only on a board, so whatever it sent before is a flight's that ended.
             _picks[peer] = pick;
+            _held.RemoveAll(held => held.Peer == peer);
             return;
         }
 
         if (CoopSeatFitMessage.TryRead(payload, out var seatFit))
         {
             _seatFits[seatFit.Seat] = seatFit.Fit;
+            return;
+        }
+
+        if (TakeDogfight(peer, payload))
+        {
             return;
         }
 
@@ -240,6 +269,36 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
     {
         _held.Clear();
         (_inner as IDisposable)?.Dispose();
+    }
+
+    // The Dogfight lobby's three messages. A chat inbox past the held depth drops its oldest line,
+    // so a lobby nobody reads cannot grow without bound.
+    private bool TakeDogfight(int peer, ReadOnlySpan<byte> payload)
+    {
+        if (DogfightOptionsMessage.TryRead(payload, out var options))
+        {
+            DogfightOptions = options;
+            return true;
+        }
+
+        if (DogfightRosterMessage.TryRead(payload, out var roster))
+        {
+            DogfightRoster = roster;
+            return true;
+        }
+
+        if (!LobbyChatMessage.TryRead(payload, out var line))
+        {
+            return false;
+        }
+
+        if (_chat.Count >= HeldPayloads)
+        {
+            _chat.RemoveAt(0);
+        }
+
+        _chat.Add((peer, line));
+        return true;
     }
 
     private void SendAdvert(int peer)

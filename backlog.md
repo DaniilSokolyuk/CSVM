@@ -1122,30 +1122,6 @@ usual.
   keep in one place; do not scatter it into the extracted modules. *Cross-refs:* `BL-1014`,
   `BL-1016`, `docs/architecture/Session.md`.
 
-- `BL-1022` `[Feature]` `[M]` `[Next: code]` `[Impact: high]` `[Evidence: trace]` **A host and a
-  guest agree on the map and the aircraft by hand: nothing is exchanged before the session starts,
-  so each end picks its own and a disagreement is silent.** *Evidence:* the multiplayer door hands
-  the launch an open transport and nothing else, and both ends then walk their own map screen and
-  their own aircraft select. A guest flying a different chapter than its host gets a world its
-  host is not in, with no word either way. A host's roster gives every remote seat the local
-  pilot's airframe (`Launcher`'s net roster over `PlanePickerRoster.StockAirframes`), because no
-  message carries a guest's pick before the handshake. The original agrees all of it in a lobby,
-  the four `OriginalScreenshots/Multiplayer Lobby *.png` shots: a `Players (1 of 16)` roster with
-  a Ready box per pilot, Boot and Create Team, a chat line, and four tabs. Mission Options is the
-  host's page (Mission Environment, Mission Type with its description, Victory Conditions as one
-  of Time in minutes or Score, Restrict Number of Teams with a range, Limited Lives and Auto
-  Respawn, Allow Custom Planes with Outlaw Components); Select Plane (Default or Custom, stats
-  and the gun and hardpoint census) and Select Ammo (a shell type per gun calibre and a rocket
-  type per hardpoint, eight rows) are per pilot; Game Scores is the fourth tab. *Fix shape:* a
-  pre-session exchange over
-  the existing vocabulary, the host announcing the chapter and the match rules and each guest
-  answering with its airframe index, applied before the session is built; the index is into
-  `PlanePickerRoster.StockAirframes`, which both ends already read in one order. *⚠ Traps:* the
-  index is the contract, so a reordering of that list is a wire break, not a cosmetic change; a
-  guest that joins after the host has launched has no screen left to correct a mismatch on, so the
-  exchange belongs before the launch, not after it. *Cross-refs:* `BL-1021`,
-  `docs/architecture/Net.md`, `docs/architecture/Session.md`.
-
 ## Tooling, platform & docs
 
 - `BL-033` `[Cleanup]` `[Blocked: SDL >= 3.4.4]` `[S]` `[Next: code]` `[Impact: none]` `[Evidence: data]` **Drop the `SDL_JOYSTICK_DIRECTINPUT=0` launch-script workaround** (set 2026-07-19 in

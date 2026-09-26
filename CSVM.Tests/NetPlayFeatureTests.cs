@@ -217,6 +217,62 @@ public class NetPlayFeatureTests
     }
 
     [Fact]
+    public void ABuiltInHostRunsAnUnshownLobbyThatAnOriginalGuestPicksAgainst()
+    {
+        var mesh = LoopbackTransport.Mesh(2, Clean, new Random(37));
+        var host = new NetPlayFeature((_, _, _) => mesh[0], (_, _) => mesh[0]);
+        var guest = new NetPlayFeature((_, _, _) => mesh[1], (_, _) => mesh[1]);
+        host.OpenHost(NetSeats.MaxPlayers - 1);
+        guest.OpenJoin();
+        Pump(host, guest);
+
+        Assert.True(host.Dogfight is { IsHost: true, Shown: false });
+        Assert.False(host.Advertising!.Value.HasMission);
+        Assert.True(guest.Dogfight is { HasOptions: true });
+
+        guest.Dogfight!.Show();
+        guest.Dogfight.Pick(2, default);
+        Pump(host, guest);
+        Assert.Equal(2, host.Dogfight!.Players[1].Airframe);
+    }
+
+    [Fact]
+    public void AGuestBackFromAMatchTakesNoTailForALaunchUntilTheHostNamesANewRound()
+    {
+        var mesh = LoopbackTransport.Mesh(2, Clean, new Random(41));
+        var host = new NetPlayFeature((_, _, _) => mesh[0], (_, _) => mesh[0]);
+        var guest = new NetPlayFeature((_, _, _) => mesh[1], (_, _) => mesh[1]);
+        host.OpenDogfightHost(NetSeats.MaxPlayers - 1);
+        guest.OpenJoin();
+        Pump(host, guest);
+        guest.Dogfight!.Show();
+        guest.Dogfight.SetReady(true);
+        host.Dogfight!.SetReady(true);
+        Pump(host, guest);
+        Assert.True(host.Dogfight.CanLaunch);
+
+        // One session payload stands in for the host's opener, and then for its match's tail.
+        Assert.NotNull(host.BuildLaunch());
+        SessionPayload(mesh);
+        guest.Step(0.016);
+        Assert.True(guest.DogfightLaunchDue);
+        Assert.NotNull(guest.BuildLaunch());
+        Assert.True(guest.Reclaim());
+        SessionPayload(mesh);
+        guest.Step(0.016);
+        Assert.False(guest.DogfightLaunchDue);
+
+        // ABLE-TO-FAIL CONTROL: once the host lands and names a new round, a payload is a launch.
+        Assert.True(host.Reclaim());
+        host.Dogfight.Land(Array.Empty<DogfightScore>());
+        Pump(host, guest);
+        guest.Dogfight.SetReady(true);
+        SessionPayload(mesh);
+        guest.Step(0.016);
+        Assert.True(guest.DogfightLaunchDue);
+    }
+
+    [Fact]
     public void AJoinNobodyAnswersGivesUpAndSaysSo()
     {
         var mesh = LoopbackTransport.Mesh(1, Clean, new Random(3));
@@ -575,6 +631,10 @@ public class NetPlayFeatureTests
         Assert.True(guest.IsCoopGuest);
         return (host, guest);
     }
+
+    // A payload no lobby reads, sent host to guest, which the guest's lobby holds for a session.
+    private static void SessionPayload(IReadOnlyList<LoopbackTransport> mesh) =>
+        mesh[0].Send(mesh[1].LocalPeer, new byte[] { 0xEE, 1, 2, 3 }, NetReliability.Reliable);
 
     private static void Pump(NetPlayFeature host, NetPlayFeature guest)
     {

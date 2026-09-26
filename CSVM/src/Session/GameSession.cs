@@ -52,6 +52,7 @@ public partial class GameSession : Node3D
 
     // Seconds a downed Versus player watches the crash cam before auto-respawning (R skips early).
     // Respawn is at the player's own spawn point, full HP/ammo, no invulnerability window.
+    // UNDECODED: the original's delay is the crash def's RESET_TIME (docs/org/multiplayer-scoring.md).
     private const float VersusRespawnDelay = 3f;
 
     // Nathan Zachary's own zeppelin: the world node escape.zrd's shared MYZEP icon stands for, and
@@ -332,6 +333,10 @@ public partial class GameSession : Node3D
     // Who downed each seat last, which the rotation weighs heaviest. Filled by every rig's Downed
     // report, a seat flown elsewhere included, since its owner's death report raises that here too.
     private int?[] _lastKiller = System.Array.Empty<int?>();
+    // Each seat's deaths as the lives line last read them, so a death posts its line once. The
+    // string table the in-flight lines are worded from rides with it.
+    private int[] _livesSeen = System.Array.Empty<int>();
+    private Messages? _flightStrings;
     // The stunt race (--stunt with several pilots), for the same reason: a rerun resets it rather
     // than each pilot's own run. Null outside a race.
     private StuntRace? _race;
@@ -2367,6 +2372,7 @@ public partial class GameSession : Node3D
         // reuses the session archives and the world gamez, so rockets get their flyout bodies.
         mark = StartupProfile.Mark();
         var weaponMessages = Messages.Load(state.MessagesPath);
+        _flightStrings = weaponMessages;
         var weaponDefs = WeaponDefs.Load(state.ZrdrPath, weaponMessages);
         // Decode the catalogue's own sounds while the archive is open. Nothing else covers them:
         // weapons.json names them, not the anim program, and every one is first reached in flight
@@ -2480,7 +2486,7 @@ public partial class GameSession : Node3D
         // binds every pane's VersusHud to this one instance below); the score/respawn plumbing
         // that feeds it Downed reports only runs once every rig exists, further down.
         VersusMatch? versus = _spec.Versus
-            ? new VersusMatch(_seatRigs.Count, _spec.VsKills, _spec.VsTimeMinutes * 60f)
+            ? new VersusMatch(_seatRigs.Count, _spec.VsKills, _spec.VsTimeMinutes * 60f, _spec.VsLives)
             : null;
 
         // The original's HUD bitmap font, loaded once and shared across panes. Null when the rimage
@@ -2781,12 +2787,16 @@ public partial class GameSession : Node3D
             // Who downed each seat last, which the rotation weighs heaviest: the Downed report
             // carries it, and the respawn that reads it happens seconds later.
             _lastKiller = new int?[_seatRigs.Count];
+            _livesSeen = new int[_seatRigs.Count];
             var lastKiller = _lastKiller;
             foreach (var rig in _seatRigs)
                 if (rig.Controller is { } pilot)
                 {
                     int seat = rig.Index;
-                    pilot.AutoRespawnAfter = VersusRespawnDelay; // crash cam, then back in, R skips
+                    // Crash cam, then back in, R skips. With the lobby's Auto Respawn off the same
+                    // crash cam runs and then waits for Fire Guns, as the original's does.
+                    pilot.AutoRespawnAfter = VersusRespawnDelay;
+                    pilot.RespawnOnFire = !_spec.VsAutoRespawn;
                     pilot.Match = match;                  // R-ownership gate: board-up ⇒ rematch
                     pilot.RestartMatch = () => RestartMatch(match);
                     if (_netSeats.Count > 0)
@@ -4443,6 +4453,9 @@ public partial class GameSession : Node3D
             plane.Inert = true;
         }
 
+        // A drop is the other thing that can leave a match without an opponent (reason 4). The
+        // host's step sends that ending; a guest's replicated match only marks the seat.
+        _versus?.Leave(seat);
         string line = UI.Menu.CoopDoorText.Left(_netSeats[seat].Callsign);
         foreach (var rig in _rigs)
         {
@@ -4491,11 +4504,14 @@ public partial class GameSession : Node3D
         }
 
         // Which of the original's end reasons this is. The remake arms both limits at once
-        // (docs/org/multiplayer-scoring.md). A completed match is therefore a time-out when the
-        // clock ran out, and a score target otherwise.
+        // (docs/org/multiplayer-scoring.md). A completed match is therefore reason 4 when the
+        // last opponent went, a time-out when the clock ran out, and a score target otherwise.
+        var was = _matchEnd;
         _matchEnd = !match.Completed ? Net.NetMatchEnd.Running
+            : match.AllAlone ? Net.NetMatchEnd.NobodyLeft
             : match.TimeLimit > 0f && match.Elapsed >= match.TimeLimit ? Net.NetMatchEnd.TimeLimit
             : Net.NetMatchEnd.ScoreTarget;
+        PostAllAlone(was);
         net.Broadcast(
             new Net.MatchStateMessage(match.TimeRemaining, match.TimeLimit, (short)match.KillTarget,
                 _matchEnd, (float)(_clock?.Time ?? 0.0)),
@@ -4509,7 +4525,9 @@ public partial class GameSession : Node3D
             return;
         }
 
+        var was = _matchEnd;
         _matchEnd = state.End;
+        PostAllAlone(was);
         _netClock?.Observe(state.HostClock, _clock?.Time ?? 0.0);
         _versus?.ApplyState(state.ScoreTarget, state.TimeLimitSeconds, state.RemainingSeconds,
             state.End != Net.NetMatchEnd.Running);
@@ -4522,6 +4540,7 @@ public partial class GameSession : Node3D
     private void StepVersusMatch(float dt)
     {
         _versus?.Advance(dt);
+        HoldSpentPilots();
         if (_matchCadence is not { } cadence)
         {
             return;
@@ -4533,6 +4552,90 @@ public partial class GameSession : Node3D
         {
             SendMatchState();
         }
+    }
+
+    // Reason 4 in words, on every machine the moment its end turns to it. The original's "Game
+    // Over:" and "No Enemies Left" lines go into each local pane's stack.
+    private void PostAllAlone(Net.NetMatchEnd was)
+    {
+        if (was == Net.NetMatchEnd.NobodyLeft || _matchEnd != Net.NetMatchEnd.NobodyLeft)
+        {
+            return;
+        }
+
+        foreach (var rig in _rigs)
+        {
+            if (rig.Controller?.MessageStack is { } stack)
+            {
+                HudMessages.PostAllAlone(stack, _flightStrings);
+            }
+        }
+    }
+
+    // The lobby's Limited Lives. A pilot whose deaths reach the limit watches the next aircraft
+    // still flying. A rematch's zeroed deaths put it back. Every
+    // machine reads the host's death count, so both ends hold the same pilots down, and each
+    // death tells its own pilot the lives left.
+    private void HoldSpentPilots()
+    {
+        if (_versus is not { Lives: > 0 } match)
+        {
+            return;
+        }
+
+        var flying = new bool[_seatRigs.Count];
+        for (int seat = 0; seat < flying.Length; seat++)
+        {
+            flying[seat] = _seatRigs[seat].Controller is { Crashed: false, Inert: false }
+                && !match.OutOfLives(seat);
+        }
+
+        for (int seat = 0; seat < _seatRigs.Count; seat++)
+        {
+            if (_seatRigs[seat].Controller is not { } pilot)
+            {
+                continue;
+            }
+
+            pilot.Spectating = match.OutOfLives(seat);
+            int? watched = pilot.Spectating
+                ? VersusMatch.NextWatched(seat, flying, SeatOf(pilot.Watching))
+                : null;
+            pilot.Watching = watched is { } w ? _seatRigs[w].Controller : null;
+            PostLivesLeft(match, seat, pilot);
+        }
+    }
+
+    // One seat's lives line, posted once per death into that seat's own pane alone, as the
+    // original posts it for the local pilot.
+    private void PostLivesLeft(VersusMatch match, int seat, FlightController pilot)
+    {
+        if (seat >= _livesSeen.Length)
+        {
+            return;
+        }
+
+        int deaths = match.DeathsOf(seat);
+        bool died = deaths > _livesSeen[seat];
+        _livesSeen[seat] = deaths;
+        bool local = _netSeats.Count == 0 || (seat < _netSeats.Count && _netSeats[seat].IsLocal);
+        if (died && local && pilot.MessageStack is { } stack)
+        {
+            HudMessages.PostLivesLeft(stack, _flightStrings, match.Lives - deaths);
+        }
+    }
+
+    private int? SeatOf(FlightController? pilot)
+    {
+        for (int seat = 0; pilot != null && seat < _seatRigs.Count; seat++)
+        {
+            if (ReferenceEquals(_seatRigs[seat].Controller, pilot))
+            {
+                return seat;
+            }
+        }
+
+        return null;
     }
 
     // Where a downed seat comes back, over the wire. The rotation stands on the host alone, so a
@@ -4590,7 +4693,7 @@ public partial class GameSession : Node3D
     {
         if (_net is not { IsHost: true } net || seat < 0 || seat >= _seatRigs.Count
             || _seatRigs[seat].Controller is not { } rig
-            || (kind == Net.NetSpawnKind.Respawn && !rig.Crashed))
+            || (kind == Net.NetSpawnKind.Respawn && (!rig.Crashed || _versus?.OutOfLives(seat) == true)))
         {
             return;
         }

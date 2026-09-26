@@ -98,6 +98,16 @@ public enum NetMessageType : ushort
     /// <summary>One seat's ammunition and ordnance, sent by a co-op host to every guest at a launch.
     /// </summary>
     CoopSeatFit = 0x0052,
+
+    /// <summary>A Dogfight host's Mission Options: the environment, the type, the victory
+    /// condition and the lives rule.</summary>
+    DogfightOptions = 0x0053,
+
+    /// <summary>A Dogfight host's player list: each pilot's name, airframe and Ready mark.</summary>
+    DogfightRoster = 0x0054,
+
+    /// <summary>One line of lobby chat and the name of the pilot who typed it.</summary>
+    LobbyChat = 0x0055,
 }
 
 /// <summary>Which board a co-op host stands on, the screen a <see cref="CoopFlowMessage"/> names.
@@ -1205,6 +1215,9 @@ public static class NetMessage
         NetMessageType.CoopFlow => CoopFlowMessage.Reliability,
         NetMessageType.CoopPick => CoopPickMessage.Reliability,
         NetMessageType.CoopSeatFit => CoopSeatFitMessage.Reliability,
+        NetMessageType.DogfightOptions => DogfightOptionsMessage.Reliability,
+        NetMessageType.DogfightRoster => DogfightRosterMessage.Reliability,
+        NetMessageType.LobbyChat => LobbyChatMessage.Reliability,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "no such message type"),
     };
 

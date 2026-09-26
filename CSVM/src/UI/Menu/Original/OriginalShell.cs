@@ -73,6 +73,10 @@ public enum OriginalScreen
     /// first answer.</summary>
     ConnectionGames,
 
+    /// <summary>The Multiplayer Lobby a Dogfight's host and guests share before its launch: the
+    /// player list, the four tabs, Ready, the chat and Leave Game.</summary>
+    Lobby,
+
     /// <summary>The decoded <c>[@Campaign@]</c> player profile screen: the name box, the roster,
     /// CONTINUE, DELETE PLAYER and CANCEL.</summary>
     CampaignRoster,
@@ -404,10 +408,14 @@ public sealed partial class OriginalShell : IOriginalScreenHost
             campaign, _setup, planes, _campaignLayout, this, profiles, _stock, _flightDevices, dataRoot, () => _net);
         Hangar = hangar != null ? new OriginalHangarScreen(hangar, planes, layout, measure, this) : null;
         Wrapup = new OriginalWrapupScreen(_campaignLayout, measure, this, InstantAction.OpenInstantAction);
-        Connection = new OriginalConnectionScreen(() => _net, this, dataRoot);
+        Lobby = new OriginalLobbyScreen(
+            () => _net, this, dataRoot, _stock,
+            () => _setup.Seats.Count > 0 ? _flightDevices(_setup.Seats[0]) : Array.Empty<int>(),
+            () => profiles?.Invoke().LastPlayedPilotName);
+        Connection = new OriginalConnectionScreen(() => _net, this, dataRoot, Lobby.OpenHost);
         _modules = Hangar != null
-            ? new IOriginalScreenModule[] { InstantAction, Options, Campaign, Hangar, Wrapup, Connection }
-            : new IOriginalScreenModule[] { InstantAction, Options, Campaign, Wrapup, Connection };
+            ? new IOriginalScreenModule[] { InstantAction, Options, Campaign, Hangar, Wrapup, Connection, Lobby }
+            : new IOriginalScreenModule[] { InstantAction, Options, Campaign, Wrapup, Connection, Lobby };
         var plaqueRow = layout.Screen("FlightCheck")?.Widget("FC_B_CHANGEPLANE");
         _plaque = plaqueRow is { Art.Count: > 0 } ? new BoardArt(BoardArtLibrary.Ui, plaqueRow.Art[0], plaqueRow.Frames) : null;
         Inks = ReadInks(layout, plaqueRow);
@@ -503,7 +511,7 @@ public sealed partial class OriginalShell : IOriginalScreenHost
     public bool CapturingText =>
         _dialog == null
         && (TypingCheat || _screen == OriginalScreen.CampaignRoster || (Hangar?.CapturingText ?? false)
-            || Connection.CapturingText);
+            || Connection.CapturingText || Lobby.CapturingText);
 
     /// <summary>The hangar module behind the hangar screens, with its own state and inks, or null
     /// on a shell built without a hangar feature.</summary>
@@ -531,6 +539,10 @@ public sealed partial class OriginalShell : IOriginalScreenHost
     /// <summary>The module behind the Multiplayer Connection page and its games list. It stands on
     /// a shell built without a network door too, with the Multiplayer plaque disabled.</summary>
     public OriginalConnectionScreen Connection { get; }
+
+    /// <summary>The module behind the Multiplayer Lobby, standing empty until a Dogfight is hosted
+    /// or joined.</summary>
+    public OriginalLobbyScreen Lobby { get; }
 
     /// <summary>Which campaign board the screen showing wears, or null when it wears none; what
     /// the presentation picks the board's palette by. The campaign's own screens answer for
@@ -624,8 +636,8 @@ public sealed partial class OriginalShell : IOriginalScreenHost
 
         string band = CoopDoorText.HostBand(net);
         net.Step(dt);
-        bool changed = FollowCoopGuest(net) | Campaign.StepCoop() | (CoopDoorText.HostBand(net) != band);
-        return Connection.Tick(dt) || changed;
+        bool changed = FollowCoopGuest(net) | FollowDogfight(net) | Campaign.StepCoop() | (CoopDoorText.HostBand(net) != band);
+        return Connection.Tick(dt) | Lobby.Tick(dt) || changed;
     }
 
     /// <summary>The Connection page following the door's join again: a co-op guest whose link to
@@ -637,9 +649,9 @@ public sealed partial class OriginalShell : IOriginalScreenHost
         Connection.OpenConnection();
     }
 
-    /// <summary>A co-op guest's launch once its host has launched, taken after
+    /// <summary>A co-op or Dogfight guest's launch once its host has launched, taken after
     /// <see cref="StepNet"/>, or null.</summary>
-    public MenuExit? TakeNetExit() => _net != null ? Campaign.GuestLaunch() : null;
+    public MenuExit? TakeNetExit() => _net != null ? Lobby.GuestLaunch() ?? Campaign.GuestLaunch() : null;
 
     /// <summary>Stands <paramref name="door"/> in for the network door, the screenshot aids' and
     /// the suites' way to show a door they drive themselves.</summary>
@@ -667,6 +679,31 @@ public sealed partial class OriginalShell : IOriginalScreenHost
 
         Connection.StopFollowing();
         return Campaign.OpenGuestCampaign();
+    }
+
+    // A joined Dogfight guest leaves the Connection pages for the lobby once its host's lobby
+    // answers. A lobby whose door has closed goes back to the Connection page, which says why.
+    private bool FollowDogfight(NetPlayFeature net)
+    {
+        if (_screen == OriginalScreen.Lobby)
+        {
+            if (net.Dogfight != null || net.DogfightLaunchDue || net.Released)
+            {
+                return false;
+            }
+
+            ReturnToConnection();
+            return true;
+        }
+
+        if (!net.IsDogfightGuest || net.Dogfight == null || net.Released || !Connection.Owns(_screen))
+        {
+            return false;
+        }
+
+        Connection.StopFollowing();
+        Lobby.OpenGuest();
+        return true;
     }
 
     // The module that owns a screen, or null where the shell itself does. Every dispatch site asks
@@ -707,6 +744,7 @@ public sealed partial class OriginalShell : IOriginalScreenHost
         {
             OriginalScreen.CampaignRoster => Campaign.TypeName(commands, cues),
             OriginalScreen.Connection => Connection.TypeAddress(commands),
+            OriginalScreen.Lobby => Lobby.TypeText(commands),
             _ => Hangar?.TypeName(commands, cues) ?? false,
         };
 

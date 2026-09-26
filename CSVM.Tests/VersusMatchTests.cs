@@ -15,6 +15,77 @@ namespace CSVM.Tests;
 public class VersusMatchTests
 {
     [Fact]
+    public void APilotIsOutOfLivesOnceItsDeathsReachTheLimit()
+    {
+        var match = new VersusMatch(playerCount: 2, killTarget: 0, timeLimit: 0f, lives: 2);
+
+        match.RegisterKill(shooter: 0, victim: 1);
+        Assert.False(match.OutOfLives(1));
+        match.RegisterDeath(1);
+        Assert.True(match.OutOfLives(1));
+        Assert.False(match.OutOfLives(0));
+
+        // ABLE-TO-FAIL CONTROL: with no limit, no count of deaths spends a pilot.
+        var unlimited = new VersusMatch(playerCount: 2, killTarget: 0, timeLimit: 0f);
+        for (int i = 0; i < 10; i++)
+        {
+            unlimited.RegisterDeath(1);
+        }
+
+        Assert.False(unlimited.OutOfLives(1));
+    }
+
+    [Fact]
+    public void AFreeForAllEndsOnReasonFourWhenOnePilotWithLivesIsLeft()
+    {
+        var match = new VersusMatch(playerCount: 3, killTarget: 0, timeLimit: 600f, lives: 1);
+
+        // ABLE-TO-FAIL CONTROL: one pilot spent still leaves two with lives, and the match runs.
+        match.RegisterKill(shooter: 0, victim: 1);
+        Assert.True(match.OutOfLives(1));
+        Assert.False(match.Completed);
+
+        match.RegisterDeath(2);
+        Assert.True(match.Completed);
+        Assert.True(match.AllAlone);
+    }
+
+    [Fact]
+    public void ADropThatLeavesOnePilotEndsOnReasonFourWhateverTheLives()
+    {
+        var match = new VersusMatch(playerCount: 3, killTarget: 0, timeLimit: 600f);
+        match.Leave(2);
+        Assert.False(match.Completed);
+        match.Leave(1);
+        Assert.True(match.AllAlone);
+
+        // ABLE-TO-FAIL CONTROLS: a replicated match hears its ending from the host, and a match
+        // that opened with one pilot has no opponent to lose.
+        var guest = new VersusMatch(playerCount: 2, killTarget: 0, timeLimit: 600f);
+        guest.Replicate();
+        guest.Leave(1);
+        Assert.False(guest.Completed);
+        var solo = new VersusMatch(playerCount: 1, killTarget: 0, timeLimit: 600f, lives: 1);
+        solo.RegisterDeath(0);
+        Assert.False(solo.Completed);
+    }
+
+    [Fact]
+    public void ASpentPilotWatchesTheNextFlyingSeatAndKeepsItWhileItFlies()
+    {
+        var flying = new[] { true, false, false, true };
+
+        Assert.Equal(3, VersusMatch.NextWatched(1, flying, null));
+        Assert.Equal(0, VersusMatch.NextWatched(1, flying, 0));
+        Assert.Equal(0, VersusMatch.NextWatched(3, flying, null));
+
+        // ABLE-TO-FAIL CONTROL: a watched seat that went down is left for the next one flying, and
+        // with nobody flying there is nothing to watch.
+        Assert.Equal(3, VersusMatch.NextWatched(1, flying, 2));
+        Assert.Null(VersusMatch.NextWatched(0, new[] { true, false }, null));
+    }
+
+    [Fact]
     public void RegisterKillScoresTheShooterAndTalliesTheVictimsDeath()
     {
         var match = new VersusMatch(playerCount: 2, killTarget: 5, timeLimit: 300f);

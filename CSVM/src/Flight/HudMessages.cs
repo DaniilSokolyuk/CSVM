@@ -50,6 +50,22 @@ public sealed partial class HudMessages : Control
     /// above it, and only where the mission is not already won.</summary>
     public const string MissionLostKey = "MSG_MISSION_LOST";
 
+    /// <summary>"You Are Out of Lives!", row 209, a Limited Lives death that spent the last one
+    /// (<c>FUN_00498bf0</c>, <c>0x498c52</c>-<c>0x498cba</c>).</summary>
+    public const string NoLivesKey = "MSG_NO_LIVES";
+
+    /// <summary>"You Have %1!d! Lives Left!", row 210, a death that left more than one.</summary>
+    public const string NumLivesKey = "MSG_NUM_LIVES";
+
+    /// <summary>"You Have ONE Life Left!", row 211, a death that left exactly one.</summary>
+    public const string OneLifeKey = "MSG_ONE_LIFE";
+
+    /// <summary>"Game Over:", row 135, the first of reason 4's two lines (<c>FUN_004996d0(4)</c>).</summary>
+    public const string GameOverKey = "MSG_STATE_GAMEOVER";
+
+    /// <summary>"No Enemies Left", row 7067, the second of them.</summary>
+    public const string AllAloneKey = "MSG_MP_ALL_ALONE";
+
     // The placement, from FUN_00458a10: x is 0.5 of the display width (0x006032e0) with the
     // centring flag set (the text object's +0x1044, read at 0x005c7e4f), y is 0.2 of its height
     // (0x006034fc), and each further slot sits 18 px lower (FUN_00458530's `+ 0x12`). The 18 px and
@@ -168,6 +184,25 @@ public sealed partial class HudMessages : Control
     {
         stack.Post(Text(strings, TimeExpiredKey), Side.Neutral);
         stack.Post(Text(strings, MissionLostKey), Side.Neutral);
+    }
+
+    /// <summary>The line a Limited Lives death shows its own pilot, picked by the lives left. None
+    /// takes row 209, one takes row 211, and more take row 210 with the count filled in.</summary>
+    public static string LivesLine(Messages? strings, int livesLeft) =>
+        livesLeft <= 0 ? Text(strings, NoLivesKey)
+        : livesLeft == 1 ? Text(strings, OneLifeKey)
+        : Messages.Fill(Text(strings, NumLivesKey), livesLeft.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    /// <summary>Posts <see cref="LivesLine"/> into the dying pilot's own pane, in its own colour.</summary>
+    public static void PostLivesLeft(HudMessages stack, Messages? strings, int livesLeft) =>
+        stack.Post(LivesLine(strings, livesLeft), Side.Friendly);
+
+    /// <summary>Posts reason 4's ending so "Game Over:" reads above "No Enemies Left", both in the
+    /// stack's default colour.</summary>
+    public static void PostAllAlone(HudMessages stack, Messages? strings)
+    {
+        stack.Post(Text(strings, AllAloneKey), Side.Neutral);
+        stack.Post(Text(strings, GameOverKey), Side.Neutral);
     }
 
     /// <summary>Where slot <paramref name="slot"/>'s line is anchored in a pane of

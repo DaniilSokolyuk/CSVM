@@ -173,6 +173,12 @@ public sealed class OriginalPresentation : IMenuPresentation
     /// Searching box stands.</summary>
     public const string ConnectionSearchingAid = "searching";
 
+    /// <summary>The aid value that opens the Multiplayer Lobby over the aids' loopback wire with two
+    /// guests on it. Its first colon argument names the view: host (the default), guest (Ready) or
+    /// waiting (a guest not yet Ready). The second names the tab: mission (the default), plane,
+    /// ammo, rockets or scores, which lands a finished match first.</summary>
+    public const string LobbyAid = "lobby";
+
     /// <summary>The campaign aid values Original shares with Built-in, each over the scratch
     /// profile store: the empty profile screen, the two-player one, the cabin, the table of
     /// contents, the book on the last mission flown, the briefing (with its seconds argument),
@@ -437,6 +443,15 @@ public sealed class OriginalPresentation : IMenuPresentation
                 _shell.ReturnToConnection();
             }
         }
+        else if (destination is LobbyReturn landing)
+        {
+            // The lobby the match was launched from, on its scores, or the Connection page saying
+            // why the link ended.
+            if (!_shell.Lobby.Land(landing.Scores))
+            {
+                _shell.ReturnToConnection();
+            }
+        }
         else if (aid.Length > 0 && OpenCampaignAid(aid))
         {
             // A campaign aid over the scratch store, shared with Built-in's aids of the same name.
@@ -515,6 +530,9 @@ public sealed class OriginalPresentation : IMenuPresentation
                     _shell.Connection.OpenConnection();
                     _shell.Connection.SearchLan();
                     _shell.StepNet(0.0);
+                    break;
+                case string lobby when lobby == LobbyAid || lobby.StartsWith(LobbyAid + ":", StringComparison.Ordinal):
+                    OpenLobbyAid(lobby[LobbyAid.Length..].TrimStart(':'));
                     break;
                 case CreditsAid + ":" + CreditsAboutAid:
                     // The screen opens on ABOUT, its first row, so one accept raises the box.
@@ -911,6 +929,63 @@ public sealed class OriginalPresentation : IMenuPresentation
         }
 
         _controlsSeats.Sync(pollers);
+    }
+
+    // The lobby posed over the aids' wire. The shown door is opened through the screen itself, so it
+    // goes by the pilot's name the way a player's own lobby does.
+    private void OpenLobbyAid(string argument)
+    {
+        string[] parts = argument.Split(':');
+        bool waiting = parts[0] == "waiting";
+        bool guestView = parts[0] == "guest" || waiting;
+        string tab = parts.Length > 1 ? parts[1] : parts[0] is "host" or "guest" or "waiting" ? string.Empty : parts[0];
+        var (host, guests) = NetDoorAid.DogfightDoors();
+        var shown = guestView ? guests[waiting ? 1 : 0] : host;
+        _shell!.StandInNetDoor(shown);
+        if (guestView)
+        {
+            host.OpenDogfightHost(NetSeats.MaxPlayers - 1);
+        }
+        else
+        {
+            _shell.Lobby.OpenHost();
+        }
+
+        foreach (var guest in guests)
+        {
+            guest.OpenJoin();
+        }
+
+        NetDoorAid.SettleDogfight(host, guests);
+        if (guestView)
+        {
+            _shell.Lobby.OpenGuest();
+        }
+
+        NetDoorAid.PoseDogfight(host, guests);
+        if (tab == "scores")
+        {
+            // Game Scores fills only on the way back from a match, so every door lands one.
+            var scores = NetDoorAid.PlayedScores(host);
+            foreach (var door in guests.Prepend(host).Where(door => door != shown))
+            {
+                door.Dogfight?.Land(scores);
+            }
+
+            _shell.Lobby.Land(scores);
+            NetDoorAid.SettleDogfight(host, guests);
+        }
+
+        _shell.Lobby.ShowTab(
+            tab switch
+            {
+                "plane" => LobbyTab.Plane,
+                "ammo" or "rockets" => LobbyTab.Ammo,
+                "scores" => LobbyTab.Scores,
+                _ => LobbyTab.Mission,
+            },
+            rockets: tab == "rockets");
+        _shell.StepNet(0.0);
     }
 
     private void OpenGameOptionsAid(string aid)

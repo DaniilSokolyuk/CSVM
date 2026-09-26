@@ -301,6 +301,7 @@ named in it; `WaveEdit` is the twelfth and has no aid, which is the warning unde
 | `campaign-coop-ready` | Original only: a co-op host's flight check with two guests, the first Ready and the second not, so FLY MISSION is greyed and the strip's chips say Ready | `Campaign` |
 | `connection` | Original only: the Multiplayer Connection page | out of scope |
 | `connection-games[:searching]` | Original only: the LAN games list over an in-process LAN answering with four sample games, or with none so the Searching box stands | out of scope |
+| `lobby[:host\|guest[:mission\|plane\|ammo\|rockets\|scores]]` | Original only: the Multiplayer Lobby as its host or first guest, over an in-process wire with two guests, Time 5 and Limited Lives set, the first guest Ready and one chat line from each, on the named tab | out of scope |
 | `network-coopjoin` | the Network board of a guest joined over the loopback to a campaign host, the session named in its status | `Network` |
 | `network-coopwait` | that guest's waiting board | `Network` |
 | `loadboard[:mission_type]` | the load screen's blackboard, over the menu, writing that mission type's own dialog | out of scope |
@@ -455,8 +456,8 @@ device mapping behind them is the seats' own tests.
 
 Decision 5 puts everything `LaunchMenu` hosts in scope. Mapping that onto the original's 34
 single-player screens leaves **30 in and 4 out**, before the 22 multiplayer screens. Of those, the
-Connection page and the LAN games list are built as the campaign co-op's way in; the rest (the
-Dogfight lobby and its pages) stay out, CSVM's Dogfight being splitscreen on `dogfight_ace` spawns.
+Connection page and the LAN games list are built as the campaign co-op's way in, and the
+Multiplayer Lobby with its four tab pages as the networked Dogfight's; the rest stay out.
 
 **In scope (30):** MainMenu; Preferences, GameOptions, Audio, Video, ControlsPrefs, Keys; Credits;
 InstantAction, IA_WrapUp; Campaign, PassengerCabin, MomentoSelection, FlightCheck, PlaneSelection,
@@ -509,11 +510,37 @@ constants rather than reading a layout.
 - **What is ours.** Only LAN TCP/IP, which searches, and Internet, which joins the typed address,
   are on the page, at the script's first two radio places (y 98 and 134) with its pitch, the IP
   Address box at (184, 151) and the Internet description at y 177. MSN Gaming Zone, LAN IPX and
-  Modem-to-Modem, with the phone box, are left off since the remake has no carrier for them. Host,
-  Create Game and Build Custom Plane draw greyed, since no Dogfight lobby exists. The Mission
-  Environment column names a co-op game's mission, or its shortcode when the name passes 24
-  characters. A join is followed on the shared message box: connecting, waiting on the host, or why
+  Modem-to-Modem, with the phone box, are left off since the remake has no carrier for them. Host
+  and Create Game open the Multiplayer Lobby as a Dogfight's host, skipping the original's host
+  box (game name and player cap); Build Custom Plane draws greyed. The Mission Environment column
+  names a co-op game's mission, or its shortcode when the name passes 24 characters, and a
+  Dogfight's environment. A join is followed on the shared message box: connecting, waiting on the host, or why
   it ended. The multiplayer error box's errors (langui 10022, 10025) are raised in the shared box.
+- **The Multiplayer Lobby** (`MP_LOBBY_BACKGROUND.JPG`). The title (10046) at (60, 22), the
+  player count (10048) and the Ready header (10052) at y 54, the player list from (34, 83) at a
+  20 px pitch with its `MP_B_CHECKBOX.PNG` mark 230 px right of each name, and the chat pane at
+  (34, 373), 735 x 165, the speaker's name then the line 100 px right of it. The tab strip's four
+  tabs (10094, 10114, 10119, 10507) stand at y 24 from x 324, 442, 548 and 656, and the picked tab's
+  page (`MP_LOBBY_MISSION.PNG`, `_PLANE`, `_AMMO`, `_STATSCREEN`) at (314, 26). Mission Options
+  carries the Environment and Type boxes (`MP_B_LISTBOXARROW.PNG`), the victory radios
+  (`MP_B_RADIO8STATESSM.PNG`) with their Time and Score boxes, and the teams, lives and planes
+  checkboxes (`MP_B_CHECKBOX8STATES.PNG`); Select Plane the Default and Custom sub-tabs
+  (`MP_LOBBY_TABLARGE.PNG`), the plane box and the plane's icons (`MP_PLANEICONSTOPFRONT.PNG`) and
+  ratings; Select Ammo the Guns and Rockets sub-tabs (`MP_LOBBY_TABSMALL.PNG`), a box per gun slot
+  or per wing cell. Boot, Create Team, the Ready box (`MP_B_CHECKBOXLARGE.PNG`) and its Ready? label,
+  LAUNCH!, the chat box, Send and Leave Game stand on every tab.
+- **What is ours in the lobby.** Only Deathmatch flies, so Capture the Flag, Zeppelin vs Zeppelin,
+  the teams, Allow Custom Planes, Outlaw Components, Custom Planes and Boot draw greyed; guests fly
+  stock planes. A completed match's Exit lands every pilot back in the same lobby on Game Scores,
+  which shows that match's name, points, kills and deaths best first (Hits % stays blank), with
+  every Ready cleared for the next round. Game Scores is greyed until a match has landed. The own
+  name is drawn red in the list and the chat, and the player list shows its first eleven rows with
+  no scroll bar. Leave Game always lands on the Connection page. The host's options lock while it
+  is Ready, and any option change clears every Ready. A guest's plane and ammo picks stay live, and
+  a changed pick clears that guest's own Ready. The Lives box is greyed until Limited Lives is
+  ticked, then reads 3 (the remake's own default) and takes 1..99. A Built-in Dogfight host serves
+  an Original guest too: its launch waits for that guest's Ready and flies its pick on one of the
+  seven lobby environments.
 - **The cabin's network door.** Remake-only: a paper plaque in the `FC_B_CHANGEPLANE` convention at
   (14, 40) reading HOST CO-OP or CLOSE NETWORK, with the host's band over a dark ground at y 14.
   The original has no co-op campaign, so no script describes it.

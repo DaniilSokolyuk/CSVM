@@ -64,6 +64,7 @@ send call, and "To" is the fourth.
 | `0x22` | `FUN_00499110` | `LAB_00499190` | `0x10` | yes | 0 | a damage attribution: victim id at `+4`, attacker id at `+8`, a dword from the weapon record `+0x10` at `+0xc` |
 | `0x23` | `FUN_0049bd00` | `LAB_0049bd70` | `0xc` | yes | one peer | the ping: two `GetTickCount` stamps, sent only to a peer whose id is at or above ours, so one side of each pair pings |
 | `0x24`, `0x25` | none found | `LAB_0049bde0` | | | | receive-only in this build, both on one handler |
+| `0x26` | `FUN_004134e0` | lobby, `FUN_00415940` | `0x2c` + a variable payload | yes | 0 | the lobby settings block, below |
 | `0x27` | `FUN_004135f0` | lobby | 8 + `0x20` per player + a tail | yes | 0 | the lobby roster, below |
 
 ⚠ **Types `0x02`, `0x03`, `0x05`, `0x06`, `0x07`, `0x0d` and `0x0e` never cross the wire.**
@@ -186,6 +187,31 @@ The guest's velocity query `FUN_004bf7f0` answers speed times the received forwa
 leg a guest's hull trails the host's by the speed times the link's latency, plus the speed over the
 chase rate, `v / 2` metres.
 
+## The lobby settings block
+
+[Evidence: decoded] The host builds type `0x26` in `FUN_004134e0` (gated on `FUN_005b4210`, the
+block stored at `0x413533`). A receiver's `FUN_00415940` hands it to `FUN_00414040`, which copies 40
+bytes back into `0x642f8c` and posts `0x3f7`. The block at `+4` is a copy of `0x642f8c`..`0x642fb3`:
+
+| Block offset | Global | Carries |
+|---|---|---|
+| `+0x00` | `0x642f8c` | environment |
+| `+0x04` | `0x642f90` | mission type |
+| `+0x08` | `0x642f94` | victory kind (0 Time, 1 Score) |
+| `+0x0c` | `0x642f98` | victory value |
+| `+0x10` | `0x642f9c` | restrict-teams byte |
+| `+0x14`, `+0x18` | `0x642fa0`, `0x642fa4` | team minimum and maximum |
+| `+0x1c` | `0x642fa8` | Limited Lives byte |
+| `+0x20` | `0x642fac` | lives count dword |
+| `+0x24` | `0x642fb0` | Auto Respawn byte |
+| `+0x25`..`+0x27` | | unmapped flags |
+
+A variable payload follows at `+0x2c`. [Evidence: undecoded] What triggers the send, and bytes
+`+0x25`..`+0x27`, are open. No message carries a pilot's remaining lives: each peer seeds them from
+this block and counts them down on the `0x12` death reports
+([`multiplayer-scoring.md`](multiplayer-scoring.md)). The remake's `0x53` carries the same lives
+settings and nothing more.
+
 ## The lobby roster
 
 `FUN_004135f0` sends type `0x27`, the widest message in the protocol and the only one the remake
@@ -205,7 +231,7 @@ score, `0x17` match state, `0x22` hit and `0x27` seat roster. Damage, spawn, the
 director transition, the join handshake and a seat's ask to be spawned again have no
 counterpart, so they are minted at `0x40`, `0x41`, `0x42`, `0x43` and `0x44`, above the ceiling
 above. The host-owned world's four (AI state, AI fire, a guest's hit claim on an AI, and a world
-event) are minted at `0x45` to `0x48`, below, the clock ping at `0x49`, the lobby's session advert at `0x4A`, the zeppelin path at `0x4B`, a generator's AI launch at `0x4C`, the surface-vehicle patrol at `0x4D`, a positional start at `0x4E`, the lobby's session closed at `0x4F`, and the lobby's co-op flow, co-op pick and co-op seat fit at `0x50` to `0x52`. The handshake carries the master seed, the host's clock and the seat the joining peer was
+event) are minted at `0x45` to `0x48`, below, the clock ping at `0x49`, the lobby's session advert at `0x4A`, the zeppelin path at `0x4B`, a generator's AI launch at `0x4C`, the surface-vehicle patrol at `0x4D`, a positional start at `0x4E`, the lobby's session closed at `0x4F`, and the lobby's co-op flow, co-op pick and co-op seat fit at `0x50` to `0x52`, and the Dogfight lobby's options, roster and chat at `0x53` to `0x55`. The handshake carries the master seed, the host's clock and the seat the joining peer was
 given; the original needs none of the three, because it draws from no shared stream and hands
 out no seat. The ask carries a seat and nothing else: the original's client takes its own
 respawn, while here the host owns every placement and answers the ask with a spawn event.
@@ -498,6 +524,26 @@ host's current round, so a Ready given before the host backed out never launches
 The host's launch waits until every guest's latest pick is Ready. While the host flies, the flow
 says in mission and the advert's status is in mission, so a guest joining then waits in the cabin.
 The debrief flow carries the host's result, which every guest's scrapbook shows.
+
+### Dogfight lobby
+
+The Multiplayer Lobby runs over three more lobby messages, minted at `0x53` to `0x55`, with a
+guest's plane and Ready riding the co-op pick at `0x51` under the lobby's own round. None reaches a
+session.
+
+| Id | Message | Class | Carries |
+|---|---|---|---|
+| `0x53` | Dogfight options | reliable, host to each guest | round at 4, environment at 5, mission type at 6 (Capture the Flag 0, Deathmatch 1, Zeppelin vs Zeppelin 2), flags at 7 (bit 0 Score rather than Time, bit 1 Limited Lives, bit 2 Auto Respawn), minutes at 8, lives at 9, score at 10 (12 bytes) |
+| `0x54` | Dogfight roster | reliable, host to each guest | round at 4, row count at 5, the reading guest's own row at 6, one reserved byte, then sixteen rows of 20 bytes: flags (bit 0 Ready, bit 1 host), airframe, two reserved bytes, the name in 16 bytes (328 bytes) |
+| `0x55` | Lobby chat | reliable, guest to host and host to each guest | the speaker's name in 16 bytes at 4, the line in 84 bytes at 20 (104 bytes) |
+
+Any option change advances the round and clears every Ready, the host's own included, so a player
+is never launched on options it did not see. A guest's changed pick clears that guest's own Ready,
+and the pick drops any session payload the host still holds from that guest's last match. The
+launch waits until every row is Ready. A guest's
+chat line goes to the host, which adds it to its own list and relays it to every other guest under
+the name the guest's pick gave, so each end shows the line once. The advert's mission sequence
+carries the environment index for a Dogfight, which is what the games list reads.
 
 ### LAN discovery
 

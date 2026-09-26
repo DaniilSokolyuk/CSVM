@@ -792,7 +792,7 @@ narration.
 
 ## src/UI/Menu/MenuExit.cs
 The one typed way out of the menu, handed to `IMenuHost.Exit` and consumed by `Launcher`:
-`LaunchExit` (chapter, per-seat `MenuSeatChoice`, `MenuMode`, optional `InstantActionDef`, and for Dogfight a `VersusRules` of kill target and minutes that an explicit `--vs-kills=`/`--vs-time=` beats),
+`LaunchExit` (chapter, per-seat `MenuSeatChoice`, `MenuMode`, optional `InstantActionDef`, and for Dogfight a `VersusRules` of kill target, minutes, lives and auto-respawn that an explicit `--vs-kills=`/`--vs-time=`/`--vs-lives=`/`--vs-no-respawn` beats),
 `CampaignMissionExit` (profile, `cm_sequence` position, per-seat choices), `QuitExit` and
 `OptionsApplyExit` (the graphics-mode and difficulty words, the four display settings, the four volume levels and the gameplay switches, null where never set).
 An applied choice rides the exit rather than being saved by the screen that took it, so the options file keeps one writer, and a screen
@@ -1077,10 +1077,16 @@ their strings: [../org/menu-inventory.md](../org/menu-inventory.md).
 The original's Multiplayer Connection page and the LAN games list behind its Connect, one
 `IOriginalScreenModule` over `NetPlayFeature`. The multiplayer scripts place their widgets inline,
 so every corner is the scripts' own rather than the layout's. Only LAN TCP/IP, which searches the
-network, and Internet, which joins the typed address, are offered; Build Custom Plane, Host and
-Create Game draw greyed. A join started here is followed on the shared messagebox over the page until it lands or
+network, and Internet, which joins the typed address, are offered; Build Custom Plane draws greyed,
+and Host and Create Game open `OriginalLobbyScreen` as a Dogfight's host. A join started here is followed on the shared messagebox over the page until it lands or
 fails. Its plaques draw as pictures, since a plaque layer stands over the labels a script colours.
 The geometry and strings: [../org/menu-inventory.md](../org/menu-inventory.md).
+
+## src/UI/Menu/Original/OriginalLobbyScreen.cs
+The original's Multiplayer Lobby, one `IOriginalScreenModule` over the door's `DogfightLobby`, with its four tabs (Mission Options, Select Plane, Select Ammo, Game Scores) in the scripts' own placements and art.
+The host's option controls are live until it is Ready, a guest's are drawn greyed with the host's values, and what the lobby does not fly (Capture the Flag, the zeppelin mode, custom planes, teams, Boot) draws greyed. The Lives box is live only while Limited Lives is ticked.
+Every player picks a stock plane and its ammunition, live at all times. Ready is live once the options have been heard. `Land` stands a completed match's peers back here on Game Scores, which is greyed until then. LAUNCH! is live on the host once every row is Ready, and hands the shell a Versus `LaunchExit` on the environment's chapter with the lobby's rules and the door's wire; `GuestLaunch` is a guest's same exit once its host has launched.
+Leave Game closes the door and lands on the Connection page. The shell follows a Dogfight guest into this screen and out of it when the link ends. Geometry and strings: [../org/menu-inventory.md](../org/menu-inventory.md).
 
 ## src/UI/Menu/Original/OriginalPresentation.cs
 The Original presentation node, registered under `PresentationId.Original`: a `CanvasLayer` on the board layer holding one
@@ -1116,8 +1122,8 @@ under `MPG`, where the executable resolves them. Coverage: `CSVM.Tests/OriginalM
 The versioned required/optional asset manifest, derived from the decoded layout rather than
 hand-listed. `Derive` classes the art of the sections Original composes required, less two short
 tables (rows it does not draw, and rows it draws whose file the screen survives the absence of,
-which is where the background movies sit), everything else optional, and the five files the scripts
-name and Original draws anyway required. `Check` reads no bitmap: existence plus the PNG signature
+which is where the background movies sit), everything else optional, and the files the scripts
+name and Original draws anyway (the pointers, the font, the multiplayer pages and the lobby's art) required. `Check` reads no bitmap: existence plus the PNG signature
 and IHDR size for a required entry, existence alone for an optional one, and one report naming every
 fault with its section, row and file. `Schema` carries the rule for its own bumps; the asset policy
 and the reconciliation against what the screens draw are [../menu-presentations.md](../menu-presentations.md).
@@ -1148,13 +1154,13 @@ arrives as one jump. The four device reads are injected delegates, so the seat i
 Built-in ignores the pointer; Original maps it into its authored space; a later pad seat has none.
 
 ## src/UI/Menu/MenuReturnDestination.cs
-Where the menu stands when it comes back, said semantically: `TopLevel`, `InstantAction`, `InstantActionWrapupReturn(snapshot)`, `CabinReturn(profile)` and `DebriefReturn(profile, missionSeq)`. The host names the destination and the
+Where the menu stands when it comes back, said semantically: `TopLevel`, `InstantAction`, `InstantActionWrapupReturn(snapshot)`, `CabinReturn(profile)`, `DebriefReturn(profile, missionSeq)` and `LobbyReturn(scores)`, a completed Dogfight's landing on the lobby's Game Scores. The host names the destination and the
 active presentation maps it into its own graph at `Activate`, so no presentation-specific screen id crosses the seam. `ForLaunch(exit)` reads off a launch's own exit the screen it came from, which is
 where a flight left early lands; the exit and not the session's spec, since a spec inherits the command line's `--campaign=` and would call a Free Flight launched afterwards a campaign mission. A
 destination names where the player stands and never a store: the two campaign returns name a profile, the store it is re-read from is the presentation's own, and an Instant Action return names
 nothing, the sortie's setup being the feature's. The one exception is the wrap-up return, which carries `IaWrapupSnapshot` (declared here, so nothing outside the shared namespace crosses the seam but the stunt camera's own `StuntShot` records):
 the session that counted an ended Instant Action mission's numbers is freed before any page can draw them. The `--menu=` aid is not a destination either, reaching the cold start alone, so a return is
-always one of these five. The namespace seam this whole
+always one of these. The namespace seam this whole
 folder is held to, and the two scans that enforce it, are in [../menu-presentations.md](../menu-presentations.md).
 
 ## src/UI/Menu/MenuChapters.cs
@@ -1204,7 +1210,14 @@ launcher's `Net/NetCarrier.cs`, or a suite's loopback mesh and no router); every
 carrier in a `Net/NetLobby.cs`. `OpenHost`, `OpenCoopHost` (whose `Offer` names the mission) and
 `OpenJoin` open; `Step` carries the link; `Close` unmaps the lease. In co-op `ShowCoop` sends each
 guest the host's boards, `CoopAllReady` holds FLY MISSION until every guest is Ready, `CoopLaunchDue` tells a guest to follow, `TellSeatFits` sends every seat's fit before the opener, and
-`LeaveCoopMission` tells the host at once that a guest walked out. Boards: `LaunchMenu.cs`.
+`LeaveCoopMission` tells the host at once that a guest walked out. `OpenDogfightHost` opens a Dogfight lobby, and `Dogfight` is the `DogfightLobby` either end stands in, created on a guest when its host's advert names a Dogfight and unshown behind a Built-in host; `DogfightLaunchDue` tells a guest its host has launched, and a guest back from a match waits for the host's next round. Boards: `LaunchMenu.cs`.
+
+## src/UI/Menu/DogfightLobby.cs
+The Multiplayer Lobby's state over a `Net/NetLobby.cs`, engine-free, one class for both ends.
+The host owns the options (environment, mission type, victory condition, time or score, the lives rule) and sends them to every guest; any change advances the round and clears every Ready, its own included.
+A guest reads the options and the host's player list, and sends its stock plane, fit and Ready under the round it heard once a lobby screen `Show`s it; a changed pick clears its own Ready. `Say` sends one chat line, which the host relays.
+`CanLaunch` is the host's gate, every row Ready; `RulesOf` is the `VersusRules` a launch carries, lives clamped to 1..99, and `ChapterOf` the chapter an environment flies on. Setters refuse on a guest and for a greyed choice. `CheckBuiltInLaunch` gates a Built-in host's launch on its lobby guests, and `Land` holds a match's `Scores` and opens the next round.
+Wire: [../org/multiplayer-messages.md](../org/multiplayer-messages.md). Coverage: `CSVM.Tests/DogfightLobbyTests.cs`.
 
 ## src/UI/Menu/CoopDoorText.cs
 The words the campaign's network door is drawn in, engine-free and built off the door alone: the
@@ -1217,7 +1230,9 @@ a delegate, since only the caller holds the langui table.
 The multiplayer doors the `--menu=` screenshot aids stand on: a host door over a loopback wire with
 guests already on it and a router stub mapping at a documentation address, and a guest door already
 joined to a loopback host advertising a campaign mission. `CoopGuest` stands a guest on a given
-host flow, and `AnswerReady` makes a host's guest Ready. No aid opens a socket or asks a router.
+host flow, and `AnswerReady` makes a host's guest Ready. `DogfightDoors` is a Dogfight host and two
+guests on one wire, `PoseDogfight` sets the lobby the `lobby` aid shows, and `PlayedScores` is the
+finished match its Game Scores page lands. No aid opens a socket or asks a router.
 
 ## src/UI/MenuSeatDevices.cs
 The pad side of the shared player setup, for any presentation, over seat 0's `MenuInput` and the
