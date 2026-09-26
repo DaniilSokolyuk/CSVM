@@ -75,8 +75,9 @@ public sealed partial class SpectatorCamera : Node
     private float _orbitYaw, _orbitPitch, _orbitDist;
 
     /// <summary>A free camera over <paramref name="camera"/>. The pad half reads the flight sticks
-    /// of <paramref name="playerIndex"/>'s seat (<see cref="StickDeviceState.Live"/>), or the
-    /// suite's <paramref name="sticks"/>. So a stick control bound on a camera row moves it.</summary>
+    /// of <paramref name="playerIndex"/>, this machine's local player and never a network roster
+    /// seat (<see cref="StickDeviceState.Live"/>), or the suite's <paramref name="sticks"/>. So a
+    /// stick control bound on a camera row moves it.</summary>
     public SpectatorCamera(Camera3D camera, Vector3 position, Vector3 lookAt,
         int[]? padDevices = null, bool useKeyboard = true, int playerIndex = 0, IDeviceState? sticks = null)
     {

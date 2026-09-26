@@ -700,6 +700,7 @@ public partial class FlightController : Node3D
     private bool[] _gunLoggedFirst = Array.Empty<bool>(); // verification breadcrumb: each group logs its first live round once
     private int _rocketsLaunched;                // verification breadcrumb: the first few launches log their pylon
     private int? _team;                          // Team's backing field, null until overridden (B7)
+    private int? _localPlayer;                   // LocalPlayer's backing field, null until set
     private bool _held;                          // Held's backing field, the airframe is pinned (weapon lab)
     private bool _cameraOwned;                   // CameraOwned's backing field, the lab's free camera has the view
     private bool _panelShown;                    // the cockpit interior is on the screen this frame
@@ -732,7 +733,7 @@ public partial class FlightController : Node3D
 
     public FlightController()
     {
-        _seatState = new SeatDeviceState(DefaultBindings.AnyPad, () => PadDevices, sticks: StickDeviceState.Live(() => PlayerIndex));
+        _seatState = new SeatDeviceState(DefaultBindings.AnyPad, () => PadDevices, sticks: StickDeviceState.Live(() => LocalPlayer));
         _padMutedState = new SeatDeviceState(DefaultBindings.AnyPad, () => PadDevices, readsPads: false);
         _bindings = BindingProfile.Defaults(default, true);
         _rumble = new PadRumble(() => PadDevices, _bindings.Device);
@@ -786,6 +787,17 @@ public partial class FlightController : Node3D
     {
         get => _team ?? AimAssist.TeamOfPilot(PlayerIndex);
         set => _team = value;
+    }
+
+    /// <summary>Which of this machine's own players flies this seat, from 0, or -1 for a seat flown
+    /// elsewhere. It names the keymap file and decides who reads the flight sticks.
+    /// ⚠ Never read <see cref="PlayerIndex"/> for either: a network guest's own player stands behind
+    /// the host's seat. Unset, it is <see cref="PlayerIndex"/>, as in every session with no roster.
+    /// </summary>
+    public int LocalPlayer
+    {
+        get => _localPlayer ?? PlayerIndex;
+        set => _localPlayer = value;
     }
 
     /// <summary>The roster cohort this aircraft is counted in (the <c>aiv</c> block's <c>group</c>,
@@ -3595,7 +3607,7 @@ public partial class FlightController : Node3D
         _keyActions.ReadsKeyboard = UseKeyboard;
         // A stick plugged or unplugged mid-flight moves seat 1's active profiles; the merge edits the
         // maps every resolver here reads.
-        if (IsHumanPiloted && PlayerIndex == StickDeviceState.OwningSeat
+        if (IsHumanPiloted && LocalPlayer == StickDeviceState.OwningSeat
             && StickProfiles.MergeIfChanged(_bindings, ref _stickRevision))
             ComposeControlPrompts();
         _seatState.Refresh();
@@ -4684,7 +4696,7 @@ public partial class FlightController : Node3D
             return null;
         }
 
-        var sticks = PlayerIndex == StickDeviceState.OwningSeat ? StickPump.Roster : null;
+        var sticks = LocalPlayer == StickDeviceState.OwningSeat ? StickPump.Roster : null;
         float? position = AnalogAxes.LeverPosition(
             _padActions.Map.Bindings(InputAction.ThrottleLever),
             _padAxes.Value(InputAction.ThrottleLever),

@@ -186,6 +186,8 @@ internal sealed class HumanFlightAdapter
         controller.Bind(new FlightControllerBuild
         {
             PlayerIndex = pi,
+            // The keymap file and the sticks are this machine's player's, not the roster seat's.
+            LocalPlayer = MenuSeatOf(pi),
             IsHumanPiloted = true,
             // A seat flown elsewhere takes its pose out of this history, not a flight model.
             // The buffer's presence IS that ownership, so it is built here and nowhere else.
@@ -214,7 +216,7 @@ internal sealed class HumanFlightAdapter
             // ⚠ Pass the null through. Null and empty are DIFFERENT bindings to Pads.For: null
             // reads every connected pad (what AssignPads returns for one player), empty reads none.
             // Coalescing flew a single player pad-dead; a remote seat takes empty, it reads none.
-            PadDevices = remote ? Array.Empty<int>() : _human.PadAssignment?[pi],
+            PadDevices = remote ? Array.Empty<int>() : PadsOf(MenuSeatOf(pi)),
             // The keyboard is this machine's first seat's, which on a guest is not seat 0.
             UseKeyboard = !remote && MenuSeatOf(pi) == 0,
             MouseCaptureAllowed = !remote && _policy.MouseCaptureAllowed,
@@ -659,6 +661,12 @@ internal sealed class HumanFlightAdapter
     // Which of this machine's menu seats flies seat pi. The menu lists only the local seats, and a
     // guest's own seat stands behind its host's in the roster. A seat flown elsewhere has none.
     private int MenuSeatOf(int pi) => Net.NetSeats.LocalOrdinal(_human.NetSeats, pi);
+
+    // The pads a local player was given. The assignment lists this machine's players only, so it is
+    // indexed by the local player and never by the roster seat. Null passes through (every pad).
+    private int[]? PadsOf(int localPlayer) => _human.PadAssignment is not { } assignment
+        ? null
+        : localPlayer >= 0 && localPlayer < assignment.Length ? assignment[localPlayer] : Array.Empty<int>();
 
     public readonly record struct AssemblyState(int MeshInstances, string WhatSuffix,
         ulong PaintRngState, IReadOnlyList<FlightStart>? Starts);

@@ -13,6 +13,11 @@ namespace CSVM.Flight.Airframe;
 internal sealed class FlightControllerBuild
 {
     public int PlayerIndex;
+
+    /// <summary>Which of this machine's players flies the seat (<see cref="FlightController.LocalPlayer"/>),
+    /// -1 for a seat flown elsewhere. Null leaves it at <see cref="PlayerIndex"/>, which is right
+    /// wherever there is no network roster.</summary>
+    public int? LocalPlayer;
     public bool IsHumanPiloted;
     public AiPilot? Pilot;
 
@@ -114,11 +119,15 @@ public partial class FlightController
 
     /// <summary>Puts this seat on the keymap its player saved, so it flies what the rebinding screen
     /// wrote. Anything the file does not carry, or this build cannot read, stays at that action's
-    /// shipped default, and under the launch gate no file is read at all
+    /// shipped default. Under the launch gate no file is read at all
     /// (<see cref="Bindings.LaunchBindings"/>). A human rig calls it from <see cref="Bind"/> once
-    /// <see cref="PlayerIndex"/> is known; an AI rig never reads a player's file.</summary>
-    public void LoadSavedKeymap() =>
-        ApplyProfile(Bindings.LaunchBindings.Profile(PlayerIndex + 1, default, readsKeyboard: true));
+    /// <see cref="LocalPlayer"/> is known; an AI rig and a seat flown elsewhere read no file.</summary>
+    public void LoadSavedKeymap()
+    {
+        if (LocalPlayer < 0)
+            return;
+        ApplyProfile(Bindings.LaunchBindings.Profile(LocalPlayer + 1, default, readsKeyboard: true));
+    }
 
     /// <summary>Puts this seat on <paramref name="profile"/>'s flight rows, mouse scheme and mouse
     /// sensitivity, the whole
@@ -155,6 +164,8 @@ public partial class FlightController
             throw new InvalidOperationException("a flight controller must be bound once before tree attachment");
 
         PlayerIndex = build.PlayerIndex;
+        if (build.LocalPlayer is { } localPlayer)
+            LocalPlayer = localPlayer;
         IsHumanPiloted = build.IsHumanPiloted;
         Pilot = build.Pilot;
         _holdSegments = build.HoldSegments;
@@ -177,7 +188,7 @@ public partial class FlightController
         PadDevices = build.PadDevices;
         AllowPause = build.AllowPause;
         Inert = build.Inert;
-        // After PlayerIndex, which names the file, and only for a seat a person flies: an AI rig
+        // After LocalPlayer, which names the file, and only for a seat a person flies. An AI rig
         // would otherwise read a player's keymap once per aircraft in the mission.
         if (build.IsHumanPiloted)
             LoadSavedKeymap();

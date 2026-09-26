@@ -285,6 +285,7 @@
     "net-cutscene-remote-owner": 3.0,
     "net-cutscene-skip-episode": 0.1,
     "net-director-follow": 16.0,
+    "net-guest-keymap": 1.37,
     "net-human-field": 6.0,
     "net-match-state": 10.0,
     "net-pause-overlay": 8.0,

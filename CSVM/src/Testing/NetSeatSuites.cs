@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
+using CSVM.Bindings;
 using CSVM.Flight;
 using CSVM.Flight.Airframe;
 using CSVM.Flight.Camera;
@@ -29,6 +31,14 @@ internal static class NetSeatSuites
     // The airframe the remote seat's roster entry names. Different from the launch's own pick, so
     // the assertion that the roster wins cannot be satisfied by the default.
     private const string RemotePlane = "player_fbrand";
+
+    // A pad id no machine enumerates, so the check reads the assignment and never a live device.
+    private const int FirstPad = 901;
+
+    private static readonly Binding Zed = new(DeviceId.Keyboard, BindingControl.Key((int)Key.Z));
+
+    // What the stub stick source merges in, a control no shipped flight row uses.
+    private static readonly Binding StickMarker = new(DeviceId.Keyboard, BindingControl.Key((int)Key.F12));
 
     [Suite("net-seats",
         "a network match's remote seats are pilots without panes: the roster commits all three "
@@ -85,42 +95,8 @@ internal static class NetSeatSuites
         try
         {
             var match = new VersusMatch(roster.Length, killTarget: 0, timeLimit: 0f);
-            flightRoster = new FlightRoster(FlightRosterPolicy.From(spec),
-                new LiveryResolver(spec, Path.Combine(ctx.DataRoot, "extracted", "rof")),
-                new WorldEffectsFactory(spec, ctx.Host, () => Vector3.Zero), ctx.Host,
-                new AircraftAssemblyResources
-                {
-                    PlanesGamez = planesGamez,
-                    StatsFor = plane => PlaneStats.Load(ctx.ZrdrPath, plane),
-                    AiStatsFor = (plane, aiDef) => PlaneStats.LoadForAi(ctx.ZrdrPath, plane, aiDef),
-                    CamParamsFor = _ => new CamParams(),
-                    PaintRng = new RandomNumberGenerator(),
-                    ZrdrPath = ctx.ZrdrPath,
-                    StockLoadouts = StockLoadouts.Load(),
-                    WeaponDefs = WeaponDefs.Load(ctx.ZrdrPath, null),
-                    WeaponMessages = Messages.Load(ctx.MessagesPath),
-                    Textures = textures,
-                    Shakes = ShakeDefs.Load(ctx.ZrdrPath),
-                },
-                new FlightWorldBindings
-                {
-                    Projectiles = pool,
-                    Gamez = planesGamez,
-                    ChapterZrdrPath = chapterZrdr,
-                    MissionZrdrPath = missionZrdr,
-                },
-                new HumanRosterBindings
-                {
-                    RigCount = rigs.Count,
-                    NetSeats = roster,
-                    Rigs = rigs,
-                    SpawnList = table,
-                    SpawnBase = picker.ChooseSpawnBase(table),
-                    VersusMatch = match,
-                    PauseState = new PauseState(),
-                    MenuInputFor = _ => new UI.Screens.MenuInput(),
-                    ExitSession = () => { },
-                }, picker);
+            flightRoster = NewRoster(ctx, spec, new Field(planesGamez, textures, pool, table, picker,
+                chapterZrdr, missionZrdr), roster, rigs, match, padAssignment: null);
             flightRoster.BuildPlayers(rigs);
 
             ctx.Same(rigs.Count, flightRoster.Humans.Count,
@@ -189,6 +165,181 @@ internal static class NetSeatSuites
         }
     }
 
+    [Suite("net-guest-keymap",
+        "a network guest's own players fly this machine's keymaps: behind a remote host at seat 0, "
+        + "the guest's first local player loads player one's saved file and the stick rows while its "
+        + "second loads player two's, each reads the pads its local player was given, and the host's "
+        + "seat reads no keymap file at all")]
+    internal static void GuestKeymapIsLocal(TestContext ctx)
+    {
+        ctx.RequireData(ctx.PlanesGamezPath, $"planes gamez");
+        ctx.RequireData(ctx.ZrdrPath, $"zrdr archive");
+        string texturesPath = SessionPaths.ChapterTextures(ctx.DataRoot, ctx.Chapter);
+        string chapterZrdr = SessionPaths.ChapterZrdr(ctx.DataRoot, ctx.Chapter);
+        string missionZrdr = SessionPaths.MissionZrdr(ctx.DataRoot, ctx.Chapter, MpMission);
+        ctx.RequireData(texturesPath, $"{ctx.Chapter} textures");
+        ctx.RequireData(chapterZrdr, $"{ctx.Chapter} zrdr");
+        ctx.RequireData(missionZrdr, $"{ctx.Chapter}/{MpMission} zrdr");
+
+        var spec = SessionSpec.Parse(new[]
+        {
+            "--vs", $"--chapter={ctx.Chapter}", $"--mission={MpMission}", "--players=1", "--spawn=0",
+        });
+        var picker = new SpawnPicker(spec);
+        var table = picker.LoadSpawnList(missionZrdr, spec.Scenario);
+        if (table is not { Count: >= 3 })
+        {
+            throw new SuiteSkippedException($"{ctx.Chapter}/{MpMission} authors no usable net.zrd table");
+        }
+
+        // The guest's side of a match: the host flies seat 0 elsewhere, and this machine's two
+        // players sit behind it at seats 1 and 2.
+        var roster = new NetSeat[]
+        {
+            new() { PeerId = 1, SeatIndex = 0, Callsign = "host" },
+            new() { PeerId = 2, SeatIndex = 1, IsLocal = true, Callsign = "P1" },
+            new() { PeerId = 2, SeatIndex = 2, IsLocal = true, Callsign = "P2" },
+        };
+        NetSeats.Validate(roster);
+
+        // ⚠ This opens the keymap gate --run-tests shuts, so the store points at scratch first and
+        // both are restored in the finally, as bindings-launch-load does.
+        string dir = Path.Combine(ctx.ScratchDir, "net-guest-keymap");
+        Directory.CreateDirectory(dir);
+        string? previousDir = BindingStore.DirectoryOverride;
+        var previousRows = LaunchBindings.StickRows;
+        BindingStore.DirectoryOverride = dir;
+        WriteKeymap(dir, 1, InputAction.Nitro);
+        WriteKeymap(dir, 2, InputAction.FireRockets);
+        LaunchBindings.Configure(deterministic: false);
+        LaunchBindings.StickRows = new MarkerStickRows();
+
+        var planesGamez = GameZ.Load(ctx.PlanesGamezPath);
+        var textures = new TextureArchive(texturesPath);
+        var pool = new ProjectilePool(textures, null, null);
+        ctx.Host.AddChild(pool);
+        var panes = new[] { new SubViewport(), new SubViewport() };
+        var rigs = new List<PlayerRig> { new() { Index = 0, Camera = null!, HudParent = ctx.Host } };
+        for (int i = 0; i < panes.Length; i++)
+        {
+            ctx.Host.AddChild(panes[i]);
+            var camera = new Camera3D();
+            panes[i].AddChild(camera);
+            rigs.Add(new() { Index = i + 1, Camera = camera, HudParent = panes[i], Viewport = panes[i] });
+        }
+
+        FlightRoster? flightRoster = null;
+        try
+        {
+            var match = new VersusMatch(roster.Length, killTarget: 0, timeLimit: 0f);
+            var pads = new[] { new[] { FirstPad }, new[] { FirstPad + 1 } };
+            flightRoster = NewRoster(ctx, spec, new Field(planesGamez, textures, pool, table, picker,
+                chapterZrdr, missionZrdr), roster, rigs, match, pads);
+            flightRoster.BuildPlayers(rigs);
+            var host = rigs[0].Controller!;
+            var first = rigs[1].Controller!;
+            var second = rigs[2].Controller!;
+
+            ctx.Check(host.PlayerIndex == 0 && first.PlayerIndex == 1 && second.PlayerIndex == 2,
+                $"every aircraft keeps its roster seat as its identity ({host.PlayerIndex}, {first.PlayerIndex}, {second.PlayerIndex})");
+            ctx.Check(host.LocalPlayer == -1 && first.LocalPlayer == 0 && second.LocalPlayer == 1,
+                $"and its local player is this machine's own count ({host.LocalPlayer}, {first.LocalPlayer}, {second.LocalPlayer})");
+
+            // The fix itself. Unfixed, seat 1 flies player two's file and seat 2 a file nobody saved.
+            ctx.Check(Holds(first, InputAction.Nitro, Zed) && !Holds(first, InputAction.FireRockets, Zed),
+                $"the guest's first player flies player one's saved keymap, not player two's ({Names(first, InputAction.Nitro)}, {Names(first, InputAction.FireRockets)})");
+            ctx.Check(Holds(first, InputAction.AutoLand, StickMarker),
+                $"and takes player one's stick rows ({Names(first, InputAction.AutoLand)})");
+            ctx.Check(Holds(second, InputAction.FireRockets, Zed) && !Holds(second, InputAction.Nitro, Zed)
+                      && !Holds(second, InputAction.AutoLand, StickMarker),
+                $"the guest's second player flies player two's keymap and no stick rows ({Names(second, InputAction.FireRockets)})");
+            ctx.Check(first.PadDevices is [FirstPad] && second.PadDevices is [FirstPad + 1],
+                $"each local player reads the pads it was given ([{string.Join(", ", first.PadDevices ?? Array.Empty<int>())}], [{string.Join(", ", second.PadDevices ?? Array.Empty<int>())}])");
+            ctx.Check(!Holds(host, InputAction.Nitro, Zed) && !Holds(host, InputAction.AutoLand, StickMarker),
+                $"the host's seat, flown elsewhere, reads neither a keymap file nor the sticks");
+
+            // ABLE-TO-FAIL CONTROL: the two files differ, so a seat reading the wrong one shows it.
+            ctx.Check(!Holds(first, InputAction.FireRockets, Zed) && Holds(second, InputAction.FireRockets, Zed),
+                $"ABLE-TO-FAIL CONTROL: player two's rebound rockets reach only player two's seat");
+        }
+        finally
+        {
+            flightRoster?.ClearMembership();
+            foreach (var rig in rigs)
+            {
+                rig.Controller?.Free();
+            }
+
+            foreach (var pane in panes)
+            {
+                pane.Free();
+            }
+
+            pool.Free();
+            textures.Dispose();
+            LaunchBindings.StickRows = previousRows;
+            LaunchBindings.Configure(deterministic: true);
+            BindingStore.DirectoryOverride = previousDir;
+        }
+    }
+
+    private static FlightRoster NewRoster(TestContext ctx, SessionSpec spec, Field field,
+        IReadOnlyList<NetSeat> roster, List<PlayerRig> rigs, VersusMatch match, int[][]? padAssignment) =>
+        new(FlightRosterPolicy.From(spec),
+            new LiveryResolver(spec, Path.Combine(ctx.DataRoot, "extracted", "rof")),
+            new WorldEffectsFactory(spec, ctx.Host, () => Vector3.Zero), ctx.Host,
+            new AircraftAssemblyResources
+            {
+                PlanesGamez = field.PlanesGamez,
+                StatsFor = plane => PlaneStats.Load(ctx.ZrdrPath, plane),
+                AiStatsFor = (plane, aiDef) => PlaneStats.LoadForAi(ctx.ZrdrPath, plane, aiDef),
+                CamParamsFor = _ => new CamParams(),
+                PaintRng = new RandomNumberGenerator(),
+                ZrdrPath = ctx.ZrdrPath,
+                StockLoadouts = StockLoadouts.Load(),
+                WeaponDefs = WeaponDefs.Load(ctx.ZrdrPath, null),
+                WeaponMessages = Messages.Load(ctx.MessagesPath),
+                Textures = field.Textures,
+                Shakes = ShakeDefs.Load(ctx.ZrdrPath),
+            },
+            new FlightWorldBindings
+            {
+                Projectiles = field.Pool,
+                Gamez = field.PlanesGamez,
+                ChapterZrdrPath = field.ChapterZrdr,
+                MissionZrdrPath = field.MissionZrdr,
+            },
+            new HumanRosterBindings
+            {
+                RigCount = rigs.Count,
+                NetSeats = roster,
+                Rigs = rigs,
+                SpawnList = field.Table,
+                SpawnBase = field.Picker.ChooseSpawnBase(field.Table),
+                VersusMatch = match,
+                PadAssignment = padAssignment,
+                PauseState = new PauseState(),
+                MenuInputFor = _ => new UI.Screens.MenuInput(),
+                ExitSession = () => { },
+            }, field.Picker);
+
+    // One stored keymap with a single action moved onto Z, through the real serializer.
+    private static void WriteKeymap(string dir, int player, InputAction action)
+    {
+        var profile = BindingProfile.Defaults(default, readsKeyboard: true);
+        var map = profile.Map(InputContext.Flight);
+        map.Clear(action);
+        map.Add(action, Zed);
+        File.WriteAllText(Path.Combine(dir, BindingStore.FileNameFor(player)),
+            BindingStore.Serialize(1, profile), new UTF8Encoding(false));
+    }
+
+    private static bool Holds(FlightController pilot, InputAction action, Binding binding) =>
+        pilot.FlightKeymap.Bindings(action).Any(held => ActionMap.SameControl(held, binding));
+
+    private static string Names(FlightController pilot, InputAction action) =>
+        $"{action}=[{string.Join(", ", pilot.FlightKeymap.Bindings(action).Select(BindingStore.Encode))}]";
+
     // Which table entry a placed aircraft is standing on, or -1. The picker raises a start off the
     // ground under it, so the match is on the horizontal position alone.
     private static int EntryAt(IReadOnlyList<SpawnPoint> table, Vector3 pos)
@@ -202,5 +353,21 @@ internal static class NetSeatSuites
             }
         }
         return -1;
+    }
+
+    // The data one field is built from, read once per suite.
+    private readonly record struct Field(GameZ PlanesGamez, TextureArchive Textures, ProjectilePool Pool,
+        List<SpawnPoint> Table, SpawnPicker Picker, string ChapterZrdr, string MissionZrdr);
+
+    // A stick source standing in for the live profiles: it adds one marker row, so a seat that took
+    // player one's stick rows shows it.
+    private sealed class MarkerStickRows : IStickRows
+    {
+        public void MergeInto(BindingProfile keymap) =>
+            keymap.Map(InputContext.Flight).Add(InputAction.AutoLand, StickMarker);
+
+        public void ResetInto(ActionMap reset, ActionMap staged, InputContext context)
+        {
+        }
     }
 }

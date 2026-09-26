@@ -166,8 +166,14 @@ internal sealed class HumanRosterBindings
     /// <summary>The fit a seat flown elsewhere carries, by seat, or null for its stock fit.</summary>
     public Func<int, LoadoutChoice?>? SeatFit { get; init; }
     public float MixGain { get; init; } = 1f;
+
+    /// <summary>The pads each of this machine's players reads, indexed by local player, never by
+    /// seat (<see cref="Net.NetSeats.LocalOrdinal"/>). Null reads every pad.</summary>
     public int[][]? PadAssignment { get; init; }
     public PauseState PauseState { get; init; } = null!;
+
+    /// <summary>The board reader for a roster seat. It maps the seat to the local player that sits
+    /// in it, so a guest's own seat drives its own cursor.</summary>
     public Func<int, MenuInput> MenuInputFor { get; init; } = null!;
     public bool ExitsToMenu { get; init; }
     public Action ExitSession { get; init; } = null!;

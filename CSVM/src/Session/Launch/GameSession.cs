@@ -3921,10 +3921,12 @@ public partial class GameSession : Node3D
         }
 
         stick.Poll();
-        if (stick.Pressed && _cutscene.Playing
-            && _cutscene.TakeStickPress(Sticks.StickDeviceState.OwningSeat, () => stick.Held))
+        // The sticks are this machine's first player's, whose seat a key skip names too. On a
+        // network guest that seat stands behind the host's, so it is not the owning index itself.
+        int skipper = _rigs.Count > 0 ? _rigs[0].Index : Sticks.StickDeviceState.OwningSeat;
+        if (stick.Pressed && _cutscene.Playing && _cutscene.TakeStickPress(skipper, () => stick.Held))
         {
-            _split?.NoteSkip(Sticks.StickDeviceState.OwningSeat);
+            _split?.NoteSkip(skipper);
         }
     }
 
@@ -4933,13 +4935,19 @@ public partial class GameSession : Node3D
         return inputs;
     }
 
-    // The reader a board menu drives its cursor from. An owner outside the roster (a board that
-    // named no player) falls back to player 1, who always exists.
-    private UI.Screens.MenuInput MenuInputFor(int playerIndex)
+    // The reader a board menu drives its cursor from, for a roster seat. The readers are this
+    // machine's players in order, so the seat goes through its local player first: a guest's own
+    // seat is not 0. A seat with no local player here falls back to player 1, who always exists.
+    private UI.Screens.MenuInput MenuInputFor(int seat)
     {
         var inputs = _menuInputs ??= BuildMenuInputs(null);
-        return playerIndex >= 0 && playerIndex < inputs.Length ? inputs[playerIndex] : inputs[0];
+        int local = LocalPlayerOf(seat);
+        return local >= 0 && local < inputs.Length ? inputs[local] : inputs[0];
     }
+
+    // Which of this machine's players sits in a roster seat, -1 for one flown elsewhere. Outside a
+    // network match every seat is its own local player.
+    private int LocalPlayerOf(int seat) => Net.NetSeats.LocalOrdinal(_netSeats, seat);
 
     // The Original presentation's pause sheet, or null where it does not apply: the Built-in
     // presentation, a mode the original authors no dialog for, or an extraction the sheet cannot be
@@ -5352,7 +5360,7 @@ public partial class GameSession : Node3D
         pilot.SetPilotHudVisible(false);
         var eye = rig.Camera.Position;
         _photoCamera = new SpectatorCamera(rig.Camera, eye, eye - rig.Camera.Basis.Z,
-            pilot.PadDevices, pilot.UseKeyboard, pilot.PlayerIndex)
+            pilot.PadDevices, pilot.UseKeyboard, pilot.LocalPlayer)
         {
             Name = "photo_mode_camera",
             ShowReadout = false,   // the hint line is this mode's only furniture
@@ -5436,8 +5444,8 @@ public partial class GameSession : Node3D
         }
 
         // The seats go in so an accepted Controls page reaches the flight behind the leaf now, not
-        // at the next restart.
-        leaf.Open(pollers, owner, flying);
+        // at the next restart. The pollers are local players in order, so the owner seat maps too.
+        leaf.Open(pollers, Math.Max(0, LocalPlayerOf(owner)), flying);
     }
 
     // The leaf's own door out, by RETURN TO MAIN MENU, Back or an accepted page: the sheet comes
