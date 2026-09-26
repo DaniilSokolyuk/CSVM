@@ -34,6 +34,9 @@ public sealed class CampaignDirector
     /// <see cref="WingmanFit"/> as.</summary>
     public const string WingmanName = "wingman_1";
 
+    /// <summary>The pilot a co-op guest's director flies as, since a guest has no profile.</summary>
+    public const string CoopGuestPilot = "Guest";
+
     /// <summary>How long the world stays up after an ending before the session leaves it. The
     /// original's mission-end path (<c>FUN_00443090</c>) pushes its "Fade State" over a copy of the
     /// frame the ending landed on and runs it for this, its default duration, before the next
@@ -229,6 +232,10 @@ public sealed class CampaignDirector
     /// (<see cref="CampaignProfileStore.LastPlayedPilotName"/>).</summary>
     public string? PilotName => _profile.Name;
 
+    /// <summary>Whether a profile store stands behind this director, so an ending is written to disk.
+    /// A co-op guest's has none.</summary>
+    public bool HasStore => _store != null;
+
     /// <summary>The picture the flying profile hangs, as the bitmap name a sheet draws: what the
     /// pause screen's memento slot takes, and the same one the cabin wall carries. A profile that
     /// has chosen none draws the seeded pin-up (<c>docs/org/pause-screen.md</c>).</summary>
@@ -298,7 +305,7 @@ public sealed class CampaignDirector
     /// cannot be read (<see cref="TryCreate"/> reports that one).</summary>
     public static SessionSpec ResolveSeatedPlane(SessionSpec spec)
     {
-        if (spec.CampaignProfile == null
+        if (spec.CampaignProfile is not { Length: > 0 }
             || CampaignProfileStore.UserProfiles().Load(spec.CampaignProfile) is not { } profile
             || profile.Planes.Count == 0)
         {
@@ -341,11 +348,14 @@ public sealed class CampaignDirector
             return null;
         }
 
-        var store = CampaignProfileStore.UserProfiles();
-        if (store.Load(spec.CampaignProfile) is not { } profile)
+        // A co-op guest flies its host's mission with no profile of its own. The director keeps its
+        // result in memory, and with no store behind it nothing reaches the guest's disk.
+        bool guest = spec.CampaignProfile.Length == 0;
+        var store = guest ? null : CampaignProfileStore.UserProfiles();
+        if ((guest ? CampaignProfileDef.NewProfile(CoopGuestPilot) : store!.Load(spec.CampaignProfile)) is not { } profile)
         {
             GD.PushWarning($"--campaign={spec.CampaignProfile}: " +
-                           $"{store.LoadProblem(spec.CampaignProfile)}, flying without a mission");
+                           $"{store!.LoadProblem(spec.CampaignProfile)}, flying without a mission");
             return null;
         }
 

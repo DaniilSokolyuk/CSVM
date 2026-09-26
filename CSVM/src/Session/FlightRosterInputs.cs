@@ -154,6 +154,9 @@ internal sealed class HumanRosterBindings
     /// camera, listener or input device. Where a seat names an airframe, the roster's pick beats
     /// this machine's launch flags: every peer has to build the same field.</summary>
     public IReadOnlyList<Net.NetSeat> NetSeats { get; init; } = Array.Empty<Net.NetSeat>();
+
+    /// <summary>The fit a seat flown elsewhere carries, by seat, or null for its stock fit.</summary>
+    public Func<int, LoadoutChoice?>? SeatFit { get; init; }
     public float MixGain { get; init; } = 1f;
     public int[][]? PadAssignment { get; init; }
     public PauseState PauseState { get; init; } = null!;

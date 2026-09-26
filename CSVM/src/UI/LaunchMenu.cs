@@ -61,6 +61,10 @@ public sealed partial class LaunchMenu : CanvasLayer
     /// machine holds a seat but no pane here, and the chip says which kind a player is.</summary>
     public const string RemoteChipMark = " net";
 
+    /// <summary>What follows a co-op guest's tag on the chip strip once it is Ready for the launch,
+    /// in place of <see cref="RemoteChipMark"/>.</summary>
+    public const string ReadyChipMark = " ready";
+
     // The multiplayer door's five rows, in the order they are drawn. Two fields a player edits,
     // two ways a socket opens, and the way on to the map. The door's own state is the feature's;
     // these are this screen's row numbers alone.

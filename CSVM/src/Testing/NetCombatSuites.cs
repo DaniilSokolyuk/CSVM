@@ -850,7 +850,8 @@ internal static class NetCombatSuites
     internal sealed record Ends(SubViewport Pane, GameSession Session, bool Built)
     {
         public static Ends Open(TestContext ctx, SessionSpec spec, INetTransport transport,
-            bool isHost, ulong seed, IReadOnlyList<NetSeat>? roster)
+            bool isHost, ulong seed, IReadOnlyList<NetSeat>? roster,
+            IReadOnlyList<string>? airframes = null, Func<int, LoadoutChoice?>? seatFit = null)
         {
             var pane = new SubViewport
             {
@@ -890,16 +891,25 @@ internal static class NetCombatSuites
                 NetSeats = isHost ? roster : null,
                 NetTransport = transport,
                 NetHost = isHost,
-                NetAirframes = Airframes,
+                NetAirframes = airframes ?? Airframes,
+                NetSeatFit = seatFit,
             });
             pane.AddChild(session);
             return new Ends(pane, session, session.StartSession());
         }
 
+        // Safe to call twice, since a suite may end a flight before its own cleanup runs.
         public void Close()
         {
-            Session.Free();
-            Pane.Free();
+            if (GodotObject.IsInstanceValid(Session))
+            {
+                Session.Free();
+            }
+
+            if (GodotObject.IsInstanceValid(Pane))
+            {
+                Pane.Free();
+            }
         }
     }
 }

@@ -273,6 +273,16 @@ internal sealed class NetWorldLink
         }
     }
 
+    /// <summary>Tells every guest still here that <paramref name="seat"/>'s guest left the mission.
+    /// Host only.</summary>
+    internal void SendSeatLeft(int seat)
+    {
+        if (_net.IsHost && seat is >= 0 and <= ushort.MaxValue)
+        {
+            _net.Broadcast(new WorldEventMessage((ushort)NetWorldEvent.SeatLeft, (ushort)seat, 0, 0f), NetChannels.Events);
+        }
+    }
+
     // The host's index first, then a search by name. A pool registered at run time on one end
     // alone shifts every index after it, and the key still finds the right one.
     private static DestructibleRegistry.Instance? FindPool(
@@ -681,6 +691,13 @@ internal sealed class NetWorldLink
                 }
 
                 break;
+            case NetWorldEvent.SeatLeft:
+                if (_seats.SeatLeft?.Invoke(e.Subject) == true)
+                {
+                    WorldEventsApplied++;
+                }
+
+                break;
         }
     }
 }
@@ -706,4 +723,7 @@ internal sealed class NetWorldSeats
 
     /// <summary>The pool a replayed round is spawned into.</summary>
     public ProjectilePool? Projectiles { get; init; }
+
+    /// <summary>Takes a departed guest's seat out of play, answering whether it was still in.</summary>
+    public Func<int, bool>? SeatLeft { get; init; }
 }

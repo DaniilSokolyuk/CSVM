@@ -26,7 +26,7 @@ internal static class MenuOriginalConnectionSuites
         + "cabin's HOST CO-OP opens the carrier, the router mapping and the LAN answer, and CLOSE "
         + "NETWORK gives all three back, the Multiplayer plaque opens the Connection page, its "
         + "Connect over LAN TCP/IP lists the host as one row of five columns, Join Game lands the "
-        + "guest on a waiting box, a second guest joins, a fourth human is seated and a fifth is "
+        + "guest on the host's cabin, a second guest joins, a fourth human is seated and a fifth is "
         + "refused as full, a silent drop tells a guest the host left, and CLOSE NETWORK tells the "
         + "other the host closed the game and puts it back on the Connection page")]
     internal static void TheConnectionPage(TestContext ctx)
@@ -297,8 +297,8 @@ internal static class MenuOriginalConnectionSuites
         var door = guest.Door;
         ctx.Check(door.IsCoopGuest && door.Advert?.Host == CampaignAidProfiles.Pilot,
             $"Join Game lands {who} on the host's campaign ({door.Stage}, {door.Advert?.Host})");
-        ctx.Check(shell.Dialog is { } box && box.Message.EndsWith("Waiting for the host to launch the mission.", StringComparison.Ordinal),
-            $"and holds it on a box that says what it waits for ({shell.Dialog?.Message})");
+        ctx.Check(shell.Dialog == null && shell.Screen == OriginalScreen.CampaignCabin && shell.Campaign.IsGuest,
+            $"and stands it on the host's cabin as a guest ({shell.Screen}, {shell.Dialog?.Message})");
     }
 
     // Two plain doors take the last seat and knock past it: four humans fit, the fifth hears why.

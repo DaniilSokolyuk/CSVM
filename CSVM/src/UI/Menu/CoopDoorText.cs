@@ -37,6 +37,9 @@ public static class CoopDoorText
     /// <summary>A guest's word when the host had no seat left for it.</summary>
     public const string GameFull = "The game is full";
 
+    /// <summary>The question a co-op guest's Back asks on the host's boards.</summary>
+    public const string LeaveQuestion = "Leave the co-op session?";
+
     /// <summary>The cabin's door while it is shut.</summary>
     public const string HostCoopButton = "HOST CO-OP";
 
@@ -189,6 +192,34 @@ public static class CoopDoorText
         string joined = guests == 1 ? "1 guest" : $"{guests.ToString(CultureInfo.InvariantCulture)} guests";
         return $"NETWORK OPEN  {where}  {joined}";
     }
+
+    /// <summary>A co-op guest's band over the host's boards. It says whose campaign it follows and
+    /// what the host is doing, or on the flight check what the guest still owes. Empty while the
+    /// door is not a co-op guest's or the host has named no board yet.</summary>
+    public static string GuestBand(NetPlayFeature net)
+    {
+        ArgumentNullException.ThrowIfNull(net);
+        if (!net.IsCoopGuest || net.CoopFlow is not { } flow)
+        {
+            return "";
+        }
+
+        string host = net.Advert is { Host.Length: > 0 } advert ? advert.Host : "The host";
+        string doing = flow.Screen switch
+        {
+            NetCoopScreen.Briefing => $"{host} is on the briefing",
+            NetCoopScreen.FlightCheck => net.CoopReady
+                ? $"Ready, waiting for {host} to launch"
+                : "Pick your plane and ammo, then press Ready",
+            NetCoopScreen.InMission => $"{host} is in a mission; you fly from the next briefing",
+            NetCoopScreen.Debrief => flow.Won ? "Mission won" : "Mission failed",
+            _ => $"{host} is in the cabin",
+        };
+        return $"CO-OP  {doing}";
+    }
+
+    /// <summary>What every player is told when a guest's link drops mid-mission.</summary>
+    public static string Left(string name) => $"{(name.Length > 0 ? name : "A guest")} left";
 
     private static string HostedBy(SessionAdvertMessage advert) =>
         advert.Host.Length > 0 ? $"hosted by {advert.Host}, " : "";

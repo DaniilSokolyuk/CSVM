@@ -462,6 +462,74 @@ public class CampaignFeatureTests
     }
 
     [Fact]
+    public void AGuestFliesTheHostsStockHangarAndWritesNothing()
+    {
+        var (feature, store, dir) = Open();
+        feature.ContinuePlayer(Pilot);
+        var files = Snapshot(dir);
+        ushort hangar = (1 << 5) | (1 << 7);
+
+        feature.OpenGuest("Zachary", 4, hangar);
+        Assert.True(feature.IsGuest);
+        Assert.True(feature.IsOpen);
+        Assert.Null(feature.Store);
+        Assert.Equal(new[] { 5, 7 }, feature.Profile!.Planes.ConvertAll(p => p.Airframe));
+        Assert.All(feature.Profile.Planes, plane => Assert.False(plane.Special));
+        Assert.Equal(5, feature.GuestAirframe);
+        Assert.Equal(4, feature.NextMissionSeq);
+        Assert.True(feature.ChangePlaneAllowed(0));
+        Assert.False(feature.ChangePlaneAllowed(1));
+
+        feature.SetMission(12);
+        Assert.False(feature.GrantMissionAircraft());
+        feature.Profile.SelectedPlane = 1;
+        feature.RecordGuestResult(12, null, 0b11, 900);
+        var exit = feature.BuildExit(new IReadOnlyList<int>[] { new[] { 0 }, new[] { 1 } })!;
+        Assert.Equal("", exit.Profile);
+        Assert.Equal(12, exit.MissionSeq);
+        var seat = Assert.Single(exit.Seats);
+        Assert.Equal("node7", seat.PlaneNode);
+        Assert.Null(seat.Custom);
+
+        var run = CampaignProgression.ResultOf(feature.Profile, 12)!.Latest!;
+        Assert.Equal(0b11, run.CompletedMask);
+        Assert.Equal(900, run.Money);
+
+        // The host's hangar moving on keeps the pick where the host still holds it, and the results.
+        feature.FollowHost(5, (ushort)(hangar | (1 << 2)));
+        Assert.Equal(7, feature.GuestAirframe);
+        Assert.Equal(3, feature.Profile.Planes.Count);
+        Assert.NotNull(CampaignProgression.ResultOf(feature.Profile, 12));
+        feature.FollowHost(5, 1 << 2);
+        Assert.Equal(2, feature.GuestAirframe);
+
+        // Nothing a guest did reached the disk, and the host's roster still reads as it was.
+        Assert.Equal(files, Snapshot(dir));
+        Assert.Equal(Pilot, store.LastPlayed);
+
+        // ABLE-TO-FAIL CONTROL: the same exit from a seated profile saves it and names it.
+        var (seated, seatedStore, _) = Open();
+        seated.ContinuePlayer(Pilot);
+        seated.SetMission(3);
+        seated.Profile!.Funds = 4321;
+        Assert.Equal(Pilot, seated.BuildExit(new IReadOnlyList<int>[] { new[] { 0 } })!.Profile);
+        Assert.Equal(4321, seatedStore.Load(Pilot)!.Funds);
+    }
+
+    [Fact]
+    public void AHostOffersEveryAirframeItsHangarHoldsAndAlwaysTheStarter()
+    {
+        var profile = CampaignProfileDef.NewProfile(Pilot);
+        profile.Planes.Clear();
+        profile.Planes.Add(new OwnedPlane { Name = "A", Airframe = 2 });
+        profile.Planes.Add(new OwnedPlane { Name = "B", Airframe = 9 });
+        Assert.Equal((1 << 2) | (1 << 5) | (1 << 9), CampaignFeature.HangarAirframes(profile));
+
+        // ABLE-TO-FAIL CONTROL: nobody seated offers the starter alone.
+        Assert.Equal(1 << 5, CampaignFeature.HangarAirframes(null));
+    }
+
+    [Fact]
     public void TheNameRuleIsTheOriginals()
     {
         Assert.True(CampaignFeature.ValidName("Nathan Zachary 2"));

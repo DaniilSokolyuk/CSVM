@@ -624,13 +624,50 @@ public sealed partial class OriginalShell : IOriginalScreenHost
 
         string band = CoopDoorText.HostBand(net);
         net.Step(dt);
-        bool changed = Campaign.OfferCoop() | (CoopDoorText.HostBand(net) != band);
+        bool changed = FollowCoopGuest(net) | Campaign.StepCoop() | (CoopDoorText.HostBand(net) != band);
         return Connection.Tick(dt) || changed;
     }
+
+    /// <summary>The Connection page following the door's join again: a co-op guest whose link to
+    /// its host ended lands here, and the page's box says why.</summary>
+    public void ReturnToConnection()
+    {
+        Campaign.CloseCampaign();
+        Connection.FollowAgain();
+        Connection.OpenConnection();
+    }
+
+    /// <summary>A co-op guest's launch once its host has launched, taken after
+    /// <see cref="StepNet"/>, or null.</summary>
+    public MenuExit? TakeNetExit() => _net != null ? Campaign.GuestLaunch() : null;
 
     /// <summary>Stands <paramref name="door"/> in for the network door, the screenshot aids' and
     /// the suites' way to show a door they drive themselves.</summary>
     internal void StandInNetDoor(NetPlayFeature door) => _net = door ?? throw new ArgumentNullException(nameof(door));
+
+    // A joined co-op guest leaves the Connection page for its host's boards once the host names
+    // one. It goes back to the page when the link ends, and the page then says why.
+    private bool FollowCoopGuest(NetPlayFeature net)
+    {
+        if (Campaign.IsGuest)
+        {
+            if (net.IsCoopGuest)
+            {
+                return false;
+            }
+
+            ReturnToConnection();
+            return true;
+        }
+
+        if (!net.IsCoopGuest || net.CoopFlow == null || net.Released || !Connection.Owns(_screen))
+        {
+            return false;
+        }
+
+        Connection.StopFollowing();
+        return Campaign.OpenGuestCampaign();
+    }
 
     // The module that owns a screen, or null where the shell itself does. Every dispatch site asks
     // once and calls what comes back, so no site knows how many modules there are or which screens

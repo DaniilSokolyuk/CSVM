@@ -70,6 +70,10 @@ public sealed class NetSession : INetTransportListener
     /// channel rides along because a forward keeps the one it arrived on.</summary>
     private delegate void Relay(int from, int channel, ReadOnlySpan<byte> payload);
 
+    /// <summary>Raised when a peer drops off the transport. Its seats stay on the roster; what
+    /// leaving means for the aeroplanes it flew is the session's rule.</summary>
+    public event Action<int>? PeerLeft;
+
     /// <summary>Whether this peer owns the match: the seed, the roster and every host-authoritative
     /// rule. A guest holds the mirror of what it is told.</summary>
     public bool IsHost { get; }
@@ -285,6 +289,7 @@ public sealed class NetSession : INetTransportListener
     {
         // The seat stays in the roster: every seat-indexed table is addressed by the index
         // directly, so closing a gap would renumber the field mid-match (NetSeats.Validate).
+        PeerLeft?.Invoke(peer);
     }
 
     /// <inheritdoc/>

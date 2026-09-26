@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using CSVM.Flight;
+using CSVM.Net;
 using CSVM.Session;
 using CSVM.Utils;
 using Godot;
@@ -152,6 +153,15 @@ public sealed class OriginalPresentation : IMenuPresentation
     /// loopback door. Its colon argument is how many guests are on the wire.</summary>
     public const string CampaignCoopAid = "campaign-coop";
 
+    /// <summary>The aid value that shows a joined co-op guest following the aids' loopback host.
+    /// Its colon argument names the host's board: cabin (the default), briefing, flightcheck,
+    /// ready, planeselection, ammo or debrief.</summary>
+    public const string CampaignCoopGuestAid = "campaign-coop-guest";
+
+    /// <summary>The aid value that shows a co-op host's flight check with two guests on the aids'
+    /// loopback wire. The first is Ready and the second not, so FLY MISSION waits.</summary>
+    public const string CampaignCoopReadyAid = "campaign-coop-ready";
+
     /// <summary>The aid value that opens the Multiplayer Connection page.</summary>
     public const string ConnectionAid = "connection";
 
@@ -172,7 +182,7 @@ public sealed class OriginalPresentation : IMenuPresentation
     {
         "campaign-empty", "campaign-roster", "campaign-cabin", "campaign-previous", "campaign-scrapbook",
         "campaign-briefing", "campaign-flightcheck", "campaign-ammo", "campaign-planeselection", "campaign-hangar",
-        CampaignDeleteAid, CampaignCoopAid,
+        CampaignDeleteAid, CampaignCoopAid, CampaignCoopGuestAid, CampaignCoopReadyAid,
     };
 
     /// <summary>The cabin's palette: the shared cabin board's, with the mission pull-down's words
@@ -417,6 +427,14 @@ public sealed class OriginalPresentation : IMenuPresentation
             if (!_shell.Campaign.ShowScrapbook(debrief.Profile, debrief.MissionSeq, debrief.MissionWon))
             {
                 Log.Warn("ui", $"original presentation: debrief return could not seat '{debrief.Profile}'; the profile screen shows instead");
+            }
+        }
+        else if (destination is CoopGuestReturn guest)
+        {
+            // Back onto the host's boards, or onto the Connection page saying why the link ended.
+            if (!_shell.Campaign.ShowGuestDebrief(guest.Attempt))
+            {
+                _shell.ReturnToConnection();
             }
         }
         else if (aid.Length > 0 && OpenCampaignAid(aid))
@@ -665,6 +683,13 @@ public sealed class OriginalPresentation : IMenuPresentation
         // The network door is stepped every frame whatever shows. A guest arriving, a search
         // answer or a hang-up then lands without waiting for a screen to ask.
         changed |= _shell.StepNet(dt);
+        if (_shell.TakeNetExit() is { } launched)
+        {
+            _host.Audio.EndMixPreview();
+            _host.Exit(launched);
+            return;
+        }
+
         // Text capture is set before the poll: the name screen's letters must be text, not
         // cursor aliases, for the frame that reads them.
         _host.Seats[0].CapturingText = _shell.CapturingText;
@@ -983,6 +1008,20 @@ public sealed class OriginalPresentation : IMenuPresentation
                 _shell.StepNet(0.0);
                 argument = string.Empty;
                 break;
+            case CampaignCoopGuestAid:
+                PoseCoopGuest(argument);
+                argument = string.Empty;
+                break;
+            case CampaignCoopReadyAid:
+                _shell.Campaign.ShowCabin(CampaignAidProfiles.Pilot);
+                var ready = NetDoorAid.Host(2, out _, out var guestEnds);
+                _shell.StandInNetDoor(ready);
+                NetDoorAid.OpenCoopHost(ready, CampaignAidProfiles.MissionsFlown, localPlayers: 1);
+                _shell.Campaign.ShowMissionScreen(OriginalScreen.CampaignFlightCheck);
+                _shell.StepNet(0.0);
+                NetDoorAid.AnswerReady(ready, guestEnds[0], _shell.Campaign.SeatedAirframe ?? HangarFeature.DefaultAirframe);
+                _shell.StepNet(0.0);
+                break;
             case "campaign-previous":
                 _shell.Campaign.ShowCabin(CampaignAidProfiles.Pilot);
                 _shell.Campaign.ShowMissionScreen(OriginalScreen.CampaignPreviousMissions);
@@ -1044,6 +1083,36 @@ public sealed class OriginalPresentation : IMenuPresentation
         }
 
         return true;
+    }
+
+    // The guest as the host's boards leave it, three humans on the wire and this guest the second.
+    // The third is Ready on the check, so a shot shows another's mark beside this guest's own.
+    private void PoseCoopGuest(string board)
+    {
+        var host = CampaignAidProfiles.Store(seeded: true, progressed: true).Load(CampaignAidProfiles.Pilot);
+        ushort airframes = CampaignFeature.HangarAirframes(host);
+        byte flown = CampaignAidProfiles.MissionsFlown;
+        var flow = board switch
+        {
+            "briefing" => new CoopFlowMessage(NetCoopScreen.Briefing, flown, 1, 1, 0, 3, flown, false, airframes, 0, 0),
+            "flightcheck" or "planeselection" or "ammo" =>
+                new CoopFlowMessage(NetCoopScreen.FlightCheck, flown, 1, 1, 0, 3, flown, false, airframes, 0, 0),
+            "ready" => new CoopFlowMessage(NetCoopScreen.FlightCheck, flown, 1, 1, 0b100, 3, flown, false, airframes, 0, 0),
+            "debrief" => new CoopFlowMessage(NetCoopScreen.Debrief, (byte)(flown - 1), 2, 1, 0, 3, flown, true, airframes, 0b11, 4500),
+            _ => new CoopFlowMessage(NetCoopScreen.Cabin, flown, 1, 1, 0, 3, flown, false, airframes, 0, 0),
+        };
+
+        _shell!.StandInNetDoor(NetDoorAid.CoopGuest(flow, ready: board == "ready"));
+        _shell.Connection.OpenConnection();
+        _shell.StepNet(0.0);
+        if (board == "planeselection")
+        {
+            _shell.Campaign.ShowMissionScreen(OriginalScreen.CampaignPlaneSelection);
+        }
+        else if (board == "ammo")
+        {
+            _shell.Campaign.ShowMissionScreen(OriginalScreen.CampaignAmmo);
+        }
     }
 
     // --debug-join=N, once: N device-less seats with distinct cursors, the last one selected, so

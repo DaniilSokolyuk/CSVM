@@ -228,6 +228,14 @@ public partial class Launcher : Node3D
     private Net.INetTransport? _netWire;
     private Net.NetSeat[]? _netRoster;
     private bool _netIsHost;
+
+    // Whether the flight under way is a co-op campaign's, whose door keeps stepping in flight.
+    private bool _coopFlight;
+
+    // A co-op host's fit for each seat, by seat, as its launch told the guests. A guest reads its
+    // host's word off the door instead.
+    private Net.CoopFit[] _coopSeatFits = System.Array.Empty<Net.CoopFit>();
+    private StockLoadouts? _coopStock;
     // The decoded menu layout the Original presentation composes from, loaded once by the
     // availability check and handed to every Original instance the registry creates.
     private MenuLayout? _originalLayout;
@@ -1057,6 +1065,8 @@ public partial class Launcher : Node3D
             ReturnToMenu(new InstantActionWrapupReturn(wrapup));
         }
 
+        TickCoopFlight(delta);
+
         // An Options apply, one frame after the exit that asked for it.
         if (_pendingApply is { } applied)
         {
@@ -1104,6 +1114,49 @@ public partial class Launcher : Node3D
         Log.Info("ui", $"cinema {name} playing skip={skip}");
         cinema.Ended = then;
         AddChild(cinema);
+    }
+
+    /// <summary>Whether a co-op guest's flight is over. Its host named another board, or the
+    /// link to the host is gone and the door has failed.</summary>
+    internal static bool CoopGuestFlightOver(UI.Menu.NetPlayFeature door) =>
+        !door.IsCoopGuest || door.CoopFlow is not { Screen: Net.NetCoopScreen.InMission };
+
+    /// <summary>The fit a co-op seat flown elsewhere carries: from <paramref name="launched"/> on
+    /// the host that launched it, or the host's word through <paramref name="door"/> on a guest.
+    /// Stock where neither names one.</summary>
+    internal static LoadoutChoice? CoopSeatFitFor(int seat, IReadOnlyList<Net.CoopFit>? launched,
+        UI.Menu.NetPlayFeature? door, StockLoadouts stock)
+    {
+        var fit = launched != null
+            ? seat >= 0 && seat < launched.Count ? launched[seat] : default
+            : door?.CoopSeatFits.TryGetValue(seat, out var told) == true ? told : default;
+        return CampaignLoadout.For(fit, stock);
+    }
+
+    /// <summary>A co-op host's field and each seat's fit, by seat. Its own seats come first, with
+    /// the fits its launch carried. Then comes every seated guest still on the wire, in the plane,
+    /// fit and name its pick carried.</summary>
+    internal static (Net.NetSeat[] Roster, Net.CoopFit[] SeatFits) CoopLaunchField(
+        UI.Menu.NetPlayFeature door, Net.INetTransport wire, IReadOnlyList<string> planes,
+        IReadOnlyList<LoadoutChoice?> fits, StockLoadouts stock)
+    {
+        var guests = new List<(int Peer, string Plane, string Name)>();
+        var seatFits = new List<Net.CoopFit>();
+        for (int i = 0; i < planes.Count; i++)
+        {
+            seatFits.Add(CampaignLoadout.FitOf(i < fits.Count ? fits[i] : null, stock));
+        }
+
+        foreach (var guest in door.CoopGuests)
+        {
+            if (System.Linq.Enumerable.Contains(wire.Peers, guest.Peer))
+            {
+                guests.Add((guest.Peer, UI.PlanePickerRoster.AirframeNode(guest.Airframe), guest.Name));
+                seatFits.Add(guest.Fit);
+            }
+        }
+
+        return (Net.NetSeats.CoopField(wire.LocalPeer, planes, guests), seatFits.ToArray());
     }
 
     // Where a flight left early lands, taken from the launch that starts it. Every menu launch path
@@ -1528,6 +1581,7 @@ public partial class Launcher : Node3D
             NetHost = _netIsHost,
             NetSeats = _netRoster,
             NetAirframes = _netWire == null ? null : UI.PlanePickerRoster.StockAirframes,
+            NetSeatFit = _coopFlight ? CoopSeatFit : null,
         });
         AddChild(_session);
         bool built = _session.StartSession();
@@ -2176,6 +2230,31 @@ public partial class Launcher : Node3D
         _netRoster = seats.ToArray();
     }
 
+    // A co-op campaign launch's wire. The host's roster is its own seats and then each guest the
+    // door seated, in the stock aeroplane it picked and under its name. Every seat's fit goes to
+    // every guest before the session's opener, on the same ordered channel. A guest builds none.
+    private void TakeCoopLaunch(UI.Menu.MenuNetLaunch? net, IReadOnlyList<string> planes,
+        IReadOnlyList<LoadoutChoice?> fits)
+    {
+        _netWire = net?.Transport;
+        _netIsHost = net?.IsHost ?? false;
+        _netRoster = null;
+        _coopSeatFits = System.Array.Empty<Net.CoopFit>();
+        _coopFlight = _netWire != null && _netDoor is { IsCoopHost: true } or { IsCoopGuest: true };
+        if (_netWire == null || !_netIsHost || _netDoor == null)
+        {
+            return;
+        }
+
+        (_netRoster, _coopSeatFits) = CoopLaunchField(_netDoor, _netWire, planes, fits,
+            _coopStock ??= StockLoadouts.Load());
+        _netDoor.TellSeatFits(_coopSeatFits);
+        Log.Info("core", $"net: co-op launch with {_netRoster.Length - planes.Count} guest(s)");
+    }
+
+    private LoadoutChoice? CoopSeatFit(int seat) =>
+        CoopSeatFitFor(seat, _netIsHost ? _coopSeatFits : null, _netDoor, _coopStock ??= StockLoadouts.Load());
+
     // The seat choices as the four parallel lists the spec factories take. The fits ride
     // alongside the planes rather than inside them: FromMenu writes each menu-settable field
     // explicitly, so a chosen loadout has to be handed over or it would be dropped. A plane the
@@ -2244,6 +2323,7 @@ public partial class Launcher : Node3D
     {
         var (planes, pads, fits, customs) = Unpack(mission.Seats);
         LaunchedFrom(mission);
+        TakeCoopLaunch(mission.Net, planes, fits);
         _spec = SessionSpec.FromCampaign(_cli, mission.Profile, mission.MissionSeq, planes,
             pads.Count, fits, customs);
         StepSortieSeed();
@@ -2258,7 +2338,10 @@ public partial class Launcher : Node3D
     private void OpenDebrief(string profile, CampaignMissionResult result)
     {
         Log.Info("core", $"campaign: {result.Outcome}, arrived at the debrief with '{profile}'");
-        ReturnToMenu(new DebriefReturn(profile, result.Attempt.Seq, result.Outcome == MissionOutcome.Won));
+        // A co-op guest has no profile, and its debrief is the one its host shows.
+        ReturnToMenu(profile.Length == 0
+            ? new CoopGuestReturn(result.Attempt)
+            : new DebriefReturn(profile, result.Attempt.Seq, result.Outcome == MissionOutcome.Won));
     }
 
     // The mission boards' Restart (Instant Action and campaign): free this session and build a
@@ -2342,7 +2425,7 @@ public partial class Launcher : Node3D
     // The end of a network flight: the wire the match ran on is dropped, and the door gives the
     // router's forwarded port back. The door handed the transport over at the launch and no
     // longer closes it, so that half is the session layer's. A door that mapped nothing pays
-    // nothing here.
+    // nothing here. A co-op door takes its wire back instead, since the session outlives a flight.
     private void CloseNetLaunch()
     {
         if (_netWire == null)
@@ -2350,15 +2433,61 @@ public partial class Launcher : Node3D
             return;
         }
 
-        if (_netWire is System.IDisposable open)
+        var wire = _netWire;
+        _netWire = null;
+        _netRoster = null;
+        _netIsHost = false;
+        _coopFlight = false;
+        if (_netDoor is { } door && (door.IsCoopHost || door.IsCoopGuest) && door.Reclaim())
+        {
+            return;
+        }
+
+        if (wire is System.IDisposable open)
         {
             open.Dispose();
         }
 
-        _netWire = null;
-        _netRoster = null;
-        _netIsHost = false;
-        _netDoor?.Close();
+        // A door that failed keeps its fault, which the Connection page then names.
+        if (_netDoor is { Stage: not UI.Menu.NetDoorStage.Failed } shut)
+        {
+            shut.Close();
+        }
+    }
+
+    // A co-op flight's upkeep. The door still seats, advertises and follows the host while the
+    // session carries its wire. A guest's flight ends when its host names any other board, or
+    // when the link to the host is gone.
+    private void TickCoopFlight(double delta)
+    {
+        if (!_coopFlight || _netDoor is not { } door || _netWire == null || _session is not { InSession: true })
+        {
+            return;
+        }
+
+        door.Step(delta);
+        if (_netIsHost)
+        {
+            // A guest that walked out through its pause sheet keeps its link, so its word is the
+            // only sign. Its seat leaves at once rather than flying on frozen.
+            foreach (var guest in door.CoopGuests)
+            {
+                if (guest.Left)
+                {
+                    _session.TakeGuestLeft(guest.Peer);
+                }
+            }
+
+            return;
+        }
+
+        if (CoopGuestFlightOver(door))
+        {
+            Log.Info("core", $"net: co-op flight over, {(door.IsCoopGuest ? "the host left the mission" : $"the link ended ({door.Fault})")}");
+            // The host's ending reaches the guest's director inside the host's own hold. A result
+            // is therefore banked here whenever the host went on to its debrief.
+            ReturnToMenu(new CoopGuestReturn(_session.Campaign?.Result?.Attempt));
+        }
     }
 
     /// <summary>The three quits reached from a frame that is still drawing: blacks the persistent
@@ -2382,6 +2511,13 @@ public partial class Launcher : Node3D
     // shader globals persist on `this`.
     private void ReturnToMenu(MenuReturnDestination destination)
     {
+        // A co-op guest leaving a flight its host still flies says so before the wire goes back.
+        // The door ignores this once the host has named any other board.
+        if (_coopFlight && !_netIsHost && _session is { Campaign.Result: null })
+        {
+            _netDoor?.LeaveCoopMission();
+        }
+
         if (_session != null)
         {
             _session.QueueFree();
@@ -2652,6 +2788,11 @@ public sealed class LauncherContext
     /// roster carries an index and a seat flies a named node. Empty leaves a guest's seats without
     /// a pick, which falls back to this machine's own launch flags.</summary>
     public IReadOnlyList<string>? NetAirframes { get; init; }
+
+    /// <summary>The fit a seat flown elsewhere carries, by seat index, or null for its stock fit.
+    /// Read once the field is known, which on a guest is after the host's roster arrived. A seat
+    /// flown here keeps its own menu pick and never asks this.</summary>
+    public System.Func<int, Flight.LoadoutChoice?>? NetSeatFit { get; init; }
 
     /// <summary>The presentation this session's own boards take, already resolved: the menu's
     /// active one, or what the flags name on a CLI launch. A resolved answer rather than a flag,

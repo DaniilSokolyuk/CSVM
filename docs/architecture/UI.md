@@ -840,14 +840,14 @@ leaves it empty and an unpicked engine or gun slot is prose alone. The string id
 arithmetic and which tab reads which block: [../org/hangar.md](../org/hangar.md).
 
 ## src/UI/Menu/CampaignFeature.cs
-The campaign as a shared engine-free feature in the host's feature set: the state and the operations
-both presentations read and write, with neither one's screen shell in it. `Open` opens a campaign
-over a `CampaignProfileStore`, each further dependency optional. The roster operations create, seat,
-delete and record the last-played player in the original's own words; the mission operations settle
-which `cm_sequence` entry the screens after the cabin are about, with its briefing, wingman flag,
-per-slot change-plane rules and the story aircraft its flight check grants; the writes save the
-loadout, the planes, the cabin's memento (refused unless the profile holds it), an exported build and the mission exit. It carries the one `ChapterCinema` and
-`ClosingCinema` the host built it with, which is how a cabin or mission-end door reaches a film. Read `CampaignFlow.cs` next.
+The campaign as a shared engine-free feature: the state and operations both presentations read and
+write, with neither one's screen shell in it. `Open` opens a campaign over a `CampaignProfileStore`;
+`OpenGuest` opens a co-op guest's with no profile, on the host's mission and stock hangar, writing
+nothing, and `GuestCoopFit` is its ammo pick as the wire carries it. The roster operations create, seat, delete and record the last-played player in the
+original's own words; the mission operations settle which `cm_sequence` entry the screens after the
+cabin are about, with its briefing, wingman flag, per-slot change-plane rules and story aircraft;
+the writes save the loadout, planes, memento (refused unless held), an exported build and the
+mission exit. It carries the host's `ChapterCinema` and `ClosingCinema`. Read `CampaignFlow.cs` next.
 
 ## src/UI/Menu/BriefingScript.cs
 The briefing reveal script, engine-free: the `Briefing.zrd` reader (`BriefingDialog`,
@@ -1197,14 +1197,14 @@ the backing-out ladder; the gate is the mode's minimum of seats and every seat c
 and `BuildExit` are the typed result. Nothing here reads a pad: `src/UI/MenuSeatDevices.cs`, below.
 
 ## src/UI/Menu/NetPlayFeature.cs
-The multiplayer door as a shared `IMenuFeature`, engine-free and carrier-free: the port and the
-address a board edits, the socket it opens, and the readouts a board draws (`Stage`, `Peers`,
-`Link`, `PortMap`, `Fault`, `HostStarted`, `Advert`). Both carrier factories and both
-port-mapping calls arrive as delegates, so the launcher passes `Net/NetCarrier.cs`'s selection and
-a suite passes a loopback mesh and no router. Every open wraps its carrier in a `Net/NetLobby.cs`.
-`OpenHost`, `OpenCoopHost` (the campaign's, whose `Offer` names the mission) and `OpenJoin` open;
-`Step` carries the link and re-advertises; `BuildLaunch` hands the lobby on; `Close` unmaps. The
-map runs on its own thread, which renews the lease until `Close`. Boards: `LaunchMenu.cs`.
+The multiplayer door as a shared `IMenuFeature`, engine-free and carrier-free: the port and address
+a board edits, the socket it opens, and the readouts a board draws (`Stage`, `Peers`, `Link`,
+`PortMap`, `Fault`, `HostStarted`, `Advert`). Carriers and port maps arrive as delegates (the
+launcher's `Net/NetCarrier.cs`, or a suite's loopback mesh and no router); every open wraps its
+carrier in a `Net/NetLobby.cs`. `OpenHost`, `OpenCoopHost` (whose `Offer` names the mission) and
+`OpenJoin` open; `Step` carries the link; `Close` unmaps the lease. In co-op `ShowCoop` sends each
+guest the host's boards, `CoopAllReady` holds FLY MISSION until every guest is Ready, `CoopLaunchDue` tells a guest to follow, `TellSeatFits` sends every seat's fit before the opener, and
+`LeaveCoopMission` tells the host at once that a guest walked out. Boards: `LaunchMenu.cs`.
 
 ## src/UI/Menu/CoopDoorText.cs
 The words the campaign's network door is drawn in, engine-free and built off the door alone: the
@@ -1216,7 +1216,8 @@ a delegate, since only the caller holds the langui table.
 ## src/UI/Menu/NetDoorAid.cs
 The multiplayer doors the `--menu=` screenshot aids stand on: a host door over a loopback wire with
 guests already on it and a router stub mapping at a documentation address, and a guest door already
-joined to a loopback host advertising a campaign mission. No aid opens a socket or asks a router.
+joined to a loopback host advertising a campaign mission. `CoopGuest` stands a guest on a given
+host flow, and `AnswerReady` makes a host's guest Ready. No aid opens a socket or asks a router.
 
 ## src/UI/MenuSeatDevices.cs
 The pad side of the shared player setup, for any presentation, over seat 0's `MenuInput` and the

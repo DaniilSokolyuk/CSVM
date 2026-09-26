@@ -205,7 +205,7 @@ score, `0x17` match state, `0x22` hit and `0x27` seat roster. Damage, spawn, the
 director transition, the join handshake and a seat's ask to be spawned again have no
 counterpart, so they are minted at `0x40`, `0x41`, `0x42`, `0x43` and `0x44`, above the ceiling
 above. The host-owned world's four (AI state, AI fire, a guest's hit claim on an AI, and a world
-event) are minted at `0x45` to `0x48`, below, the clock ping at `0x49`, the lobby's session advert at `0x4A`, the zeppelin path at `0x4B`, a generator's AI launch at `0x4C`, the surface-vehicle patrol at `0x4D`, a positional start at `0x4E` and the lobby's session closed at `0x4F`. The handshake carries the master seed, the host's clock and the seat the joining peer was
+event) are minted at `0x45` to `0x48`, below, the clock ping at `0x49`, the lobby's session advert at `0x4A`, the zeppelin path at `0x4B`, a generator's AI launch at `0x4C`, the surface-vehicle patrol at `0x4D`, a positional start at `0x4E`, the lobby's session closed at `0x4F`, and the lobby's co-op flow, co-op pick and co-op seat fit at `0x50` to `0x52`. The handshake carries the master seed, the host's clock and the seat the joining peer was
 given; the original needs none of the three, because it draws from no shared stream and hands
 out no seat. The ask carries a seat and nothing else: the original's client takes its own
 respawn, while here the host owns every placement and answers the ask with a spawn event.
@@ -375,7 +375,9 @@ applying and searches by when the index has shifted), 4 a `WARP_VEHICLE` pick (t
 drawn waypoint index, the argument the hash of the warped vehicle's name), 5 an AI's presence (the argument is 1 for in
 play and 0 for deactivated). The host sends 5 whenever an AI's `Inert` changes outside a cutscene
 park, which covers a script wake, a Black Hat launch and a wingman taken out. A cutscene park (913)
-is not sent, because each end's own cutscene parks its own copy.
+is not sent, because each end's own cutscene parks its own copy. 6 a seat left (the subject is
+the seat of a guest whose link dropped mid-mission): the host sends it to the guests still flying,
+every end removes that aeroplane and tells its players "<name> left", and the mission goes on.
 
 Code 3 goes out at once for a stage change or a kill. A hit that lowers a pool without either is
 held and sent on the seat stream's next tick, one sample per pool however many hits landed, because
@@ -467,6 +469,35 @@ sees them.
 A guest that reads a closed reason tells the player the host closed the game, or that the game was
 full, instead of reading the dropped link as a lost connection. An unknown status or reason reads as
 unknown rather than failing the message, so a newer host's value does not strand an older guest.
+
+### Campaign co-op boards
+
+A co-op guest follows the host's boards through three more lobby messages, minted at `0x50` to
+`0x52` since the original has no campaign across a link. None reaches a session.
+
+| Id | Message | Class | Carries |
+|---|---|---|---|
+| `0x50` | Co-op flow | reliable, host to each guest | screen at 4 (unknown 0, cabin 1, briefing 2, flight check 3, in mission 4, debrief 5), mission sequence at 5, round at 6, the guest's player number at 7, Ready mask by player number at 8, humans at 9, host's campaign progress at 10, flags at 11 (bit 0 won), hangar airframe mask at 12, the guest's local seats at 14, one reserved byte, objectives mask at 16, cash at 20 (24 bytes) |
+| `0x51` | Co-op pick | reliable, guest to host | round at 4, flags at 5 (bit 0 Ready, bit 1 left the flight), airframe at 6, one reserved byte, the fit at 8, the player name at 20 (16 bytes, zero-padded; 36 bytes) |
+| `0x52` | Co-op seat fit | reliable, host to each guest | seat at 4, three reserved bytes, the fit at 8 (20 bytes) |
+
+A fit is twelve bytes: the four gun slots' ammunition, then the eight ordnance cells, one byte
+each, each the profile's stored value plus one so that zero reads as unset (stock). The pick
+carries a guest's own plane record's ammunition and ordnance. At its launch the host sends every
+guest a seat fit for each seat, its own seats included, before the session's opener on the same
+ordered channel. Every machine then builds each seat flown elsewhere with its own pilot's fit.
+The name is the guest's last-played pilot, read without writing, and the host's roster calls
+the guest by it; a guest with none is called by its player number. A guest leaving the flight
+through its pause sheet sets the left flag, and the host takes its seat out at once, as it does
+for a dropped link.
+
+The host sends a flow to each guest whenever its boards change, since the player number differs
+per guest. The round advances when the mission changes, and on any screen change other than
+between the briefing and the flight check, and it clears every Ready. A pick counts only under the
+host's current round, so a Ready given before the host backed out never launches the next mission.
+The host's launch waits until every guest's latest pick is Ready. While the host flies, the flow
+says in mission and the advert's status is in mission, so a guest joining then waits in the cabin.
+The debrief flow carries the host's result, which every guest's scrapbook shows.
 
 ### LAN discovery
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using CSVM.Net;
 using Godot;
 using Xunit;
@@ -637,6 +638,93 @@ public class NetMessagesTests
         Span<byte> advert = stackalloc byte[SessionAdvertMessage.Size];
         new SessionAdvertMessage(NetSessionKind.Dogfight, 0, 1, "h").Write(advert);
         Assert.False(SessionClosedMessage.TryRead(advert, out _));
+    }
+
+    // A co-op host's word about its boards: every field a guest follows, and the shared result.
+    [Fact]
+    public void ACoopFlowRoundTripsTheBoardTheRoundAndTheResultInTwentyFourBytes()
+    {
+        Assert.Equal(24, CoopFlowMessage.Size);
+        Span<byte> buffer = stackalloc byte[CoopFlowMessage.Size];
+        var sent = new CoopFlowMessage(NetCoopScreen.Debrief, 23, 9, 2, 0b0110, 3, 22, true,
+            0b1010_0000, 0x15, 1250, Locals: 2);
+        Assert.Equal(CoopFlowMessage.Size, sent.Write(buffer));
+        Assert.True(CoopFlowMessage.TryRead(buffer, out var got));
+        Assert.Equal(sent, got);
+        Assert.True(got.IsReady(1) && got.IsReady(2));
+        Assert.True(got.Offers(5) && got.Offers(7));
+
+        // ABLE-TO-FAIL CONTROL: the slots and airframes left out read as left out.
+        Assert.False(got.IsReady(0) || got.IsReady(3));
+        Assert.False(got.Offers(6));
+
+        Assert.Equal(0x50, (int)NetMessageType.CoopFlow);
+        Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.CoopFlow));
+        Assert.False(NetMessage.IsOriginalId(NetMessageType.CoopFlow));
+
+        // A screen a later build adds reads as unknown rather than as a board this one shows.
+        buffer[4] = 0x70;
+        Assert.True(CoopFlowMessage.TryRead(buffer, out var later));
+        Assert.Equal(NetCoopScreen.Unknown, later.Screen);
+        Assert.False(CoopFlowMessage.TryRead(buffer[..(CoopFlowMessage.Size - 1)], out _));
+    }
+
+    [Fact]
+    public void ACoopPickRoundTripsItsRoundReadyAirframeFitNameAndLeaveInThirtySixBytes()
+    {
+        Assert.Equal(36, CoopPickMessage.Size);
+        Span<byte> buffer = stackalloc byte[CoopPickMessage.Size];
+        var fit = CoopFit.Of(new[] { 2, 4, -1, 0 }, new[] { 0, 3, 12, 0, 0, 0, 0, 1 });
+        foreach (var sent in new[]
+        {
+            new CoopPickMessage(4, true, 7),
+            new CoopPickMessage(255, false, 0, fit, "Lucy", Left: true),
+            new CoopPickMessage(9, true, 5, fit, "Red Baron Jr"),
+        })
+        {
+            Assert.Equal(CoopPickMessage.Size, sent.Write(buffer));
+            Assert.True(CoopPickMessage.TryRead(buffer, out var got));
+            Assert.Equal(sent, got);
+        }
+
+        Assert.Equal(0x51, (int)NetMessageType.CoopPick);
+        Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.CoopPick));
+
+        // ABLE-TO-FAIL CONTROL: a flow's bytes are not a pick.
+        Span<byte> flow = stackalloc byte[CoopFlowMessage.Size];
+        default(CoopFlowMessage).Write(flow);
+        Assert.False(CoopPickMessage.TryRead(flow, out _));
+    }
+
+    [Fact]
+    public void ACoopSeatFitRoundTripsTheSeatAndItsFitInTwentyBytes()
+    {
+        Assert.Equal(20, CoopSeatFitMessage.Size);
+        Span<byte> buffer = stackalloc byte[CoopSeatFitMessage.Size];
+        var sent = new CoopSeatFitMessage(3, CoopFit.Of(new[] { 3, 3, 1, 4 }, new[] { 12, 0, 0, 0, 5, 0, 0, 0 }));
+        Assert.Equal(CoopSeatFitMessage.Size, sent.Write(buffer));
+        Assert.True(CoopSeatFitMessage.TryRead(buffer, out var got));
+        Assert.Equal(sent, got);
+        Assert.Equal(0x52, (int)NetMessageType.CoopSeatFit);
+        Assert.Equal(NetReliability.Reliable, NetMessage.ReliabilityOf(NetMessageType.CoopSeatFit));
+
+        // ABLE-TO-FAIL CONTROL: a pick's bytes are not a seat fit.
+        Span<byte> pick = stackalloc byte[CoopPickMessage.Size];
+        new CoopPickMessage(1, true, 5).Write(pick);
+        Assert.False(CoopSeatFitMessage.TryRead(pick, out _));
+    }
+
+    [Fact]
+    public void ACoopFitKeepsEachStoredValueAndUnsetStaysUnset()
+    {
+        var fit = CoopFit.Of(new[] { 0, 4, -1 }, new[] { 0, 12, 1 });
+        Assert.Equal(new[] { 0, 4, -1, -1 }, Enumerable.Range(0, CoopFit.GunSlots).Select(fit.AmmoAt));
+        Assert.Equal(new[] { 0, 12, 1, 0, 0, 0, 0, 0 }, Enumerable.Range(0, CoopFit.Cells).Select(fit.OrdnanceAt));
+        Assert.False(fit.IsStock);
+
+        // ABLE-TO-FAIL CONTROL: nothing picked is the stock fit, and stored ammunition 0 is not unset.
+        Assert.True(CoopFit.Of(Array.Empty<int>(), null).IsStock);
+        Assert.False(CoopFit.Of(new[] { 0 }, null).IsStock);
     }
 
     // The original's ping width: the header and two stamps.

@@ -399,6 +399,22 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
         return false;
     }
 
+    /// <summary>Lets go of the join this page followed, its guest having gone on to its host's
+    /// boards. The box standing for it goes with the screen change.</summary>
+    internal void StopFollowing()
+    {
+        _following = false;
+        _shown = null;
+    }
+
+    /// <summary>Follows the door's join again, for a guest coming back from its host's boards. An
+    /// ended link then raises the box saying why, as a join that failed here does.</summary>
+    internal void FollowAgain()
+    {
+        _following = true;
+        _shown = null;
+    }
+
     private static int IndexOf(string key, string prefix) =>
         int.TryParse(key.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out int index) ? index : -1;
 

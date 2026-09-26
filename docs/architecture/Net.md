@@ -95,9 +95,10 @@ A carrier's first listener, standing between the socket a menu opens and the ses
 binds it, since a carrier binds only once. It is itself the `INetTransport` the session binds. A
 host's `Advertise` sends a `SessionAdvertMessage` to every peer on connect and on each change; a
 guest keeps the latest arrival in `Advert`, and the host's closing word in `Closed`, and never
-passes either on. Any other payload is held (up
-to `HeldPayloads`) until a session binds, then replayed behind the peer announcement, so `Held` is
-how a guest's board learns that the host's session has answered. Read `NetLobbyTests.cs`.
+passes either on. The co-op boards' messages stay here too: a host sends `CoopFlow` per guest and
+keeps each guest's latest `CoopPick`, a guest keeps the latest flow and `SeatFits`. Others are held
+(up to `HeldPayloads`) until a session binds, then replayed behind the peer announcement, so `Held`
+is how a guest's board learns that the host's session has answered. Read `NetLobbyTests.cs`.
 
 ## src/Net/LanDiscovery.cs
 The LAN search's datagram pair, apart from the carrier: `LanDiscovery` writes and reads a query
@@ -150,6 +151,15 @@ index), `AiSpawnMessage` (a host generator launch at the ordinal it claims, reli
 `SurfaceVehicleStateMessage` (one hull's patrol by spawn index and name hash) and
 `WorldEventMessage`, whose `NetWorldEvent` code says what its subject, argument and value carry.
 Ids and phase mapping: [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
+
+## src/Net/NetCoopMessages.cs
+The campaign co-op boards' three messages, all reliable and all kept in `NetLobby` rather than a
+session. `CoopFlowMessage` is the host's boards as one guest follows them: the screen, the mission,
+the round of picks (`Epoch`), the guest's player number, the Ready mask, the hangar's airframes and,
+on the debrief, the host's result. `CoopPickMessage` is a guest's airframe, `CoopFit`, name, Ready
+and Left under the round it answers, so a Ready from an earlier round never launches the next
+mission. `CoopSeatFitMessage` tells every guest one seat's fit before the session opener. Layout:
+[../org/multiplayer-messages.md](../org/multiplayer-messages.md).
 
 ## src/Net/NetPositionalMessages.cs
 `PositionalStartMessage`, the one message a position-started definition crosses as: a landing row
@@ -206,7 +216,7 @@ without a pane.
 ## src/Net/NetSeats.cs
 The roster's rules: `MaxPlayers = 16` pilots admitted, the count the original's lobby shows and
 its data holds, every seat-indexed table built `SeatCapacity = 16` wide, each seat's identity
-colour, and `Validate`, which requires seats numbered from zero with no gap and at least one flown here. `Field` builds a host's roster from its local planes and the peers on its wire.
+colour, and `Validate`, which requires seats numbered from zero with no gap and at least one flown here. `Field` builds a host's roster from its local planes and the peers on its wire; `CoopField` does so for co-op, naming each guest by its own player name.
 Seats 0 to 7 take the original's authored dwords at `00628eb4` in order (the remake's index is
 0-based where the original's was 1-based and its eighth pilot read past the table); seats 8 to 15
 take the channel-wise complement of seat minus 8. The channel order and the derived eight are TUNE

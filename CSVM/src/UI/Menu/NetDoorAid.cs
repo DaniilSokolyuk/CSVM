@@ -41,11 +41,18 @@ public static class NetDoorAid
 
     /// <summary>A shut door whose host opens onto a loopback wire with <paramref name="guests"/>
     /// peers already on it, and whose router maps any port asked for.</summary>
-    public static NetPlayFeature Host(int guests, out Func<int> unmapped)
+    public static NetPlayFeature Host(int guests, out Func<int> unmapped) => Host(guests, out unmapped, out _);
+
+    /// <summary>A door as <see cref="Host(int, out Func{int})"/>, with <paramref name="guestEnds"/>
+    /// the guests' own ends of its wire so an aid can answer for them.</summary>
+    public static NetPlayFeature Host(int guests, out Func<int> unmapped, out IReadOnlyList<INetTransport> guestEnds)
     {
         var mesh = LoopbackTransport.Mesh(1 + Math.Max(0, guests), LoopbackConditions.Perfect, new Random(1));
         int given = 0;
         unmapped = () => given;
+        var ends = new List<INetTransport>(mesh);
+        ends.RemoveAt(0);
+        guestEnds = ends;
         return new NetPlayFeature(
             (port, maxGuests, bind) => mesh[0],
             (address, port) => throw new InvalidOperationException("the aid's host door joins nothing"),
@@ -68,6 +75,18 @@ public static class NetDoorAid
         }
     }
 
+    /// <summary>Answers Ready on <paramref name="airframe"/> for the guest at <paramref name="guest"/>,
+    /// under the round <paramref name="host"/> has under way, and lets the host hear it.</summary>
+    public static void AnswerReady(NetPlayFeature host, INetTransport guest, int airframe)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        ArgumentNullException.ThrowIfNull(guest);
+        Span<byte> bytes = stackalloc byte[CoopPickMessage.Size];
+        new CoopPickMessage(host.CoopEpoch, true, (byte)airframe).Write(bytes);
+        guest.Send(guest.Peers[0], bytes, NetReliability.Reliable);
+        host.Step(0.0);
+    }
+
     /// <summary>A shut door whose LAN search hears <see cref="SampleGames"/>, answered at once
     /// from documentation addresses. With <paramref name="silent"/> nothing answers, so the
     /// games list stands on its Searching box.</summary>
@@ -79,17 +98,39 @@ public static class NetDoorAid
     /// <summary>A door joined over the loopback to a host advertising a campaign mission at
     /// <paramref name="missionSeq"/> with <paramref name="players"/> players in it. The advert
     /// has already landed when this returns.</summary>
-    public static NetPlayFeature JoinedGuest(int missionSeq, int players)
+    public static NetPlayFeature JoinedGuest(int missionSeq, int players) => Joined(missionSeq, players, out _);
+
+    /// <summary>A door joined as <see cref="JoinedGuest"/> that has also heard its host name its
+    /// boards as <paramref name="flow"/>, so a guest's campaign follows them. With
+    /// <paramref name="ready"/> the guest has answered Ready under that round.</summary>
+    public static NetPlayFeature CoopGuest(CoopFlowMessage flow, bool ready)
+    {
+        var door = Joined(flow.MissionSeq, flow.Humans, out var host);
+        Span<byte> bytes = stackalloc byte[CoopFlowMessage.Size];
+        flow.Write(bytes);
+        host.Send(host.Peers[0], bytes, NetReliability.Reliable);
+        door.Step(0.0);
+        if (ready)
+        {
+            door.PickCoop(door.CoopPickAirframe, true);
+            door.Step(0.0);
+        }
+
+        return door;
+    }
+
+    private static NetPlayFeature Joined(int missionSeq, int players, out INetTransport host)
     {
         var mesh = LoopbackTransport.Mesh(2, LoopbackConditions.Perfect, new Random(1));
-        var host = new NetLobby(mesh[0]);
-        host.Advertise(new SessionAdvertMessage(
+        var lobby = new NetLobby(mesh[0]);
+        lobby.Advertise(new SessionAdvertMessage(
             NetSessionKind.CampaignCoop, (byte)missionSeq, (byte)players, HostName));
         var door = new NetPlayFeature(
             (port, maxGuests, bind) => throw new InvalidOperationException("the aid's guest door hosts nothing"),
             (address, port) => mesh[1]);
         door.OpenJoin();
         door.Step(0.0);
+        host = mesh[0];
         return door;
     }
 

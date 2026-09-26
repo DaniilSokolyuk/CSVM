@@ -136,6 +136,45 @@ public sealed class NetSeatTests
         Assert.Throws<ArgumentException>(() => NetSeats.Validate(Roster(3, locals: 0)));
     }
 
+    [Fact]
+    public void ACoopFieldSeatsEachGuestInThePlaneItPickedUnderItsName()
+    {
+        var field = NetSeats.CoopField(1, new[] { "player_bhawk" }, new[] { (4, "player_fury", "Lucy"), (9, "player_warhawk", " ") });
+
+        Assert.Equal(new[] { 1, 4, 9 }, field.Select(s => s.PeerId));
+        Assert.Equal(new[] { true, false, false }, field.Select(s => s.IsLocal));
+
+        // A guest that sent a name is called by it. ABLE-TO-FAIL CONTROL: one that sent none falls
+        // back to its player number.
+        Assert.Equal(new[] { "P1", "Lucy", "P3" }, field.Select(s => s.Callsign));
+        Assert.Equal(new[] { "player_bhawk", "player_fury", "player_warhawk" }, field.Select(s => s.PlaneNode));
+
+        // ABLE-TO-FAIL CONTROL: the versus field flies every guest in one plane and names it by peer.
+        var versus = NetSeats.Field(1, new[] { "player_bhawk" }, new[] { 4 }, "player_bhawk");
+        Assert.Equal("guest 4", versus[1].Callsign);
+        Assert.Equal("player_bhawk", versus[1].PlaneNode);
+    }
+
+    [Fact]
+    public void ALocalOrdinalCountsOnlyTheSeatsFlownHere()
+    {
+        var guestSide = new[]
+        {
+            new NetSeat { SeatIndex = 0, PeerId = 1, Callsign = "P1" },
+            new NetSeat { SeatIndex = 1, PeerId = 2, IsLocal = true, Callsign = "P2" },
+            new NetSeat { SeatIndex = 2, PeerId = 3, Callsign = "P3" },
+            new NetSeat { SeatIndex = 3, PeerId = 2, IsLocal = true, Callsign = "P4" },
+        };
+
+        Assert.Equal(-1, NetSeats.LocalOrdinal(guestSide, 0));
+        Assert.Equal(0, NetSeats.LocalOrdinal(guestSide, 1));
+        Assert.Equal(1, NetSeats.LocalOrdinal(guestSide, 3));
+        Assert.Equal(-1, NetSeats.LocalOrdinal(guestSide, 4));
+
+        // ABLE-TO-FAIL CONTROL: offline there is no roster and every seat is its own ordinal.
+        Assert.Equal(3, NetSeats.LocalOrdinal(Array.Empty<NetSeat>(), 3));
+    }
+
     private static IReadOnlyList<NetSeat> Roster(int count, int locals) =>
         Enumerable.Range(0, count)
             .Select(i => new NetSeat { PeerId = i + 1, SeatIndex = i, IsLocal = i < locals, Callsign = $"P{i + 1}" })

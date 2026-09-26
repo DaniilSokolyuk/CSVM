@@ -86,8 +86,11 @@ public sealed record LaunchExit(
 
 /// <summary>A campaign mission launch: the seated profile's name, the <c>cm_sequence</c> story
 /// position, and one <see cref="MenuSeatChoice"/> per joined human in seat order. Seat 0 is the
-/// seated profile's pilot; later seats are guests whose records never touch the profile store.</summary>
+/// seated profile's pilot; later seats are guests whose records never touch the profile store.
+/// A co-op mission carries its wire on <paramref name="Net"/>, and a co-op guest's exit names no
+/// profile, since the campaign it flies is the host's.</summary>
 public sealed record CampaignMissionExit(
     string Profile,
     int MissionSeq,
-    IReadOnlyList<MenuSeatChoice> Seats) : MenuExit;
+    IReadOnlyList<MenuSeatChoice> Seats,
+    MenuNetLaunch? Net = null) : MenuExit;

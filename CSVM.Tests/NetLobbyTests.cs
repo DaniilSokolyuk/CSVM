@@ -36,19 +36,96 @@ public class NetLobbyTests
     }
 
     [Fact]
-    public void APeerConnectingLaterIsHandedTheCurrentAdvertBeforeAnythingElse()
+    public void APeerConnectingMidFlightIsHandedTheAdvertButNeverReachesTheBoundSession()
     {
         var host = new RecordingTransport(localPeer: 1);
         var lobby = new NetLobby(host);
         lobby.Advertise(new SessionAdvertMessage(NetSessionKind.Dogfight, SessionAdvertMessage.NoMission, 1, ""));
+        host.Connect(3);
         var session = new RecordingListener();
         lobby.Bind(session);
 
         host.Connect(7);
-        Assert.Single(host.Sent);
-        Assert.Equal(7, host.Sent[0].Peer);
-        Assert.True(SessionAdvertMessage.TryRead(host.Sent[0].Bytes, out _));
-        Assert.Equal(new[] { 7 }, session.Connected);
+        Assert.Equal(2, host.Sent.Count);
+        Assert.Equal(7, host.Sent[1].Peer);
+        Assert.True(SessionAdvertMessage.TryRead(host.Sent[1].Bytes, out _));
+
+        // The field was fixed when the session bound: the newcomer waits in the lobby.
+        Assert.Equal(new[] { 3 }, session.Connected);
+        Assert.Equal(new[] { 3 }, lobby.Peers);
+        Assert.Equal(new[] { 3, 7 }, lobby.AllPeers);
+        host.Deliver(7, Handshake(5));
+        Assert.Empty(session.Payloads);
+
+        // ABLE-TO-FAIL CONTROL: the peer present at the bind is the session's, payloads included.
+        host.Deliver(3, Handshake(6));
+        Assert.Single(session.Payloads);
+    }
+
+    [Fact]
+    public void UnbindFreesTheCarrierForTheNextFlightAndDropsWhatWasHeld()
+    {
+        var host = new RecordingTransport(localPeer: 1);
+        var lobby = new NetLobby(host);
+        host.Connect(3);
+        var first = new RecordingListener();
+        lobby.Bind(first);
+
+        // ABLE-TO-FAIL CONTROL: a second bind without an unbind is refused.
+        Assert.Throws<InvalidOperationException>(() => lobby.Bind(new RecordingListener()));
+
+        lobby.Unbind();
+        Assert.False(lobby.Bound);
+        host.Connect(7);
+        host.Deliver(3, Handshake(1));
+        Assert.Equal(1, lobby.Held);
+        lobby.DropHeld();
+        Assert.Equal(0, lobby.Held);
+        host.Deliver(7, Handshake(2));
+        lobby.Unbind();
+        Assert.Equal(0, lobby.Held);
+
+        var second = new RecordingListener();
+        lobby.Bind(second);
+        Assert.Equal(new[] { 3, 7 }, second.Connected);
+        Assert.Empty(second.Payloads);
+        Assert.Empty(first.Payloads);
+    }
+
+    [Fact]
+    public void CoopFlowsAndPicksAreKeptByTheLobbyAndNeverPassedOn()
+    {
+        var host = new RecordingTransport(localPeer: 1);
+        var lobby = new NetLobby(host);
+        host.Connect(3);
+        var session = new RecordingListener();
+        lobby.Bind(session);
+
+        var flow = new CoopFlowMessage(NetCoopScreen.FlightCheck, 4, 2, 1, 0b10, 2, 3, false, 0b100000, 0, 0);
+        host.Deliver(3, Bytes(flow));
+        host.Deliver(3, Bytes(flow));
+        host.Deliver(3, Bytes(new CoopPickMessage(2, true, 7)));
+
+        Assert.Equal(flow, lobby.Flow);
+        Assert.Equal(2, lobby.Flows);
+        Assert.Equal(new CoopPickMessage(2, true, 7), lobby.Picks[3]);
+
+        // A seat fit is kept by seat, and a later launch's word for the seat replaces it.
+        var fit = CoopFit.Of(new[] { 1 }, new[] { 4 });
+        host.Deliver(3, Bytes(new CoopSeatFitMessage(2, default)));
+        host.Deliver(3, Bytes(new CoopSeatFitMessage(2, fit)));
+        Assert.Equal(fit, lobby.SeatFits[2]);
+        Assert.Empty(session.Payloads);
+
+        // A departing guest's pick goes with it, and its leaving reaches the session it flew in.
+        host.Drop(3);
+        Assert.False(lobby.Picks.ContainsKey(3));
+        Assert.Equal(new[] { 3 }, session.Disconnected);
+
+        // ABLE-TO-FAIL CONTROL: a peer that never belonged to the session leaves it untold.
+        host.Connect(9);
+        host.Drop(9);
+        Assert.Equal(new[] { 3 }, session.Disconnected);
     }
 
     [Fact]
@@ -126,6 +203,21 @@ public class NetLobbyTests
         Assert.Equal(0, guest.DroppedUnknown);
     }
 
+    private static byte[] Handshake(ulong seed)
+    {
+        var bytes = new byte[HandshakeMessage.Size];
+        new HandshakeMessage(seed, 0.0, 1).Write(bytes);
+        return bytes;
+    }
+
+    private static byte[] Bytes<T>(in T message)
+        where T : struct, INetMessage<T>
+    {
+        var bytes = new byte[64];
+        int length = message.Write(bytes);
+        return bytes.AsSpan(0, length).ToArray();
+    }
+
     // A carrier that records its sends and connects a peer on demand.
     private sealed class RecordingTransport : INetTransport
     {
@@ -148,6 +240,14 @@ public class NetLobbyTests
             _listener?.OnPeerConnected(peer);
         }
 
+        public void Deliver(int peer, byte[] payload) => _listener?.OnPayload(peer, 0, payload);
+
+        public void Drop(int peer)
+        {
+            _peers.Remove(peer);
+            _listener?.OnPeerDisconnected(peer);
+        }
+
         public void Send(int peer, ReadOnlySpan<byte> payload, NetReliability reliability, int channel = 0) =>
             Sent.Add((peer, payload.ToArray()));
 
@@ -165,11 +265,11 @@ public class NetLobbyTests
 
         public List<byte[]> Payloads { get; } = new();
 
+        public List<int> Disconnected { get; } = new();
+
         public void OnPeerConnected(int peer) => Connected.Add(peer);
 
-        public void OnPeerDisconnected(int peer)
-        {
-        }
+        public void OnPeerDisconnected(int peer) => Disconnected.Add(peer);
 
         public void OnPayload(int peer, int channel, ReadOnlySpan<byte> payload) => Payloads.Add(payload.ToArray());
     }

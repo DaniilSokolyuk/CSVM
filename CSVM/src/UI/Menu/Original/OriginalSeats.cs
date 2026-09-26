@@ -43,6 +43,9 @@ public sealed partial class OriginalShell
     // A remote guest's chip spans two pitches, since its tag carries the network mark.
     private const int RemoteChipPitches = 2;
 
+    // A Ready chip's word is longer than the network mark and would wrap in two pitches.
+    private const int ReadyChipPitches = 3;
+
     // The aircraft column's scrollbar, remake chrome on a remake screen: a thin track down the
     // window's right edge with a thumb no shorter than a row, drawn only once the roster outruns
     // the window.
@@ -59,6 +62,12 @@ public sealed partial class OriginalShell
     // Instant Action paper needs a more opaque plate than a painted panel does to hold them.
     private const float CampaignStripGround = 0.45f;
     private const float CampaignStripGroundOnPaper = 0.72f;
+
+    // A Ready chip's cell, a green wash over the dark ground so the mark reads before its word.
+    private const byte CampaignStripReadyRed = 0x30;
+    private const byte CampaignStripReadyGreen = 0xB0;
+    private const byte CampaignStripReadyBlue = 0x40;
+    private const float CampaignStripReadyAlpha = 0.45f;
 
     private int _pickedVersusChapter = -1;
     private int _airframeTop;
@@ -166,6 +175,13 @@ public sealed partial class OriginalShell
         return seat.Confirmed ? $"{name}  READY" : seat.Locked ? name : "choosing";
     }
 
+    private static CampaignChip Chip(int seat, bool own, bool ready)
+    {
+        string mark = ready ? LaunchMenu.ReadyChipMark : own ? "" : LaunchMenu.RemoteChipMark;
+        int pitches = ready ? ReadyChipPitches : mark.Length > 0 ? RemoteChipPitches : 1;
+        return new CampaignChip(SplitScreen.PlayerTag(seat) + mark, seat, pitches, own, ready);
+    }
+
     // Built-in's chip row in the Original presentation's own space, drawn over a campaign board
     // only once a second seat has joined so a solo campaign shows the authored screen alone. No
     // device and no pick status: the campaign's picks are the flight field's, and the sortie
@@ -174,15 +190,20 @@ public sealed partial class OriginalShell
     // reads only over a ground dark enough to hold it.
     private BoardPanel? CampaignSeatPanel(bool onPaper = false)
     {
-        var seats = _setup.Seats;
-        int remote = _net is { IsCoopHost: true } net ? Math.Min(net.Peers, Math.Max(0, NetSeats.MaxPlayers - seats.Count)) : 0;
-        if (seats.Count + remote < 2)
+        var chips = CampaignChips();
+        if (chips.Count < 2)
         {
             return null;
         }
 
         int current = StripFocus;
-        float width = (seats.Count + (remote * RemoteChipPitches)) * SeatStrip.Pitch;
+        int pitches = 0;
+        foreach (var chip in chips)
+        {
+            pitches += chip.Pitches;
+        }
+
+        float width = pitches * SeatStrip.Pitch;
         float left = BoardFit.AuthoredWidth - SeatStrip.Inset - width;
         float top = SeatStrip.Inset - SeatStrip.Pad;
         var fills = new List<BoardFill>(2)
@@ -191,30 +212,67 @@ public sealed partial class OriginalShell
                 0, 0, 0, onPaper ? CampaignStripGroundOnPaper : CampaignStripGround),
         };
 
-        var lines = new List<BoardLine>(seats.Count);
-        for (int i = 0; i < seats.Count; i++)
+        var lines = new List<BoardLine>(chips.Count);
+        float x = left;
+        for (int i = 0; i < chips.Count; i++)
         {
-            float x = left + (i * SeatStrip.Pitch);
-            if (i == current)
+            var chip = chips[i];
+            float chipWidth = chip.Pitches * SeatStrip.Pitch;
+            if (chip.Ready)
             {
-                fills.Add(new BoardFill(x, top, SeatStrip.Pitch, SeatStrip.Ground,
+                fills.Add(new BoardFill(x, top, chipWidth, SeatStrip.Ground, CampaignStripReadyRed, CampaignStripReadyGreen,
+                    CampaignStripReadyBlue, CampaignStripReadyAlpha));
+            }
+            else if (chip.Local && chip.Seat == current)
+            {
+                fills.Add(new BoardFill(x, top, chipWidth, SeatStrip.Ground,
                     CampaignStripLit, CampaignStripLit, CampaignStripLit, CampaignStripLitAlpha));
             }
 
-            lines.Add(new BoardLine(SplitScreen.PlayerTag(i), x, SeatStrip.Inset, SeatStrip.Pitch,
-                SeatStrip.Font, SeatStrip.Ink(i), -1, false, BoardJustify.Center));
-        }
-
-        // A guest at another machine takes a seat and a chip but no pane, and its chip says so.
-        for (int i = 0; i < remote; i++)
-        {
-            int seat = seats.Count + i;
-            float x = left + ((seats.Count + (i * RemoteChipPitches)) * SeatStrip.Pitch);
-            lines.Add(new BoardLine(SplitScreen.PlayerTag(seat) + LaunchMenu.RemoteChipMark, x, SeatStrip.Inset,
-                RemoteChipPitches * SeatStrip.Pitch, SeatStrip.Font, SeatStrip.Ink(seat), -1, false, BoardJustify.Center));
+            lines.Add(new BoardLine(chip.Text, x, SeatStrip.Inset, chipWidth,
+                SeatStrip.Font, SeatStrip.Ink(chip.Seat), -1, false, BoardJustify.Center));
+            x += chipWidth;
         }
 
         return new BoardPanel(fills, Array.Empty<BoardPicture>(), lines);
+    }
+
+    // The campaign strip's chips, player 1 first. A human at another machine takes a chip but no
+    // pane, and its chip says so. In co-op a guest's chip says Ready instead once it is, as the
+    // original lobby's list marks a player. A co-op guest's own strip is the host's field.
+    private List<CampaignChip> CampaignChips()
+    {
+        var chips = new List<CampaignChip>(NetSeats.MaxPlayers);
+        if (Campaign.IsGuest && _net is { IsCoopGuest: true, CoopFlow: { } flow } guest)
+        {
+            for (int slot = 0; slot < Math.Min((int)flow.Humans, NetSeats.MaxPlayers); slot++)
+            {
+                bool own = slot == flow.Slot;
+                bool ready = own ? guest.CoopReady : flow.IsReady(slot);
+                chips.Add(Chip(slot, own, ready));
+            }
+
+            return chips;
+        }
+
+        var seats = _setup.Seats;
+        for (int i = 0; i < seats.Count; i++)
+        {
+            chips.Add(new CampaignChip(SplitScreen.PlayerTag(i), i, 1, true, false));
+        }
+
+        if (_net is { IsCoopHost: true } host)
+        {
+            foreach (var coop in host.CoopGuests)
+            {
+                if (chips.Count < NetSeats.MaxPlayers)
+                {
+                    chips.Add(Chip(chips.Count, false, coop.Ready));
+                }
+            }
+        }
+
+        return chips;
     }
 
     // The sortie screen's rows: the chapters and BACK in column 0, the aircraft window and FLY in
@@ -484,4 +542,8 @@ public sealed partial class OriginalShell
             lines.Add(new BoardLine("▼", markX, ListTop + (AirframeWindow * RowPitch), 16f, MarkSize, BoardInk.Detail, -1, false, BoardJustify.Center));
         }
     }
+
+    // One chip on the campaign strip: its words, its colour and how many pitches it spans. It also
+    // says whether it is a seat at this machine, and whether it is Ready.
+    private readonly record struct CampaignChip(string Text, int Seat, int Pitches, bool Local, bool Ready);
 }

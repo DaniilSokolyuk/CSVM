@@ -117,6 +117,8 @@ public partial class GameSession : Node3D
     private readonly List<FlightController> _aircraftScan = new();
     // scratch: the rigs' controllers alone, rebuilt on every HumanAircraft() call
     private readonly List<FlightController> _humanScan = new();
+    // The seats whose guest left the session mid-mission, each out of play for the rest of it.
+    private readonly HashSet<int> _seatsLeft = new();
     // scratch: rig camera positions for the edge extender
     private readonly List<Vector3> _focusPoints = new();
     // Pickable subtrees that live beside the world content rather than under it, the anim lab's
@@ -186,6 +188,7 @@ public partial class GameSession : Node3D
     // The whole match's seat roster, empty outside a network match. See Net.NetSeat. Not
     // readonly: a guest's roster arrives over the wire, between construction and the build.
     private IReadOnlyList<Net.NetSeat> _netSeats;
+    private Func<int, Flight.LoadoutChoice?>? _netSeatFit;
     // How this guest reads the host's session clock, null on a host and outside a match. Built
     // from the handshake, whose seed is already in _masterSeed by then.
     private Net.NetClockSlew? _netClock;
@@ -419,6 +422,7 @@ public partial class GameSession : Node3D
         _netSeats = ctx.NetSeats is { Count: > 0 } seats
             ? seats.OrderBy(s => s.SeatIndex).ToArray()
             : Array.Empty<Net.NetSeat>();
+        _netSeatFit = ctx.NetSeatFit;
         _netClock = ctx.NetHandshake is { } handshake
             ? new Net.NetClockSlew(handshake.HostClock)
             : null;
@@ -1087,6 +1091,17 @@ public partial class GameSession : Node3D
     /// there is no frame budget, rather than to the launch frame that needs one.</summary>
     internal bool StepOwedLoad() => _flightRoster?.BuildOrderedAirframe() ?? false;
 
+    /// <summary>A guest this host flies with walked out of the mission while its link stays up, as
+    /// its pause sheet's exit does. Its seats leave exactly as a dropped link's would. A peer that
+    /// already left is a no-op, so the caller may repeat this every step.</summary>
+    internal void TakeGuestLeft(int peer)
+    {
+        if (_net is { IsHost: true })
+        {
+            OnPeerLeft(peer);
+        }
+    }
+
     private static void CopyInstanceShaderParams(Node source, Node copy)
     {
         if (source is GeometryInstance3D from && copy is GeometryInstance3D to)
@@ -1278,9 +1293,10 @@ public partial class GameSession : Node3D
     private IReadOnlyList<FlightController> HumanAircraft()
     {
         _humanScan.Clear();
-        foreach (var rig in _seatRigs)
+        for (int seat = 0; seat < _seatRigs.Count; seat++)
         {
-            if (rig.Controller is { } c)
+            // A guest that left is no longer a human of this mission, so nothing waits on it.
+            if (_seatRigs[seat].Controller is { } c && !_seatsLeft.Contains(seat))
             {
                 _humanScan.Add(c);
             }
@@ -2480,7 +2496,7 @@ public partial class GameSession : Node3D
         // ⚠ No --det bypass on this arm, unlike the race arm below: a story mission has one
         // PLAYER_INIT, so the plain walk stacks the whole field on it
         // (docs/architecture.md, ## src/Session/StartGrid.cs).
-        bool coopCampaign = _spec.CampaignProfile != null && _rigs.Count > 1;
+        bool coopCampaign = _spec.CampaignProfile != null && _seatRigs.Count > 1;
         // ⚠ Choose the spawn placement ONCE, by picking an implementation here, never by a runtime
         // flag inside one: a --det race stays byte-identical because StartGrid is then not built at
         // all. It cannot move up beside new SpawnPicker, which runs before `race` is settled.
@@ -2556,6 +2572,7 @@ public partial class GameSession : Node3D
         {
             RigCount = _seatRigs.Count,
             NetSeats = _netSeats,
+            SeatFit = _netSeatFit,
             MixGain = mixGain,
             PadAssignment = padAssignment,
             PauseState = _pauseState!,
@@ -4379,7 +4396,13 @@ public partial class GameSession : Node3D
             WeaponIndex = weapon => _weaponWire.TryGetValue(weapon.Id, out int index) ? index : -1,
             WeaponAt = index => _weaponDefs is { } defs && index >= 0 && index < defs.All.Count ? defs.All[index] : null,
             Projectiles = _projectiles,
+            SeatLeft = TakeSeatLeft,
         }, world);
+        if (net.IsHost)
+        {
+            net.PeerLeft += OnPeerLeft;
+        }
+
         if (_zeppelins != null)
         {
             _netWorld.FollowZeppelins(_zeppelins);
@@ -4392,6 +4415,42 @@ public partial class GameSession : Node3D
         }
 
         Log.Info("core", $"net world: {(net.IsHost ? $"host (flying every AI and deciding every world hit, {world?.Destructibles.Count ?? 0} pool(s))" : "guest (AI replicated from the host, world pools spending nothing of their own)")}");
+    }
+
+    // A guest's link dropped on the host. Each seat it flew leaves the mission, here and on every
+    // other guest, and the mission goes on without it.
+    private void OnPeerLeft(int peer)
+    {
+        for (int seat = 0; seat < _netSeats.Count; seat++)
+        {
+            if (!_netSeats[seat].IsLocal && _netSeats[seat].PeerId == peer && TakeSeatLeft(seat))
+            {
+                _netWorld?.SendSeatLeft(seat);
+            }
+        }
+    }
+
+    // Takes one departed guest's seat out of play and names it in every pane's message stack.
+    private bool TakeSeatLeft(int seat)
+    {
+        if (seat < 0 || seat >= _netSeats.Count || _netSeats[seat].IsLocal || !_seatsLeft.Add(seat))
+        {
+            return false;
+        }
+
+        if (seat < _seatRigs.Count && _seatRigs[seat].Controller is { } plane && GodotObject.IsInstanceValid(plane))
+        {
+            plane.Inert = true;
+        }
+
+        string line = UI.Menu.CoopDoorText.Left(_netSeats[seat].Callsign);
+        foreach (var rig in _rigs)
+        {
+            rig.Controller?.MessageStack?.Post(line, HudMessages.Side.Neutral);
+        }
+
+        Log.Info("core", $"net: seat {seat} ({_netSeats[seat].Callsign}) left the mission");
+        return true;
     }
 
     // The match clock, its limits and its ending over the wire. The host is the only writer: it

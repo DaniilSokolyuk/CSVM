@@ -7,9 +7,10 @@ namespace CSVM.Net;
 /// A carrier's first listener, standing between a socket and the session that later binds it.
 /// A carrier binds once, and the menu reads the host's advert before any session exists. So this
 /// binds the carrier at once and is itself the transport the session binds.
-/// <see cref="Advertise"/> reaches every peer on connect and on each change. An arriving advert or
-/// close notice is kept here and never passed on. Any other payload is held until a listener
-/// binds, then replayed behind the roster announcement, and no engine type is named.
+/// <see cref="Advertise"/> reaches every peer on connect and on each change. An arriving advert,
+/// close notice, co-op flow, pick or seat fit is kept here and never passed on. Any other payload is
+/// held until a listener binds, then replayed behind the roster announcement. A bound session sees
+/// only the peers present when it bound, and <see cref="Unbind"/> frees the carrier for the next.
 /// </summary>
 public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
 {
@@ -20,7 +21,12 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
 
     private readonly INetTransport _inner;
     private readonly List<(int Peer, int Channel, byte[] Bytes)> _held = new();
-    private readonly byte[] _scratch = new byte[SessionAdvertMessage.Size];
+    private readonly List<int> _bound = new();
+    private readonly Dictionary<int, CoopPickMessage> _picks = new();
+    private readonly Dictionary<int, CoopFit> _seatFits = new();
+
+    // Wide enough for the widest lobby message with room to spare.
+    private readonly byte[] _scratch = new byte[CoopPickMessage.Size + SessionAdvertMessage.Size];
     private INetTransportListener? _listener;
     private SessionAdvertMessage? _advertising;
 
@@ -41,6 +47,21 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
     /// advert, so the notice reaches a guest board whether or not a session has bound.</summary>
     public SessionClosedMessage? Closed { get; private set; }
 
+    /// <summary>The co-op host's latest word about its boards, or null while none has arrived.
+    /// </summary>
+    public CoopFlowMessage? Flow { get; private set; }
+
+    /// <summary>How many co-op flows have arrived, so a board can tell a repeat from news.</summary>
+    public int Flows { get; private set; }
+
+    /// <summary>Each connected guest's latest co-op pick, by peer.</summary>
+    public IReadOnlyDictionary<int, CoopPickMessage> Picks => _picks;
+
+    /// <summary>Each seat's fit as the co-op host last launched it, by seat. A launch names every
+    /// seat again, so an entry from an earlier flight is always overwritten before it is read.
+    /// </summary>
+    public IReadOnlyDictionary<int, CoopFit> SeatFits => _seatFits;
+
     /// <summary>The advert this end hands out, or null while it hands out none.</summary>
     public SessionAdvertMessage? Advertising => _advertising;
 
@@ -54,8 +75,14 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
     /// <inheritdoc/>
     public int LocalPeer => _inner.LocalPeer;
 
-    /// <inheritdoc/>
-    public IReadOnlyList<int> Peers => _inner.Peers;
+    /// <summary>The peers a bound session flies with: those present when it bound and still
+    /// connected. Every connected peer while nothing is bound. A peer arriving mid-flight waits
+    /// here with the advert, since no guest joins a mission in flight.</summary>
+    public IReadOnlyList<int> Peers => _listener != null ? _bound : _inner.Peers;
+
+    /// <summary>Every connected peer, a bound session's or not: the count a host's advert reads.
+    /// </summary>
+    public IReadOnlyList<int> AllPeers => _inner.Peers;
 
     /// <summary>Hands <paramref name="advert"/> to every peer now and to every peer that connects
     /// later. Sent only when it differs from the last one, so a board may call this every frame.
@@ -80,11 +107,13 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
     {
         if (_listener != null)
         {
-            throw new InvalidOperationException("a lobby hands its carrier to one session only");
+            throw new InvalidOperationException("a lobby hands its carrier to one session at a time");
         }
 
         _listener = listener ?? throw new ArgumentNullException(nameof(listener));
-        foreach (int peer in new List<int>(_inner.Peers))
+        _bound.Clear();
+        _bound.AddRange(_inner.Peers);
+        foreach (int peer in new List<int>(_bound))
         {
             listener.OnPeerConnected(peer);
         }
@@ -97,9 +126,31 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
         }
     }
 
+    /// <summary>Takes the carrier back from the session that bound it, so the next flight can bind
+    /// it again. What was held for the old session is dropped with it.</summary>
+    public void Unbind()
+    {
+        _listener = null;
+        _bound.Clear();
+        _held.Clear();
+    }
+
+    /// <summary>Drops every held payload. A guest does this whenever the host names a board. What
+    /// trails in from a flight that ended is not the next flight's join answer.</summary>
+    public void DropHeld() => _held.Clear();
+
     /// <inheritdoc/>
     public void Send(int peer, ReadOnlySpan<byte> payload, NetReliability reliability, int channel = 0) =>
         _inner.Send(peer, payload, reliability, channel);
+
+    /// <summary>Sends one lobby message to <paramref name="peer"/>, outside any session.</summary>
+    /// <typeparam name="T">The message being sent.</typeparam>
+    public void Tell<T>(int peer, in T message)
+        where T : struct, INetMessage<T>
+    {
+        int length = message.Write(_scratch);
+        _inner.Send(peer, _scratch.AsSpan(0, length), T.Reliability);
+    }
 
     /// <inheritdoc/>
     public void Disconnect(int peer) => _inner.Disconnect(peer);
@@ -111,19 +162,20 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
     public void OnPeerConnected(int peer)
     {
         // The advert goes first, so a guest names the session before the join answer lands.
-        if (_advertising != null)
-        {
-            SendAdvert(peer);
-        }
-
-        _listener?.OnPeerConnected(peer);
+        // Nothing more: a bound session's field was fixed when it bound, so a newcomer never
+        // reaches it. An unbound lobby announces every peer when a session binds.
+        SendAdvert(peer);
     }
 
     /// <inheritdoc/>
     public void OnPeerDisconnected(int peer)
     {
         _held.RemoveAll(held => held.Peer == peer);
-        _listener?.OnPeerDisconnected(peer);
+        _picks.Remove(peer);
+        if (_listener != null && _bound.Remove(peer))
+        {
+            _listener.OnPeerDisconnected(peer);
+        }
     }
 
     /// <inheritdoc/>
@@ -141,9 +193,32 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
             return;
         }
 
+        if (CoopFlowMessage.TryRead(payload, out var flow))
+        {
+            Flow = flow;
+            Flows++;
+            return;
+        }
+
+        if (CoopPickMessage.TryRead(payload, out var pick))
+        {
+            _picks[peer] = pick;
+            return;
+        }
+
+        if (CoopSeatFitMessage.TryRead(payload, out var seatFit))
+        {
+            _seatFits[seatFit.Seat] = seatFit.Fit;
+            return;
+        }
+
         if (_listener != null)
         {
-            _listener.OnPayload(peer, channel, payload);
+            if (_bound.Contains(peer))
+            {
+                _listener.OnPayload(peer, channel, payload);
+            }
+
             return;
         }
 
@@ -158,11 +233,7 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
 
     /// <summary>Tells <paramref name="peer"/> why it is being sent away. The caller still hangs up;
     /// the notice only lets the guest's board name the reason.</summary>
-    public void Farewell(int peer, NetCloseReason reason)
-    {
-        int length = new SessionClosedMessage(reason).Write(_scratch);
-        _inner.Send(peer, _scratch.AsSpan(0, length), SessionClosedMessage.Reliability);
-    }
+    public void Farewell(int peer, NetCloseReason reason) => Tell(peer, new SessionClosedMessage(reason));
 
     /// <summary>Closes the carrier underneath, when it is one that can be closed.</summary>
     public void Dispose()
@@ -173,12 +244,9 @@ public sealed class NetLobby : INetTransport, INetTransportListener, IDisposable
 
     private void SendAdvert(int peer)
     {
-        if (_advertising is not { } advert)
+        if (_advertising is { } advert)
         {
-            return;
+            Tell(peer, advert);
         }
-
-        int length = advert.Write(_scratch);
-        _inner.Send(peer, _scratch.AsSpan(0, length), SessionAdvertMessage.Reliability);
     }
 }

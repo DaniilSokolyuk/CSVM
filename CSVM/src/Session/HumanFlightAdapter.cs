@@ -207,7 +207,8 @@ internal sealed class HumanFlightAdapter
             // reads every connected pad (what AssignPads returns for one player), empty reads none.
             // Coalescing flew a single player pad-dead; a remote seat takes empty, it reads none.
             PadDevices = remote ? Array.Empty<int>() : _human.PadAssignment?[pi],
-            UseKeyboard = !remote && pi == 0,
+            // The keyboard is this machine's first seat's, which on a guest is not seat 0.
+            UseKeyboard = !remote && MenuSeatOf(pi) == 0,
             MouseCaptureAllowed = !remote && _policy.MouseCaptureAllowed,
             // The whole messages.json table, not just the weapon rows: the pilot HUD words its
             // auto-land prompt out of the same file.
@@ -621,19 +622,35 @@ internal sealed class HumanFlightAdapter
     /// mission hands over carries its own fit (see <see cref="AirframeSwapRequest"/>).</summary>
     private LoadoutChoice? MenuFitFor(int pi, AirframeSwapRequest? swap)
     {
-        if (swap != null || _policy.LoadoutOverride != null || pi < 0 || pi >= _policy.MenuLoadouts.Count)
+        int menu = MenuSeatOf(pi);
+        if (swap != null || _policy.LoadoutOverride != null)
         {
             return null;
         }
 
-        return _policy.MenuLoadouts[pi];
+        // A seat flown elsewhere carries its own pilot's fit, so every machine builds it alike.
+        if (menu < 0)
+        {
+            return _human.SeatFit?.Invoke(pi);
+        }
+
+        if (menu >= _policy.MenuLoadouts.Count)
+        {
+            return null;
+        }
+
+        return _policy.MenuLoadouts[menu];
     }
 
     /// <summary>Pane <paramref name="pi"/>'s custom-built plane, or null to fly the stock
     /// airframe. Empty on every launch that did not come off the launchscreen, so the scripted
     /// paths (<c>--plane=</c>, <c>--det</c>) never see one.</summary>
     private Flight.CustomPlaneDef? CustomPlaneFor(int pi) =>
-        pi >= 0 && pi < _policy.MenuCustomPlanes.Count ? _policy.MenuCustomPlanes[pi] : null;
+        MenuSeatOf(pi) is int menu && menu >= 0 && menu < _policy.MenuCustomPlanes.Count ? _policy.MenuCustomPlanes[menu] : null;
+
+    // Which of this machine's menu seats flies seat pi. The menu lists only the local seats, and a
+    // guest's own seat stands behind its host's in the roster. A seat flown elsewhere has none.
+    private int MenuSeatOf(int pi) => Net.NetSeats.LocalOrdinal(_human.NetSeats, pi);
 
     public readonly record struct AssemblyState(int MeshInstances, string WhatSuffix,
         ulong PaintRngState, IReadOnlyList<FlightStart>? Starts);

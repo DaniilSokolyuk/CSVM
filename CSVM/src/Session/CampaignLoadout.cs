@@ -51,6 +51,67 @@ public static class CampaignLoadout
     public static LoadoutChoice For(CustomPlaneDef plane, StockLoadouts? stock) =>
         For(plane.Ammo, plane.Ordnance, stock);
 
+    /// <summary>The same reading of a fit a co-op pick or launch carried over the wire. It holds
+    /// the stored values of the plane it came from. A stock fit reads as null, so the seat flies
+    /// its base fit untouched.</summary>
+    public static LoadoutChoice? For(Net.CoopFit fit, StockLoadouts? stock)
+    {
+        if (fit.IsStock)
+        {
+            return null;
+        }
+
+        var ammo = new int[Net.CoopFit.GunSlots];
+        for (int slot = 0; slot < ammo.Length; slot++)
+        {
+            ammo[slot] = fit.AmmoAt(slot);
+        }
+
+        var ordnance = new int[Net.CoopFit.Cells];
+        for (int cell = 0; cell < ordnance.Length; cell++)
+        {
+            ordnance[cell] = fit.OrdnanceAt(cell);
+        }
+
+        return For(ammo, ordnance, stock);
+    }
+
+    /// <summary>A launch's fit as the stored values a co-op launch sends, the inverse of
+    /// <see cref="For(Net.CoopFit, StockLoadouts?)"/>. Only the picks a stored record can hold
+    /// travel: gun ammunition by slot and ordnance by wing cell. A physical pylon pick has no stored
+    /// value and stays on this machine.</summary>
+    public static Net.CoopFit FitOf(LoadoutChoice? fit, StockLoadouts? stock)
+    {
+        if (fit == null)
+        {
+            return default;
+        }
+
+        var ammo = new int[Net.CoopFit.GunSlots];
+        for (int slot = 0; slot < ammo.Length; slot++)
+        {
+            string? pick = fit.GunAmmoFor(slot + 1);
+            ammo[slot] = pick == LoadoutChoice.None ? NoGun : System.Array.IndexOf(AmmoNames, pick);
+        }
+
+        var ordnance = new int[Net.CoopFit.Cells];
+        var table = stock?.Options.PylonOrdnance;
+        for (int cell = 0; table != null && cell < ordnance.Length; cell++)
+        {
+            string? pick = fit.WingCellFor(cell);
+            for (int row = 0; pick != null && row < table.Count; row++)
+            {
+                if (table[row].Id == pick)
+                {
+                    ordnance[cell] = row + 1;
+                    break;
+                }
+            }
+        }
+
+        return Net.CoopFit.Of(ammo, ordnance);
+    }
+
     private static LoadoutChoice For(
         IReadOnlyList<int> ammoPicks, IReadOnlyList<int> ordnancePicks, StockLoadouts? stock)
     {

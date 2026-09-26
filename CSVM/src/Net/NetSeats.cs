@@ -133,6 +133,62 @@ public static class NetSeats
         return seats.ToArray();
     }
 
+    /// <summary>A co-op host's field: one seat per plane in <paramref name="localPlanes"/> flown
+    /// here, then one per guest flying the plane it picked, cut at <see cref="MaxPlayers"/>. A
+    /// guest is called by the player name its pick carried. A seat with no name is called by its
+    /// player number.</summary>
+    public static NetSeat[] CoopField(
+        int localPeer, IReadOnlyList<string> localPlanes, IReadOnlyList<(int Peer, string Plane, string Name)> guests)
+    {
+        ArgumentNullException.ThrowIfNull(localPlanes);
+        ArgumentNullException.ThrowIfNull(guests);
+        var seats = new List<NetSeat>(localPlanes.Count + guests.Count);
+        for (int i = 0; i < localPlanes.Count + guests.Count && seats.Count < MaxPlayers; i++)
+        {
+            bool local = i < localPlanes.Count;
+            string name = local ? "" : (guests[i - localPlanes.Count].Name ?? "").Trim();
+            seats.Add(new NetSeat
+            {
+                PeerId = local ? localPeer : guests[i - localPlanes.Count].Peer,
+                SeatIndex = seats.Count,
+                IsLocal = local,
+                Callsign = name.Length > 0
+                    ? name
+                    : $"P{(i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+                PlaneNode = local ? localPlanes[i] : guests[i - localPlanes.Count].Plane,
+            });
+        }
+
+        Validate(seats);
+        return seats.ToArray();
+    }
+
+    /// <summary>Which of this machine's own seats <paramref name="seat"/> is, counting from 0 in
+    /// seat order. That is its index into a list of local seats only, as a launch's menu picks are.
+    /// -1 for a seat flown elsewhere. With no roster every seat is local, so it is its own.
+    /// </summary>
+    public static int LocalOrdinal(IReadOnlyList<NetSeat> roster, int seat)
+    {
+        ArgumentNullException.ThrowIfNull(roster);
+        if (seat >= roster.Count)
+        {
+            return roster.Count == 0 ? seat : -1;
+        }
+
+        if (seat < 0 || !roster[seat].IsLocal)
+        {
+            return -1;
+        }
+
+        int ordinal = 0;
+        for (int i = 0; i < seat; i++)
+        {
+            ordinal += roster[i].IsLocal ? 1 : 0;
+        }
+
+        return ordinal;
+    }
+
     private static uint[] BuildTable()
     {
         var table = new uint[SeatCapacity];

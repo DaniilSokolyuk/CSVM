@@ -396,6 +396,195 @@ public class NetPlayFeatureTests
         Assert.False(door.Answering);
     }
 
+    [Fact]
+    public void AGuestsReadyCountsOnlyUnderTheHostsCurrentRoundOfPicks()
+    {
+        var (host, guest) = CoopPair(53);
+        host.ShowCoop(NetCoopScreen.FlightCheck, 3, 2, 0b10_0000);
+        Pump(host, guest);
+
+        // ABLE-TO-FAIL CONTROL: a seated guest that has not said Ready holds the launch.
+        Assert.False(host.CoopAllReady);
+        Assert.False(Assert.Single(host.CoopGuests).Ready);
+
+        guest.PickCoop(5, true);
+        Pump(host, guest);
+        var seated = Assert.Single(host.CoopGuests);
+        Assert.True(host.CoopAllReady);
+        Assert.Equal(1, seated.Slot);
+        Assert.Equal(5, seated.Airframe);
+        Assert.True(guest.CoopReady);
+        Assert.True(guest.CoopFlow!.Value.IsReady(1));
+
+        // Between the briefing and the flight check the round stands, and so does the Ready.
+        byte round = host.CoopEpoch;
+        host.ShowCoop(NetCoopScreen.Briefing, 3, 2, 0b10_0000);
+        Assert.Equal(round, host.CoopEpoch);
+        Assert.True(host.CoopAllReady);
+
+        // Backing out to the cabin starts a new round: the pick already there is stale at once.
+        host.ShowCoop(NetCoopScreen.Cabin, 3, 2, 0b10_0000);
+        Assert.NotEqual(round, host.CoopEpoch);
+        Assert.False(host.CoopAllReady);
+        Pump(host, guest);
+        Assert.False(guest.CoopPickReady);
+        Assert.False(guest.CoopReady);
+
+        // A new mission clears it the same way.
+        host.ShowCoop(NetCoopScreen.Briefing, 3, 2, 0b10_0000);
+        Pump(host, guest);
+        guest.PickCoop(5, true);
+        Pump(host, guest);
+        Assert.True(host.CoopAllReady);
+        host.ShowCoop(NetCoopScreen.Briefing, 4, 2, 0b10_0000);
+        Assert.False(host.CoopAllReady);
+    }
+
+    [Fact]
+    public void APickTheHostsHangarDoesNotHoldFliesTheStarter()
+    {
+        var (host, guest) = CoopPair(59);
+        host.ShowCoop(NetCoopScreen.FlightCheck, 3, 2, 0b1010_0000);
+        guest.PickCoop(9, true);
+        Pump(host, guest);
+        Assert.Equal(NetPlayFeature.StarterAirframe, Assert.Single(host.CoopGuests).Airframe);
+
+        // ABLE-TO-FAIL CONTROL: an airframe the hangar holds is flown as picked.
+        guest.PickCoop(7, true);
+        Pump(host, guest);
+        Assert.Equal(7, Assert.Single(host.CoopGuests).Airframe);
+    }
+
+    [Fact]
+    public void ACoopFlightIsAdvertisedInMissionAndAGuestLaunchesOnlyIntoANewOne()
+    {
+        var (host, guest) = CoopPair(61);
+        host.ShowCoop(NetCoopScreen.FlightCheck, 3, 2, 0b10_0000);
+        guest.PickCoop(5, true);
+        Pump(host, guest);
+
+        // ABLE-TO-FAIL CONTROL: a door on its boards is not in a mission.
+        Assert.NotEqual(NetSessionStatus.InMission, host.Advertising!.Value.Status);
+        Assert.False(guest.CoopLaunchDue);
+
+        var launch = host.BuildLaunch()!;
+        var roster = NetSeats.Field(launch.Transport.LocalPeer, new[] { "plane" }, launch.Transport.Peers, "plane");
+        var session = NetSession.Host(launch.Transport, roster, seed: 5);
+        Assert.Equal(NetCoopScreen.InMission, host.CoopScreen);
+        host.Step(0.016);
+        Assert.Equal(NetSessionStatus.InMission, host.Advertising!.Value.Status);
+
+        guest.Step(0.016);
+        Assert.True(guest.CoopLaunchDue);
+        Assert.NotNull(guest.BuildLaunch());
+        Assert.False(guest.CoopLaunchDue);
+
+        // Back from the flight while the host still flies it: what trails in opens nothing.
+        Assert.True(guest.Reclaim());
+        session.Broadcast(new ClockPingMessage(1f, 2f), NetChannels.Events);
+        guest.Step(0.016);
+        Assert.False(guest.CoopLaunchDue);
+
+        // The host's next flight comes after a debrief, and that one seats the guest again.
+        Assert.True(host.Reclaim());
+        host.ShowCoop(NetCoopScreen.Debrief, 3, 3, 0b10_0000);
+        Pump(host, guest);
+        Assert.NotEqual(NetSessionStatus.InMission, host.Advertising!.Value.Status);
+        host.ShowCoop(NetCoopScreen.InMission, 3, 3, 0b10_0000);
+        Pump(host, guest);
+        _ = NetSession.Host(launch.Transport, roster, seed: 6);
+        guest.Step(0.016);
+        Assert.True(guest.CoopLaunchDue);
+    }
+
+    [Fact]
+    public void AGuestsPickCarriesItsFitAndNameAndTheHostsLaunchTellsItEverySeatsFit()
+    {
+        var (host, guest) = CoopPair(67);
+        host.ShowCoop(NetCoopScreen.FlightCheck, 3, 2, 0b10_0000);
+        var fit = CoopFit.Of(new[] { 3, 1 }, new[] { 0, 7 });
+        guest.PickCoop(5, true, fit);
+        Pump(host, guest);
+
+        // ABLE-TO-FAIL CONTROL: a guest with no player name is seated with none.
+        Assert.Equal(string.Empty, Assert.Single(host.CoopGuests).Name);
+        guest.PlayerName = "Lucy";
+        Pump(host, guest);
+        var seated = Assert.Single(host.CoopGuests);
+        Assert.Equal(fit, seated.Fit);
+        Assert.Equal("Lucy", seated.Name);
+
+        // ABLE-TO-FAIL CONTROL: nothing names a seat's fit to the guest before the launch.
+        Assert.Empty(guest.CoopSeatFits);
+        var launch = host.BuildLaunch()!;
+        var hostFit = CoopFit.Of(new[] { 2 }, null);
+        host.TellSeatFits(new[] { hostFit, seated.Fit });
+        launch.Transport.Step(0.016);
+        guest.Step(0.016);
+        Assert.Equal(hostFit, guest.CoopSeatFits[0]);
+        Assert.Equal(fit, guest.CoopSeatFits[1]);
+    }
+
+    [Fact]
+    public void AGuestWalkingOutOfItsFlightIsHeardAtOnceAndOnlyForThatFlight()
+    {
+        var (host, guest) = CoopPair(71);
+        host.ShowCoop(NetCoopScreen.FlightCheck, 3, 2, 0b10_0000);
+        guest.PickCoop(5, true);
+        Pump(host, guest);
+
+        // ABLE-TO-FAIL CONTROL: a guest on its boards has no flight to leave.
+        guest.LeaveCoopMission();
+        Pump(host, guest);
+        Assert.False(Assert.Single(host.CoopGuests).Left);
+
+        var launch = host.BuildLaunch()!;
+        for (int frame = 0; frame < 3; frame++)
+        {
+            launch.Transport.Step(0.016);
+            host.Step(0.016);
+            guest.Step(0.016);
+        }
+
+        Assert.False(Assert.Single(host.CoopGuests).Left);
+        guest.LeaveCoopMission();
+        launch.Transport.Step(0.016);
+        host.Step(0.016);
+        Assert.True(Assert.Single(host.CoopGuests).Left);
+
+        // The mark belongs to the flight: the host's debrief is a new round and the guest is back.
+        Assert.True(host.Reclaim());
+        host.ShowCoop(NetCoopScreen.Debrief, 3, 3, 0b10_0000);
+        Assert.False(Assert.Single(host.CoopGuests).Left);
+        Pump(host, guest);
+        host.ShowCoop(NetCoopScreen.InMission, 3, 3, 0b10_0000);
+        Pump(host, guest);
+        Assert.False(Assert.Single(host.CoopGuests).Left);
+    }
+
+    // A co-op host with one local seat and one guest seated behind it, both on their boards.
+    private static (NetPlayFeature Host, NetPlayFeature Guest) CoopPair(int seed)
+    {
+        var mesh = LoopbackTransport.Mesh(2, Clean, new Random(seed));
+        var host = new NetPlayFeature((_, _, _) => mesh[0], (_, _) => mesh[0]);
+        var guest = new NetPlayFeature((_, _, _) => mesh[1], (_, _) => mesh[1]);
+        host.OpenCoopHost(NetSeats.MaxPlayers - 1);
+        host.Offer(3, "Zachary", 1);
+        guest.OpenJoin();
+        Pump(host, guest);
+        Assert.True(guest.IsCoopGuest);
+        return (host, guest);
+    }
+
+    private static void Pump(NetPlayFeature host, NetPlayFeature guest)
+    {
+        for (int frame = 0; frame < 3; frame++)
+        {
+            host.Step(0.016);
+            guest.Step(0.016);
+        }
+    }
+
     // A door over a one-peer mesh with no router behind it, which is every case that does not
     // care what the carrier does.
     private static NetPlayFeature Door()

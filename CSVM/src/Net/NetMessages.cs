@@ -86,6 +86,41 @@ public enum NetMessageType : ushort
     /// <summary>A host's word that it is sending a guest away: the session closed, or it is full.
     /// </summary>
     SessionClosed = 0x004F,
+
+    /// <summary>A co-op host's screen as a guest follows it: which board, which mission, who is
+    /// Ready, and the shared result once a mission ends.</summary>
+    CoopFlow = 0x0050,
+
+    /// <summary>A co-op guest's answer on the flight check. It carries the airframe, fit and name,
+    /// whether the guest is Ready, and whether it left the flight.</summary>
+    CoopPick = 0x0051,
+
+    /// <summary>One seat's ammunition and ordnance, sent by a co-op host to every guest at a launch.
+    /// </summary>
+    CoopSeatFit = 0x0052,
+}
+
+/// <summary>Which board a co-op host stands on, the screen a <see cref="CoopFlowMessage"/> names.
+/// </summary>
+public enum NetCoopScreen : byte
+{
+    /// <summary>A screen this build does not know.</summary>
+    Unknown = 0,
+
+    /// <summary>The cabin, or any board of the host's own past it.</summary>
+    Cabin = 1,
+
+    /// <summary>The mission briefing.</summary>
+    Briefing = 2,
+
+    /// <summary>The flight check and its plane and ammo screens.</summary>
+    FlightCheck = 3,
+
+    /// <summary>The host is flying the mission.</summary>
+    InMission = 4,
+
+    /// <summary>The mission ended and the host stands on its debrief.</summary>
+    Debrief = 5,
 }
 
 /// <summary>Where a session a host advertises stands, the games list's Status column.</summary>
@@ -172,6 +207,10 @@ public enum NetWorldEvent : ushort
     /// admission ordinal and the argument 1 for in play, 0 for deactivated. A cutscene park is not
     /// sent, since each end's own cutscene parks its own copy.</summary>
     AiPresence = 5,
+
+    /// <summary>A guest's link dropped mid-mission and its aeroplane left the field. The subject is
+    /// that guest's seat.</summary>
+    SeatLeft = 6,
 }
 
 /// <summary>Why a pilot died, the original's own cause word
@@ -1163,6 +1202,9 @@ public static class NetMessage
         NetMessageType.SurfaceVehicleState => SurfaceVehicleStateMessage.Reliability,
         NetMessageType.PositionalStart => PositionalStartMessage.Reliability,
         NetMessageType.SessionClosed => SessionClosedMessage.Reliability,
+        NetMessageType.CoopFlow => CoopFlowMessage.Reliability,
+        NetMessageType.CoopPick => CoopPickMessage.Reliability,
+        NetMessageType.CoopSeatFit => CoopSeatFitMessage.Reliability,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "no such message type"),
     };
 

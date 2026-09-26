@@ -185,7 +185,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 21. ☑ The host-owned mission director: objective graph transitions, cutscene codes and wingman spawns as events
 22. ☑ Host-owned AI and world: aircraft, zeppelins, turrets, generators, vehicles and destructibles as spawn, state and death events
 23. ☑ Guests as the human field: `CampaignHumanField` and the objective rules see remote humans, the scripted P1 stays the host
-24. ☐ The co-op session flow: guests follow the host's cabin and briefing, pick from the host's hangar, Ready before launch, and share the debrief
+24. ☑ The co-op session flow: guests follow the host's cabin and briefing, pick from the host's hangar, Ready before launch, and share the debrief
 25. ☑ The co-op door: the campaign flow opens to the network, guests join from the Network board and wait for the host's launch
 26. ☑ Host-decided positional starts and the airframe swap: landing approaches, the ladder switch, `PlayerRange` and codes 965 to 967 for a guest
 
@@ -1424,7 +1424,109 @@ and asserts the host's read arrives one buffer delay (within a sample and a step
   last buffered pose. The guest's replicated graph takes Lost from the host, never from its own
   wreck.
 
-## C24 ☐ The co-op session flow: guests follow the host's cabin and briefing, pick from the host's hangar, Ready before launch, and share the debrief
+## C24 ☑ The co-op session flow: guests follow the host's cabin and briefing, pick from the host's hangar, Ready before launch, and share the debrief
+
+**Landed.**
+- `CSVM/src/Net/NetCoopMessages.cs` (new): `CoopFlowMessage` at `0x50` (24 bytes, reliable, host to
+  each guest: screen, mission, round, the guest's player number, Ready mask, humans, host progress,
+  won flag, hangar airframe mask, the guest's local seats, objectives and cash) and
+  `CoopPickMessage` at `0x51` (36 bytes, reliable, guest to host: round, Ready and Left flags,
+  airframe, the ammo and ordnance as a `CoopFit`, the guest's player name), and
+  `CoopSeatFitMessage` at `0x52` (20 bytes, reliable, host to every guest before the session
+  opener: one seat's `CoopFit`). `NetMessages.cs` gains the type words, `NetCoopScreen`, and
+  `NetWorldEvent.SeatLeft` (6). Layout: `docs/org/multiplayer-messages.md`, "Campaign co-op boards".
+- `NetLobby.cs` keeps all three in the lobby: a host's latest pick per guest, a guest's latest flow
+  and `SeatFits`. `NetSession.cs` raises `PeerLeft`. `NetSeats.cs` gains `CoopField` (each guest
+  seated in the airframe it picked, under its player number, named by its own player name with
+  `P{n}` only when it has none) and `LocalOrdinal`.
+- **The guest's ammo flies.** `CampaignFeature.GuestCoopFit` packs the guest's pick, and
+  `CampaignLoadout.For`/`FitOf` convert between a `CoopFit` and a `LoadoutChoice`. At the launch the
+  host's `Launcher.CoopLaunchField` keeps every seat's fit, `NetPlayFeature.TellSeatFits` sends them
+  ahead of the opener, and every machine resolves a seat through `Launcher.CoopSeatFitFor` into
+  `LauncherContext.NetSeatFit`, `HumanRosterBindings.SeatFit` and `HumanFlightAdapter.MenuFitFor`.
+- **A guest's walk-out.** Leaving through the pause sheet runs `NetPlayFeature.LeaveCoopMission`,
+  a pick with the Left flag under the current round; the host's `TickCoopFlight` hands it to
+  `GameSession.TakeGuestLeft`, which retires the seat and sends `SeatLeft` with the link still up.
+- **The co-op start grid.** `GameSession` chose `StartGrid` for a campaign by its LOCAL pane count,
+  so a networked field of one pane per machine spawned every human on one `PLAYER_INIT` and they
+  collided at once; it now keys on `_seatRigs`, the whole field.
+- `CSVM/src/Testing/NetCoopMissionSuites.cs` (new): suite `net-coop-mission` (weight 19.4), a host
+  and two guests over a lossy loopback on C3/M01. It checks the abreast start, the names, each
+  seat's fit on every machine, that a guest session holds no store, a guest's walk-out, the host's
+  loss on the guest's debrief, Retry back to the briefing with every Ready cleared, and a dropped
+  host failing the guest with "Host left the game". The user's profile directory is compared
+  before and after. Every claim has an able-to-fail control.
+- `NetPlayFeature.cs`: the host's `ShowCoop` and `ShowCoopResult` send each guest the boards and
+  the result, bumping the round on a mission change or on any screen change other than between the
+  briefing and the check; `CoopGuests` and `CoopAllReady` count only picks under the current round;
+  a guest's `PickCoop`, `CoopReady` and `CoopLaunchDue`. A launched host advertises `InMission`,
+  and `Reclaim` takes the wire back after the flight.
+- `CampaignFeature.cs`: `OpenGuest` opens a profile-free guest campaign over the host's stock
+  hangar (`HangarAirframes`, always with the starter), `FollowHost` moves it only on the host's
+  word, `GuestAirframe` and `RecordGuestResult`; `BuildExit` gives a guest profile `""` and one
+  seat, and `GrantMissionAircraft` and every save are no-ops on a guest.
+- `Launcher.cs`, `CampaignDirector.cs`, `GameSession.cs`, `NetWorldLink.cs`,
+  `HumanFlightAdapter.cs`: a guest launch on `CoopLaunchDue` with a null profile store, the host's
+  door stepped through the flight (`TickCoopFlight`) and reclaimed at the end, and a guest dropped
+  mid-mission sent as `SeatLeft` so every end removes its aeroplane and shows "<name> left".
+  `MenuReturnDestination.CoopGuestReturn` brings a guest back onto the host's boards.
+- Original screens: `OriginalCampaignScreen.cs` follows the host's board on a guest, greys every
+  row that is not the guest's (the strip's disabled frame) and the host's FLY MISSION while a guest
+  is not Ready; a guest's own controls are plane, ammo and Ready on its check. `OriginalSeats.cs`
+  draws a Ready chip, `OriginalShell.cs` and `OriginalConnectionScreen.cs` take a joined guest
+  onto the host's cabin and back to the Connection page when the link ends. `CoopDoorText.cs`
+  gains the guest band, the leave question and "<name> left".
+- Aids `campaign-coop-guest[:board]` and `campaign-coop-ready` (`NetDoorAid.CoopGuest`,
+  `AnswerReady`); suite `menu-original-coop-flow`; `menu-original-connection` now lands the join on
+  the host's cabin.
+- F51's two leftovers are wired: `InMission` is advertised while the host flies, and the guest
+  chips carry Ready marks.
+- **The Continue, Retry and Quit mapping onto the scrapbook.** Retry is REPLAY MISSION, which takes
+  host and guests to the briefing and then through selection and Ready again. Continue and Quit to
+  cabin are both RETURN TO CABIN, and the cabin's NEXT MISSION is the forward step. VIEW ALL
+  MISSIONS and the page turns are the host's; every one of these is greyed on a guest, which
+  follows.
+
+**Judgement calls.**
+- Greying uses the plaque strip's disabled frame only in co-op states, so no solo board changes.
+  EXPORT stays dead for a guest because it writes a file; the paper button's disabled frame
+  matches its normal frame, so it is not visibly greyed.
+- A launched host's menu stops naming the board (`StepCoop` returns early while the door is
+  released), so the hidden menu cannot overwrite `InMission`.
+- A guest's scrapbook reads a transient record built from the host's objectives and cash plus the
+  guest's own attempt; nothing reaches a store.
+- The Ready chip spans three pitches, since "Ready" wraps in the network mark's two.
+- The guest's store in `menu-original-coop-flow` lives outside `CampaignAidProfiles.Directory`,
+  which every seeded aid store wipes.
+- The walk-out is a lobby-level flag on the pick rather than a new message, so it rides the channel
+  the host already reads between boards and during the flight.
+- A guest's name is the last pilot it flew, read and never written; with none it is `P{n}`. The
+  host's own local seats keep `P{n}`.
+- A fit travels as the ammo per gun slot and the ordnance per cell; a pick made by physical pylon
+  does not travel, since which pylon a cell names depends on what the airframe hangs.
+- A guest that has flown nothing holds no attempt time, so its scrapbook offers no REPLAY row at
+  all rather than a greyed one.
+- `net-coop-mission` gives its host profile `""` too, so the suite writes nothing to the user's
+  store; the guest's store claim is checked against a temporary store as its control.
+
+**Verified.** The complete battery on the merged tree (C24 over F51 and everything before it)
+passed: units 4998/0/2, engine 401 (with `menu-original-coop-flow` and `net-coop-mission`), goldens
+19 hash-identical. The user approved the guest cabin, the plane and ammo pick, the Ready marks and
+the shared debrief at the look. Owed: one mission end to end on two machines at the controls.
+
+**Owed.**
+- A guest's extra local seats do not fly: `CampaignFeature.BuildExit` gives a guest
+  `Math.Min(1, pads)` seats. Flying them needs a pick per local seat (airframe, fit, name and
+  Ready), `NetSeats.CoopField` seating several per peer, `NetSession.LocalSeat` and the guest's
+  `LocalOrdinal` and menu seats generalised to several, and `Admit` counting a guest's locals
+  against the co-op human limit. Not a small change; filed as `BL-1044`.
+- Once a guest has left, the loss log reads "seat 3 of 2 is lost", since it compares the seat
+  number with the reduced count. Cosmetic.
+- The guest's plane and ammo pick is driven through the feature in the menu suite, not through the
+  selection screen's rows.
+- At the controls: two machines, one mission end to end.
+
+**Original approach (kept for reference).**
 
 **Goal.** A guest who joined a co-op host through F51's doors follows the host from the cabin into
 the same briefing, picks a plane and ammo from the host's hangar, presses Ready, flies the mission
