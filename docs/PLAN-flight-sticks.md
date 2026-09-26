@@ -678,8 +678,10 @@ battery ran 4942 passed, 2 skipped; the engine suites `exhaust-smoke`, `exhaust-
 `flight-input-handback`, `look-stick` and `target-input` passed (12/12, engine errors clean).
 
 **Left open.** Flight feel at the controls is the user's to judge, and no engine suite flies a
-stick, since no headless source produces one. A stick bound to the look-aim rows still bends
-through `StickCurve`, because the camera reads `_padActions`. `AnalogAxes.cs` and `StickSplit.cs`
+stick, since no headless source produces one. A stick bound to the look-aim rows bends through
+`StickCurve`, because the camera reads `_padActions`. That is kept on purpose: a VKB's mini-stick
+is a gamepad thumbstick in all but name, and the pad curve reads well on it at the controls.
+`AnalogAxes.cs` and `StickSplit.cs`
 have no `.uid` yet. Two stick lever bindings on different models where only one is unplugged still
 read the absent one as centred, since presence is decided per source, not per binding.
 
