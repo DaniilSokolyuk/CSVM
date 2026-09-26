@@ -881,6 +881,9 @@ internal static class InstantActionSuites
         string missionZrdr = SessionPaths.MissionZrdr(ctx.DataRoot, "C1", "IA1");
         ctx.RequireData(missionZrdr, $"C1/IA1 zrdr");
         ctx.RequireData(ctx.MessagesPath, $"messages.json");
+        // The stunt runs fly C1/IA1's markers in the host's one physics space. A cached collidable
+        // C1 world's scenery would stand there too and crash them mid-hold.
+        ctx.EvictCollidableWorlds();
 
         var planesGamez = GameZ.Load(ctx.PlanesGamezPath);
         var weaponDefs = WeaponDefs.Load(ctx.ZrdrPath, null);
