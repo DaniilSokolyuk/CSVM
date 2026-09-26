@@ -14,7 +14,10 @@ them round-trips byte-identically in the fork.** If you only need the practical 
   case by `RofTree`, whatever case the install or the data spells it, and every reader maps a
   name the same way, so a case-sensitive disk finds each file with no directory scan. The files
   the extraction authors (`menu_layout.json`, `ui_strings.json`, `_crimptch/`) keep their own
-  names. A player runs it
+  names. The ZBD half's outputs take `ZbdTree`'s case, the retail install's own: chapter and
+  mission folders upper case (`C1B/M03`), archive names lower case (`zrdr.zip`,
+  `rtexture12.zip`). The campaign sequence names the folders `c1b`/`m03`, so every chapter and
+  mission path resolves through `SessionPaths`, which maps it the same way. A player runs it
   from the in-game Extract screen, a developer with `Extract.ps1` (repo root) or the headless
   `--extract=<install>` flag ([../tooling.md](../tooling.md), [../cli.md](../cli.md)).
 - The extractor runs the **fork** build (`tools/mech3ax/target/release/unzbd.exe`),

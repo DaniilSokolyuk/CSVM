@@ -169,6 +169,29 @@ Tests: `RofExtractionTests.EveryGameNamedPathIsWrittenUpperCase`,
 `MoviesAreCopiedUpperCase...`, `OriginalManifestTests.TheDatasOwnSpellingResolvesToTheNameTheExtractionWrote`,
 each comparing names on disk ordinally, which fail on the old code.
 
+**One case for the chapter trees (found on the Deck).** On Linux a campaign mission loaded and flew,
+but its load screen showed only the bar (`Loading.zrd has no sheet for c3/m01`) and its briefing
+never played. The ZBD half writes the install's own spelling, chapter and mission folders upper case
+(`C3/M01/zrdr.zip`), while `CampaignMission.ChapterFolder`/`MissionFolder` are `c3`/`m01`. The flight
+path worked because `CampaignDirector` upper-cases both before launching; the load sheet, the pause
+aid, the flight-check objectives note and `CampaignBriefing` passed them verbatim to
+`SessionPaths.MissionZrdr`. In the briefing the missing `objectives.json` threw after the state was
+read, so the catch left no reveal and no narration, and nothing was logged. `Extraction/ZbdTree.cs`
+now fixes the case the retail install already uses: folders upper, file names lower.
+`ZbdPlan.OutputRelativePath` writes through it and every chapter path reads through it
+(`SessionPaths`' four chapter and mission paths, `AnimProgram.ArchivePaths`, the probes' mission
+discovery), so a caller may name a chapter in any case. No stamp bump and no re-extract: Windows
+ignores case, and an existing Linux tree extracted from the retail install already has this layout.
+Entries inside a zip are unchanged, since `Zrdr` looks them up ordinally on every platform, and the
+`cloud1.tif`/`cloud2.tif` warning on C3 is the data's own (Windows logs it too). Verified in WSL on
+an exported tarball, headless `--run-tests`: on the old B11 tree the old build fails `load-sheet`
+(`FAIL c3/m01 resolves loading_c61` and the other campaign missions), `campaign-briefing-note` (all 24
+objectives notes empty) and `menu-original-campaign` (no briefing for seq 0); the new build passes all
+three on the same tree and on a fresh `--extract`, which writes no chapter folder with a lower-case
+letter. Tests: `ZbdExtractionTests.TheOutputTakesUpperCaseFoldersALowerCaseNameAndItsExtension`, the
+runner test's on-disk names, `SessionPathsTests.ALowerCaseChapterAndMissionMapToTheCaseTheExtractionWrites`
+and `EveryCampaignMissionResolvesToWhereTheExtractionWritesIt`, which fail on the old code.
+
 **Verified.** The full battery passes on the merged branch: units 4,886 (3 data skips), engine 383 of 383, 19 golden shots hash-identical.
 
 Output comparison, run by the item agent: `ExtractRof.ps1 -Source <install>\GOSDATA\ASSETS -Dest

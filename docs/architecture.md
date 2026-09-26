@@ -740,6 +740,7 @@ in [`formats/extraction.md`](formats/extraction.md).
 - `src/Extraction/MenuLayoutDecoder.cs`, `LAYOUT.CSV`, `SCRAPBOOK.CSV`, `RESOURCE.H` and the GUI scripts decoded into `menu_layout.json`.
 - `src/Extraction/ZbdExtraction.cs`, the ZBD half of extraction: every archive through unzbd, then `messages.json`, the optional unzip and the stamp, off the main thread.
 - `src/Extraction/ZbdPlan.cs`, the ZBD half's pure rules: the archive-name mode map, output naming, the up-to-date and unzip rules, and the stderr notes.
+- `src/Extraction/ZbdTree.cs`, the one case the ZBD half writes (folders upper, file names lower) and the chapter and mission path mapping its writer and readers share.
 - `src/Extraction/ZbdProgress.cs`, the ZBD runner's options, per-step progress report with its console lines, and result totals with the closing summary.
 - `src/Extraction/UnzbdTool.cs`, the bundled unzbd as a child process: its platform file name and release path, one run with both streams drained, and its identity for the stamp.
 - `src/Extraction/ExtractionRun.cs`, the whole extraction in order (install check, ZBD half, `.rof` half, stamps) with one progress stream, cancel, summary and exit code, for `--extract` and the extraction screen.
@@ -748,7 +749,7 @@ in [`formats/extraction.md`](formats/extraction.md).
 ### Session root and tests
 
 - `src/Pads.cs`, single owner of "which gamepads exist": the phantom-device policy, the launch-time roster split, the focus gate and `--no-pads`.
-- `src/SessionPaths.cs`, resolves the extracted-data paths (per-chapter gamez/texture/zrdr, per-mission zrdr) under a data root, unpacked folder or `.zip`.
+- `src/SessionPaths.cs`, resolves the extracted-data paths (per-chapter gamez/texture/zrdr, per-mission zrdr) under a data root in `ZbdTree`'s case, unpacked folder or `.zip`.
 - `src/SessionSpec.cs`, the launch args as one immutable, engine-free value: `Parse` parses **and** resolves, plus the pure arg parsers the tests reach.
 
 - `CSVM.Tests/`, the xUnit project (`dotnet test`): engine-free reader units on hand-authored fixtures + `extracted/` golden counts, skipped when absent; plus eight former in-engine suites moved here as `Probes.*`/plain-static/`StuntMission`/`GaugeCluster` facts.

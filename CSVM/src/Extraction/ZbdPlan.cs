@@ -51,10 +51,11 @@ public static class ZbdPlan
     }
 
     /// <summary>The output path, relative to the extraction root, for the archive at
-    /// <paramref name="relativeZbd"/> under the install's <c>ZBD</c> folder. The folders and the
-    /// base name keep the install's spelling; only the extension changes.</summary>
+    /// <paramref name="relativeZbd"/> under the install's <c>ZBD</c> folder. It takes
+    /// <see cref="ZbdTree"/>'s case whatever the install's spelling, with the extension swapped.</summary>
     public static string OutputRelativePath(string relativeZbd, ZbdMode mode) =>
-        Path.ChangeExtension(relativeZbd, mode.Extension);
+        Path.ChangeExtension(ZbdTree.Canonical(relativeZbd), mode.Extension)
+            .Replace('/', Path.DirectorySeparatorChar);
 
     /// <summary>Whether an output written at <paramref name="outputWrite"/> (null when it does not
     /// exist) is up to date against a source written at <paramref name="sourceWrite"/>. An output

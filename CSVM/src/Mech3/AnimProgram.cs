@@ -158,8 +158,8 @@ public sealed class AnimProgram
                 Path.GetFileNameWithoutExtension(zipPath));
             return Directory.Exists(dir) ? dir : zipPath;
         }
-        return (Prefer(Path.Combine(repoRoot, "extracted", chapter, "cam_anim.zip")),
-                Prefer(Path.Combine(repoRoot, "extracted", chapter, mission, "mis_anim.zip")));
+        return (Prefer(Extraction.ZbdTree.Under(repoRoot, chapter + "/cam_anim.zip")),
+                Prefer(Extraction.ZbdTree.Under(repoRoot, $"{chapter}/{mission}/mis_anim.zip")));
     }
 
     /// <summary>Definitions an ANIMATION_NAME refers to (startanims entries, CALL_ANIMATION

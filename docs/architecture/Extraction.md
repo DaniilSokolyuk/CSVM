@@ -93,7 +93,7 @@ at runtime.
 `InstallLocator`) for `.zbd` in any case, runs `unzbd cs <mode> <in> <out>` on each archive in turn,
 then `unzbd cs messages` on the install root's `strings.dll`. An archive fails on a non-zero exit
 only, is counted, and the run goes on; a run with no failure stamps the tree. Output keeps the
-install's spelling, relative path and base name. Unzip (always for the root `rimage.zip`) deletes and re-expands a folder older than its
+install's relative path in `ZbdTree`'s case. Unzip (always for the root `rimage.zip`) deletes and re-expands a folder older than its
 zip, writing entry by entry so the later of two entries differing only by case wins, as
 `Expand-Archive` does. Blocks its thread; the caller runs it off the main thread.
 
@@ -101,10 +101,18 @@ zip, writing entry by entry so the later of two entries differing only by case w
 The rules `ZbdExtraction` applies, each testable alone. `ModeFor` maps a lower-cased base name:
 `interp` to `interp` (`.json`); `planes`, `gamez` to `gamez`; `soundsh`, `soundsl` to `sounds`;
 `zrdr` to `reader`; `rimage`, `texture`, `rtexture<n>` to `textures`; `cam_anim`, `mis_anim` to
-`anim` (all `.zip`); anything else is an unknown type, skipped. An output as new as its source is up
-to date. `AlwaysUnzipped` names the root `rimage.zip`, whose PNGs the HUD reads loose. `Classify` counts stderr notes: "object3d transform fail" (matrix recomposed inexactly, the
+`anim` (all `.zip`); anything else is an unknown type, skipped. `OutputRelativePath` writes the
+path through `ZbdTree.Canonical`. An output as new as its source is up to date. `AlwaysUnzipped` names the root `rimage.zip`, whose PNGs the HUD reads loose. `Classify` counts stderr notes: "object3d transform fail" (matrix recomposed inexactly, the
 stored one is kept) and "VAL FAIL" or "anim def duplicate anim ref" (anim fields kept as read); every
 other line is a warning.
+
+## src/Extraction/ZbdTree.cs
+The one case the ZBD half writes under `extracted/`, the retail install's: folders upper case
+(`C3/M01`), file names lower case (`zrdr.zip`). `Canonical` maps a relative path, `Under` a file
+path under a data root and `Folder` a chapter or mission folder. `ZbdPlan.OutputRelativePath`
+writes through it, and `SessionPaths`' chapter and mission paths, `AnimProgram.ArchivePaths` and
+the probes' mission discovery read through it, so the campaign's `c3`/`m01` finds `C3/M01` on a
+case-sensitive disk. Coverage: `CSVM.Tests/ZbdExtractionTests.cs` and `SessionPathsTests.cs`.
 
 ## src/Extraction/ZbdProgress.cs
 The types around the runner. `ZbdExtractionOptions` (`Force`, `Unzip`); the player's button uses the

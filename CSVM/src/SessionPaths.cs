@@ -43,7 +43,7 @@ public static class SessionPaths
     /// their painted alpha silhouette there.</summary>
     public static string ChapterTextures(string dataRoot, string chapter)
     {
-        var dir = Path.Combine(dataRoot, "extracted", chapter);
+        var dir = Extraction.ZbdTree.Folder(dataRoot, chapter);
         string best = "texture";
         int bestN = -1;
         if (Directory.Exists(dir))
@@ -64,12 +64,12 @@ public static class SessionPaths
     /// <summary>The chapter's world GameZ (<c>extracted/&lt;chapter&gt;/gamez.zip</c>), the single
     /// <c>world1</c> node and everything under it.</summary>
     public static string ChapterGamez(string dataRoot, string chapter) =>
-        PreferUnzipped(Path.Combine(dataRoot, "extracted", chapter, "gamez.zip"));
+        PreferUnzipped(Extraction.ZbdTree.Under(dataRoot, chapter + "/gamez.zip"));
 
     /// <summary>The chapter's zrdr scope (<c>extracted/&lt;chapter&gt;/zrdr.zip</c>), zepstate,
     /// startanims, and the chapter-wide anim defs.</summary>
     public static string ChapterZrdr(string dataRoot, string chapter) =>
-        PreferUnzipped(Path.Combine(dataRoot, "extracted", chapter, "zrdr.zip"));
+        PreferUnzipped(Extraction.ZbdTree.Under(dataRoot, chapter + "/zrdr.zip"));
 
     /// <summary>Where the ten <c>.mpg</c> cinemas the extraction copies across sit. It is one
     /// directory deeper than the bitmaps the same layout rows name, which is the base the original
@@ -88,7 +88,9 @@ public static class SessionPaths
     }
 
     /// <summary>The mission's zrdr scope (<c>extracted/&lt;chapter&gt;/&lt;mission&gt;/zrdr.zip</c>)
-    ///, spawn points, danger zones, weather, objectives, and the mission's own anim defs.</summary>
+    ///, spawn points, danger zones, weather, objectives, and the mission's own anim defs.
+    /// ⚠ The chapter and mission may come in either case, and the campaign sequence names
+    /// <c>c3</c>/<c>m01</c>. Every chapter path here maps through <see cref="Extraction.ZbdTree"/>.</summary>
     public static string MissionZrdr(string dataRoot, string chapter, string mission) =>
-        PreferUnzipped(Path.Combine(dataRoot, "extracted", chapter, mission, "zrdr.zip"));
+        PreferUnzipped(Extraction.ZbdTree.Under(dataRoot, $"{chapter}/{mission}/zrdr.zip"));
 }

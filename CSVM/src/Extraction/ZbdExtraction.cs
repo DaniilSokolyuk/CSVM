@@ -10,7 +10,8 @@ using CSVM.Session.Launch;
 namespace CSVM.Extraction;
 
 /// <summary>The ZBD half of extraction. Every archive under the install's <c>ZBD</c> folder runs
-/// through unzbd into the same relative path under the extraction root. Then <c>strings.dll</c>
+/// through unzbd into the same relative path under the extraction root, in
+/// <see cref="ZbdTree"/>'s case. Then <c>strings.dll</c>
 /// becomes <c>messages.json</c>, and the stamp is written. Archives run one at a time on the calling thread,
 /// which must not be the engine's main thread. Engine-free; the rules are <see cref="ZbdPlan"/>.</summary>
 public static class ZbdExtraction

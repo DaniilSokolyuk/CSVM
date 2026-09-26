@@ -42,12 +42,13 @@ public class ZbdExtractionTests
     }
 
     [Fact]
-    public void TheOutputKeepsTheInstallSpellingAndSwapsTheExtension()
+    public void TheOutputTakesUpperCaseFoldersALowerCaseNameAndItsExtension()
     {
-        string rel = Path.Combine("C1", "Ia1", "GAMEZ.ZBD");
+        string rel = Path.Combine("c1b", "Ia1", "GAMEZ.ZBD");
 
-        Assert.Equal(Path.Combine("C1", "Ia1", "GAMEZ.zip"), ZbdPlan.OutputRelativePath(rel, ZbdPlan.ModeFor("GAMEZ")!));
-        Assert.Equal("interp.json", ZbdPlan.OutputRelativePath("interp.zbd", ZbdPlan.ModeFor("interp")!));
+        Assert.Equal(Path.Combine("C1B", "IA1", "gamez.zip"), ZbdPlan.OutputRelativePath(rel, ZbdPlan.ModeFor("GAMEZ")!));
+        Assert.Equal("interp.json", ZbdPlan.OutputRelativePath("Interp.zbd", ZbdPlan.ModeFor("interp")!));
+        Assert.Equal("C3/M01/zrdr.zip", ZbdTree.Canonical(@"c3\m01\ZRDR.zip"));
     }
 
     [Fact]
@@ -171,7 +172,8 @@ public class ZbdExtractionTests
         Assert.Equal(2, first.AnimNotes);
         Assert.Equal(2, first.Warnings.Count);
         Assert.True(File.Exists(Path.Combine(extracted, "C1", "interp.json")));
-        Assert.True(File.Exists(Path.Combine(extracted, "C1", "Sub", "Texture.zip")));
+        Assert.Equal(new[] { "texture.zip" }, Directory.GetFiles(Path.Combine(extracted, "C1", "Sub")).Select(Path.GetFileName));
+        Assert.Equal(new[] { "SUB" }, Directory.GetDirectories(Path.Combine(extracted, "C1")).Select(Path.GetFileName));
         Assert.True(File.Exists(Path.Combine(extracted, "messages.json")));
         Assert.Equal(Path.Combine(extracted, "VERSION.json"), first.Stamp);
         Assert.All(steps, s => Assert.Equal(4, s.Total));
