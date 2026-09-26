@@ -381,7 +381,7 @@ $document = @(
 # second occurrence turning up here is something to go and look at, not to wave through.
 # Written as regex escapes, not as the characters themselves: a BOM-less .ps1 carrying
 # non-ASCII is mangled by PowerShell 5.1's own interpreter before it runs (CLAUDE.md).
-$repairPattern = 'Â([ -¿])'
+$repairPattern = '\u00C2([\u00A0-\u00BF])'
 $repaired = [regex]::Matches($document, $repairPattern).Count
 $document = [regex]::Replace($document, $repairPattern, '$1')
 
