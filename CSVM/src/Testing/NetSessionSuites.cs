@@ -201,6 +201,78 @@ internal static class NetSessionSuites
         }
     }
 
+    [Suite("net-pause-overlay",
+        "a host and then a guest open the pause sheet mid-flight in a network match: the sheet is "
+        + "up, the clock is not halted, the pauser's aeroplane flies on with its stick centred, and "
+        + "its states keep crossing the wire to the far peer; an offline flight's pause, the "
+        + "control, still halts the clock and stops the aeroplane dead")]
+    internal static void PauseSheetLeavesANetworkFlightRunning(TestContext ctx)
+    {
+        string missionZrdr = RequireMatchData(ctx);
+        var spec = SessionSpec.Parse(new[]
+        {
+            "--vs", $"--chapter={ctx.Chapter}", $"--mission={MpMission}", "--players=1", "--mute",
+            "--no-pads", TrackedFlight,
+        });
+        var table = new SpawnPicker(spec).LoadSpawnList(missionZrdr, spec.Scenario);
+        if (table is not { Count: >= 2 })
+        {
+            throw new SuiteSkippedException($"{ctx.Chapter}/{MpMission} authors no usable net.zrd table");
+        }
+
+        var mesh = LoopbackTransport.Mesh(2, new LoopbackConditions(0.03, 0.01, 0.25), new Random(4127));
+        var roster = new NetSeat[]
+        {
+            new() { PeerId = 0, SeatIndex = 0, IsLocal = true, Callsign = "host", PlaneNode = Airframes[0] },
+            new() { PeerId = 1, SeatIndex = 1, Callsign = "guest", PlaneNode = Airframes[1] },
+        };
+        NetSeats.Validate(roster);
+
+        ulong master = Rng.Master;
+        bool pinned = Rng.Pinned;
+        var clockWas = GameClock.Current;
+        var profileWas = StartupProfile.Current;
+        Ends? host = null;
+        Ends? guest = null;
+        Ends? offline = null;
+        try
+        {
+            host = Open(ctx, spec, mesh[0], isHost: true, HostSeed, roster);
+            guest = Open(ctx, spec, mesh[1], isHost: false, GuestSeed, null);
+            ctx.Check(host.Built && guest.Built,
+                $"both sessions build in one process (host {host.Built}, guest {guest.Built})");
+            if (!host.Built || !guest.Built)
+            {
+                return;
+            }
+
+            Lockstep(host.Session, guest.Session);
+            SheetOverNetFlight(ctx, "host", host.Session, guest.Session, host.Session, guest.Session);
+            SheetOverNetFlight(ctx, "guest", guest.Session, host.Session, host.Session, guest.Session);
+            guest.Close();
+            guest = null;
+            host.Close();
+            host = null;
+
+            var offlineSpec = SessionSpec.Parse(new[] { "--stage=empty", "--mute", "--no-pads", TrackedFlight });
+            offline = Open(ctx, offlineSpec, null, isHost: false, HostSeed, null);
+            ctx.Check(offline.Built, $"the offline control's session builds");
+            if (offline.Built)
+            {
+                SheetOverOfflineFlight(ctx, offline.Session);
+            }
+        }
+        finally
+        {
+            offline?.Close();
+            guest?.Close();
+            host?.Close();
+            StartupProfile.Current = profileWas;
+            GameClock.Current = clockWas;
+            Rng.Reset(master, pinned);
+        }
+    }
+
     // The error between an owner's own path and the path the far peer showed for it. The shown
     // path is DELIBERATELY late, by the buffer's read-behind plus the link. The lag is fitted
     // first, and the residual at it is the tracking error (METHOD-32). ⚠ The fit is in fractions
@@ -312,6 +384,73 @@ internal static class NetSessionSuites
         var wrong = Track(flight.GuestOwn, flight.GuestShown);
         ctx.Check(wrong.Mean > there.Mean * 10f,
             $"ABLE-TO-FAIL CONTROL: matched against the other aeroplane's path the same metric reads {wrong.Mean:0.0} m mean, against {there.Mean:0.00} m for the right one");
+    }
+
+    // One end opens the sheet the way its pause key does, and both ends are stepped with it up.
+    // The harness renders no frame, so the poll the key would reach is called here directly.
+    private static void SheetOverNetFlight(TestContext ctx, string name, GameSession pauser,
+        GameSession far, GameSession host, GameSession guest)
+    {
+        int seat = pauser.NetLink!.LocalSeat;
+        var pilot = pauser.SeatRigs[seat].Controller!;
+        var clock = pauser.SimClock!;
+        var pause = pauser.Pause!;
+        var stick = pilot.LastCommand;
+        ctx.Check(pause.Overlay && Mathf.Abs(stick.Pitch) + Mathf.Abs(stick.Roll) > 0.1f,
+            $"the {name}'s pause is an overlay, and its pilot is flying the scripted stick ({stick.Pitch:0.0},{stick.Roll:0.0})");
+
+        pause.TryToggle(pilot.PlayerIndex);
+        bool halted = pilot.PollPauseForTest(clock);
+        var own = pilot.WorldPosition;
+        int sent = pauser.NetLink.Sent;
+        int received = far.NetLink!.Received;
+        Lockstep(host, guest);
+
+        float flown = pilot.WorldPosition.DistanceTo(own);
+        ctx.Check(pause.Paused && pilot.SheetOverFlightForTest() && !halted && !clock.Halted,
+            $"the {name}'s sheet is up over a clock that is not halted (paused {pause.Paused}, halted {clock.Halted})");
+        ctx.Check(flown > 10f,
+            $"…and its aeroplane flies on under the sheet ({flown:0.0} m over {LockstepSteps} steps)");
+        stick = pilot.LastCommand;
+        ctx.Check(stick.Pitch == 0f && stick.Roll == 0f && stick.Yaw == 0f,
+            $"…on a centred stick, so the sheet's keys fly nothing ({stick.Pitch:0.0},{stick.Roll:0.0},{stick.Yaw:0.0})");
+        // The far copy's own motion is no evidence here: its buffer extrapolates a silent owner.
+        ctx.Check(pauser.NetLink.Sent > sent && far.NetLink.Received > received,
+            $"…while its states keep crossing (sent {sent} to {pauser.NetLink.Sent}, the far end received {received} to {far.NetLink.Received})");
+
+        pause.ForceResume();
+        pilot.PollPauseForTest(clock);
+        ctx.Check(!pause.Paused && !pilot.SheetOverFlightForTest(),
+            $"…and the resume hands the {name}'s seat back");
+    }
+
+    // ABLE-TO-FAIL CONTROL. The same toggle and the same poll on a flight with no wire. A sheet
+    // that halted nothing anywhere would pass every network check above and fail this one.
+    private static void SheetOverOfflineFlight(TestContext ctx, GameSession session)
+    {
+        var pilot = session.Rigs[0].Controller!;
+        var clock = session.SimClock!;
+        var start = pilot.WorldPosition;
+        Step(session);
+        float before = pilot.WorldPosition.DistanceTo(start);
+
+        session.Pause!.TryToggle(pilot.PlayerIndex);
+        bool halted = pilot.PollPauseForTest(clock);
+        var held = pilot.WorldPosition;
+        Step(session);
+        float during = pilot.WorldPosition.DistanceTo(held);
+        ctx.Check(before > 1f && !session.Pause.Overlay && halted && clock.Halted && during == 0f,
+            $"ABLE-TO-FAIL CONTROL: offline the same sheet halts the clock ({clock.Halted}) and stops an aeroplane that had flown {before:0.0} m dead ({during:0.0} m)");
+        session.Pause.ForceResume();
+        pilot.PollPauseForTest(clock);
+
+        static void Step(GameSession session)
+        {
+            for (int i = 0; i < LockstepSteps; i++)
+            {
+                session._PhysicsProcess(GameClock.FixedDt);
+            }
+        }
     }
 
     // Where a path was between two of its steps, which is what a fractional lag asks for. The
@@ -452,7 +591,7 @@ internal static class NetSessionSuites
 
     // One end of the match: its own pane, its own world, its own session node. The pane renders
     // nothing, the suite reads poses and counters rather than pixels.
-    private static Ends Open(TestContext ctx, SessionSpec spec, INetTransport transport,
+    private static Ends Open(TestContext ctx, SessionSpec spec, INetTransport? transport,
         bool isHost, ulong seed, IReadOnlyList<NetSeat>? roster)
     {
         var pane = new SubViewport
@@ -493,7 +632,7 @@ internal static class NetSessionSuites
             NetSeats = isHost ? roster : null,
             NetTransport = transport,
             NetHost = isHost,
-            NetAirframes = Airframes,
+            NetAirframes = transport == null ? null : Airframes,
         });
         pane.AddChild(session);
         return new Ends(pane, session, session.StartSession());

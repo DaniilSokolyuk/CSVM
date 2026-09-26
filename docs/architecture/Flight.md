@@ -792,7 +792,8 @@ session, built by `GameSession` ahead of the rig loop and assigned to every rig'
 and resuming only for the owner, and it is refused outright while `Ended` is set. `Raise` and
 `Clear` own the results-board half and reject `Paused`, which carries ownership and must go
 through `TryToggle`; `ForceResume` drops a pause whoever owns it, for a rerun or an exit chosen
-from a menu. Off-engine coverage: `CSVM.Tests/PauseStateTests.cs`. Read `PauseBoard` next.
+from a menu. A network session's pause is an `Overlay`: the sheet is up and `ClockHeld` stays
+false. Off-engine coverage: `CSVM.Tests/PauseStateTests.cs`. Read `PauseBoard` next.
 
 ## src/Flight/Airframe/Weather.cs
 `WeatherState`, the flown mission's own weather.json as per-zone `ZoneWeather` records: fog colour,

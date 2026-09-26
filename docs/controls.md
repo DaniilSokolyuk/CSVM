@@ -203,7 +203,7 @@ by about 1.15; Built-in prints the value as a multiplier, `1.00x`.
 
 | Input | Pad | Does |
 |---|---|---|
-| `Esc` | Start | pause, halts the sim and opens the pause board's menu (Resume · Photo Mode · Restart · Exit); `.` steps one frame. Splitscreen: any player's press pauses everyone, and the board names who paused (`BL-373`), only that player resumes it and only that player drives the cursor |
+| `Esc` | Start | pause, halts the sim and opens the pause board's menu (Resume · Photo Mode · Restart · Exit); `.` steps one frame. Splitscreen: any player's press pauses everyone, and the board names who paused (`BL-373`), only that player resumes it and only that player drives the cursor. Network play: the sheet halts nothing and `.` does not step, the world runs on and your aeroplane flies as trimmed, taking no flight input, until you close it |
 | ↑↓ · `W`/`S` | d-pad ↑↓ · left stick | move the board menu's cursor. The stick counts as a press past half its travel |
 | ←→ · `A`/`D` | d-pad ←→ · left stick | step the value under the cursor, on the rows that carry one |
 | `Enter` · numpad `Enter` · `Space` | A | confirm the highlighted item |

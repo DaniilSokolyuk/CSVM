@@ -661,7 +661,11 @@ public partial class FlightController : Node3D
     private IFlightInputSource? _suppliedInputSource;
     private bool _pausePrev;                     // previous frame's pause-key state (edge detection)
     private bool _haltPrev;                      // previous frame's clock-halt state (orbit seeding)
-    private ImmediateMesh? _probe;               // debug collision-probe line
+    private bool _boardPrev;                     // previous frame's board-up state (re-entry latch)
+    // A network pause's sheet is up over a flight that keeps running. The seat is then wholly
+    // held and the look controls are muted, so the sheet's menu keys fly nothing.
+    private bool _sheetOverFlight;
+    private ImmediateMesh? _probe;              // debug collision-probe line
     // The rest pose of every node the crash def flings (the destroyed wreck's pieceN meshes) and
     // the BUILT visibility of every plane-model node, both captured before the first crash so
     // Respawn can undo what the def did: a RESET_STATE re-poses only the nodes it names and
@@ -1068,7 +1072,10 @@ public partial class FlightController : Node3D
 
     // Both holds swallow the discrete commands, so every command read tests this rather than one
     // named setting. Only the stick asks which of the two it is.
-    private bool CommandsHeld => ControlHold != FlightControlHold.None;
+    private bool CommandsHeld => EffectiveHold != FlightControlHold.None;
+
+    // The director's hold, widened to the whole seat while a network pause sheet is up.
+    private FlightControlHold EffectiveHold => _sheetOverFlight ? FlightControlHold.All : ControlHold;
 
     // The solo scoreboard's end: it shows over the finish pose and takes R as a rerun. Keyed on the
     // board itself rather than a flag of its own. The board is what these rules belong to.
@@ -2038,7 +2045,7 @@ public partial class FlightController : Node3D
             // A wholly held seat commands nothing. The stick centres over the lever it was left on,
             // so the aeroplane flies on as trimmed, not held still or cut to idle. The narrower
             // hold leaves the stick and the throttle exactly as the pilot works them.
-            var input = ControlHold == FlightControlHold.All
+            var input = EffectiveHold == FlightControlHold.All
                 ? new FlightInput { Throttle = _throttle }
                 : InputSource.Read(dt);
             // Read AFTER the input: R respawns inside it, and a sweep from the pose before that
@@ -2295,7 +2302,7 @@ public partial class FlightController : Node3D
             halted = PollPauseAndHalt(clock);
         // ⚠ Ahead of the inert return as well. A seat flagged inert mid-session must give the
         // pointer back, and this is the only frame that would notice.
-        StepMouseCapture(halted);
+        StepMouseCapture(halted || _sheetOverFlight);
         // Nothing left to draw, animate, interpolate or point a camera at while inert.
         if (Inert)
             return;
@@ -2359,7 +2366,8 @@ public partial class FlightController : Node3D
         }
         else
         {
-            PollViewModeKeys();
+            if (!_sheetOverFlight)
+                PollViewModeKeys();
             // Numpad +/- (BL-433): only here, never while orbiting, since the weapon lab's held
             // orbit reads the same two keys for its own dolly (OrbitInput above).
             _cam.UpdateZoom(simDt);
@@ -2382,7 +2390,7 @@ public partial class FlightController : Node3D
                 // Rigid at cockpit_camera (wobble inherited), the mode's own FOV, aimed by the
                 // head. Look-back stays IN the cockpit, the head snapped to dead astern while held,
                 // as the original does. This arm therefore sits above the look-behind cut below.
-                _cam.StepHead(simDt, _cam.BackActive(_padActions.Held(InputAction.LookBack))
+                _cam.StepHead(simDt, _cam.BackActive(!_sheetOverFlight && _padActions.Held(InputAction.LookBack))
                     ? new HeadLookInput(0f, -1f, 0f, 0f, false, ForceSnap: true)
                     : HeadLookRead(), HeadLook.FirstPersonElevationFloor);
                 _cam.FirstPersonView(_renderPose);
@@ -2393,7 +2401,7 @@ public partial class FlightController : Node3D
             // E42: this player's right-stick click looks back, the pad twin of holding
             // numpad 0, read here, not in CameraController, same "no pad devices in the camera"
             // rule OrbitInput/PadLookInput follow.
-            else if (_cam.BackActive(_padActions.Held(InputAction.LookBack)))
+            else if (_cam.BackActive(!_sheetOverFlight && _padActions.Held(InputAction.LookBack)))
             {
                 _cam.BackView(_renderPose);
                 logged = CameraView.Back;
@@ -3703,7 +3711,7 @@ public partial class FlightController : Node3D
 
     // One frame of the pause key, and the halt it mirrors into the shared clock. Polled from
     // _Process, not the sim step: a halted sim takes no steps and could never resume itself.
-    // With a shared PauseState only the player who paused may resume it.
+    // With a shared PauseState only the player who paused may resume it. Returns the clock's halt.
     private bool PollPauseAndHalt(GameClock? clock)
     {
         bool pausePressed = PauseTogglePressed();
@@ -3715,18 +3723,24 @@ public partial class FlightController : Node3D
                 clock.Halted = !clock.Halted;
         }
         _pausePrev = pausePressed;
-        bool halted = PauseState?.Halted ?? (clock?.Halted ?? false);
+        bool boardUp = PauseState?.Halted ?? (clock?.Halted ?? false);
+        bool halted = PauseState?.ClockHeld ?? boardUp;
         if (clock != null)
             clock.Halted = halted;
+        _sheetOverFlight = boardUp && !halted && !RemoteOwned;
         if (halted != _haltPrev)
         {
             _haltPrev = halted;
             // The engine/whine/rattle loops hold their sample position through the freeze; the
             // one-shots already in flight are left to play out.
             Audio?.SetPaused(halted);
+        }
+        if (boardUp != _boardPrev)
+        {
+            _boardPrev = boardUp;
             // Clearing is the pause board's own re-entry point: the B or Enter that dismissed the
             // sheet can still be down on this very frame.
-            if (!halted)
+            if (!boardUp)
                 SwallowInputHeldThroughReentry();
         }
         return halted;
@@ -3737,6 +3751,9 @@ public partial class FlightController : Node3D
     // headless rig renders no frame, so nothing calls _Process and the halt-clearing edge would
     // never run. Kept beside the poll it drives rather than hoisted for SA1202's sake.
     internal bool PollPauseForTest(GameClock? clock) => PollPauseAndHalt(clock);
+
+    // Whether the seat is wholly held under a network pause sheet, for the suite that pins it.
+    internal bool SheetOverFlightForTest() => _sheetOverFlight;
 #pragma warning restore SA1202
 
     /// <summary>One frame of player targeting: rebuild the pool and re-resolve, prune the
@@ -4992,6 +5009,8 @@ public partial class FlightController : Node3D
     // both views, so the chase swing and the first-person head cannot take different sticks.
     private (float X, float Y) PadLookInput()
     {
+        if (_sheetOverFlight)
+            return (0f, 0f);
         float x = StickCurve(_padActions.Axis(InputAction.LookAimRight, InputAction.LookAimLeft));
         float y = StickCurve(_padActions.Axis(InputAction.LookAimDown, InputAction.LookAimUp));
         // A live stick beats the scripted pin, the rule a held numpad key follows against --view=.
@@ -5005,6 +5024,8 @@ public partial class FlightController : Node3D
     // chase camera clears `includePad`, since the stick places that view itself (PadLook).
     private HeadLookInput HeadLookRead(bool includePad = true)
     {
+        if (_sheetOverFlight)
+            return default;
         var (snapX, snapY) = SnapLookInput();
         var (freeRight, freeUp) = FreeLookRead();
         var (lookX, lookY) = includePad ? PadLookInput() : (0f, 0f);

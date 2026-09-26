@@ -283,6 +283,7 @@
     "net-director-follow": 16.0,
     "net-human-field": 6.0,
     "net-match-state": 10.0,
+    "net-pause-overlay": 8.0,
     "net-versus-lives": 11.5,
     "net-versus-host-left": 11.1,
     "net-positional-start": 8.0,

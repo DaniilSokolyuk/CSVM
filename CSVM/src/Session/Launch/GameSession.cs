@@ -533,6 +533,10 @@ public partial class GameSession : Node3D
     /// wrap-up board is holding a machine.</summary>
     internal PauseState? Pause => _pauseState;
 
+    /// <summary>This session's own sim clock. Two sessions in one process share one
+    /// <see cref="GameClock.Current"/>, so a suite driving both reads each end's here.</summary>
+    internal GameClock? SimClock => _clock;
+
     /// <summary>How many host grants this session has placed an aircraft from, the host's own
     /// included. A suite reads it to tell a placement that came off the wire from one the shared
     /// seed walked to. That is the line between the opening spawn and every respawn.</summary>
@@ -575,9 +579,9 @@ public partial class GameSession : Node3D
     // the labs and the C overlay read, so they cannot disagree with what WorldSession built.
     private bool BuildsCollision => _spec.BuildsCollision;
 
-    // Whether P / . may halt this session. Splitscreen flight says no: the freeze halts the shared
-    // world, so it is not one player's to press.
-    private bool HaltAllowed => !_spec.Fly || _rigs.Count == 1;
+    // Whether P / . may halt this session. Splitscreen flight and a network session say no: the
+    // freeze halts the shared world, so it is not one player's to press.
+    private bool HaltAllowed => _net == null && (!_spec.Fly || _rigs.Count == 1);
 
     /// <summary>Builds one flight/view session from the spec (mode, chapter, plane, spawn, …)
     /// into a fresh <see cref="_worldRoot"/> so Esc-to-menu can tear it all down and a new session
@@ -2385,7 +2389,7 @@ public partial class GameSession : Node3D
         var padAssignment = _menuPads ?? Pads.AssignPads(_rigs.Count);
         // Ahead of the rigs, because the assembler hands both to the per-pane stunt board.
         _menuInputs = BuildMenuInputs(padAssignment);
-        _pauseState = new PauseState();
+        _pauseState = new PauseState { Overlay = _net != null };
         if (_menuPads != null)
             Pads.LogPads(_menuPads);
         // One livery RNG for the session, so P1..P4 draw distinct colours from one
@@ -5305,8 +5309,8 @@ public partial class GameSession : Node3D
     }
 
     /// <summary>Take <paramref name="playerIndex"/>'s pane to photo mode, chosen from whichever
-    /// board is up. The halt is NEVER dropped: the world stays the still frame the board froze, so
-    /// this only moves an eye. Idempotent, so a second press of the row while already in it does
+    /// board is up. The pause is NEVER dropped: offline the world stays the still frame the board
+    /// froze, so this only moves an eye. Idempotent, so a second press of the row while already in it does
     /// nothing rather than stacking cameras.</summary>
     private void EnterPhotoMode(int playerIndex)
     {
@@ -5376,9 +5380,9 @@ public partial class GameSession : Node3D
             MenuInputFor(rig.Index).Prime();
     }
 
-    // PREFERENCES on either pause board: the sheet steps aside and the options leaf stands over the
-    // held world in its place. The halt is never dropped, so the mission stays the still frame the
-    // pause made of it, and every rig's pause key goes silent for the duration.
+    // PREFERENCES on either pause board: the sheet steps aside and the options leaf stands in its
+    // place. The pause is never dropped, so an offline mission stays the pause's still frame. Every
+    // rig's pause key goes silent for the duration.
     private void OpenPauseOptions(int owner)
     {
         if (_pauseOptions is not { Visible: false } leaf || _pauseBoard == null)
