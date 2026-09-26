@@ -2499,8 +2499,8 @@ co-op cap is `NetPlayFeature.CoopHumans` (4), inherited by the Built-in door. Ai
 everything before it) passed: units 4982/0/2, engine 399, goldens 19 hash-identical. The
 `menu-original-flag` golden was re-pinned for the live Multiplayer plaque: every changed pixel lies
 inside that plaque, and reverting only the plaque's enable renders the old hash exactly. The user
-approved the network doors and the two-way Connection page at the look. Owed: a LAN search between
-two machines at the controls.
+approved the network doors and the two-way Connection page at the look. On two machines at the
+controls, the fixed build's LAN search lists the host (see "Found at the controls").
 
 **Wiring contract.**
 - `NetPlayFeature(openHost, openJoin, map, unmap, lan)`: `lan` is `Func<string, int, ILanSocket>?`
@@ -2544,7 +2544,8 @@ two machines at the controls.
 worked. Windows sent the limited broadcast out of another adapter; a directed broadcast to
 192.168.178.255 was answered. Each search round now also asks at every up network's directed
 broadcast (`Net/LanBroadcast.cs`, `Utils/LocalNetworks.cs`). The responder already binds every
-interface. The two-machine search is still owed at the controls on the fixed build.
+interface. On the fixed build the same guest lists the host, which the user confirmed at the
+controls.
 
 **Original approach (kept for reference).**
 
