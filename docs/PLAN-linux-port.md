@@ -781,7 +781,8 @@ owed: the Deck did not answer on SSH while this item ran. It is the same headles
 `--dump-sticks` run from a scratch folder, expected to log `sticks: SDL 2.32.56 from
 libSDL2-2.0.so.0 (system: /usr/lib/...)` and a `stick skipped:` line with the Valve reason for the
 Deck's own controls if SDL2 lists them. A real flight stick on Linux is owed to whoever has one.
-<pending orchestrator run>
+Orchestrator check on the merged tree (flight sticks from main, the rof case fix, B15): units 5207
+passed with 3 skipped, engine 384/384, goldens 19 identical.
 
 **Original approach (kept for reference).**
 
