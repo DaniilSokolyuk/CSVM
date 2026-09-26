@@ -842,21 +842,31 @@ public sealed partial class ComposedBoardView : Control
     // glyphs, so the line keeps its place in the draw order and nothing drawn later is covered.
     private bool DrawMarquee(BoardFit fit, Font font, BoardLine line, int points, Vector2 at)
     {
-        float wide = font.GetStringSize(line.Text, HorizontalAlignment.Left, -1f, points).X;
         float box = fit.Length(line.Width);
-        if (wide <= box)
-        {
-            return false;
-        }
-
-        _marqueeMoving = true;
-        // Whole window pixels, so a nearest-sampled face does not shimmer between two positions.
-        float shift = Mathf.Round(fit.Length(BoardMarquee.Offset((wide - box) / fit.Scale, _marqueeClock)));
         var server = TextServerManager.GetPrimaryInterface();
         var shaped = server.CreateShapedText();
         try
         {
             server.ShapedTextAddString(shaped, line.Text, font.GetRids(), points, font.GetOpentypeFeatures());
+            // Measured off the shaping that draws, and the overflow rounded UP to whole pixels. ⚠ The
+            // clip keeps only whole glyphs. A shift short of the overflow by a pixel fraction never
+            // shows the last glyph.
+            float wide = (float)server.ShapedTextGetSize(shaped).X;
+            if (wide <= box)
+            {
+                return false;
+            }
+
+            if (wide - box <= fit.Length(BoardMarquee.SlackPixels))
+            {
+                server.ShapedTextDraw(shaped, GetCanvasItem(), at, -1f, -1f, InkOf(line));
+                return true;
+            }
+
+            _marqueeMoving = true;
+            float overflow = Mathf.Ceil(wide - box);
+            // Whole window pixels, so a nearest-sampled face does not shimmer between two positions.
+            float shift = Mathf.Min(overflow, Mathf.Round(fit.Length(BoardMarquee.Offset(overflow / fit.Scale, _marqueeClock))));
             server.ShapedTextDraw(shaped, GetCanvasItem(), new Vector2(at.X - shift, at.Y), shift, shift + box, InkOf(line));
         }
         finally

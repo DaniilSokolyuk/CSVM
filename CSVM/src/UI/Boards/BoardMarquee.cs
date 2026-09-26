@@ -19,6 +19,12 @@ public static class BoardMarquee
     /// page's row face. TUNE: calm enough to read while it moves; no reference fixes it.</summary>
     public const float PixelsPerSecond = 20f;
 
+    /// <summary>How far past its box a caption may run, in authored pixels, and still be drawn whole
+    /// and still. The renderer clips whole glyphs, so a caption a pixel too wide would otherwise
+    /// scroll one pixel and trade its first glyph for its last. TUNE: inside the gap between the
+    /// KEYS page's columns.</summary>
+    public const float SlackPixels = 4f;
+
     /// <summary>The clock every marquee reads while set, in seconds, or null to let the view's own
     /// clock run. ⚠ A deterministic run must set it. A running marquee puts a capture's pixels on
     /// the frame count, so <c>--det</c> pins the start and <c>--debug-marquee=</c> any phase.
