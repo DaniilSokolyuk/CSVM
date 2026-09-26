@@ -81,7 +81,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 ### Wave A, in-engine extraction (Windows release)
 
 1. ☑ Extraction decoders move into `CSVM/src/Extraction/`, engine-side and platform-neutral
-2. ☐ `unzbd` runner: per-archive modes, messages, MPG copy, incremental skip, VERSION.json stamp
+2. ☑ `unzbd` runner: per-archive modes, messages, MPG copy, incremental skip, VERSION.json stamp
 3. ☑ Install discovery and case-insensitive install lookup, remembered path in `app_userdata`
 4. ☐ Headless `--extract=<install>` and its development options
 5. ☐ Extraction UI: Extract button, picker, progress, and the out-of-date-data screen
@@ -186,7 +186,31 @@ BOM, and `ExtractionStamp.cs:55` reads text for that reason; a new writer withou
 readers that use text APIs but check every reader. `langui.dll` is read before `language.dll` and wins
 a duplicate id (`ExtractRof.ps1:469`); keep that order.
 
-## A2 ☐ `unzbd` runner: per-archive modes, messages, MPG copy, incremental skip, VERSION.json stamp
+## A2 ☑ `unzbd` runner: per-archive modes, messages, MPG copy, incremental skip, VERSION.json stamp
+
+**Landed.** Everything `ExtractAssets.ps1` does is engine C# under `CSVM/src/Extraction/`,
+engine-free. The MPG copy is A1's, beside the other `.rof`-half outputs. `ZbdExtraction.Run(installRoot,
+extractedDir, unzbd, ZbdExtractionOptions(Force, Unzip), progress, cancel)` finds `ZBD` through
+`InstallLocator`, runs each `.zbd` (any case) through `unzbd cs <mode>` as a child process, then
+`strings.dll` into `messages.json`, expands zips on `Unzip`, and stamps the tree when nothing failed.
+It returns a `ZbdExtractionResult` (counts, notes, failures, unknowns, warnings, stamp path, `Fatal`,
+`Summary`). The pure rules are `ZbdPlan` (mode map, output naming, up-to-date and unzip rules,
+stderr notes); the process and its identity are `UnzbdTool` (`DefaultPath(executableFolder)` gives
+`tools/unzbd.exe` or `tools/unzbd`). `ExtractionStampWriter` writes `VERSION.json` without a BOM:
+`WriteAssets` for this half, `WriteRof(movies)` for A1's, both merging and both stamping
+`ExtractionStamp.Schema`. Archives run in sequence: a full run takes 11 s against the script's 16 s,
+so parallel runs would buy little and cost a deterministic progress order. `CSVM.Tests/ZbdExtractionTests.cs`
+covers the rules, the stamp merge over a BOM file, and the runner over a fake install with a batch
+file standing in for unzbd. The scripts and their `$StampSchema` stay until A6.
+
+**Verified.** <pending orchestrator run>. Against `ExtractAssets.ps1` with the same fork unzbd, into
+two scratch trees: 186 files each with identical names, the two unzbd `.json` outputs byte-identical,
+183 zips with identical entry lists and entry contents (59,610 entries), 185 extracted, 172 transform
+and 4,714 anim notes in both. A second run left 185 up to date. With unzip, 59,794 files each, all
+42,043 unpacked non-JSON files and 17,567 JSON files identical; only `VERSION.json` differs (date and
+`script`). Owed to A4: the 8-chapter `--freecam` regression on an engine-extracted tree.
+
+**Original approach (kept for reference).**
 
 **Goal.** The engine walks the install's `ZBD` tree and runs the bundled `unzbd` on each archive as a
 child process, producing the same `extracted/` tree `ExtractAssets.ps1` does, and writes
@@ -205,12 +229,13 @@ main thread, and reports progress per archive for A5. Tool name `unzbd.exe` on W
 on Linux. unzbd's stderr is diagnostics, not failure (`ExtractAssets.ps1:162`); failure is the exit
 code. Keep the anim reader's "INTERVAL VAL FAIL" / "DELTA VAL FAIL" notes as notes
 (`ExtractAssets.ps1:178`). `--extract-unzip` expands each zip into its sibling folder.
-<TODO: whether archives run in parallel or in sequence>
+Archives run in sequence (see **Landed.**).
 
-**Model recommendation.** <TODO: not settled in session>
+**Model recommendation.** Settled by landing.
 
 **Verify.** A fresh extraction by the engine and one by today's scripts give the same file list and
-identical zip contents. <TODO: exact comparison command> Then the full 8-chapter `--freecam`
+identical zip contents: file lists compared case-sensitively, non-zip files by SHA-256, and each zip
+opened with `ZipFile.OpenRead` to compare entry names in order and each entry's SHA-256. Then the full 8-chapter `--freecam`
 regression on the engine-extracted tree.
 
 **⚠ Traps.** `unzbd` must stay a separate process: `packaging/README.md` states it is not linked into

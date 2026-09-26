@@ -702,6 +702,11 @@ in [`formats/extraction.md`](formats/extraction.md).
 - `src/Extraction/UiStringTable.cs`, the `ui_strings.json` rows: string-table text joined to its `RESOURCE.H` symbol and split from its `[FONTID]` tag.
 - `src/Extraction/MovieCopy.cs`, the install's `.mpg` cinemas copied verbatim under their own spelling, skipping a copy already at the source's length.
 - `src/Extraction/MenuLayoutDecoder.cs`, `LAYOUT.CSV`, `SCRAPBOOK.CSV`, `RESOURCE.H` and the GUI scripts decoded into `menu_layout.json`.
+- `src/Extraction/ZbdExtraction.cs`, the ZBD half of extraction: every archive through unzbd, then `messages.json`, the optional unzip and the stamp, off the main thread.
+- `src/Extraction/ZbdPlan.cs`, the ZBD half's pure rules: the archive-name mode map, output naming, the up-to-date and unzip rules, and the stderr notes.
+- `src/Extraction/ZbdProgress.cs`, the ZBD runner's options, per-step progress report with its console lines, and result totals with the closing summary.
+- `src/Extraction/UnzbdTool.cs`, the bundled unzbd as a child process: its platform file name and release path, one run with both streams drained, and its identity for the stamp.
+- `src/Extraction/ExtractionStampWriter.cs`, writes `extracted/VERSION.json` without a BOM, merging one half's field and the engine's schema into what is there.
 
 ### Session root and tests
 

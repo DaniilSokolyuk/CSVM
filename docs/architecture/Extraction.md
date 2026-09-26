@@ -1,9 +1,9 @@
 # Extraction
 
-The in-engine extraction: finding the player's Crimson Skies install, then the modules that read
-it and write `extracted/`. No type here touches the engine except `RememberedInstall` through
-`OptionsStore.UserOptions`, which is what lets a plain unit test run every decoder, and lets the
-same code run on any platform the engine exports to.
+The in-engine extraction: finding the player's Crimson Skies install, decoding its UI archives,
+running the bundled unzbd over its ZBD archives, and stamping the tree. No type here touches the
+engine except `RememberedInstall` through `OptionsStore.UserOptions`, which is what lets a plain
+unit test run every decoder, and lets the same code run on any platform the engine exports to.
 
 One `## src/...` entry per module, body at most 8 lines.
 
@@ -79,3 +79,43 @@ are the pure steps a test drives on fixtures. It stays in the C# 5 subset while 
 still `Add-Type`s it. The format and every field order are in
 [../formats/menu-layout.md](../formats/menu-layout.md); `UI/Menu/MenuLayout.cs` reads the output
 at runtime.
+
+## src/Extraction/ZbdExtraction.cs
+`Run(installRoot, extractedDir, unzbd, options, progress, cancel)` walks `ZBD` (found through
+`InstallLocator`) for `.zbd` in any case, runs `unzbd cs <mode> <in> <out>` on each archive in turn,
+then `unzbd cs messages` on the install root's `strings.dll`. An archive fails on a non-zero exit
+only, is counted, and the run goes on; a run with no failure stamps the tree. Output keeps the
+install's spelling, relative path and base name. Unzip deletes and re-expands a folder older than its
+zip, writing entry by entry so the later of two entries differing only by case wins, as
+`Expand-Archive` does. Blocks its thread; the caller runs it off the main thread.
+
+## src/Extraction/ZbdPlan.cs
+The rules `ZbdExtraction` applies, each testable alone. `ModeFor` maps a lower-cased base name:
+`interp` to `interp` (`.json`); `planes`, `gamez` to `gamez`; `soundsh`, `soundsl` to `sounds`;
+`zrdr` to `reader`; `rimage`, `texture`, `rtexture<n>` to `textures`; `cam_anim`, `mis_anim` to
+`anim` (all `.zip`); anything else is an unknown type, skipped. An output as new as its source is up
+to date. `Classify` counts stderr notes: "object3d transform fail" (matrix recomposed inexactly, the
+stored one is kept) and "VAL FAIL" or "anim def duplicate anim ref" (anim fields kept as read); every
+other line is a warning.
+
+## src/Extraction/ZbdProgress.cs
+The types around the runner. `ZbdExtractionOptions` (`Force`, `Unzip`); the player's button uses the
+defaults. `ZbdProgress` is one report per step (index of total, output path, `ZbdStep`, mode, notes,
+detail), and `Lines()` gives the console lines the script printed. `ZbdExtractionResult` holds the
+counts (extracted, up to date, skipped, unzipped, both note kinds), failures, unknown archives,
+warnings, the stamp path, `Fatal` when nothing could start, and `Summary(unzip)`.
+
+## src/Extraction/UnzbdTool.cs
+unzbd stays a child process, never linked: it is EUPL-1.2 and the engine GPL-3. `FileName` and
+`DefaultPath(executableFolder)` give `tools/unzbd.exe` on Windows and `tools/unzbd` elsewhere, the
+release layout. `Run` passes arguments as a list and drains stdout and stderr concurrently, since anim
+archives write thousands of lines; cancelling kills the process tree. `Identify` reads the
+`--version` first line, the SHA-256, and the fork commit when the exe sits at
+`<checkout>/target/release/` in a git checkout.
+
+## src/Extraction/ExtractionStampWriter.cs
+Writes `extracted/VERSION.json`: `schema` (always `ExtractionStamp.Schema`), `assets` (`script`,
+`date` UTC, `unzbdVersion`, `unzbdSha256`, optional `unzbdCommit`) from `WriteAssets`, and `rof`
+(`script`, `date`, `movies`) from `WriteRof`. `Merge` keeps every other field, reads an existing file
+as text so a BOM from the PowerShell scripts parses, rewrites an unreadable one, and writes UTF-8
+without a BOM. `script` is `CSVM`.
