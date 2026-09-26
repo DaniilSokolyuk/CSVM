@@ -494,9 +494,8 @@ public partial class Launcher : Node3D
         RenderingServer.ViewportSetMeasureRenderTime(_viewportRid, true);
 
 
-        // The window is created without focus (no_focus in project.godot); an interactive
-        // session asks for it explicitly instead, since setting the flag at runtime measured
-        // not to hand focus back. See docs/verification.md's SHELL-13.
+        // An editor run's window is created without focus (no_focus in project.godot). An
+        // interactive session asks for it here. See docs/verification.md's SHELL-13.
         if (!_spec.IsScripted)
         {
             DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.NoFocus, false);
