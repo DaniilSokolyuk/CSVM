@@ -93,7 +93,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 
 11. ☐ Linux `unzbd`: WSL toolchain and a musl build called from `ExportRelease.ps1`
 12. ☑ Linux export preset and `.tar.gz` packaging with executable bits
-13. ☐ Linux README with an "On Steam Deck" section
+13. ☑ Linux README with an "On Steam Deck" section
 14. ☐ Pre-release Linux check in WSL: extract, then a headless mission load
 15. ☐ SDL2 stick bridge resolved per platform (after `PLAN-flight-sticks` lands)
 16. ☐ Steam Deck test pass and the first Linux release
@@ -433,7 +433,7 @@ modes back out of the archive and prints the tarball's SHA-256. `-LinuxUnzbd <pa
 Linux `unzbd` (default `tools\mech3ax\target\x86_64-unknown-linux-musl\release\unzbd`, B11's
 output); a missing one, a missing `linux_release.x86_64` template or an unreachable WSL distro is a
 named error before the build. The Linux payload drops the PowerShell extractors, which SteamOS
-cannot run. The README is `packaging/README.md` through `$LinuxReadme`, the one line B13 changes.
+cannot run. The README is `packaging/README-linux.md` through `$LinuxReadme` (B13).
 `packaging/MANIFEST.md` has the Linux table and `docs/tooling.md` the `-Linux` paragraph. In a
 worktree the script now takes `tools\` from `CSVM_DATA_ROOT`, as `RunTests.ps1` does.
 
@@ -475,7 +475,35 @@ and `tools/unzbd` survives. Record SHA-256 like the Windows zip.
 **⚠ Traps.** A zip made on Windows loses the executable bit, which is why this is a `.tar.gz`
 (Decision 4).
 
-## B13 ☐ Linux README with an "On Steam Deck" section
+## B13 ☑ Linux README with an "On Steam Deck" section
+
+**Landed.** `packaging/README-linux.md` is the tarball's `README.md`: `$LinuxReadme` in
+`ExportRelease.ps1` names it, `Copy-ReleaseFiles` stages it at the root of `.scratch\export-linux\`,
+and the WSL pack step archives everything in that folder. `packaging/MANIFEST.md`'s Linux table and
+`docs/tooling.md` name it. It is derived from `packaging/README.md` with the Windows-only material
+removed (`Extract.cmd`, the PowerShell scripts, SmartScreen, Direct3D 12) and covers: the
+community-tested, best-effort label with the Steam Deck as the reference machine; `sha256sum`;
+requirements (x86_64, Vulkan only, the original game's installed folder, no ICU library to install,
+per Decision 12); unpacking into a new folder, since the archive's entries sit at its root, with
+`tar` keeping the executable bits and a `chmod +x` fallback; where the original folder comes from
+(a copied Windows install first, per Decision 5b; the Wine and Proton prefix search, stated as
+untried, with a request to report whether the CD installer works under Proton); the in-game
+extraction; an "On Steam Deck" section (non-Steam game from Desktop mode, no Proton version forced,
+first extraction in Desktop mode); `logs/`, the `llvmpipe` software-rendering case; the settings
+folder `~/.local/share/godot/app_userdata/CSVM` (no `config/use_custom_user_dir` in
+`project.godot`, so Godot's default; `$XDG_DATA_HOME` moves it); the payload list and the licences.
+The extraction paragraphs describe A5, which is not built: the screen offered at startup with no
+data, the pre-filled folder, choosing another, the mis-pick message, `extracted` beside the
+executable, the menu opening afterwards, and the re-extraction screen for out-of-date data. They
+are worded after A5's goal and Decisions 5 and 8 rather than after screen text, and A5's landing
+should re-read them. Controllers on the Deck are left to the community testing (B15 and B16 are
+open). The OpenGL wording is hedged: `project.godot` does not set
+`rendering/rendering_device/fallback_to_opengl3`, so Godot's default decides whether a machine
+without Vulkan switches to the Compatibility renderer, and the README calls that path untested.
+
+**Verified.** <pending orchestrator run>
+
+**Original approach (kept for reference).**
 
 **Goal.** The Linux download carries a README that covers requirements (Vulkan only, no Direct3D 12
 fallback), setup through the in-game Extract button, the settings folder, and the Deck.

@@ -90,9 +90,9 @@ $LinuxDistro    = "Debian"
 if (-not $LinuxUnzbd) {
     $LinuxUnzbd = Join-Path $ToolsRoot "tools\mech3ax\target\x86_64-unknown-linux-musl\release\unzbd"
 }
-# The Linux README. Until packaging has a Linux-specific one, the Windows README ships in its
-# place; pointing this at the Linux file is the whole change when that file exists.
-$LinuxReadme = Join-Path $RepoRoot "packaging\README.md"
+# The Linux README, shipped as README.md at the tarball root like the zip's own. A separate
+# file because the Windows one describes Extract.cmd, SmartScreen and Direct3D 12.
+$LinuxReadme = Join-Path $RepoRoot "packaging\README-linux.md"
 
 # The zip payload beside the export output, from packaging/MANIFEST.md. Sources are the
 # files' one home in the repo, so a copy is byte-identical to what the manifest names.

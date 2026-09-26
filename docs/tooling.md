@@ -268,11 +268,10 @@ distro's own filesystem, given `0755` (`CSVM.x86_64`, `tools/unzbd`, directories
 (everything else), and archived root-owned. The script reads both executables' modes back from the
 archive and prints its SHA-256. `-LinuxUnzbd <path>` names the Linux `unzbd`, by default the musl
 build `tools\mech3ax\target\x86_64-unknown-linux-musl\release\unzbd`; a missing one, a missing Linux
-export template or an unreachable WSL distro is a named error before the build starts. ⚠ The
-self-contained .NET runtime needs `libicu` on the target; a system without it aborts at startup
-with "Couldn't find a valid ICU package installed on the system". The author's WSL Debian has no
-`libicu` and fails that way; with `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` the same build boots
-headless there and reaches the no-data screen.
+export template or an unreachable WSL distro is a named error before the build starts. The engine csproj sets
+`InvariantGlobalization`, so the self-contained .NET runtime never loads `libicu`; without it, a
+system lacking that library (the author's WSL Debian among them) aborts at startup with "Couldn't
+find a valid ICU package installed on the system".
 
 **The version has one home: `application/config/version` in `CSVM/project.godot`.** Bump it there
 and nowhere else. The engine reads it at startup for the log's first line and the menu's corner
@@ -299,6 +298,14 @@ in this file, and go stale silently when one of them moves: the renderer floor a
 first line, the extraction command spelling, and the payload list. ⚠ **The author reviews it before
 any release**, since outward communication is theirs; it is the one payload file that is not
 finished when it is correct.
+
+**`packaging/README-linux.md` is its Linux twin**, shipped as `README.md` at the tarball root. It
+drops the Windows-only material (`Extract.cmd`, SmartScreen, Direct3D 12) and adds the
+community-tested label, the Vulkan-only requirement, unpacking with the executable bits, where the
+original game's folder comes from (a copied Windows install; the Wine and Proton prefix search is
+untested), the settings folder under `~/.local/share/godot/app_userdata/CSVM`, and an "On Steam
+Deck" section. It restates the same facts as the Windows README plus the install search places in
+`InstallLocator`, and the author reviews it on the same terms.
 
 **Two of the zip's files are about the build rather than part of it.**
 `LICENSE-thirdparty.txt` carries the notices the payload's own contents oblige it to carry, which

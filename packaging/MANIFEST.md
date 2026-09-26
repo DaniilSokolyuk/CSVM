@@ -46,7 +46,7 @@ the archive before it reports success.
 |---|---|---|
 | `CSVM.x86_64` + `data_CSVM_linuxbsd_x86_64/` | the Godot `Linux/X11` release export output | `0755`; the pck is embedded as in the Windows exe. The data folder holds the self-contained linux-x64 .NET runtime |
 | `tools/unzbd` | `-LinuxUnzbd`, default `tools\mech3ax\target\x86_64-unknown-linux-musl\release\unzbd` | `0755`; the static musl build of the same fork commit as `unzbd.exe` |
-| `README.md` | `packaging/README.md` | The Windows README until a Linux one exists; `$LinuxReadme` in the script is the one line that changes |
+| `README.md` | `packaging/README-linux.md` | The Linux README: the community-tested label, requirements (x86_64, Vulkan), unpacking with the executable bits, where the original game's folder comes from, the in-game extraction, the "On Steam Deck" section, logs, the settings folder and the licences. Author-reviewed before release like the zip's README; `$LinuxReadme` in the script names it |
 | `LICENSE`, `LICENSE-unzbd`, `LICENSE-thirdparty.txt` | as in the zip | ⚠ `LICENSE-thirdparty.txt` is assembled from the Windows artefacts (the `win-x64` runtime pack, the crate tree for `x86_64-pc-windows-msvc`), so it does not yet enumerate what the Linux binaries contain |
 | `BUILD-INFO.txt` | GENERATED, as in the zip | The same commits, with the Linux file names and LF line endings |
 
