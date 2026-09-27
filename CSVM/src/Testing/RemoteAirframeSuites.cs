@@ -58,7 +58,7 @@ internal static class RemoteAirframeSuites
         var pool = new ProjectilePool(textures, null, null);
         ctx.Host.AddChild(pool);
 
-        var received = new RemotePoseBuffer();
+        var received = new RemotePoseBuffer(SendInterval);
         var remoteSpawn = new Vector3(0f, SpawnAltitudeM, 0f);
         // Far enough from the remote rig that neither sweeps into the other while both fly.
         var localSpawn = new Vector3(4000f, SpawnAltitudeM, 0f);

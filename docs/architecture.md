@@ -771,7 +771,7 @@ original's own message set, with ids and guarantees, is in [`org/multiplayer-mes
 - `src/Net/NetHandshake.cs`, what a host hands a joining guest before either flies: the master seed every stream derives from, and the host's session clock at send.
 - `src/Net/NetSeat.cs`, one pilot's place in a match: peer, team, local flag, callsign, airframe, paint, seat index and signed score, with the seat index as the whole identity.
 - `src/Net/NetSeats.cs`, the roster's rules: eight pilots admitted behind sixteen-wide tables, the original's authored seat colours, and what makes a roster well formed.
-- `src/Net/RemotePoseBuffer.cs`, one remote aircraft's received samples and the pose to draw it at now: interpolated a fixed delay behind, extrapolated along the newest velocity up to a cap, then held, with a tally of its reads and misses.
+- `src/Net/RemotePoseBuffer.cs`, one remote aircraft's received samples and the pose to draw it at now: placed by sequence on the sender's timeline, played out a fixed delay behind at the fitted sender clock rate, extrapolated along the newest velocity up to a cap, then held, with a tally of its reads and misses.
 - `src/Net/AircraftStateCadence.cs`, when an owner puts its own aeroplane on the wire, in simulation steps, and the per-seat sequence each sample carries.
 - `src/Net/MatchStateCadence.cs`, when a host repeats the match clock, in simulation steps: a second between ticks, and every change sent where it happens instead.
 - `src/Net/NetChannels.cs`, which channel a message rides: one per seat for state and another per seat for fire, since sequenced discard is per sender and channel, and one for the join and every reliable event.

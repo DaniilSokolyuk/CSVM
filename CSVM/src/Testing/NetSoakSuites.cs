@@ -50,6 +50,11 @@ internal static class NetSoakSuites
 
     private const int SettleSteps = 30;
 
+    // Sim steps each cell's link runs before the cell reads anything. The playout clock walks onto
+    // a stepped latency over about a second instead of jumping. A flight read inside that second
+    // measures one lag fitted across a lag still moving, not the link.
+    private const int ConvergeSteps = 120;
+
     // Steps of clean link at the end with both guns held. The last loss of every stream then sits
     // behind a delivered payload, so the inferred count can meet the carrier's.
     private const int FlushFireSteps = 12;
@@ -144,6 +149,7 @@ internal static class NetSoakSuites
     {
         pair.Mesh[0].SetConditions(1, cell.Conditions);
         pair.Mesh[1].SetConditions(0, cell.Conditions);
+        pair.Step(ConvergeSteps);
         int lostBefore = pair.Mesh.Sum(m => m.Lost);
         int discardedBefore = pair.Mesh.Sum(m => m.DiscardedStale);
         var hostBefore = pair.Host.NetLink!.Instruments.Reading;

@@ -1972,6 +1972,11 @@ public partial class FlightController : Node3D
         if (!RemoteOwned)
             PollInput();
 
+        // The receive clock runs through a death too, because the owner keeps sending. A sample
+        // stamped on a stopped clock would read as the sender's clock racing ahead of this one.
+        if (RemoteOwned)
+            RemotePoses?.Advance(dt);
+
         // Advance the stunt clock every physics frame, including through the crash freeze so the
         // clock never stops (a deliberate rule); it stops only at AllComplete (inside Tick). A
         // halted GameClock stops the calls entirely, so the timer freezes with the rest of the sim.
@@ -3508,7 +3513,6 @@ public partial class FlightController : Node3D
     {
         if (RemotePoses is not { } received)
             return;
-        received.Advance(dt);
         _lifecycle.TickTimers(dt);
         if (!received.TrySample(out var pose))
             return;

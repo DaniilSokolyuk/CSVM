@@ -6,10 +6,10 @@ namespace CSVM.Tests;
 
 /// <summary>
 /// The received history of one remote aircraft, off-engine. Samples go in with the time they
-/// arrived at, and a read asks for a render time. So every case a real wire produces is scripted
-/// here rather than waited for. Two samples straddling the read, a gap where one never came, a
-/// delivery that overtook the one before it. A newest sample gone stale, and an empty buffer. The
-/// three answers the reader reports are what an instrument counts, so each is asserted by name.
+/// arrived at, and a read asks for a time on the sender's timeline, which the sequence sets. So
+/// every case a real wire produces is scripted here rather than waited for. Two samples straddling
+/// the read, a gap where one never came, a delivery that overtook the one before it. A newest
+/// sample gone stale, an empty buffer, and the playout clock that walks the timeline.
 /// </summary>
 [Trait("Tier", "Quick")]
 public class RemotePoseBufferTests
@@ -24,11 +24,11 @@ public class RemotePoseBufferTests
     [Fact]
     public void TwoSamplesStraddlingTheReadInterpolateBetweenThem()
     {
-        var buffer = new RemotePoseBuffer();
+        var buffer = OneSecondSamples();
         buffer.Add(Sample(1, 0f), 0.0);
         buffer.Add(Sample(2, 1f), 1.0);
 
-        Assert.True(buffer.TrySample(0.5 + Delay, out var pose));
+        Assert.True(buffer.TrySample(1.5, out var pose));
         Assert.Equal(RemotePoseFeed.Interpolating, pose.Feed);
         Assert.Equal(0.5f, pose.Position.X, 3);
         Assert.Equal(0.5f, pose.Throttle, 3);
@@ -38,20 +38,33 @@ public class RemotePoseBufferTests
     [Fact]
     public void AGapInTheStreamStillInterpolatesAcrossTheSamplesThatArrived()
     {
-        var buffer = new RemotePoseBuffer();
+        var buffer = OneSecondSamples();
         buffer.Add(Sample(1, 0f), 0.0);
-        // Sequence 2 never arrives; 3 does, a second later.
+        // Sequence 2 never arrives; 3 does, two seconds of the sender's later.
         buffer.Add(Sample(3, 2f), 2.0);
 
-        Assert.True(buffer.TrySample(1.0 + Delay, out var pose));
+        Assert.True(buffer.TrySample(2.0, out var pose));
         Assert.Equal(RemotePoseFeed.Interpolating, pose.Feed);
         Assert.Equal(1f, pose.Position.X, 3);
     }
 
     [Fact]
+    public void ALateArrivalIsPlacedByItsSequenceAndNotByWhenItLanded()
+    {
+        var buffer = OneSecondSamples();
+        buffer.Add(Sample(1, 0f), 0.0);
+        buffer.Add(Sample(2, 1f), 1.0);
+        // A second and a half late. Stamped by arrival it would stretch the pair before it.
+        buffer.Add(Sample(3, 2f), 3.5);
+
+        Assert.True(buffer.TrySample(2.5, out var pose));
+        Assert.Equal(1.5f, pose.Position.X, 3);
+    }
+
+    [Fact]
     public void ASampleAtOrBelowTheNewestSequenceIsDropped()
     {
-        var buffer = new RemotePoseBuffer();
+        var buffer = OneSecondSamples();
         buffer.Add(Sample(7, 0f), 0.0);
         buffer.Add(Sample(9, 2f), 1.0);
 
@@ -60,32 +73,36 @@ public class RemotePoseBufferTests
         Assert.Equal(2, buffer.Count);
         Assert.Equal((ushort)9, buffer.NewestSequence);
 
-        Assert.True(buffer.TrySample(1.0 + Delay, out var pose));
+        Assert.True(buffer.TrySample(9.0, out var pose));
         Assert.Equal(2f, pose.Position.X, 3);
     }
 
     [Fact]
     public void TheSequenceWrapIsNotMistakenForAnOldSample()
     {
-        var buffer = new RemotePoseBuffer();
+        var buffer = OneSecondSamples();
         Assert.True(buffer.Add(Sample(65535, 0f), 0.0));
         Assert.True(buffer.Add(Sample(0, 1f), 1.0));
         Assert.True(buffer.Add(Sample(1, 2f), 2.0));
 
         Assert.Equal(3, buffer.Count);
         Assert.Equal((ushort)1, buffer.NewestSequence);
+        // The timeline runs on through the wrap rather than folding back to zero.
+        Assert.True(buffer.TrySample(65535.5, out var pose));
+        Assert.Equal(RemotePoseFeed.Interpolating, pose.Feed);
+        Assert.Equal(0.5f, pose.Position.X, 3);
     }
 
     [Fact]
     public void AStaleNewestSampleIsFlownAlongItsVelocity()
     {
-        var buffer = new RemotePoseBuffer();
+        var buffer = OneSecondSamples();
         buffer.Add(Sample(1, 0f), 0.0);
         buffer.Add(Sample(2, 1f), 1.0);
 
         // Half the cap past the newest sample, so the answer is the sample plus half a cap of
         // its own velocity, and it says so.
-        Assert.True(buffer.TrySample(1.0 + Delay + (Cap * 0.5), out var pose));
+        Assert.True(buffer.TrySample(2.0 + (Cap * 0.5), out var pose));
         Assert.Equal(RemotePoseFeed.Extrapolating, pose.Feed);
         Assert.Equal(1f + (Cap * 0.5f), pose.Position.X, 3);
     }
@@ -93,20 +110,34 @@ public class RemotePoseBufferTests
     [Fact]
     public void PastTheCapTheAnswerHoldsRatherThanFlyingFurther()
     {
-        var buffer = new RemotePoseBuffer();
+        var buffer = OneSecondSamples();
         buffer.Add(Sample(1, 0f), 0.0);
         buffer.Add(Sample(2, 1f), 1.0);
 
-        Assert.True(buffer.TrySample(1.0 + Delay + (Cap * 4.0), out var pose));
+        Assert.True(buffer.TrySample(2.0 + (Cap * 4.0), out var pose));
         Assert.Equal(RemotePoseFeed.Starved, pose.Feed);
         Assert.Equal(1f + Cap, pose.Position.X, 3);
     }
 
     [Fact]
+    public void TheOwnersPlayoutStopsAtTheCapWhenTheStreamStops()
+    {
+        var buffer = OneSecondSamples();
+        buffer.Receive(Sample(1, 0f));
+        for (int i = 0; i < 600; i++)
+            buffer.Advance(1f / 60f);
+
+        Assert.Equal(1.0 + Cap, buffer.PlayoutTime, 6);
+        Assert.True(buffer.TrySample(out var pose));
+        Assert.Equal(RemotePoseFeed.Starved, pose.Feed);
+        Assert.Equal(Cap, pose.Position.X, 3);
+    }
+
+    [Fact]
     public void AReadBeforeTheOldestSampleHoldsThatSample()
     {
-        var buffer = new RemotePoseBuffer();
-        buffer.Add(Sample(1, 5f), 10.0);
+        var buffer = OneSecondSamples();
+        buffer.Add(Sample(10, 5f), 10.0);
 
         Assert.True(buffer.TrySample(1.0, out var pose));
         Assert.Equal(RemotePoseFeed.Starved, pose.Feed);
@@ -124,19 +155,77 @@ public class RemotePoseBufferTests
     }
 
     [Fact]
-    public void TheBuffersOwnClockStampsArrivalsAndTimesReads()
+    public void ThePlayoutRunsTheDelayBehindTheNewestArrival()
     {
+        // The sender's own cadence, one metre a second, over a lag-free link: the answer is where
+        // the owner was one delay ago.
         var buffer = new RemotePoseBuffer();
-        buffer.Receive(Sample(1, 0f));
-        for (int i = 0; i < 60; i++)
-            buffer.Advance(1f / 60f);
-        buffer.Receive(Sample(2, 1f));
+        ushort sequence = 0;
+        for (int step = 0; step < 180; step++)
+        {
+            if (step % AircraftStateCadence.SendStepInterval == 0)
+            {
+                buffer.Receive(Sample(sequence, sequence * AircraftStateCadence.SampleSeconds));
+                sequence++;
+            }
 
-        Assert.Equal(1.0, buffer.Now, 3);
+            buffer.Advance(1f / 60f);
+        }
+
+        Assert.Equal(3.0, buffer.Now, 3);
         Assert.True(buffer.TrySample(out var pose));
-        // The read is the delay behind Now, which is inside the pair just received.
         Assert.Equal(RemotePoseFeed.Interpolating, pose.Feed);
-        Assert.Equal(1f - Delay, pose.Position.X, 2);
+        Assert.Equal(3f - Delay, pose.Position.X, 2);
+        Assert.Equal(1.0, buffer.PlayoutRate, 3);
+    }
+
+    [Fact]
+    public void ASenderClockAtHalfThisOnesRateIsFittedAndFlownSmoothly()
+    {
+        // The sender's simulation runs at half this machine's clock, so each sample describes
+        // half as much time as passes between arrivals. The playout must walk at half speed.
+        var buffer = new RemotePoseBuffer();
+        ushort sequence = 0;
+        float? before = null;
+        float slowest = float.MaxValue, fastest = 0f;
+        for (int step = 0; step < 900; step++)
+        {
+            if (step % (AircraftStateCadence.SendStepInterval * 2) == 0)
+            {
+                buffer.Receive(Sample(sequence, sequence * AircraftStateCadence.SampleSeconds));
+                sequence++;
+            }
+
+            buffer.Advance(1f / 60f);
+            Assert.True(buffer.TrySample(out var pose));
+            if (step >= 600 && before is { } x)
+            {
+                float speed = (pose.Position.X - x) * 60f;
+                slowest = Mathf.Min(slowest, speed);
+                fastest = Mathf.Max(fastest, speed);
+            }
+
+            before = pose.Position.X;
+        }
+
+        Assert.Equal(0.5, buffer.PlayoutRate, 2);
+        Assert.InRange(slowest, 0.48f, 0.52f);
+        Assert.InRange(fastest, 0.48f, 0.52f);
+    }
+
+    [Fact]
+    public void AStreamThatResumesFarAheadReanchorsThePlayout()
+    {
+        var buffer = OneSecondSamples();
+        buffer.Receive(Sample(1, 0f));
+        buffer.Advance(1f);
+        buffer.Receive(Sample(2, 1f));
+        // The sender's timeline moves on ten seconds between two arrivals one second apart.
+        buffer.Advance(1f);
+        buffer.Receive(Sample(12, 11f));
+
+        Assert.Equal(1, buffer.Resyncs);
+        Assert.Equal(12.0 - Delay, buffer.PlayoutTime, 6);
     }
 
     [Fact]
@@ -153,9 +242,28 @@ public class RemotePoseBufferTests
     }
 
     [Fact]
+    public void ARespawnKeepsThePlayoutClockRunning()
+    {
+        // A respawn empties the samples, but the sender's sequence runs on through it. Anchoring
+        // afresh on the first arrival after it would move the playout by that arrival's jitter.
+        var buffer = OneSecondSamples();
+        buffer.Add(Sample(1, 0f), 0.0);
+        buffer.Advance(1f);
+        buffer.Add(Sample(2, 1f), 1.0);
+        double before = buffer.PlayoutTime;
+        buffer.Clear();
+        buffer.Advance(1f);
+        buffer.Add(Sample(3, 50f), 2.5);  // late, and at the new spawn
+
+        Assert.Equal(before + 1.0, buffer.PlayoutTime, 6);
+        Assert.Equal(0, buffer.Resyncs);
+        Assert.Equal(1, buffer.Count);
+    }
+
+    [Fact]
     public void TheHistoryIsBoundedAndKeepsTheNewestSamples()
     {
-        var buffer = new RemotePoseBuffer();
+        var buffer = OneSecondSamples();
         for (int i = 0; i < RemotePoseBuffer.Capacity * 2; i++)
             buffer.Add(Sample((ushort)(i + 1), i), i);
 
@@ -167,7 +275,7 @@ public class RemotePoseBufferTests
         Assert.Equal((float)RemotePoseBuffer.Capacity, early.Position.X, 3);
 
         float newest = (RemotePoseBuffer.Capacity * 2) - 1;
-        Assert.True(buffer.TrySample(newest + Delay + 0.1, out var late));
+        Assert.True(buffer.TrySample(newest + 1.0 + 0.1, out var late));
         Assert.Equal(RemotePoseFeed.Extrapolating, late.Feed);
         Assert.Equal(newest + 0.1f, late.Position.X, 3);
     }
@@ -175,7 +283,7 @@ public class RemotePoseBufferTests
     [Fact]
     public void AQuantisedAttitudeIsTakenAsGivenAndInterpolated()
     {
-        var buffer = new RemotePoseBuffer();
+        var buffer = OneSecondSamples();
         // What comes off the wire: four 16-bit fields, so the quaternion is near unit length and
         // not on it. A reader that demanded a normalised one would throw here.
         var level = new Quaternion(0f, 0f, 0f, 0.999f);
@@ -183,7 +291,7 @@ public class RemotePoseBufferTests
         buffer.Add(Sample(1, 0f) with { Attitude = level }, 0.0);
         buffer.Add(Sample(2, 1f) with { Attitude = banked }, 1.0);
 
-        Assert.True(buffer.TrySample(0.5 + Delay, out var pose));
+        Assert.True(buffer.TrySample(1.5, out var pose));
         Assert.Equal(1f, pose.Attitude.Length(), 3);
         Assert.True(pose.Attitude.Y > 0.3f && pose.Attitude.Y < 0.45f);
     }
@@ -191,14 +299,14 @@ public class RemotePoseBufferTests
     [Fact]
     public void TheTallyCountsStaleSamplesAndOnlyTheOwnersReadsByFeed()
     {
-        var buffer = new RemotePoseBuffer();
+        var buffer = OneSecondSamples();
         buffer.Receive(Sample(1, 0f));
         buffer.Receive(Sample(1, 0f));
         buffer.Advance(1f);
         buffer.Receive(Sample(2, 1f));
         buffer.TrySample(out _);
         buffer.TrySample(buffer.Now, out _);
-        buffer.Advance(1f);
+        buffer.Advance(2f);
         buffer.TrySample(out _);
 
         var tally = buffer.Tally;
@@ -220,7 +328,7 @@ public class RemotePoseBufferTests
     public void TheExtrapolationErrorIsHowFarASampleLandsFromTheOneBeforeItsVelocity()
     {
         // One second per sample, so a sequence step is a second of flight at one metre a second.
-        var buffer = new RemotePoseBuffer(sampleSeconds: 1f);
+        var buffer = OneSecondSamples();
         buffer.Add(Sample(1, 0f), 0.0);
         buffer.Add(Sample(2, 1f), 1.0);   // exactly where predicted
         buffer.Add(Sample(4, 3.5f), 2.0); // two steps on, half a metre past the prediction
@@ -235,7 +343,7 @@ public class RemotePoseBufferTests
     [Fact]
     public void ASampleNoFlightCouldReachIsAJumpAndNotAnError()
     {
-        var buffer = new RemotePoseBuffer(sampleSeconds: 1f);
+        var buffer = OneSecondSamples();
         buffer.Add(Sample(1, 0f), 0.0);
         // Two metres of reach either way at one metre a second, and it landed a hundred away.
         buffer.Add(Sample(2, 100f), 1.0);
@@ -254,6 +362,9 @@ public class RemotePoseBufferTests
 
         Assert.Equal(new RemotePoseTally(11, 22, 33, 44, 55, 66, 4.5, 7f, 3), a.Plus(b));
     }
+
+    // One second of the sender's timeline per sequence step, so sequence n sits at n seconds.
+    private static RemotePoseBuffer OneSecondSamples() => new(sampleSeconds: 1f);
 
     // One sample of an aeroplane one metre per second along +X, at x = position. The lever and
     // the stick carry that same number, so a read tells which sample it came from.

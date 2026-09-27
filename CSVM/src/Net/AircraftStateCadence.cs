@@ -18,7 +18,7 @@ public sealed class AircraftStateCadence
     public const int SendStepInterval = 3;
 
     /// <summary>Seconds between two consecutive sequence numbers of one seat, at the fixed step.
-    /// A receiver turns a sequence gap into flown time with it.</summary>
+    /// A receiver places each sample on the sender's timeline with it.</summary>
     public const float SampleSeconds = SendStepInterval * Utils.GameClock.FixedDt;
 
     private readonly ushort[] _sequence = new ushort[NetSeats.SeatCapacity];

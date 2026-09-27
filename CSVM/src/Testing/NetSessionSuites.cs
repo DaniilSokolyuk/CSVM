@@ -329,7 +329,7 @@ internal static class NetSessionSuites
             // opening, and it says nothing about the stream.
             if (i >= MaxLagSteps
                 && guest.SeatRigs[0].Controller?.RemotePoses is { } received
-                && received.TrySample(received.Now, out var answer))
+                && received.TrySample(received.PlayoutTime, out var answer))
             {
                 flight.Feeds[(int)answer.Feed]++;
             }

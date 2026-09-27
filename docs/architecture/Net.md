@@ -256,14 +256,14 @@ take the channel-wise complement of seat minus 8. The channel order and the deri
 (`BL-1017`).
 
 ## src/Net/RemotePoseBuffer.cs
-One remote aircraft's received history, and the pose to draw it at now: `AircraftStateMessage`
-samples go in stamped with the buffer's own clock, and a read gets the state
-`BufferDelaySeconds` behind, interpolated between the two samples straddling it. Past the newest
-sample the answer rides that sample's velocity for at most `ExtrapolationCapSeconds` and then
-holds, and `RemotePoseFeed` names which case each answer came from. A sample at or below the
-newest sequence is dropped, wrap included. `Tally` counts the owner's reads by feed, the stale
-drops, and each sample's miss against the one before it flown on its velocity (the one position
-error a machine reads without the owner); a miss past twice the sample's reach is a jump, counted apart.
+One remote aircraft's received history and the pose to draw it at now. A sample sits on the
+sender's timeline by its sequence, never its arrival; a playout clock walks it `BufferDelaySeconds`
+behind the newest arrival at the fitted sender clock rate plus a damped lead correction, and
+re-anchors only past `SnapSeconds`. `Clear` (a respawn) drops the samples but keeps the timeline,
+since the sender's sequence runs on. Past the newest sample it rides velocity for at most
+`ExtrapolationCapSeconds`, then holds; `RemotePoseFeed` names the case. Stale sequences drop, wrap
+included. `Tally` counts reads by feed, stale drops, and each sample's miss against its
+predecessor's velocity (past twice its reach, a jump). `RemotePosePlaybackTests` measures playback.
 
 ## src/Net/AircraftStateCadence.cs
 The send half of aircraft replication, and the only thing in it that is not the session's own

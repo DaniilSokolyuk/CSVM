@@ -57,6 +57,10 @@ member, and it does not go here.
   in fractions of a step first, then read the residual, because a same-step difference measures
   the delay and a whole-step fit leaves half a step of it behind.** Fitting the replicated
   aeroplane's lag fractionally moved its reading from 0.60 m to 0.52 m mean.
+- **METHOD-33**, **Judge replicated motion on two independent frame loops, never on two sessions
+  stepped in lockstep: lockstep lands every sample on a step edge, so arrival jitter cannot
+  appear.** The arrival-stamped pose buffer passed the lockstep tracking suite while
+  `RemotePosePlaybackTests`' frame-looped model read 15 to 33 % rms speed error on it.
 
 ## DIAG, chasing a symptom
 
