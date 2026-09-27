@@ -374,7 +374,6 @@ if ($NoSuites) {
     $allowSeen = @{}
     $allowMax = @{}
     $allowWhy = @{}
-    $crashedAtExit = @()
     $unexpected = [ordered]@{}
     $headlessErrors = [ordered]@{}
     foreach ($k in 1..$Shards) {
@@ -390,9 +389,10 @@ if ($NoSuites) {
         }
         $json = [IO.File]::ReadAllText($reportPath, $Utf8) | ConvertFrom-Json
         if ($exit -ne 0 -and $exit -ne 1 -and $exit -ne 124) {
-            # A signal after the report is written: the headless export's teardown, which the
-            # Windows export of the same commit does as well. The verdict is the report's.
-            $crashedAtExit += "$label (exit $exit)"
+            # A signal after the report is written is a crash in the export's teardown, the one a
+            # render instance still alive at exit causes. A player's quit takes the same teardown,
+            # so it fails the stage rather than trusting the report.
+            $problems += "${label}: crashed at exit (exit $exit) after writing its report; see shard$k.out"
         }
         $totals[[string][int]$json.shard.selectedTotal] = 1
         foreach ($suite in @($json.suites)) {
@@ -468,9 +468,6 @@ if ($NoSuites) {
     }
     foreach ($name in $stale) {
         Write-Host "  note: '$name' is on the headless-only list and passed; if it passes on a second run, take it off the list" -ForegroundColor Yellow
-    }
-    foreach ($c in $crashedAtExit) {
-        Write-Host "  note: $c crashed at exit after writing its report (headless teardown; the Windows export does the same)" -ForegroundColor Yellow
     }
     $status = if ($fail -eq 0 -and $problems.Count -eq 0 -and $suiteRows.Count -gt 0) { "PASS" } else { "FAIL" }
     Add-Stage "engine" $status (Read-Number "engine.seconds") `

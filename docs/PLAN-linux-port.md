@@ -783,9 +783,13 @@ quit condition.
 **Found while landing (WSL and harness, handled in the script).** (1) The managed side of a Linux
 export does not see Godot's own flags in `Environment.GetCommandLineArgs`, so with `--log-file` the
 harness reports the engine log unscreened; the check passes no `--log-file` and the harness screens
-the per-process `user://logs/godot.log`. (2) A headless export process can crash in teardown after
-writing its report (139 on Linux, an access violation from the Windows export); the report is the
-verdict and the crash a note. (3) On a zips-only tree 55 suites threw `ObjectDisposedException` on
+the per-process `user://logs/godot.log`. (2) A headless export process crashed in teardown after
+writing its report (139 or 134 on Linux, 0xC0000005 or 0xC0000374 from the Windows export) whenever a
+suite's build threw: `SceneBuilder.BuildSubtree` orphaned the half-built node and its mesh instance,
+which outlived the renderer and was freed after it. `BuildSubtree` and `WithEffectStage` now free
+what they built before rethrowing, and the `scene-build-throw-frees` suite pins that. The check
+fails a shard that crashes at exit, and the RunTests engine stage fails on the editor's
+`Pages in use exist at exit` line, which is the same leak seen by a build that survives it. (3) On a zips-only tree 55 suites threw `ObjectDisposedException` on
 `ZipArchive`, on Windows as on Linux, a harness bug and not a player one: the harness closed each
 world's texture archive with the build while the built scene still read it (library-root copies,
 effect stages, flyout bodies, decals), and the battery's unpacked folders served those reads. The

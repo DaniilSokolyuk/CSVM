@@ -21,15 +21,24 @@ internal static class EffectStageSuiteHelper
     {
         var stage = new Node3D { Name = $"EffectStage_{animName}" };
         int built = 0;
-        for (int slot = 0; slot < slots; slot++)
+        try
         {
-            var pool = new Node3D { Name = $"pool{slot}" };
-            pool.SetMeta(AnimRuntime.PoolSlotMeta, slot);
-            stage.AddChild(pool);
-            built += WorldEffectsFactory.BuildEffectStage(world.Gamez, world.Session.Builder.Scene, pool, rootNames);
-            foreach (var child in pool.GetChildren())
-                if (child is Node3D root)
-                    root.Visible = false;
+            for (int slot = 0; slot < slots; slot++)
+            {
+                var pool = new Node3D { Name = $"pool{slot}" };
+                pool.SetMeta(AnimRuntime.PoolSlotMeta, slot);
+                stage.AddChild(pool);
+                built += WorldEffectsFactory.BuildEffectStage(world.Gamez, world.Session.Builder.Scene, pool, rootNames);
+                foreach (var child in pool.GetChildren())
+                    if (child is Node3D root)
+                        root.Visible = false;
+            }
+        }
+        catch
+        {
+            // ⚠ Do not orphan the staged roots of earlier slots: their meshes would outlive the renderer.
+            stage.Free();
+            throw;
         }
         ctx.Check(built == rootNames.Count() * slots,
             $"{animName}: staged {built}/{rootNames.Count() * slots} template root(s) over {slots} slot(s)");

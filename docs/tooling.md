@@ -535,9 +535,13 @@ What the check had to learn:
 - **The suites read the player's zips-only tree, where the Windows battery reads unpacked
   folders.** A texture archive refuses a read after `Dispose` in both shapes alike, so a read of a
   closed archive fails the battery as it would fail here, rather than passing on the folders alone.
-- A headless process can crash in its teardown after writing its report (a signal exit on Linux,
-  an access violation from the Windows export). The report is the verdict and the crash is
-  printed as a note.
+- ⚠ **A shard that exits with a signal after writing its report fails the stage.** A render
+  instance still alive at exit (a mesh instance on a node nobody freed) crashes an exported build in
+  its teardown, on either platform: 139 or 134 on Linux, `0xC0000005` or `0xC0000374` (heap
+  corruption) from the Windows export. The editor survives the same leak and prints
+  `Pages in use exist at exit in PagedAllocator` on stderr, which `RunTests.ps1`'s engine stage
+  fails on, so the battery sees the leak before an export does. A player's quit takes the same
+  teardown, which is why the check does not trust the report here.
 - One-time setup in WSL Debian: `sudo apt install libfontconfig1`. Godot's Linux build loads it for
   system fonts and logs an engine error on every lookup without it; players' systems have it, a
   minimal WSL Debian does not, and the script refuses to start without it. The goldens are not run,
