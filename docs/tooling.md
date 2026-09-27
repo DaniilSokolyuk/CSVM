@@ -341,11 +341,28 @@ a throwaway project in `TEMP` and reads them back through `Engine.get_license_te
 draws from, not the machine-wide `dotnet` install, which is usually a newer build; and the crate
 half is `cargo metadata --offline --filter-platform x86_64-pc-windows-msvc` over the fork, with each
 crate's licence text taken from the registry checkout it was built from and deduplicated by content.
-The file's header states the Godot build, the .NET runtime version and the `cs-anim` commit it was
-assembled for, and `ExportRelease.ps1` re-checks all three against what it is packaging, so a stale
-notice is a build failure rather than a wrong claim inside a shipped zip. Regenerate when one of
-them throws; ⚠ a moved `cs-anim` counts even when the fork's own code did not change, because the
-crate list enumerates that commit's dependency tree.
+The file's header states the Godot build, the .NET runtime version, the runtime pack, the crate
+target and the `cs-anim` commit it was assembled for, and `ExportRelease.ps1` re-checks all of them
+against what it is packaging, so a stale notice is a build failure rather than a wrong claim inside
+a shipped zip. Regenerate when one of them throws; ⚠ a moved `cs-anim` counts even when the fork's
+own code did not change, because the crate list enumerates that commit's dependency tree.
+
+**The tarball ships its own notice**, `packaging/LICENSE-thirdparty-linux.txt` under the same name
+`LICENSE-thirdparty.txt`, written beside the zip's by `BuildThirdPartyNotices.ps1 -Linux` (which
+rewrites both). Its .NET half is the `Microsoft.NETCore.App.Runtime.linux-x64` pack of the same
+version, its crate half is `--filter-platform x86_64-unknown-linux-musl` (the trees differ: `libc`,
+`addr2line`, `gimli` and `object` on Linux, `windows-sys` and its companions on Windows), and a
+section 9 carries the musl C library that Rust's musl target links statically into `tools/unzbd`,
+from `packaging/LICENSE-musl` (the musl-1.2.3 release's `COPYRIGHT`; the bundled `libc.a` carries
+no text). The Godot sections are the editor's, which is valid because the engine compiles its
+licence tables from one `COPYRIGHT.txt` on every platform; the script runs the Linux template's
+`--version` in WSL and refuses a template of another build. ⚠ The script also refuses a
+`rust-toolchain.toml` pin other than Rust 1.91.1, because a new toolchain can bundle another musl
+and section 9 would then name the wrong release. Neither notice may name the other platform's
+runtime pack, crate target or file names: the script, `ExportRelease.ps1` and
+`sandbox\LinuxRelease.ps1`'s payload stage each refuse one that does, so the zip's notice cannot
+ship in the tarball. Neither notice has an SDL section; the zip carries SDL's own licence as
+`LICENSE-SDL2.txt`, and the tarball ships no SDL2.
 
 `BUILD-INFO.txt` is the one payload file generated rather than copied, because what it states is
 different on every run: the CSVM commit and the mech3ax `cs-anim` commit the two shipped binaries

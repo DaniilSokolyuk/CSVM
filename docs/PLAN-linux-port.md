@@ -685,9 +685,18 @@ unmodified script's run apart from the zip's hash.
 **Open, found while landing.** (1) The self-contained .NET runtime aborts at startup on a system
 without `libicu` ("Couldn't find a valid ICU package"), which the author's WSL Debian lacks. Settled
 by Decision 12: `InvariantGlobalization` in the engine csproj, so neither build needs a native
-locale library and B13's README states no `libicu` requirement. (2) `LICENSE-thirdparty.txt` is assembled from the Windows
-artefacts (the `win-x64` runtime pack, the `x86_64-pc-windows-msvc` crate tree); the tarball needs
-a Linux-assembled notice before it ships. (3) The Linux export log reports a completed shader bake;
+locale library and B13's README states no `libicu` requirement. (2) Settled: the tarball ships
+`packaging/LICENSE-thirdparty-linux.txt` as `LICENSE-thirdparty.txt`, checked in beside the zip's
+and written by `packaging\BuildThirdPartyNotices.ps1 -Linux` from the Linux payload's own inputs:
+the `linux-x64` runtime pack, the crate tree for `x86_64-unknown-linux-musl` (which differs from the
+msvc tree by `libc`, `addr2line`, `gimli` and `object` in and `windows-sys`, `windows-link`,
+`anstyle-wincon` and `once_cell_polyfill` out), the Godot sections checked against the Linux
+template's own build string, and a section 9 for musl 1.2.3, the C library Rust 1.91.1's musl
+target links statically, from `packaging/LICENSE-musl`. No SDL section, as the tarball ships no
+SDL2. Both headers stamp the runtime pack and crate target, and `ExportRelease.ps1`, the notices
+script and `sandbox\LinuxRelease.ps1`'s payload stage refuse a notice naming the other platform's
+pack, target or file names (`docs/tooling.md`). The zip's notice is unchanged apart from its two
+new stamp lines. (3) The Linux export log reports a completed shader bake;
 whether the baked pipelines are used on the Deck's driver is B16's to see.
 
 **Verified.** The full battery passes on the merged branch: units 4,886 (3 data skips), engine 383 of 383, 19 golden shots hash-identical.

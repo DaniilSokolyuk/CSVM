@@ -11,8 +11,9 @@
 
     Stages, each reported PASS/FAIL in RunTests.ps1's style:
       payload      the archive's listing against packaging/MANIFEST.md's Linux table: every row
-                   present, nothing at the root the table does not name, and CSVM.x86_64 and
-                   tools/unzbd marked -rwxr-xr-x
+                   present, nothing at the root the table does not name, CSVM.x86_64 and
+                   tools/unzbd marked -rwxr-xr-x, and LICENSE-thirdparty.txt stamped for the
+                   linux-x64 runtime pack and the musl crate tree, naming nothing of Windows'
       extract      ./CSVM.x86_64 --headless -- --extract=<install> into a fresh data root, the
                    player's defaults (zips only): exit 0 and a stamped VERSION.json
       engine       (unless -NoSuites) --run-tests over that same zips-only data root, the shape
@@ -209,6 +210,7 @@ tar --list --verbose --gzip --file="$tarball" > "$out/listing.txt" 2>&1
 echo $? > "$out/listing.exit"
 tar --extract --gzip --file="$tarball" --directory="$game" > "$out/unpack.log" 2>&1
 echo $? > "$out/unpack.exit"
+[ -f "$game/LICENSE-thirdparty.txt" ] && cp -- "$game/LICENSE-thirdparty.txt" "$out/LICENSE-thirdparty.txt"
 cd "$game" || exit 0
 
 xdg extract
@@ -325,6 +327,24 @@ if ((Read-Exit "listing") -ne 0) {
 }
 if ((Read-Exit "unpack") -ne 0) {
     $problems += "the archive did not unpack: $([IO.File]::ReadAllText((Join-Path $OutDir 'unpack.log')).Trim())"
+}
+# The notice must speak for what this archive ships: the linux-x64 runtime pack and the musl crate
+# tree, stated as the header stamps packaging\BuildThirdPartyNotices.ps1 -Linux writes, and none of
+# the Windows payload's names. The zip's notice, shipped here by mistake, fails on both counts.
+$noticePath = Join-Path $OutDir "LICENSE-thirdparty.txt"
+if (Test-Path $noticePath) {
+    $notice = [IO.File]::ReadAllText($noticePath, $Utf8)
+    foreach ($stamp in @(".NET runtime pack: Microsoft.NETCore.App.Runtime.linux-x64",
+                         "unzbd crate target: x86_64-unknown-linux-musl")) {
+        if ($notice.IndexOf($stamp, [StringComparison]::Ordinal) -lt 0) {
+            $problems += "LICENSE-thirdparty.txt does not state '$stamp': it was not assembled for the Linux payload"
+        }
+    }
+    foreach ($marker in @("win-x64", "x86_64-pc-windows-msvc", "data_CSVM_windows_x86_64", "unzbd.exe", "CSVM.exe")) {
+        if ($notice.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            $problems += "LICENSE-thirdparty.txt names '$marker', which is the Windows payload's"
+        }
+    }
 }
 $fileCount = @($listing | Where-Object { -not $_.IsDir }).Count
 foreach ($p in $problems) { Write-Host "  !! $p" -ForegroundColor Red }

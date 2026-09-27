@@ -44,28 +44,47 @@
     repository as packaging/LICENSE-plmpeg, and the section says in the shipped file where
     that text came from so a reader is not misled into taking it for a verbatim copy.
 
-    ExportRelease.ps1 checks the three version stamps this script writes into the file's
-    header against what it is actually packaging, and refuses an export whose notice was
-    assembled for a different engine, runtime or fork commit. That check is what makes a
-    stale notice a build failure rather than a silent shipping mistake. pl_mpeg and
-    PromptFont carry no such stamp because both live in this repository rather than in a
-    separately built binary: they move with CSVM's own history, which BUILD-INFO.txt
-    already records.
+    ExportRelease.ps1 checks the version stamps this script writes into the file's header
+    against what it is actually packaging, and refuses an export whose notice was
+    assembled for a different engine, runtime, runtime pack, crate target or fork commit.
+    That check is what makes a stale notice a build failure rather than a silent shipping
+    mistake. pl_mpeg and PromptFont carry no such stamp because both live in this
+    repository rather than in a separately built binary: they move with CSVM's own
+    history, which BUILD-INFO.txt already records.
+
+    -Linux also writes packaging/LICENSE-thirdparty-linux.txt, which the Linux tarball
+    ships as LICENSE-thirdparty.txt. Its sources are the Linux payload's own: the
+    linux-x64 runtime pack the Linux export bundles, and the crate tree cargo resolves
+    for x86_64-unknown-linux-musl, the target tools/unzbd is built for. The two crate
+    trees differ (libc and the backtrace crates on Linux, windows-sys and its companions
+    on Windows). Godot's texts are the same for both: the engine compiles them from one
+    COPYRIGHT.txt on every platform, and the run checks through WSL that the Linux
+    export template reports the same build string as the editor they are read from.
+    The tarball carries no SDL2, so neither notice has an SDL section; the zip's
+    LICENSE-SDL2.txt is SDL's own file beside it.
 
 .EXAMPLE
     .\packaging\BuildThirdPartyNotices.ps1
     Rewrite packaging/LICENSE-thirdparty.txt from the current tools/ and NuGet cache.
+
+.EXAMPLE
+    .\packaging\BuildThirdPartyNotices.ps1 -Linux
+    The same, then packaging/LICENSE-thirdparty-linux.txt beside it.
 #>
 
 [CmdletBinding()]
 param(
     # Empty means "the newest win-x64 runtime pack in the NuGet cache", which is what a
-    # self-contained publish on this machine picks up.
+    # self-contained publish on this machine picks up. -Linux reads the linux-x64 pack of
+    # the same version, since both exports publish from the one SDK.
     [string] $RuntimeVersion = "",
 
     # The checkout whose git-ignored tools\ holds Godot and the mech3ax fork, as for
     # ExportRelease.ps1's -ToolsRoot; a worktree has none of its own.
-    [string] $ToolsRoot = ""
+    [string] $ToolsRoot = "",
+
+    # Also write the Linux tarball's notice. Needs WSL (Debian) for the template check.
+    [switch] $Linux
 )
 
 $ErrorActionPreference = "Stop"
@@ -82,11 +101,32 @@ if (-not $ToolsRoot) {
 $ToolsRoot    = (Resolve-Path $ToolsRoot).Path
 $GodotExe     = Join-Path $ToolsRoot "tools\godot\Godot_v4.7-stable_mono_win64\Godot_v4.7-stable_mono_win64_console.exe"
 $Mech3axRepo  = Join-Path $ToolsRoot "tools\mech3ax"
-$OutFile      = Join-Path $PSScriptRoot "LICENSE-thirdparty.txt"
 $PlMpegFile   = Join-Path $PSScriptRoot "LICENSE-plmpeg"
 $PromptFontLicense = Join-Path $PSScriptRoot "LICENSE-promptfont"
 $PromptFontFile    = Join-Path $RepoRoot "CSVM\data\promptfont.ttf.bin"
-$PackRoot     = Join-Path $env:USERPROFILE ".nuget\packages\microsoft.netcore.app.runtime.win-x64"
+$PackCache    = Join-Path $env:USERPROFILE ".nuget\packages"
+$PackRoot     = Join-Path $PackCache "microsoft.netcore.app.runtime.win-x64"
+$LinuxTemplate = Join-Path $env:APPDATA "Godot\export_templates\4.7.stable.mono\linux_release.x86_64"
+$LinuxDistro  = "Debian"
+
+# What differs between the two notices. Pack and Target are also written into the header as
+# stamps, which ExportRelease.ps1 and sandbox\LinuxRelease.ps1 read back, so a notice built for
+# one platform cannot ship in the other's archive. Sep is the path separator the recipient's
+# system uses, so the file names read as they appear in that archive.
+$Platforms = @(
+    [pscustomobject]@{
+        Name = "Windows"; OutFile = Join-Path $PSScriptRoot "LICENSE-thirdparty.txt"
+        Pack = "win-x64"; Target = "x86_64-pc-windows-msvc"; Archive = "zip"; Sep = "\"
+        Exe = "CSVM.exe"; DataDir = "data_CSVM_windows_x86_64"; Unzbd = "tools\unzbd.exe"
+    }
+)
+if ($Linux) {
+    $Platforms += [pscustomobject]@{
+        Name = "Linux"; OutFile = Join-Path $PSScriptRoot "LICENSE-thirdparty-linux.txt"
+        Pack = "linux-x64"; Target = "x86_64-unknown-linux-musl"; Archive = "tarball"; Sep = "/"
+        Exe = "CSVM.x86_64"; DataDir = "data_CSVM_linuxbsd_x86_64"; Unzbd = "tools/unzbd"
+    }
+}
 
 $Rule = "=" * 78
 $Thin = "-" * 78
@@ -97,7 +137,9 @@ $Thin = "-" * 78
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 function Read-Utf8([string] $Path) { return [System.IO.File]::ReadAllText($Path) }
 
-foreach ($required in @($GodotExe, $Mech3axRepo, $PackRoot, $PromptFontFile, $PromptFontLicense)) {
+$requiredPaths = @($GodotExe, $Mech3axRepo, $PackRoot, $PromptFontFile, $PromptFontLicense)
+if ($Linux) { $requiredPaths += $LinuxTemplate }
+foreach ($required in $requiredPaths) {
     if (-not (Test-Path $required)) {
         throw "Not found: $required -- see PROJECT_CONTEXT.md for the tools/ setup."
     }
@@ -173,6 +215,24 @@ func _init():
     Remove-Item $dumpDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# The texts above come out of the Windows editor. The Linux export template is a different
+# binary of the same build, compiled from the same COPYRIGHT.txt, so its tables are the same
+# ones; what can drift is which build the installed template is. Its own --version answers
+# that, and only a Linux process can run it.
+if ($Linux) {
+    $templateWsl = (& wsl.exe -d $LinuxDistro --exec wslpath -u $LinuxTemplate)
+    if ($LASTEXITCODE -ne 0 -or -not $templateWsl) {
+        throw "WSL distro '$LinuxDistro' is not reachable to run $LinuxTemplate -- one-time " +
+            "setup: 'wsl --install -d Debian' (ExportRelease.ps1 -Linux needs it too)."
+    }
+    $templateBuild = (& wsl.exe -d $LinuxDistro --exec $templateWsl.Trim() --version |
+        Select-Object -Last 1)
+    if ($LASTEXITCODE -ne 0 -or "$templateBuild".Trim() -ne $godotBuild) {
+        throw "The Linux export template $LinuxTemplate reports build '$templateBuild', not the " +
+            "editor's $godotBuild -- reinstall the templates from the pinned .tpz."
+    }
+}
+
 # ---------------------------------------------------------------- .NET runtime
 
 if (-not $RuntimeVersion) {
@@ -180,13 +240,18 @@ if (-not $RuntimeVersion) {
     $RuntimeVersion = (Get-ChildItem $PackRoot -Directory |
         Sort-Object { [version] $_.Name } | Select-Object -Last 1).Name
 }
-$packDir = Join-Path $PackRoot $RuntimeVersion
-if (-not (Test-Path $packDir)) {
-    throw "Runtime pack $RuntimeVersion not in the NuGet cache ($PackRoot) -- publish once " +
-        "so the pack is restored, or pass -RuntimeVersion for one that is there."
+foreach ($platform in $Platforms) {
+    $packRootHere = Join-Path $PackCache "microsoft.netcore.app.runtime.$($platform.Pack)"
+    $packDir = Join-Path $packRootHere $RuntimeVersion
+    if (-not (Test-Path $packDir)) {
+        throw "Runtime pack $($platform.Pack) $RuntimeVersion not in the NuGet cache " +
+            "($packRootHere) -- export the $($platform.Name) build once so the pack is " +
+            "restored, or pass -RuntimeVersion for one that is there."
+    }
+    $platform | Add-Member PackName "Microsoft.NETCore.App.Runtime.$($platform.Pack)"
+    $platform | Add-Member DotnetLicense (Read-Utf8 (Join-Path $packDir "LICENSE.TXT"))
+    $platform | Add-Member DotnetNotices (Read-Utf8 (Join-Path $packDir "THIRD-PARTY-NOTICES.TXT"))
 }
-$dotnetLicense = Read-Utf8 (Join-Path $packDir "LICENSE.TXT")
-$dotnetNotices = Read-Utf8 (Join-Path $packDir "THIRD-PARTY-NOTICES.TXT")
 
 # ---------------------------------------------------------------- unzbd's crates
 
@@ -195,52 +260,65 @@ if ($LASTEXITCODE -ne 0 -or $forkCommit -notmatch '^[0-9a-f]{40}$') {
     throw "Could not resolve cs-anim in $Mech3axRepo."
 }
 
-Write-Host "Resolving unzbd's crates at cs-anim $($forkCommit.Substring(0, 8))..." -ForegroundColor Cyan
-Push-Location $Mech3axRepo
-try {
-    # --filter-platform keeps the Unix-only crates out; --offline keeps the enumeration a
-    # read of the lockfile and the registry checkouts the binary was actually built from,
-    # rather than a resolve that could pull something newer than the shipped exe.
-    $metadataJson = & cargo metadata --format-version 1 --offline --filter-platform x86_64-pc-windows-msvc
-    if ($LASTEXITCODE -ne 0) {
-        throw "cargo metadata failed (exit $LASTEXITCODE) in $Mech3axRepo."
+# The enumeration runs on this host for both targets: --filter-platform evaluates every cfg for
+# the named triple whatever the host is, and Cargo.lock's checksums pin each crate to the same
+# bytes in this machine's registry as in the WSL registry the musl build compiled.
+function Get-CrateSection([string] $Target) {
+    Push-Location $script:Mech3axRepo
+    try {
+        # --filter-platform keeps the other platform's crates out; --offline keeps the
+        # enumeration a read of the lockfile and the registry checkouts the binary was
+        # actually built from, rather than a resolve that could pull something newer.
+        $metadataJson = & cargo metadata --format-version 1 --offline --filter-platform $Target
+        if ($LASTEXITCODE -ne 0) {
+            throw "cargo metadata failed (exit $LASTEXITCODE) in $($script:Mech3axRepo) for $Target."
+        }
+    } finally {
+        Pop-Location
     }
-} finally {
-    Pop-Location
-}
-$metadata = $metadataJson | ConvertFrom-Json
+    $metadata = $metadataJson | ConvertFrom-Json
 
-# A null source is a workspace member (mech3ax's own crates), covered by LICENSE-unzbd.
-$crates = @($metadata.packages | Where-Object { $_.source } | Sort-Object name, version)
-if ($crates.Count -eq 0) {
-    throw "cargo metadata resolved no external crates -- the filter or the lockfile is wrong."
-}
+    # A null source is a workspace member (mech3ax's own crates), covered by LICENSE-unzbd.
+    $crates = @($metadata.packages | Where-Object { $_.source } | Sort-Object name, version)
+    if ($crates.Count -eq 0) {
+        throw "cargo metadata resolved no external crates for $Target -- the filter or the lockfile is wrong."
+    }
 
-$crateRows = New-Object System.Text.StringBuilder
-$texts = @{}
-foreach ($crate in $crates) {
-    $spdx = if ($crate.license) { $crate.license } else { "(no license field; see $($crate.repository))" }
-    [void] $crateRows.AppendLine(("  {0,-32} {1,-12} {2}" -f $crate.name, $crate.version, $spdx))
+    $crateRows = New-Object System.Text.StringBuilder
+    $texts = @{}
+    foreach ($crate in $crates) {
+        $spdx = if ($crate.license) { $crate.license } else { "(no license field; see $($crate.repository))" }
+        [void] $crateRows.AppendLine(("  {0,-32} {1,-12} {2}" -f $crate.name, $crate.version, $spdx))
 
-    $crateDir = Split-Path $crate.manifest_path -Parent
-    $licenseFiles = @(Get-ChildItem $crateDir -File -Force -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -match '^(LICEN[CS]E|COPYING|NOTICE|UNLICENSE)' } | Sort-Object Name)
-    foreach ($licenseFile in $licenseFiles) {
-        $text = Read-Utf8 $licenseFile.FullName
-        # Keyed on the text, so the one Apache-2.0 body sixty crates ship is printed once
-        # under all of their names instead of sixty times.
-        if (-not $texts.ContainsKey($text)) { $texts[$text] = New-Object System.Collections.ArrayList }
-        [void] $texts[$text].Add("$($crate.name) $($crate.version) ($($licenseFile.Name))")
+        $crateDir = Split-Path $crate.manifest_path -Parent
+        $licenseFiles = @(Get-ChildItem $crateDir -File -Force -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^(LICEN[CS]E|COPYING|NOTICE|UNLICENSE)' } | Sort-Object Name)
+        foreach ($licenseFile in $licenseFiles) {
+            $text = Read-Utf8 $licenseFile.FullName
+            # Keyed on the text, so the one Apache-2.0 body sixty crates ship is printed once
+            # under all of their names instead of sixty times.
+            if (-not $texts.ContainsKey($text)) { $texts[$text] = New-Object System.Collections.ArrayList }
+            [void] $texts[$text].Add("$($crate.name) $($crate.version) ($($licenseFile.Name))")
+        }
+    }
+    $crateBlocks = New-Object System.Text.StringBuilder
+    foreach ($text in ($texts.Keys | Sort-Object { $texts[$_][0] })) {
+        [void] $crateBlocks.AppendLine($script:Thin)
+        [void] $crateBlocks.AppendLine("As shipped by: " + ($texts[$text] -join ", "))
+        [void] $crateBlocks.AppendLine($script:Thin)
+        [void] $crateBlocks.AppendLine()
+        [void] $crateBlocks.AppendLine($text.TrimEnd())
+        [void] $crateBlocks.AppendLine()
+    }
+    return [pscustomobject]@{
+        Rows = $crateRows.ToString().TrimEnd(); Blocks = $crateBlocks.ToString().TrimEnd()
+        Count = $crates.Count; TextCount = $texts.Count
     }
 }
-$crateBlocks = New-Object System.Text.StringBuilder
-foreach ($text in ($texts.Keys | Sort-Object { $texts[$_][0] })) {
-    [void] $crateBlocks.AppendLine($Thin)
-    [void] $crateBlocks.AppendLine("As shipped by: " + ($texts[$text] -join ", "))
-    [void] $crateBlocks.AppendLine($Thin)
-    [void] $crateBlocks.AppendLine()
-    [void] $crateBlocks.AppendLine($text.TrimEnd())
-    [void] $crateBlocks.AppendLine()
+
+foreach ($platform in $Platforms) {
+    Write-Host "Resolving unzbd's crates for $($platform.Target) at cs-anim $($forkCommit.Substring(0, 8))..." -ForegroundColor Cyan
+    $platform | Add-Member Crates (Get-CrateSection $platform.Target)
 }
 
 # ---------------------------------------------------------------- pl_mpeg
@@ -286,30 +364,69 @@ $fontCopyrightLines = (($fontCopyright -split "`r?`n") | Where-Object { $_.Trim(
     ForEach-Object { "  " + $_.Trim() }) -join "`n"
 $promptFontLicenseText = Read-Utf8 $PromptFontLicense
 
-$promptFontIntro = @"
+function Get-PromptFontIntro([string] $Sep) {
+    return @"
 The controller button pictures CSVM draws in its prompts are characters of
 PromptFont by Yukari "Shinmera" Hafner, published at
 https://github.com/Shinmera/promptfont. The font file is packed unmodified inside
-the exported .pck as data\promptfont.ttf.bin; only the file name differs from
+the exported .pck as data$($Sep)promptfont.ttf.bin; only the file name differs from
 upstream's promptfont.ttf.
 
 The font's copyright statement, as its own name table carries it:
 
-$fontCopyrightLines
+$script:fontCopyrightLines
 
 The licence text follows, byte-identical to the LICENSE.txt in the PromptFont
 release and kept in this project as packaging\LICENSE-promptfont.
 
-$($promptFontLicenseText.TrimEnd())
+$($script:promptFontLicenseText.TrimEnd())
 "@
+}
+
+# ---------------------------------------------------------------- musl (Linux only)
+
+# The musl target links statically against the musl libc.a that Rust's own rust-std component
+# bundles for it (the self-contained libc.a, not Debian's musl-dev), so the musl MIT notice
+# travels with tools/unzbd. That libc.a carries no licence text and no version string. Its
+# version was read off its symbols for Rust 1.91.1: qsort_r and the LFS64 names are present
+# and statx is absent, which is musl 1.2.3. packaging\LICENSE-musl is the COPYRIGHT file of
+# the musl-1.2.3 release tarball, byte-identical. A moved toolchain pin can change the bundled
+# musl, so the pin is checked rather than assumed. LLVM's libunwind.a is linked too, and its
+# Apache-2.0 WITH LLVM-exception terms waive the notice for binary form.
+$MuslRustPin  = "1.91.1"
+$MuslVersion  = "1.2.3"
+$MuslLicense  = Join-Path $PSScriptRoot "LICENSE-musl"
+if ($Linux) {
+    $pinMatch = Select-String -Path (Join-Path $Mech3axRepo "rust-toolchain.toml") `
+        -Pattern '^channel\s*=\s*"([^"]+)"'
+    $rustPin = if ($pinMatch) { $pinMatch.Matches[0].Groups[1].Value } else { "(none)" }
+    if ($rustPin -ne $MuslRustPin) {
+        throw "tools\mech3ax\rust-toolchain.toml pins Rust $rustPin, but the musl section was " +
+            "established for Rust $MuslRustPin (musl $MuslVersion). Re-read which musl the new " +
+            "toolchain's self-contained libc.a is, replace packaging\LICENSE-musl with that " +
+            "release's COPYRIGHT, and update `$MuslRustPin/`$MuslVersion here."
+    }
+    if (-not (Test-Path $MuslLicense)) {
+        throw "Not found: $MuslLicense -- the COPYRIGHT file of the musl-$MuslVersion release."
+    }
+    $muslIntro = @"
+tools/unzbd is linked statically against the musl C library that Rust
+$MuslRustPin's x86_64-unknown-linux-musl target bundles, musl $MuslVersion
+(https://musl.libc.org). That library ships no licence text of its own,
+so what follows is the COPYRIGHT file of the musl-$MuslVersion release,
+byte-identical, kept in this project as packaging\LICENSE-musl.
+
+$((Read-Utf8 $MuslLicense).TrimEnd())
+"@
+}
 
 # ---------------------------------------------------------------- assembly
 
 function Section([string] $Number, [string] $Title, [string] $Body) {
     return @(
-        $Rule
+        $script:Rule
         "$Number. $Title"
-        $Rule
+        $script:Rule
         ""
         $Body.TrimEnd()
         ""
@@ -317,7 +434,27 @@ function Section([string] $Number, [string] $Title, [string] $Body) {
     ) -join "`n"
 }
 
-$header = @"
+function Build-Notice($P) {
+    $isLinux = $P.Name -eq "Linux"
+    $dataDir = $P.DataDir + $P.Sep
+    # musl's libc.a carries no text either, so on Linux section 9 is a second repository copy.
+    $regenerate = if ($isLinux) {
+        @(
+            "Regenerate with packaging\BuildThirdPartyNotices.ps1 -Linux, which reads every"
+            "text in sections 1 to 6 and 8 out of the shipped artefacts themselves. Sections"
+            "7 and 9 are the exceptions and say so in their own text: pl_mpeg publishes no"
+            "licence file to read, and the musl library Rust links carries none."
+        ) -join "`n"
+    } else {
+        @(
+            "Regenerate with packaging\BuildThirdPartyNotices.ps1, which reads every text in"
+            "sections 1 to 6 and 8 out of the shipped artefacts themselves. Section 7 is the"
+            "one exception and says so in its own text: pl_mpeg publishes no licence file to"
+            "read."
+        ) -join "`n"
+    }
+    $muslLine = if ($isLinux) { "`n  9. musl, the C library linked into $($P.Unzbd)" } else { "" }
+    $header = @"
 CSVM third-party notices
 ========================
 
@@ -325,87 +462,114 @@ This file carries the notices that the third-party software inside this build is
 licensed on condition of carrying, and one notice for third-party source CSVM's own
 code is ported from. It is not CSVM's own licence: CSVM is under the GNU General
 Public License v3, whose text is in LICENSE beside this file, and the extractor
-tools\unzbd.exe is under the EUPL-1.2, whose text is in LICENSE-unzbd.
+$($P.Unzbd) is under the EUPL-1.2, whose text is in LICENSE-unzbd.
 
 This archive contains no Crimson Skies code, data or artwork. The game files a
 player extracts with CSVM stay on their own machine.
 
 Assembled from these exact payload versions, which ExportRelease.ps1 re-checks
-against what it packages before it will build a zip:
+against what it packages before it will build a $($P.Archive):
 
-  Godot Engine build: $godotBuild
-  .NET runtime version: $RuntimeVersion
-  mech3ax cs-anim commit: $forkCommit
+  Godot Engine build: $script:godotBuild
+  .NET runtime version: $script:RuntimeVersion
+  .NET runtime pack: $($P.PackName)
+  unzbd crate target: $($P.Target)
+  mech3ax cs-anim commit: $script:forkCommit
 
-Regenerate with packaging\BuildThirdPartyNotices.ps1, which reads every text in
-sections 1 to 6 and 8 out of the shipped artefacts themselves. Section 7 is the
-one exception and says so in its own text: pl_mpeg publishes no licence file to
-read.
+$regenerate
 
 Sections
 --------
 
-  1. Godot Engine, the engine linked into CSVM.exe
+  1. Godot Engine, the engine linked into $($P.Exe)
   2. Godot Engine third-party components
   3. Godot Engine third-party licence texts
-  4. .NET runtime, published self-contained into data_CSVM_windows_x86_64\
+  4. .NET runtime, published self-contained into $dataDir
   5. .NET runtime third-party notices
-  6. Rust crates linked into tools\unzbd.exe
+  6. Rust crates linked into $($P.Unzbd)
   7. pl_mpeg, the MPEG-1 decoder CSVM's video code is ported from
-  8. PromptFont, the font the controller button pictures are drawn from
+  8. PromptFont, the font the controller button pictures are drawn from$muslLine
 
 "@
 
-$crateIntro = @"
-tools\unzbd.exe is built from the mech3ax fork, branch cs-anim, at commit
-$forkCommit.
+    $crateIntro = @"
+$($P.Unzbd) is built from the mech3ax fork, branch cs-anim, at commit
+$script:forkCommit.
 The fork's own code is EUPL-1.2 and its text is in LICENSE-unzbd, not repeated
 here; the crates statically linked into the binary are under their own terms and
 are listed below with the SPDX expression each crate's Cargo.toml declares.
 
 The list is every non-workspace package cargo resolves for
-x86_64-pc-windows-msvc, which is a superset of what any single binary links, so
+$($P.Target), which is a superset of what any single binary links, so
 nothing linked is missing from it. The licence texts follow, deduplicated by
 content: a text several crates ship identically appears once, under all of their
 names.
 
-$($crateRows.ToString().TrimEnd())
+$($P.Crates.Rows)
 
-$($crateBlocks.ToString().TrimEnd())
+$($P.Crates.Blocks)
 "@
 
-$document = @(
-    $header
-    (Section "1" "Godot Engine, the engine linked into CSVM.exe" $godotLicense)
-    (Section "2" "Godot Engine third-party components" $godotCopyright)
-    (Section "3" "Godot Engine third-party licence texts" $godotLicenses)
-    (Section "4" "The .NET runtime published into data_CSVM_windows_x86_64\" $dotnetLicense)
-    (Section "5" ".NET runtime third-party notices" $dotnetNotices)
-    (Section "6" "Rust crates linked into tools\unzbd.exe" $crateIntro)
-    (Section "7" "pl_mpeg, the MPEG-1 decoder CSVM's video code is ported from" $plmpegIntro)
-    (Section "8" "PromptFont, the font the controller button pictures are drawn from" $promptFontIntro)
-) -join "`n"
+    $sections = @(
+        $header
+        (Section "1" "Godot Engine, the engine linked into $($P.Exe)" $script:godotLicense)
+        (Section "2" "Godot Engine third-party components" $script:godotCopyright)
+        (Section "3" "Godot Engine third-party licence texts" $script:godotLicenses)
+        (Section "4" "The .NET runtime published into $dataDir" $P.DotnetLicense)
+        (Section "5" ".NET runtime third-party notices" $P.DotnetNotices)
+        (Section "6" "Rust crates linked into $($P.Unzbd)" $crateIntro)
+        (Section "7" "pl_mpeg, the MPEG-1 decoder CSVM's video code is ported from" $script:plmpegIntro)
+        (Section "8" "PromptFont, the font the controller button pictures are drawn from" (Get-PromptFontIntro $P.Sep))
+    )
+    if ($isLinux) {
+        $sections += (Section "9" "musl, the C library linked into $($P.Unzbd)" $script:muslIntro)
+    }
+    return $sections -join "`n"
+}
 
-# Godot 4.7 embeds the FreeType licence with its copyright sign ALREADY double-encoded --
-# the engine hands back U+00C2 U+00A9 where one copyright sign was meant -- and the repo's own
-# CheckEncoding.ps1 is right to refuse to commit that. Undoing the sequence restores the
-# character upstream meant and changes no term of any licence, but it is still a deliberate
-# edit to a verbatim text, so it is confined to that one pattern and counted out loud: a
-# second occurrence turning up here is something to go and look at, not to wave through.
-# Written as regex escapes, not as the characters themselves: a BOM-less .ps1 carrying
-# non-ASCII is mangled by PowerShell 5.1's own interpreter before it runs (CLAUDE.md).
-$repairPattern = '\u00C2([\u00A0-\u00BF])'
-$repaired = [regex]::Matches($document, $repairPattern).Count
-$document = [regex]::Replace($document, $repairPattern, '$1')
+# The markers ExportRelease.ps1 and sandbox\LinuxRelease.ps1 refuse in the other platform's
+# archive. Checked here too, so a notice that would fail there is never written.
+$ForeignMarkers = @{
+    Windows = @("linux-x64", "x86_64-unknown-linux-musl", "data_CSVM_linuxbsd_x86_64", "CSVM.x86_64")
+    Linux   = @("win-x64", "x86_64-pc-windows-msvc", "data_CSVM_windows_x86_64", "unzbd.exe", "CSVM.exe")
+}
 
-# CRLF throughout, matching the other files in the zip: a recipient opens this in whatever
-# Windows hands them. Normalise from LF rather than replacing blindly, or the upstream
-# files that already use CRLF gain a second carriage return per line.
-$document = ($document -replace "`r`n", "`n") -replace "`n", "`r`n"
-[System.IO.File]::WriteAllText($OutFile, $document, $Utf8NoBom)
+foreach ($platform in $Platforms) {
+    $document = Build-Notice $platform
 
-Write-Host "Wrote $OutFile" -ForegroundColor Green
-Write-Host "  Godot $godotBuild, .NET runtime $RuntimeVersion, $($crates.Count) crates, $($texts.Count) distinct crate licence texts"
-Write-Host "  Repaired $repaired double-encoded character(s) in upstream text (expected 1, Godot's FreeType notice)"
+    # Godot 4.7 embeds the FreeType licence with its copyright sign ALREADY double-encoded --
+    # the engine hands back U+00C2 U+00A9 where one copyright sign was meant -- and the repo's
+    # own CheckEncoding.ps1 is right to refuse to commit that. Undoing the sequence restores
+    # the character upstream meant and changes no term of any licence, but it is still a
+    # deliberate edit to a verbatim text, so it is confined to that one pattern and counted out
+    # loud: a second occurrence turning up here is something to go and look at, not to wave
+    # through. Written as regex escapes, not as the characters themselves: a BOM-less .ps1
+    # carrying non-ASCII is mangled by PowerShell 5.1's own interpreter before it runs.
+    $repairPattern = '\u00C2([\u00A0-\u00BF])'
+    $repaired = [regex]::Matches($document, $repairPattern).Count
+    $document = [regex]::Replace($document, $repairPattern, '$1')
+
+    foreach ($marker in $ForeignMarkers[$platform.Name]) {
+        if ($document.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            throw "The $($platform.Name) notice names '$marker', which belongs to the other " +
+                "platform's archive -- an upstream text or this script's wording has changed."
+        }
+    }
+
+    # CRLF throughout, as git's autocrlf checkout of every text file here gives it, so a
+    # regenerated file and a checked-out one are the same bytes. Normalise from LF rather than
+    # replacing blindly, or the upstream files that already use CRLF gain a second carriage
+    # return per line.
+    $document = ($document -replace "`r`n", "`n") -replace "`n", "`r`n"
+    [System.IO.File]::WriteAllText($platform.OutFile, $document, $Utf8NoBom)
+
+    Write-Host "Wrote $($platform.OutFile)" -ForegroundColor Green
+    Write-Host "  Godot $godotBuild, .NET runtime $RuntimeVersion ($($platform.PackName)), $($platform.Crates.Count) crates for $($platform.Target), $($platform.Crates.TextCount) distinct crate licence texts"
+    Write-Host "  Repaired $repaired double-encoded character(s) in upstream text (expected 1, Godot's FreeType notice)"
+}
 Write-Host "  pl_mpeg's MIT terms taken from packaging\LICENSE-plmpeg (upstream ships no licence file)"
 Write-Host "  PromptFont's copyright read from its name table, its OFL text from packaging\LICENSE-promptfont"
+if ($Linux) {
+    Write-Host "  musl $MuslVersion's COPYRIGHT taken from packaging\LICENSE-musl (Rust $MuslRustPin's bundled libc.a)"
+}
+

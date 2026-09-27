@@ -21,8 +21,9 @@
 
     Two of the zip's files are about the build rather than part of it.
     LICENSE-thirdparty.txt is copied like any other payload row, but it names the Godot
-    build, the .NET runtime version and the mech3ax commit it was assembled for, and this
-    script re-checks all three against what it is packaging. BUILD-INFO.txt is the one
+    build, the .NET runtime version and pack, the unzbd crate target and the mech3ax commit
+    it was assembled for, and this script re-checks all of them against what it is
+    packaging. The tarball ships packaging\LICENSE-thirdparty-linux.txt under that name. BUILD-INFO.txt is the one
     generated file: it records the CSVM and mech3ax commits the two shipped binaries were
     built from, which is what lets a release page state the source each came from.
 
@@ -95,6 +96,9 @@ $UnzbdExe    = Join-Path $ToolsRoot "tools\mech3ax\target\release\unzbd.exe"
 $ProjectGodot = Join-Path $ProjectDir "project.godot"
 $Mech3axRepo  = Join-Path $ToolsRoot "tools\mech3ax"
 $ThirdPartyNotices = Join-Path $RepoRoot "packaging\LICENSE-thirdparty.txt"
+# The tarball's notice, shipped under the same name: its runtime pack, crate tree and musl
+# section are the Linux payload's own (packaging\BuildThirdPartyNotices.ps1 -Linux).
+$LinuxThirdPartyNotices = Join-Path $RepoRoot "packaging\LICENSE-thirdparty-linux.txt"
 $BuildInfo    = Join-Path $ExportDir "BUILD-INFO.txt"
 $Sdl2Dir      = Join-Path $ToolsRoot "tools\sdl2"
 
@@ -123,14 +127,14 @@ $ReleaseFiles = @(
     @{ Source = Join-Path $Sdl2Dir "LICENSE.txt";               Dest = "LICENSE-SDL2.txt" }
 )
 
-# The tarball payload, packaging/MANIFEST.md's Linux table: the zip's list with the Linux README and
-# the Linux unzbd. Both platforms extract from inside the game, so neither ships a script.
+# The tarball payload, packaging/MANIFEST.md's Linux table: the zip's list with the Linux README,
+# the Linux notices and the Linux unzbd. Both platforms extract from inside the game, so neither ships a script.
 $LinuxReleaseFiles = @(
     @{ Source = $LinuxReadme;                                   Dest = "README.md" },
     @{ Source = Join-Path $RepoRoot "packaging\LICENSE";        Dest = "LICENSE" },
     @{ Source = Join-Path $RepoRoot "packaging\LICENSE-unzbd";  Dest = "LICENSE-unzbd" },
-    @{ Source = $ThirdPartyNotices;                             Dest = "LICENSE-thirdparty.txt" },
-    @{ Source = $LinuxUnzbd;                                    Dest = "tools\unzbd" }
+    @{ Source = $LinuxThirdPartyNotices;                        Dest = "LICENSE-thirdparty.txt" },
+    @{ Source = $LinuxUnzbd;                                  Dest = "tools\unzbd" }
 )
 
 if (-not (Test-Path $Sln)) {
@@ -281,29 +285,65 @@ if ($Linux) {
     }
 }
 
-# LICENSE-thirdparty.txt speaks for three payloads whose versions it names in its own header
-# (packaging\BuildThirdPartyNotices.ps1 assembles it). A notice assembled for a different
-# engine, runtime or fork commit is worse than none: it states, in the zip, obligations that
-# belong to software the zip does not contain. So the header is read back and re-checked
-# against what this run is actually packaging. Read through ReadAllText because the file is
-# BOM-less UTF-8 and 5.1's own readers would decode it as ANSI (verification.md SHELL-7).
-$noticeText = [System.IO.File]::ReadAllText($ThirdPartyNotices)
-function Get-NoticeStamp([string] $Label, [string] $Pattern) {
-    $match = [regex]::Match($script:noticeText, $Pattern)
-    if (-not $match.Success) {
-        throw "packaging\LICENSE-thirdparty.txt states no $Label -- regenerate it with " +
-            "packaging\BuildThirdPartyNotices.ps1."
+# Each notice speaks for payloads whose versions it names in its own header
+# (packaging\BuildThirdPartyNotices.ps1 assembles both). A notice assembled for a different
+# engine, runtime or fork commit is worse than none: it states, in the archive, obligations that
+# belong to software the archive does not contain. So the header is read back and re-checked
+# against what this run is actually packaging. The runtime pack and crate target stamps, and the
+# other platform's names being absent, are what keep the zip's notice out of the tarball and the
+# tarball's out of the zip; sandbox\LinuxRelease.ps1 repeats the Linux half on the built tarball.
+# Read through ReadAllText because the file is BOM-less UTF-8 and 5.1's own readers would decode
+# it as ANSI (verification.md SHELL-7).
+function Read-Notice([string] $Path, [string] $Pack, [string] $Target, [string[]] $Foreign,
+        [string] $Regenerate) {
+    $name = "packaging\" + (Split-Path $Path -Leaf)
+    $text = [System.IO.File]::ReadAllText($Path)
+    $stamp = {
+        param([string] $Label, [string] $Pattern)
+        $match = [regex]::Match($text, $Pattern)
+        if (-not $match.Success) {
+            throw "$name states no $Label -- regenerate it with $Regenerate."
+        }
+        return $match.Groups[1].Value
     }
-    return $match.Groups[1].Value
+    $notice = [pscustomobject]@{
+        Name       = $name
+        Regenerate = $Regenerate
+        Godot      = & $stamp "Godot Engine build" 'Godot Engine build: (\S+)'
+        Runtime    = & $stamp ".NET runtime version" '\.NET runtime version: (\S+)'
+        Pack       = & $stamp ".NET runtime pack" '\.NET runtime pack: (\S+)'
+        Target     = & $stamp "unzbd crate target" 'unzbd crate target: (\S+)'
+        Fork       = & $stamp "mech3ax cs-anim commit" 'mech3ax cs-anim commit: ([0-9a-f]{40})'
+    }
+    if ($notice.Pack -ne "Microsoft.NETCore.App.Runtime.$Pack" -or $notice.Target -ne $Target) {
+        throw "$name was assembled from $($notice.Pack) and the $($notice.Target) crate tree, " +
+            "not the $Pack pack and $Target -- regenerate it with $Regenerate."
+    }
+    foreach ($marker in $Foreign) {
+        if ($text.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            throw "$name names '$marker', which belongs to the other platform's archive -- " +
+                "regenerate it with $Regenerate."
+        }
+    }
+    return $notice
 }
-$noticeGodot   = Get-NoticeStamp "Godot Engine build" 'Godot Engine build: (\S+)'
-$noticeRuntime = Get-NoticeStamp ".NET runtime version" '\.NET runtime version: (\S+)'
-$noticeFork    = Get-NoticeStamp "mech3ax cs-anim commit" 'mech3ax cs-anim commit: ([0-9a-f]{40})'
+$notices = @(Read-Notice $ThirdPartyNotices "win-x64" "x86_64-pc-windows-msvc" `
+    @("linux-x64", "x86_64-unknown-linux-musl", "data_CSVM_linuxbsd_x86_64", "CSVM.x86_64") `
+    "packaging\BuildThirdPartyNotices.ps1")
+$winNotice = $notices[0]
+if ($Linux) {
+    $linuxNotice = Read-Notice $LinuxThirdPartyNotices "linux-x64" "x86_64-unknown-linux-musl" `
+        @("win-x64", "x86_64-pc-windows-msvc", "data_CSVM_windows_x86_64", "unzbd.exe", "CSVM.exe") `
+        "packaging\BuildThirdPartyNotices.ps1 -Linux"
+    $notices += $linuxNotice
+}
 
 $godotBuild = (& $GodotExe --version | Select-Object -Last 1).Trim()
-if ($godotBuild -ne $noticeGodot) {
-    throw "packaging\LICENSE-thirdparty.txt was assembled for Godot $noticeGodot but this " +
-        "export runs $godotBuild -- regenerate it with packaging\BuildThirdPartyNotices.ps1."
+foreach ($notice in $notices) {
+    if ($godotBuild -ne $notice.Godot) {
+        throw "$($notice.Name) was assembled for Godot $($notice.Godot) but this export runs " +
+            "$godotBuild -- regenerate it with $($notice.Regenerate)."
+    }
 }
 
 # The fork commit is checked, not assumed, for the reason the notice exists: the crate list in
@@ -317,9 +357,11 @@ if ($LASTEXITCODE -ne 0 -or $forkCommit -notmatch '^[0-9a-f]{40}$') {
     throw "Could not resolve cs-anim in $Mech3axRepo -- the bundled unzbd.exe's source commit " +
         "is part of the release, so the export will not guess it."
 }
-if ($forkCommit -ne $noticeFork) {
-    throw "packaging\LICENSE-thirdparty.txt enumerates cs-anim $noticeFork but the fork is at " +
-        "$forkCommit -- regenerate it with packaging\BuildThirdPartyNotices.ps1."
+foreach ($notice in $notices) {
+    if ($forkCommit -ne $notice.Fork) {
+        throw "$($notice.Name) enumerates cs-anim $($notice.Fork) but the fork is at " +
+            "$forkCommit -- regenerate it with $($notice.Regenerate)."
+    }
 }
 $forkPushed = ((& git -C $Mech3axRepo rev-parse origin/cs-anim 2>$null) -eq $forkCommit)
 $forkDirty  = [bool] (& git -C $Mech3axRepo status --porcelain)
@@ -435,17 +477,16 @@ function Invoke-PresetExport([string] $Preset, [string] $OutFile) {
 # The self-contained publish's runtime version is only knowable after the export has produced
 # it, which is why this is the one notice stamp checked after the export rather than up front.
 # It moves whenever the SDK does, silently, and it is what sections 4 and 5 of the notice quote.
-function Assert-ExportRuntime([string] $DataDir) {
+function Assert-ExportRuntime([string] $DataDir, $Notice) {
     $runtimeConfig = Join-Path $DataDir "CSVM.runtimeconfig.json"
     if (-not (Test-Path $runtimeConfig)) {
         throw "Export produced no $runtimeConfig -- the preset's .NET publish did not run."
     }
     $exportRuntime = ([System.IO.File]::ReadAllText($runtimeConfig) |
         ConvertFrom-Json).runtimeOptions.includedFrameworks[0].version
-    if ($exportRuntime -ne $script:noticeRuntime) {
-        throw "packaging\LICENSE-thirdparty.txt was assembled for .NET runtime " +
-            "$($script:noticeRuntime) but the export bundles $exportRuntime -- regenerate it " +
-            "with packaging\BuildThirdPartyNotices.ps1."
+    if ($exportRuntime -ne $Notice.Runtime) {
+        throw "$($Notice.Name) was assembled for .NET runtime $($Notice.Runtime) but the " +
+            "export bundles $exportRuntime -- regenerate it with $($Notice.Regenerate)."
     }
 }
 
@@ -525,7 +566,7 @@ if ($exeInfo.FileVersion -notlike "$Version*" -or $exeInfo.ProductVersion -notli
         "and the application/*_version keys in CSVM\export_presets.cfg."
 }
 
-Assert-ExportRuntime (Join-Path $ExportDir "data_CSVM_windows_x86_64")
+Assert-ExportRuntime (Join-Path $ExportDir "data_CSVM_windows_x86_64") $winNotice
 Copy-ReleaseFiles $ReleaseFiles $ExportDir
 $sdl2Info = "`nSDL2.dll`n" +
     "  version:  SDL $($Sdl2.Version), the official libsdl-org Windows x64 runtime as released`n" +
@@ -569,7 +610,7 @@ if (-not $Linux) {
 # The Linux half. Same export, checks and payload discipline as above; what differs is the
 # preset, the payload list, and that the archive is written inside WSL.
 Invoke-PresetExport "Linux/X11" $LinuxExportExe
-Assert-ExportRuntime (Join-Path $LinuxExportDir "data_CSVM_linuxbsd_x86_64")
+Assert-ExportRuntime (Join-Path $LinuxExportDir "data_CSVM_linuxbsd_x86_64") $linuxNotice
 Copy-ReleaseFiles $LinuxReleaseFiles $LinuxExportDir
 Write-BuildInfo (Join-Path $LinuxExportDir "BUILD-INFO.txt") `
     "CSVM.x86_64, and data_CSVM_linuxbsd_x86_64/ beside it" "tools/unzbd" "`n"
