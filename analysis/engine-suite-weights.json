@@ -50,6 +50,8 @@
     "blast-curve-cover-cap": 0.038,
     "blast-neighbor-shape": 0.036,
     "bounce-launch": 3.627,
+    "build-stamp-focus": 0.05,
+    "build-stamp-icons": 0.02,
     "burst-light": 2.42,
     "c1-aa-guns": 2.624,
     "callback-events": 0.949,

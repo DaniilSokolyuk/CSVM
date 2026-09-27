@@ -333,8 +333,8 @@ public partial class Launcher : Node3D
     // The F14 / --debug-fps frame-cost readout, ticked every frame like
     // the instrument above it, but drawing (if switched on) is its own concern, not this class's.
     private UI.Overlays.PerfHud _perfHud = null!;
-    // The version stamp drawn in the menu's corner, shown and hidden off the host's own "the menu
-    // is up" so no presentation has to carry one and no flight capture ever sees it.
+    // The version stamp and its folder icons in the menu's corner. They show while the menu or the
+    // extraction screen is up. No presentation carries them, and no flight capture sees them.
     private UI.Screens.BuildStamp _buildStamp = null!;
     // The --debug-net readout, null without the flag, and the wall time since it last refreshed.
     private UI.Overlays.NetReadout? _netReadout;
@@ -891,7 +891,7 @@ public partial class Launcher : Node3D
 
         // The version stamp on the menu, process-wide for the same reason and built beside it: the
         // build a capture came from is a fact about the binary, not about a presentation.
-        _buildStamp = new UI.Screens.BuildStamp();
+        _buildStamp = new UI.Screens.BuildStamp(_repoRoot, _exported);
         AddChild(_buildStamp);
 
         // --debug-net, process-wide like the two above: the session it reads comes and goes.
@@ -1104,7 +1104,8 @@ public partial class Launcher : Node3D
         ReportRate(frameMs);
         // Early-quit probes do not construct the readout, but Godot may process one shutdown frame.
         _perfHud?.Tick(frameMs, counters);
-        _buildStamp?.Tick(_menuHost is { Shown: true });
+        // The extraction screen too: a player whose extraction failed needs the logs icon most.
+        _buildStamp?.Tick(_menuHost is { Shown: true } || _extractionScreen != null);
         TickNetReadout(delta);
         if (_spec.Perf)
         {
@@ -2205,7 +2206,7 @@ public partial class Launcher : Node3D
         seatInput.LoadSavedKeymap(1);
         var builtInSeat = new BuiltInSeat(seatInput);
         var seat = new PointerSeat(
-            builtInSeat, MousePosition, () => Input.IsMouseButtonPressed(MouseButton.Left), TakeMenuWheel,
+            builtInSeat, MousePosition, MenuPrimaryPressed, TakeMenuWheel,
             () => Input.IsMouseButtonPressed(MouseButton.Right));
         var registry = new PresentationRegistry();
         // The factories read the aid when they run, which is inside a Show: the cold start's
@@ -2301,6 +2302,12 @@ public partial class Launcher : Node3D
         var at = GetViewport().GetMousePosition();
         return (at.X, at.Y);
     }
+
+    // The primary button, the press half of seat 0's pointer. ⚠ Keep the stamp's check. Original
+    // polls the button instead of taking GUI events, so a folder icon's click would also press the
+    // plaque under it.
+    private bool MenuPrimaryPressed() =>
+        Input.IsMouseButtonPressed(MouseButton.Left) && _buildStamp?.HoldsPointer(GetViewport().GetMousePosition()) != true;
 
     // The wheel steps counted since the last read, the wheel half of seat 0's pointer.
     private int TakeMenuWheel()

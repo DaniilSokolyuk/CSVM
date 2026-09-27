@@ -84,6 +84,8 @@ again.
 Logs are written to `logs\` next to `CSVM.exe`, one file per run, named for the mode and
 the time it started. The newest file there is the run you just did, and its first line
 states the build version. That same version is in the bottom-right corner of the menu.
+The small page icon beside it opens the logs folder, and the floppy disk icon opens the user
+folder, which holds your settings, controls, campaign profiles and custom planes.
 
 Report a problem at <https://github.com/Laeresh/CSVM/issues>, through the bug report form.
 It asks for the build version, what you did, your graphics card and the newest log file
