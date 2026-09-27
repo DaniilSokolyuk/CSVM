@@ -111,7 +111,24 @@ public static class UpnpPortMap
         }
     }
 
-    private static UpnpPortMemory UserMemory() => new(ProjectSettings.GlobalizePath("user://"));
+    /// <summary>The user directory as an absolute path, where the router memories live.</summary>
+    internal static string UserDirectory() => ProjectSettings.GlobalizePath("user://");
+
+    /// <summary>GETs <paramref name="url"/> from a LAN gateway, null on any failure or a non-200.
+    /// Blocks until the answer or <paramref name="deadline"/>.</summary>
+    internal static string? Get(Uri url, DateTime deadline) =>
+        Exchange(url, HttpClient.Method.Get, Array.Empty<string>(), "", deadline) is (200, var body) ? body : null;
+
+    /// <summary>POSTs a SOAP request to a gateway's control URL. The answer comes back with its
+    /// status, since a SOAP fault arrives as a 500 whose body names the error. Null when no answer
+    /// arrived before <paramref name="deadline"/>.</summary>
+    internal static (int Status, string Body)? Soap(Uri control, string soapAction, string body, DateTime deadline)
+    {
+        string[] headers = { "Content-Type: text/xml; charset=\"utf-8\"", $"SOAPAction: {soapAction}" };
+        return Exchange(control, HttpClient.Method.Post, headers, body, deadline);
+    }
+
+    private static UpnpPortMemory UserMemory() => new(UserDirectory());
 
     // Godot returns one flat result code for both the search and the request, so every call
     // below shares this reading of it.
@@ -131,7 +148,7 @@ public static class UpnpPortMap
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(DiscoverTimeoutMs);
         if (!Uri.TryCreate(descriptionUrl, UriKind.Absolute, out var described)
-            || Fetch(described, HttpClient.Method.Get, Array.Empty<string>(), "", deadline) is not { } description)
+            || Get(described, deadline) is not { } description)
         {
             return "";
         }
@@ -139,8 +156,7 @@ public static class UpnpPortMap
         foreach (var (service, control) in IgdAddress.Connections(description, descriptionUrl))
         {
             var (action, body) = IgdAddress.ExternalAddressRequest(service);
-            string[] headers = { "Content-Type: text/xml; charset=\"utf-8\"", $"SOAPAction: {action}" };
-            string address = IgdAddress.ExternalAddressOf(Fetch(control, HttpClient.Method.Post, headers, body, deadline) ?? "");
+            string address = Soap(control, action, body, deadline) is (200, var answer) ? IgdAddress.ExternalAddressOf(answer) : "";
             if (address.Length > 0)
             {
                 return address;
@@ -150,9 +166,9 @@ public static class UpnpPortMap
         return "";
     }
 
-    // One plain-HTTP exchange on a LAN gateway, polled until the deadline. Null on any failure,
-    // a non-200 answer included.
-    private static string? Fetch(Uri url, HttpClient.Method method, string[] headers, string body, DateTime deadline)
+    // One plain-HTTP exchange on a LAN gateway, polled until the deadline: the status and the
+    // body. Null when nothing answered.
+    private static (int Status, string Body)? Exchange(Uri url, HttpClient.Method method, string[] headers, string body, DateTime deadline)
     {
         using var http = new HttpClient();
         if (url.Scheme != Uri.UriSchemeHttp || http.ConnectToHost(url.Host, url.Port) != Error.Ok
@@ -160,7 +176,7 @@ public static class UpnpPortMap
             || http.GetStatus() != HttpClient.Status.Connected
             || http.Request(method, url.PathAndQuery, headers, body) != Error.Ok
             || !PollWhile(http, deadline, HttpClient.Status.Requesting)
-            || !http.HasResponse() || http.GetResponseCode() != 200)
+            || !http.HasResponse())
         {
             return null;
         }
@@ -178,7 +194,7 @@ public static class UpnpPortMap
             bytes.AddRange(chunk);
         }
 
-        return System.Text.Encoding.UTF8.GetString(bytes.ToArray());
+        return (http.GetResponseCode(), System.Text.Encoding.UTF8.GetString(bytes.ToArray()));
     }
 
     // False when the deadline passed with the client still in one of the waiting states.

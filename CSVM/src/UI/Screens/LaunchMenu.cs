@@ -4109,6 +4109,7 @@ public sealed partial class LaunchMenu : CanvasLayer
 
         string link = net.Link is { } state ? $", link {state.ToString().ToLowerInvariant()}" : "";
         string mapped = net.PortMap is { } map ? $". {CoopDoorText.RouterStatus(map)}" : "";
+        mapped += net.Pinhole is { } pinhole ? $"{(mapped.Length > 0 ? " " : ". ")}{CoopDoorText.PinholeStatus(pinhole)}" : "";
         return net.Stage switch
         {
             NetDoorStage.Hosting =>

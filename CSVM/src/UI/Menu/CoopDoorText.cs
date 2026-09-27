@@ -232,6 +232,23 @@ public static class CoopDoorText
         };
     }
 
+    /// <summary>What the router said about a host's IPv6 pinhole, as one clause for the door's
+    /// status line after <see cref="RouterStatus"/>.</summary>
+    public static string PinholeStatus(UpnpPinholeResult pinhole)
+    {
+        string port = pinhole.Port.ToString(CultureInfo.InvariantCulture);
+        return pinhole.Outcome switch
+        {
+            UpnpPinholeOutcome.Opened => $"IPv6: router opened UDP port {port} for {pinhole.Address}.",
+            UpnpPinholeOutcome.FirewallOff => $"IPv6: the router's firewall is off, so UDP port {port} is open.",
+            UpnpPinholeOutcome.Disallowed =>
+                $"IPv6: the router does not let programs open ports; allow it there, or open UDP port {port} by hand.",
+            UpnpPinholeOutcome.NoService => $"IPv6: the router cannot open ports on request; open UDP port {port} by hand.",
+            UpnpPinholeOutcome.NoAddress => "IPv6: no stable address to open a port for.",
+            _ => $"IPv6: opening UDP port {port} on the router failed ({pinhole.Detail}).",
+        };
+    }
+
     /// <summary>A co-op guest's band over the host's boards. It says whose campaign it follows and
     /// what the host is doing, or on the flight check what the guest still owes. Empty while the
     /// door is not a co-op guest's or the host has named no board yet.</summary>

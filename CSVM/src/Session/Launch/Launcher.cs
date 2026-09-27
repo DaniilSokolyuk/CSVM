@@ -2089,6 +2089,8 @@ public partial class Launcher : Node3D
         {
             Version = Net.NetBuildVersion.Parse(BuildVersion.Current),
             LanNetworks = LocalNetworks.Ipv4,
+            OpenPinhole = Net.NetCarrier.Pinhole(PinholeAddressPlaceholder),
+            ClosePinhole = Net.NetCarrier.PinholeClose,
         };
         host.Features.Add(_netDoor);
         host.AddSeat(seat);
@@ -2096,6 +2098,11 @@ public partial class Launcher : Node3D
         string why = reason == null ? "" : $" reason={reason}";
         Log.Info("ui", $"menu presentation active={host.Selected} requested={host.Requested}{why}");
         return host;
+
+        // The address the router's IPv6 pinhole opens for. Null skips the pinhole with a log line.
+        // ⚠ Replace with the stable global IPv6 finder, never a temporary address: a pinhole is
+        // keyed to the address the host listens on and shows.
+        static string? PinholeAddressPlaceholder() => null;
     }
 
     // The host's availability answer: Original needs the decoded layout and every file its asset

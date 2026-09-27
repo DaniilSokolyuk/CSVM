@@ -86,6 +86,7 @@ public sealed class NetPlayFeature : IMenuFeature
     private readonly List<int> _admitted = new();
     private readonly List<(int Peer, double Waited)> _refused = new();
     private readonly Dictionary<int, CoopFlowMessage> _flowSent = new();
+    private readonly List<Task> _leases = new();
 
     private NetLobby? _transport;
     private DogfightLobby? _dogfight;
@@ -126,11 +127,12 @@ public sealed class NetPlayFeature : IMenuFeature
     private string _hostName = "";
     private int _localPlayers = 1;
     private Task<UpnpPortMapResult>? _mapping;
-    private Task? _lease;
+    private Task<UpnpPinholeResult>? _pinholing;
     private CancellationTokenSource? _renewal;
     private bool _released;
     private double _joining;
     private int _mappedPort;
+    private int _pinholePort;
     private DoorReading _seen;
 
     /// <summary>A door over the carrier <paramref name="openHost"/> and <paramref name="openJoin"/>
@@ -194,6 +196,17 @@ public sealed class NetPlayFeature : IMenuFeature
     /// <summary>The port mapping this host asked its router for, or null when none was asked for
     /// or the answer has not landed yet.</summary>
     public UpnpPortMapResult? PortMap { get; private set; }
+
+    /// <summary>The IPv6 pinhole a host asks its router for on its port, held and renewed on a
+    /// thread of its own beside the mapping's. Null asks for none.</summary>
+    public Func<int, UpnpPinholeResult>? OpenPinhole { get; init; }
+
+    /// <summary>The way a host's pinhole comes back down, given its port.</summary>
+    public Action<int>? ClosePinhole { get; init; }
+
+    /// <summary>The pinhole this host asked its router for, or null when none was asked for or the
+    /// answer has not landed yet.</summary>
+    public UpnpPinholeResult? Pinhole { get; private set; }
 
     /// <summary>Where a LAN search sends its query: the broadcast address by default. A suite sets
     /// the loopback, since a broadcast on the loopback proves nothing on Windows.</summary>
@@ -811,6 +824,7 @@ public sealed class NetPlayFeature : IMenuFeature
         Offer(SessionAdvertMessage.NoMission, "", 1);
         Stage = NetDoorStage.Shut;
         PortMap = null;
+        Pinhole = null;
         UnmapPort();
     }
 
@@ -841,13 +855,14 @@ public sealed class NetPlayFeature : IMenuFeature
 
     // The mapping thread's whole life. It runs on after a launch takes the socket, since a match
     // never steps this door. A lease that lapsed mid-match would shut every guest out.
-    private static void HoldLease(Func<int, UpnpPortMapResult> map, int port,
-        TaskCompletionSource<UpnpPortMapResult> first, CancellationToken stop)
+    // The pinhole's thread is the same shape, since both leases follow one set of rules.
+    private static void HoldLease<T>(Func<int, T> ask, Func<T, (bool Held, int Seconds)> granted, int port,
+        TaskCompletionSource<T> first, CancellationToken stop)
     {
-        UpnpPortMapResult latest;
+        T latest;
         try
         {
-            latest = map(port);
+            latest = ask(port);
         }
         catch (Exception e)
         {
@@ -856,13 +871,15 @@ public sealed class NetPlayFeature : IMenuFeature
         }
 
         first.SetResult(latest);
-        int held = latest.IsMapped ? latest.LeaseSeconds : 0;
-        var wait = UpnpLease.NextRenewal(latest, held);
+        var (isHeld, seconds) = granted(latest);
+        int held = isHeld ? seconds : 0;
+        var wait = UpnpLease.NextRenewal(isHeld, seconds, held);
         while (wait != Timeout.InfiniteTimeSpan && !stop.WaitHandle.WaitOne(wait))
         {
-            latest = map(port);
-            held = latest.IsMapped ? latest.LeaseSeconds : held;
-            wait = UpnpLease.NextRenewal(latest, held);
+            latest = ask(port);
+            (isHeld, seconds) = granted(latest);
+            held = isHeld ? seconds : held;
+            wait = UpnpLease.NextRenewal(isHeld, seconds, held);
         }
     }
 
@@ -1301,42 +1318,52 @@ public sealed class NetPlayFeature : IMenuFeature
         _closing = null;
     }
 
-    // Asked for where hosting opens, and away from the frame. ⚠ The call blocks for the gateway
-    // search, so it runs on a dedicated thread, never the pool, which starves. The board shows the
-    // first answer on the step that finds it. The same thread renews the lease until Close.
+    // Asked for where hosting opens, and away from the frame. ⚠ Each call blocks for a gateway
+    // search, so the mapping and the pinhole each run on a dedicated thread, never the pool, which
+    // starves. The board shows each first answer on the step that finds it. Each thread renews its
+    // own lease until Close.
     private void MapPort()
     {
-        if (_map is not { } map)
-        {
-            _mapping = null;
-            return;
-        }
+        _mapping = _map is { } map ? Hold(map, r => (r.IsMapped, r.LeaseSeconds)) : null;
+        _pinholing = OpenPinhole is { } open ? Hold(open, r => (r.IsOpen, r.LeaseSeconds)) : null;
+    }
 
+    // One lease on its own thread, stopped by the door's one renewal token.
+    private Task<T> Hold<T>(Func<int, T> ask, Func<T, (bool Held, int Seconds)> granted)
+    {
         int port = Port;
-        var first = new TaskCompletionSource<UpnpPortMapResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var stop = new CancellationTokenSource();
-        _mapping = first.Task;
-        _renewal = stop;
-        _lease = Task.Factory.StartNew(() => HoldLease(map, port, first, stop.Token), CancellationToken.None,
-            TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        var first = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _renewal ??= new CancellationTokenSource();
+        var stop = _renewal.Token;
+        _leases.Add(Task.Factory.StartNew(() => HoldLease(ask, granted, port, first, stop), CancellationToken.None,
+            TaskCreationOptions.LongRunning, TaskScheduler.Default));
+        return first.Task;
     }
 
     // Stopped and waited for before the unmap, so a renewal in flight cannot put the mapping back.
     private void StopRenewal()
     {
         _renewal?.Cancel();
-        if (_lease != null)
+        foreach (var lease in _leases)
         {
-            Task.WaitAny(_lease);
+            Task.WaitAny(lease);
         }
 
         _renewal?.Dispose();
         _renewal = null;
-        _lease = null;
+        _leases.Clear();
     }
 
     private void TakeMapping()
     {
+        if (_pinholing is { IsCompleted: true })
+        {
+            var pinhole = _pinholing.Result;
+            _pinholing = null;
+            Pinhole = pinhole;
+            _pinholePort = pinhole.IsOpen ? pinhole.Port : 0;
+        }
+
         if (_mapping is not { IsCompleted: true })
         {
             return;
@@ -1362,12 +1389,25 @@ public sealed class NetPlayFeature : IMenuFeature
             _mappedPort = landed.IsMapped ? landed.Port : 0;
         }
 
+        if (_pinholing != null)
+        {
+            var landed = _pinholing.Result;
+            _pinholing = null;
+            _pinholePort = landed.IsOpen ? landed.Port : 0;
+        }
+
         if (_mappedPort != 0 && _unmap != null)
         {
             _unmap(_mappedPort);
         }
 
+        if (_pinholePort != 0 && ClosePinhole != null)
+        {
+            ClosePinhole(_pinholePort);
+        }
+
         _mappedPort = 0;
+        _pinholePort = 0;
     }
 
     // A wire a launch carried away is the session's to close, so a failure in flight only lets go
@@ -1395,13 +1435,13 @@ public sealed class NetPlayFeature : IMenuFeature
     }
 
     private DoorReading Read() => new(
-        _transport, _transport?.Changes ?? 0, _transport?.Held ?? 0, Stage, Fault, PortMap, _search,
+        _transport, _transport?.Changes ?? 0, _transport?.Held ?? 0, Stage, Fault, PortMap, Pinhole, _search,
         _search?.Changes ?? 0, SearchFault, Link, _admitted.Count, _dogfight);
 
     // Everything a board draws from this door that can move without an input event. The lobby's
     // and the search's own counters stand for what arrived through them.
     private readonly record struct DoorReading(
         NetLobby? Wire, int WireChanges, int Held, NetDoorStage Stage, string Fault, UpnpPortMapResult? PortMap,
-        LanSearch? Search, int SearchChanges, string SearchFault, EnetLinkState? Link, int Admitted,
-        DogfightLobby? Dogfight);
+        UpnpPinholeResult? Pinhole, LanSearch? Search, int SearchChanges, string SearchFault, EnetLinkState? Link,
+        int Admitted, DogfightLobby? Dogfight);
 }

@@ -82,30 +82,8 @@ public static class IgdAddress
     /// <summary>Every WANIPConnection and WANPPPConnection service in the device description
     /// <paramref name="xml"/>, as its service type and absolute control URL, in document order.
     /// Relative URLs resolve against the description's URLBase, else <paramref name="descriptionUrl"/>.</summary>
-    public static IReadOnlyList<(string ServiceType, Uri Control)> Connections(string xml, string descriptionUrl)
-    {
-        var found = new List<(string, Uri)>();
-        if (Parse(xml) is not { } doc || !Uri.TryCreate(descriptionUrl, UriKind.Absolute, out var described))
-        {
-            return found;
-        }
-
-        var root = doc.Root!;
-        string urlBase = root.Elements().FirstOrDefault(e => e.Name.LocalName == "URLBase")?.Value.Trim() ?? "";
-        var basis = Uri.TryCreate(urlBase, UriKind.Absolute, out var declared) ? declared : described;
-        foreach (var service in root.Descendants().Where(e => e.Name.LocalName == "service"))
-        {
-            string type = Child(service, "serviceType");
-            string control = Child(service, "controlURL");
-            if (ConnectionServices.Any(s => type.Contains(s, StringComparison.Ordinal))
-                && control.Length > 0 && Uri.TryCreate(basis, control, out var url))
-            {
-                found.Add((type, url));
-            }
-        }
-
-        return found;
-    }
+    public static IReadOnlyList<(string ServiceType, Uri Control)> Connections(string xml, string descriptionUrl) =>
+        Services(xml, descriptionUrl, ConnectionServices);
 
     /// <summary>The SOAPAction header and the envelope that ask <paramref name="serviceType"/> for
     /// its external address.</summary>
@@ -123,11 +101,35 @@ public static class IgdAddress
         return address == "0.0.0.0" ? "" : address;
     }
 
-    private static string Child(XElement parent, string name) =>
-        parent.Elements().FirstOrDefault(e => e.Name.LocalName == name)?.Value.Trim() ?? "";
+    /// <summary>Every service in the device description <paramref name="xml"/> whose type contains
+    /// one of <paramref name="kinds"/>, resolved as <see cref="Connections"/> resolves its URLs.</summary>
+    internal static IReadOnlyList<(string ServiceType, Uri Control)> Services(string xml, string descriptionUrl, string[] kinds)
+    {
+        var found = new List<(string, Uri)>();
+        if (Parse(xml) is not { } doc || !Uri.TryCreate(descriptionUrl, UriKind.Absolute, out var described))
+        {
+            return found;
+        }
+
+        var root = doc.Root!;
+        string urlBase = root.Elements().FirstOrDefault(e => e.Name.LocalName == "URLBase")?.Value.Trim() ?? "";
+        var basis = Uri.TryCreate(urlBase, UriKind.Absolute, out var declared) ? declared : described;
+        foreach (var service in root.Descendants().Where(e => e.Name.LocalName == "service"))
+        {
+            string type = Child(service, "serviceType");
+            string control = Child(service, "controlURL");
+            if (kinds.Any(s => type.Contains(s, StringComparison.Ordinal))
+                && control.Length > 0 && Uri.TryCreate(basis, control, out var url))
+            {
+                found.Add((type, url));
+            }
+        }
+
+        return found;
+    }
 
     // A gateway's text may carry a DTD; refusing it keeps a hostile one from expanding entities.
-    private static XDocument? Parse(string xml)
+    internal static XDocument? Parse(string xml)
     {
         if (string.IsNullOrWhiteSpace(xml))
         {
@@ -145,6 +147,9 @@ public static class IgdAddress
             return null;
         }
     }
+
+    private static string Child(XElement parent, string name) =>
+        parent.Elements().FirstOrDefault(e => e.Name.LocalName == name)?.Value.Trim() ?? "";
 
     private static bool TryOctets(string address, out byte[] octets)
     {

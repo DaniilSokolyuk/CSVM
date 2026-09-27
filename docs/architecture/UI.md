@@ -1341,10 +1341,10 @@ and `BuildExit` are the typed result. Nothing here reads a pad: `src/UI/Screens/
 ## src/UI/Menu/NetPlayFeature.cs
 The multiplayer door as a shared `IMenuFeature`, engine-free and carrier-free: the port and address
 a board edits, the socket it opens, and the readouts a board draws (`Stage`, `Peers`, `Link`,
-`PortMap`, `Fault`, `HostStarted`, `Advert`). Carriers and port maps arrive as delegates (the
-launcher's `Net/NetCarrier.cs`, or a suite's loopback mesh and no router); every open wraps its
+`PortMap`, `Pinhole`, `Fault`, `HostStarted`, `Advert`). Carriers, port maps and the IPv6 pinhole
+(`OpenPinhole`, `ClosePinhole`) arrive as delegates (the launcher's `Net/NetCarrier.cs`, or a suite's loopback mesh and no router), each lease held on its own thread; every open wraps its
 carrier in a `Net/NetLobby.cs`. `OpenHost`, `OpenCoopHost` (whose `Offer` names the mission) and
-`OpenJoin` open; `Step` carries the link and moves `Revision` on news, which both menus repaint on; `Close` unmaps the lease. In co-op `ShowCoop` sends each
+`OpenJoin` open; `Step` carries the link and moves `Revision` on news, which both menus repaint on; `Close` gives both leases back. In co-op `ShowCoop` sends each
 guest the host's boards, `CoopAllReady` holds FLY MISSION until every guest is Ready, `CoopLaunchDue` tells a guest to follow, `TellSeatFits` sends every seat's fit before the opener, and
 `LeaveCoopMission` tells the host at once that a guest walked out. `OpenDogfightHost` opens a Dogfight lobby, and `Dogfight` is the `DogfightLobby` either end stands in, created on a guest when its host's advert names a Dogfight and unshown behind a Built-in host; `DogfightLaunchDue` tells a guest its host has launched, and a guest back from a match waits for the host's next round. `Version` is the build's `Net/NetBuildVersion.cs`: a host refuses a guest of another version, and a guest such a host, with both versions on `Fault`. `TypeAddress` and `PasteAddress` take an address up to `AddressLimit`, brackets included, and `OpenJoin` opens on `JoinTarget`, the address split by `SplitAddress`: a port follows a closing bracket or a lone colon, so a bare IPv6 address is all host. `SessionSpec.ParseJoin` shares the rule. Boards: `LaunchMenu.cs`.
 
@@ -1358,7 +1358,8 @@ Wire: [../org/multiplayer-messages.md](../org/multiplayer-messages.md). Coverage
 ## src/UI/Menu/CoopDoorText.cs
 The words the campaign's network door is drawn in, engine-free and built off the door alone: the
 host's band (`HostBand`, the open port, the router's address and the guest count), what the router
-said about the port (`RouterStatus`, the Network board's clause per outcome), the session an
+said about the port (`RouterStatus`, the Network board's clause per outcome, and `PinholeStatus`
+for the IPv6 pinhole), the session an
 advert names (`SessionName`), the join board's status (`JoinedStatus`) and the waiting board's
 (`WaitingStatus`), the games list's cells with a version mark (`Status`), the refusal naming both
 versions (`VersionMismatch`), and the rows and presses those boards show. The mission's long name comes in as

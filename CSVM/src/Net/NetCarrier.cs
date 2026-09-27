@@ -15,6 +15,7 @@ public static class NetCarrier
     private static readonly Func<int, UpnpPortMapResult> MapPort = port => UpnpPortMap.Map(port);
     private static readonly Action<int> UnmapPort = port => UpnpPortMap.Unmap(port);
     private static readonly Func<string, int, ILanSocket> BindLan = (bind, port) => LanDiscoverySocket.Bind(port, bind);
+    private static readonly Action<int> ClosePinhole = port => UpnpPinholeMap.Close(port);
 
     /// <summary>Whether this build selects the Steam carrier.</summary>
     public static bool UsesSteam => SteamTransport.SteamBuild;
@@ -29,9 +30,22 @@ public static class NetCarrier
     /// <summary>The way that mapping comes back down, or null when none was asked for.</summary>
     public static Action<int>? PortUnmap => UsesSteam ? null : UnmapPort;
 
+    /// <summary>The way a pinhole from <see cref="Pinhole"/> comes back down, or null when none was
+    /// asked for.</summary>
+    public static Action<int>? PinholeClose => UsesSteam ? null : ClosePinhole;
+
     /// <summary>The LAN search's socket, bound on an address and a port, or null for a carrier
     /// that finds its games another way. A door handed null offers no search.</summary>
     public static Func<string, int, ILanSocket>? Lan => UsesSteam ? null : BindLan;
+
+    /// <summary>The router's IPv6 pinhole a direct-IP host asks for, opened for the address
+    /// <paramref name="address"/> names on each call, or null for a carrier reachable without one.
+    /// </summary>
+    public static Func<int, UpnpPinholeResult>? Pinhole(Func<string?> address)
+    {
+        ArgumentNullException.ThrowIfNull(address);
+        return UsesSteam ? null : port => UpnpPinholeMap.Open(port, address());
+    }
 
     /// <summary>Opens a listen server for <paramref name="maxGuests"/> guests on
     /// <paramref name="port"/> over the selected carrier. <paramref name="bindAddress"/> is the

@@ -129,12 +129,17 @@ public static class UpnpLease
     /// <summary>How long to wait before the next renewal, after <paramref name="latest"/>.
     /// <paramref name="heldLeaseSeconds"/> is the last finite lease granted, or 0 when none was.
     /// Infinite when nothing is to be renewed: no mapping, or a permanent one.</summary>
-    public static TimeSpan NextRenewal(in UpnpPortMapResult latest, int heldLeaseSeconds)
+    public static TimeSpan NextRenewal(in UpnpPortMapResult latest, int heldLeaseSeconds) =>
+        NextRenewal(latest.IsMapped, latest.LeaseSeconds, heldLeaseSeconds);
+
+    /// <summary><see cref="NextRenewal(in UpnpPortMapResult, int)"/> for any lease: whether the
+    /// latest call left it held, the lease that call granted, and the last finite one held.</summary>
+    public static TimeSpan NextRenewal(bool held, int grantedSeconds, int heldLeaseSeconds)
     {
-        if (latest.IsMapped)
+        if (held)
         {
-            return latest.LeaseSeconds > 0
-                ? TimeSpan.FromSeconds(latest.LeaseSeconds * RenewAtFraction)
+            return grantedSeconds > 0
+                ? TimeSpan.FromSeconds(grantedSeconds * RenewAtFraction)
                 : Timeout.InfiniteTimeSpan;
         }
 
