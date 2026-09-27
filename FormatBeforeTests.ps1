@@ -163,6 +163,12 @@ function Invoke-SelfTest {
             git -C $d init -q 2>&1 | Out-Null
             [IO.File]::WriteAllText((Join-Path $d 'RunTests.ps1'), 'exit 0', (New-Object System.Text.UTF8Encoding($false)))
         }
+        # macOS's temp folder sits behind the /var -> /private/var link and git reports the
+        # physical path, so the expected trees are taken from git's own spelling.
+        if ($IsMacOS -or $IsLinux) {
+            $main = Resolve-Toplevel -Path $main
+            $other = Resolve-Toplevel -Path $other
+        }
 
         # Mentions never fire.
         Assert-Fires 'mention  Get-Content .\RunTests.ps1' 'Get-Content .\RunTests.ps1' ''

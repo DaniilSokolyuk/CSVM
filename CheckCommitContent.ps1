@@ -338,6 +338,13 @@ function Invoke-SelfTest {
     try {
         New-Item -ItemType Directory -Path $main -Force | Out-Null
         git -C $main init -q 2>&1 | Out-Null
+        # macOS's temp folder sits behind the /var -> /private/var link and git reports the
+        # physical path, so the expected roots are taken from git's own spelling.
+        if ($IsMacOS -or $IsLinux) {
+            $main = ConvertTo-NormalPath -Path ([string](git -C $main rev-parse --show-toplevel))
+            $base = Split-Path -Parent $main
+            $wt = Join-Path $base 'wt'
+        }
         git -C $main config user.email 'selftest@example.invalid' | Out-Null
         git -C $main config user.name 'selftest' | Out-Null
         Write-Chars -File (Join-Path $main 'README.md') -Codes @(0x68, 0x69)
