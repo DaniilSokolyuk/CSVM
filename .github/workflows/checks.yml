@@ -1,0 +1,77 @@
+# The checks a contributor can pass without the original game: the repo's content gate, dotnet
+# format, StyleCop, and the unit tests (tests needing extracted game data skip themselves). The
+# engine suites and goldens need Godot and an install, so they stay with RunTests.ps1 locally.
+# Three OSes, because the scripts must work wherever a contributor runs them.
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: checks (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The comment caps diff against the base, and the encoding check lists files through git.
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Gate self-tests
+        run: |
+          # The self-tests commit into throwaway fixture repos.
+          git config --global user.name 'CI'
+          git config --global user.email 'ci@invalid'
+          ./CheckCommitContent.ps1 -SelfTest
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ./FormatBeforeTests.ps1 -SelfTest
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Content checks
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # A push that opens a branch has an all-zero "before"; fall back to the first parent.
+          $base = $env:BASE
+          if (-not $base -or -not (git rev-parse -q --verify "$base^{commit}")) { $base = 'HEAD^' }
+          Write-Host "comment-cap sentence scope: changes since $base"
+          ./CheckCommitContent.ps1 -Root (Get-Location).Path -Against $base
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Write-Host 'content checks clean'
+
+      - name: dotnet format
+        run: dotnet format CSVM/CSVM.csproj --verify-no-changes --verbosity quiet
+
+      - name: StyleCop
+        run: |
+          # A full rebuild, because analyzers only report when the compiler runs. SA0001 is
+          # excluded as in FormatBeforeTests.ps1.
+          $out = dotnet build CSVM/CSVM.csproj --nologo --verbosity quiet -t:Rebuild 2>&1
+          $code = $LASTEXITCODE
+          $sa = @($out | Select-String -Pattern 'SA\d{4}' | Where-Object { $_.Line -notmatch 'SA0001' })
+          if ($code) { $out; exit $code }
+          if ($sa.Count) { $sa | ForEach-Object { $_.Line }; exit 1 }
+          Write-Host 'no StyleCop warnings'
+
+      - name: Unit tests
+        run: dotnet test CSVM/CSVM.sln --nologo

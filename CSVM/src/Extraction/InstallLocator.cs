@@ -138,6 +138,10 @@ public static class InstallLocator
     // which holds the install. Deeper would walk a whole drive for a picker's hint.
     private const int HoldsInstallDepth = 2;
 
+    // How many nested link targets Canonical follows, the kernel's own symlink limit. A link
+    // pointing below itself stops there rather than recursing forever.
+    private const int MaxLinkDepth = 40;
+
     /// <summary>The directory <paramref name="relativePath"/> names under <paramref name="root"/>,
     /// matching each segment without regard to case, or null when any segment is absent. An exact
     /// match wins over a case-folded one where a case-sensitive folder holds both. Segments split
@@ -462,12 +466,13 @@ public static class InstallLocator
     }
 
     // The path with every linked segment replaced by its target, the key two spellings of one
-    // install fold to. A segment that cannot be read stays as written.
-    private static string Canonical(string path)
+    // install fold to. A segment that cannot be read stays as written. A target is canonicalised
+    // in turn, since it may be spelled through a linked parent (macOS's /var, Silverblue's /home).
+    private static string Canonical(string path, int depth = 0)
     {
         string full = Path.GetFullPath(path);
         string? root = Path.GetPathRoot(full);
-        if (string.IsNullOrEmpty(root))
+        if (string.IsNullOrEmpty(root) || depth > MaxLinkDepth)
         {
             return full;
         }
@@ -481,7 +486,7 @@ public static class InstallLocator
             {
                 if (new DirectoryInfo(current).ResolveLinkTarget(returnFinalTarget: true) is { } target)
                 {
-                    current = target.FullName;
+                    current = Canonical(target.FullName, depth + 1);
                 }
             }
             catch (IOException)

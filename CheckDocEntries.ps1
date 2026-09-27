@@ -301,9 +301,10 @@ if ($Path) {
         $candidate = if ([IO.Path]::IsPathRooted($p)) { $p } else { Join-Path $root $p }
         if (Test-Path -LiteralPath $candidate) { $resolvedTargets += (Resolve-Path -LiteralPath $candidate).Path }
     }
-    $targetFullPaths = @($resolvedTargets | ForEach-Object { $_.TrimEnd('\') })
+    $sep = [IO.Path]::DirectorySeparatorChar
+    $targetFullPaths = @($resolvedTargets | ForEach-Object { $_.TrimEnd($sep) })
     $findings = $findings | Where-Object {
-        $full = Join-Path $root ($_.File -replace '/', '\')
+        $full = Join-Path $root ($_.File -replace '/', $sep)
         if (Test-Path -LiteralPath $full) { $full = (Resolve-Path -LiteralPath $full).Path }
         $targetFullPaths -contains $full
     }

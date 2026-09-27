@@ -207,6 +207,37 @@ public class InstallLocatorTests
         }
     }
 
+    /// <summary>The Steam link's target is spelled through another linked folder, like macOS's
+    /// <c>/var</c>. The two roots still fold to one candidate.</summary>
+    [DirectoryLinkFact]
+    public void ASteamLinkSpelledThroughAnotherLinkStillGivesOneCandidate()
+    {
+        string home = TestData.TempDir();
+        string steam = Path.Combine(home, ".local", "share", "Steam");
+        string proton = OddlySpelledInstall(Path.Combine(
+            steam, "steamapps", "compatdata", "2000000123", "pfx", "drive_c", "Program Files", "Microsoft Games", "Crimson Skies"));
+        string alias = Path.Combine(home, "alias");
+        Assert.True(DirectoryLinkFactAttribute.TryLink(alias, Path.Combine(home, ".local")), "the probe that enabled this test could link");
+        Directory.CreateDirectory(Path.Combine(home, ".steam"));
+        string link = Path.Combine(home, ".steam", "steam");
+        try
+        {
+            Assert.True(DirectoryLinkFactAttribute.TryLink(link, Path.Combine(alias, "share", "Steam")), "the second link must succeed too");
+            var roots = new InstallSearchRoots(false, home, Array.Empty<string>(), Array.Empty<string>());
+
+            Assert.Equal(new[] { proton }, InstallLocator.Candidates(roots, null));
+        }
+        finally
+        {
+            if (Directory.Exists(link))
+            {
+                Directory.Delete(link);
+            }
+
+            Directory.Delete(alias);
+        }
+    }
+
     [MovieDataFact]
     public void TheRetailInstallChecksAsAnInstallAndResolvesItsArchive()
     {

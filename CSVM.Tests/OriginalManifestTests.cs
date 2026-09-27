@@ -307,8 +307,9 @@ public class OriginalManifestTests : IDisposable
         return host;
     }
 
-    private string Graphics(string name) =>
-        Path.Combine(_root, "extracted", "rof", "ASSETS", "GRAPHICS", name);
+    // The file the check reads, in the extraction's case. A case-sensitive disk would otherwise
+    // miss it and touch a differently spelled neighbour.
+    private string Graphics(string name) => OriginalAvailability.ArtPath(_root, name);
 
     // The scratch tree: the layout artifact, a stamp Original reads, and every file the fixture
     // names, the .png ones as headers and the rest as a byte.

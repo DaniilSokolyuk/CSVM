@@ -1,4 +1,3 @@
-using System;
 using System.Diagnostics;
 using CSVM.Utils;
 using Xunit;
@@ -123,22 +122,22 @@ public class AiStepCostTests
     {
         // The same contract PerfSampleTests.AScopeAllocatesNothing holds, for the same reason: an
         // instrument on the frame path that allocated would manufacture the stalls it measures.
-        for (int i = 0; i < 10_000; i++)
-        {
-            AiStepCost.Open();
-            AiStepCost.Close(4);
-        }
+        Brackets(); // warm-up: pays for tiered JIT and OSR outside the windows (PERF-28, PERF-29)
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 10_000; i++)
-        {
-            AiStepCost.Open();
-            AiStepCost.Close(4);
-        }
-        long after = GC.GetAllocatedBytesForCurrentThread();
+        int firstCharged = PerfSampleTests.MeasureWindows(Brackets, out long[] charged, out int[] collections);
 
-        Assert.Equal(0L, after - before);
+        Assert.True(firstCharged < 0, firstCharged < 0 ? string.Empty
+            : $"window {firstCharged} charged {charged[firstCharged]} bytes over {collections[firstCharged]} gen0 collections");
         AiStepCost.Take();
+    }
+
+    private static void Brackets()
+    {
+        for (int i = 0; i < 10_000; i++)
+        {
+            AiStepCost.Open();
+            AiStepCost.Close(4);
+        }
     }
 
     // Burns wall time without sleeping, so the slow walk is slow for the same reason a real one is.
