@@ -983,4 +983,4 @@ in this item unless they block the release.
 an 8BitDo pad) and a LAN match between the Deck and the Windows build work, and
 the original presentation in single player holds 60 fps. Enhanced graphics and splitscreen fall
 well below that (New York about 15 fps with enhanced graphics in single player), filed as
-`BL-1051`. Publishing is still owed.
+GitHub issue #44. Publishing is still owed.
