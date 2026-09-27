@@ -53,6 +53,14 @@ member, and it does not go here.
   hit area, so settle a hit-rate question by rastering rays over the silhouette and counting both
   geometries, never with a kill-time stopwatch that folds rate into damage.** The airframe hulls
   present 1.16 to 4.39 times the model's own silhouette and lose none of it.
+- **METHOD-32**, **A deliberately delayed reconstruction is compared at its own lag: fit the lag
+  in fractions of a step first, then read the residual, because a same-step difference measures
+  the delay and a whole-step fit leaves half a step of it behind.** Fitting the replicated
+  aeroplane's lag fractionally moved its reading from 0.60 m to 0.52 m mean.
+- **METHOD-33**, **Judge replicated motion on two independent frame loops, never on two sessions
+  stepped in lockstep: lockstep lands every sample on a step edge, so arrival jitter cannot
+  appear.** The arrival-stamped pose buffer passed the lockstep tracking suite while
+  `RemotePosePlaybackTests`' frame-looped model read 15 to 33 % rms speed error on it.
 
 ## DIAG, chasing a symptom
 
@@ -360,6 +368,22 @@ member, and it does not go here.
   measurement also inflates the instrument reading it: with `hitchMonitor.floorMs` low enough to
   trip most frames, every `[perf] hitch` line is itself a console write on the frame that follows.
   PERF-23 is the per-frame form of this.
+- **PERF-36**, **An in-engine suite that bars a per-frame cost reads it on the stepping thread's own
+  CPU time (`QueryThreadCycleTime`), never on the wall clock: in the sharded engine stage the wall
+  clock measures the neighbouring shards, and even alone half of a launch frame's wall time is a
+  wait.** On the wall clock, `ai-wave-launch-hitch` placed beside heavy suites by the shard
+  partition reads median launch frames up to 108.5 ms, a warm worst of 187.9 ms and worst idle
+  frames of 122.6 and 146 ms, against about 20, 20 and 41 ms alone. Alone, a warm C4/M03 launch frame reads
+  about 20 ms wall against 9 to 11 ms on-thread, and its `SpawnAi` reads 11 ms wall against 4 ms
+  on-thread while the whole process's cycles over the same call read the same 4 ms, so the gap is
+  no other thread's work. It matches the call's four `[flight]`/`[sound]`/`[weapons]` console
+  lines at PERF-35's 1.9 ms each, and a console write blocks until its reader drains the pipe at
+  whatever pace the machine's load allows. On the thread clock the worst readings are 13.8 ms
+  median, 14.1 ms warm worst and 44.6 ms worst idle frame, alone, in the six-shard stage and beside
+  sixteen CPU-burning processes, which the suite's 25/60/80 ms bars clear by about 1.8x. A 20 ms
+  busy-wait injected into each launch reads a 30 ms median and fails. The cost of the choice: a
+  regression that blocks instead of computing reads as nothing, so the window's wall worst stays in
+  the report.
 
 ## LOG, logs, error censuses, and exit codes
 
@@ -829,6 +853,13 @@ member, and it does not go here.
   reaching a distance can be 70 dB down there. Read the level the line prints, never the cull
   distance beside it.** An AI aeroplane's `snd_30cal` at 398 m of its 413 m cull measured -72 dB,
   and a turret cue whose scaled radius is 1000 m stands at -30 dB there.
+- **INSTR-93**, **A session's own clock stands still under a suite that drives `_PhysicsProcess`
+  alone, because `GameClock.Time` advances in `BeginFrame` and nothing but the frame callback calls
+  it: every timestamp two harness sessions exchange therefore reads zero, and a difference between
+  them can only be made by calling `_Process` on one of them.** The match-state tick carried a host
+  clock of zero to both guests over a whole harness match, so `NetClockSlew.Snaps` and `Target`
+  stayed at zero and said nothing about the feed; one `_Process(6.0)` on the host alone moved its
+  clock six seconds and the next ordinary tick landed a target of 6.000 s and one snap on both.
 
 ## SRC, sources and documents
 

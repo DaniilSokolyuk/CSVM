@@ -411,6 +411,41 @@ internal static class LandingApproachSuites
     internal static void HangarDropGate(TestContext ctx) =>
         DriveMission(ctx, TrainPickupSeq, "test-hangar-drop-gate", DriveHangarDrop);
 
+    // The topmost gamez ancestor of a named node. That is the library root a vehicle instantiates
+    // when the node belongs to one, and the world root's placed content otherwise.
+    internal static string TopAncestorOf(GameZ gamez, string nodeName)
+    {
+        var parents = new int[gamez.Nodes.Count];
+        for (int i = 0; i < parents.Length; i++)
+        {
+            parents[i] = -1;
+        }
+
+        foreach (var node in gamez.Nodes)
+        {
+            foreach (int child in node.Children)
+            {
+                if (child >= 0 && child < parents.Length)
+                {
+                    parents[child] = node.Index;
+                }
+            }
+        }
+
+        if (gamez.FindByName(nodeName) is not { } start)
+        {
+            return string.Empty;
+        }
+
+        var at = start;
+        while (parents[at.Index] >= 0)
+        {
+            at = gamez.Nodes[parents[at.Index]];
+        }
+
+        return at.Name;
+    }
+
     // The world build every landings suite needs: the story mission at this sequence position, its
     // objective script, an in-memory campaign profile, and the cutscene roots the definitions pose.
     private static void DriveMission(
@@ -3878,41 +3913,6 @@ internal static class LandingApproachSuites
         {
             textures.Dispose();
         }
-    }
-
-    // The topmost gamez ancestor of a named node: the library root a vehicle instantiates when the
-    // node belongs to one, and the world root's own placed content otherwise.
-    private static string TopAncestorOf(GameZ gamez, string nodeName)
-    {
-        var parents = new int[gamez.Nodes.Count];
-        for (int i = 0; i < parents.Length; i++)
-        {
-            parents[i] = -1;
-        }
-
-        foreach (var node in gamez.Nodes)
-        {
-            foreach (int child in node.Children)
-            {
-                if (child >= 0 && child < parents.Length)
-                {
-                    parents[child] = node.Index;
-                }
-            }
-        }
-
-        if (gamez.FindByName(nodeName) is not { } start)
-        {
-            return string.Empty;
-        }
-
-        var at = start;
-        while (parents[at.Index] >= 0)
-        {
-            at = gamez.Nodes[parents[at.Index]];
-        }
-
-        return at.Name;
     }
 
     private static List<object?>? BlockOf(

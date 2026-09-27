@@ -13,12 +13,11 @@ public readonly record struct VersusStanding(int PlayerIndex, int Kills, int Dea
 /// Deathmatch scorekeeping for splitscreen "Dogfight": per-player kills and deaths plus the match
 /// clock, host-fed exactly like <see cref="StuntRace"/>. A caller reports facts
 /// (<see cref="RegisterKill"/>, <see cref="RegisterDeath"/>, <see cref="Advance"/>) and this class
-/// turns them into standings and one completion event. The match completes once, on whichever
-/// comes first: a player's score reaching <see cref="KillTarget"/>, or the clock reaching
-/// <see cref="TimeLimit"/>; with both disabled (0) it never completes on its own. Deliberately
-/// not a Node, freed with the session, host-fed exactly like <see cref="StuntRace"/>'s timekeeping.
-/// ⚠ Zero engine dependency of any kind, not even <c>Log</c>, a <c>GD.Print</c> in this family
-/// once crashed the xUnit host. Keep it engine-free by construction.</summary>
+/// turns them into standings and one completion event. It completes once, on the first of
+/// <see cref="KillTarget"/>, <see cref="TimeLimit"/> (either disabled at 0) and
+/// <see cref="AllAlone"/>, fewer than two pilots left with lives. It is deliberately not a Node
+/// and is freed with the session. ⚠ Zero engine dependency of any kind, not even <c>Log</c>, a
+/// <c>GD.Print</c> in this family once crashed the xUnit host. Keep it engine-free by construction.</summary>
 public sealed class VersusMatch
 {
     /// <summary>What a kill is worth, the original's <c>score_kill</c> default
@@ -32,11 +31,12 @@ public sealed class VersusMatch
 
     private readonly Row[] _scores;
 
-    public VersusMatch(int playerCount, int killTarget = 5, float timeLimit = 300f)
+    public VersusMatch(int playerCount, int killTarget = 5, float timeLimit = 300f, int lives = 0)
     {
         playerCount = Math.Max(1, playerCount); // 2-4 in practice; a solo session still scores
         KillTarget = Math.Max(0, killTarget);
         TimeLimit = Math.Max(0f, timeLimit);
+        Lives = Math.Max(0, lives);
         _scores = new Row[playerCount];
         for (int i = 0; i < playerCount; i++)
             _scores[i] = new Row();
@@ -49,12 +49,23 @@ public sealed class VersusMatch
     public int PlayerCount => _scores.Length;
 
     /// <summary>The score that ends the match, 0 = no kill target (time is then the only way to
-    /// end it). Named for the menu row that sets it; the original compares the same row against a
-    /// running score, so suicides push a pilot back from it.</summary>
-    public int KillTarget { get; }
+    /// end it). Named for the menu row that sets it. The original compares that row against a
+    /// running score, so suicides push a pilot back from it. A replicated match takes this from
+    /// the host, whose lobby row is the only one in the match.</summary>
+    public int KillTarget { get; private set; }
 
     /// <summary>Seconds on the match clock, 0 = no time limit (kills are then the only way to end it).</summary>
-    public float TimeLimit { get; }
+    public float TimeLimit { get; private set; }
+
+    /// <summary>How many deaths a pilot has before it stays down for the rest of the match, 0 for
+    /// no limit. The lobby's Limited Lives box; only the lobby's options message carries it, since
+    /// every machine launches with the same lobby rules.</summary>
+    public int Lives { get; }
+
+    /// <summary>True on a guest: the clock, the limits and the ending arrive from the host through
+    /// <see cref="ApplyState"/> and nothing local writes them. Scores still arrive as scores, so
+    /// the standings are derived here rather than sent.</summary>
+    public bool Replicated { get; private set; }
 
     /// <summary>Seconds of match clock consumed so far via <see cref="Advance"/>. Stops moving once
     /// <see cref="Completed"/>, a completed match's clock is frozen for display.</summary>
@@ -68,9 +79,33 @@ public sealed class VersusMatch
     /// <see cref="RegisterKill"/>/<see cref="RegisterDeath"/>/<see cref="Advance"/> call is a no-op.</summary>
     public bool Completed { get; private set; }
 
+    /// <summary>True when the match ended because fewer than two pilots with lives were left, the
+    /// original's end reason 4 "No Enemies Left" (docs/org/multiplayer-scoring.md).</summary>
+    public bool AllAlone { get; private set; }
+
+    /// <summary>The seat an out-of-lives pilot watches. It keeps the one it watches while that one
+    /// flies, else takes the next flying seat after <paramref name="self"/>, else none. The
+    /// original binds its chase camera to the next aircraft still in flight.</summary>
+    public static int? NextWatched(int self, IReadOnlyList<bool> flying, int? current)
+    {
+        if (current is { } now && now != self && now >= 0 && now < flying.Count && flying[now])
+            return now;
+        for (int step = 1; step < flying.Count; step++)
+        {
+            int seat = (self + step) % flying.Count;
+            if (flying[seat])
+                return seat;
+        }
+        return null;
+    }
+
     public int KillsOf(int playerIndex) => RowOf(playerIndex)?.Kills ?? 0;
 
     public int DeathsOf(int playerIndex) => RowOf(playerIndex)?.Deaths ?? 0;
+
+    /// <summary>Whether <paramref name="playerIndex"/> has spent its last life. Its deaths are the
+    /// host's count, so every machine reads the same answer once the score arrives.</summary>
+    public bool OutOfLives(int playerIndex) => Lives > 0 && DeathsOf(playerIndex) >= Lives;
 
     /// <summary>The ranked number: <see cref="KillScore"/> per kill plus <see cref="SuicideScore"/>
     /// per death with no killer. May go negative.</summary>
@@ -97,8 +132,9 @@ public sealed class VersusMatch
         var victimRow = RowOf(victim);
         if (victimRow != null)
             victimRow.Deaths++;
-        if (KillTarget > 0 && shooterRow != null && shooterRow.Score >= KillTarget)
+        if (Reached(shooterRow))
             Complete();
+        CheckAlone();
     }
 
     /// <summary>A death with no killer, terrain or mid-air: +1 death and <see cref="SuicideScore"/>
@@ -114,18 +150,73 @@ public sealed class VersusMatch
             victimRow.Deaths++;
             victimRow.Score += SuicideScore;
         }
+        CheckAlone();
+    }
+
+    /// <summary>A pilot who dropped out of the session. It stays on the scoreboard but no longer
+    /// counts as an opponent. The drop can end the match on reason 4 as a death can.</summary>
+    public void Leave(int playerIndex)
+    {
+        if (RowOf(playerIndex) is not { Left: false } row)
+            return;
+        row.Left = true;
+        CheckAlone();
+    }
+
+    /// <summary>Writes one player's line as the host reports it, in place of deriving it from
+    /// events. A guest scores nothing of its own. It shows what the host counted, so a board reads
+    /// the same on every machine whatever each of them saw. The completion test runs as it does
+    /// after a kill, and a host that has ended the match sends nothing more.</summary>
+    public void ApplyScore(int playerIndex, int score, int kills, int deaths)
+    {
+        if (Completed)
+            return;
+        var row = RowOf(playerIndex);
+        if (row == null)
+            return;
+        row.Score = score;
+        row.Kills = kills;
+        row.Deaths = deaths;
+        if (Reached(row))
+            Complete();
     }
 
     /// <summary>Advance the host-fed match clock by <paramref name="dt"/> seconds; completes the
-    /// match once it reaches <see cref="TimeLimit"/>. No-op once <see cref="Completed"/> or when
-    /// <see cref="TimeLimit"/> is disabled (an untimed match never times out).</summary>
+    /// match once it reaches <see cref="TimeLimit"/>. No-op once <see cref="Completed"/>, when
+    /// <see cref="TimeLimit"/> is disabled (an untimed match never times out), or on a
+    /// <see cref="Replicated"/> match, whose clock is the host's.</summary>
     public void Advance(float dt)
     {
-        if (Completed || TimeLimit <= 0f)
+        if (Completed || Replicated || TimeLimit <= 0f)
             return;
         Elapsed += dt;
         if (Elapsed >= TimeLimit)
             Complete();
+    }
+
+    /// <summary>Hands the clock, the limits and the ending to a remote host. From here
+    /// <see cref="Advance"/> moves nothing and no score can end the match. One way: a match never
+    /// takes them back.</summary>
+    public void Replicate() => Replicated = true;
+
+    /// <summary>The host's match state, applied whole on a <see cref="Replicated"/> match: both
+    /// its limits, its clock, and whether the round has ended. ⚠ This is the only thing that ends
+    /// one, so a guest that reached the target itself flies on until the host says otherwise. An
+    /// <paramref name="ended"/> of false re-arms a completed match, which is the host's rematch,
+    /// and leaves the scores for the host to rewrite. Ignored on a host, the only writer of its
+    /// own match.</summary>
+    public void ApplyState(int killTarget, float timeLimit, float remainingSeconds, bool ended)
+    {
+        if (!Replicated)
+            return;
+        KillTarget = Math.Max(0, killTarget);
+        TimeLimit = Math.Max(0f, timeLimit);
+        if (TimeLimit > 0f)
+            Elapsed = Math.Clamp(TimeLimit - remainingSeconds, 0f, TimeLimit);
+        if (ended)
+            Complete();
+        else
+            Completed = false;
     }
 
     /// <summary>Rematch: every score/kill/death zeroed, the clock back to zero, completion
@@ -140,6 +231,7 @@ public sealed class VersusMatch
         }
         Elapsed = 0f;
         Completed = false;
+        AllAlone = false;
     }
 
     /// <summary>Every player ranked by score descending, ties sharing a rank, rank 1 alone is the
@@ -167,8 +259,31 @@ public sealed class VersusMatch
         }
     }
 
+    /// <summary>Whether this row has taken the match. Never on a <see cref="Replicated"/> one: a
+    /// guest arming the target itself would hold its board before the host's.</summary>
+    private bool Reached(Row? row) =>
+        !Replicated && KillTarget > 0 && row != null && row.Score >= KillTarget;
+
     private Row? RowOf(int playerIndex) =>
         playerIndex >= 0 && playerIndex < _scores.Length ? _scores[playerIndex] : null;
+
+    // Reason 4, run after every death and every drop as the original does. A match that opened
+    // with one pilot has no opponent to lose, and a replicated one hears its ending from the host.
+    private void CheckAlone()
+    {
+        if (Completed || Replicated || _scores.Length < 2)
+            return;
+        int standing = 0;
+        for (int i = 0; i < _scores.Length; i++)
+        {
+            if (!_scores[i].Left && !OutOfLives(i))
+                standing++;
+        }
+        if (standing >= 2)
+            return;
+        AllAlone = true;
+        Complete();
+    }
 
     private void Complete()
     {
@@ -183,5 +298,6 @@ public sealed class VersusMatch
         public int Kills;
         public int Deaths;
         public int Score;
+        public bool Left;
     }
 }

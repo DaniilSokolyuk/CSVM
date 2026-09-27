@@ -6,14 +6,13 @@ using Godot;
 
 namespace CSVM.Flight.Camera;
 
-/// <summary>Free-flying observation camera (`--freecam`, docs/architecture.md). Drives the session
-/// camera directly with no aircraft in the world: WASD/arrows move, Q/E (or Z/U) down/up, RMB-held
-/// mouse look, wheel sets speed; gamepad mirrors it. Deliberately has NO collision, and pitch is
-/// clamped short of vertical with roll never applied, so the view cannot tumble into an
-/// unrecoverable attitude.
-/// ⚠ Never bind a movement key another action already uses (C toggles the collider overlay, Space
-/// fires the guns): this camera polls raw key state, so a shared key moves the camera as a side
-/// effect of the other action, which is why the vertical pair is Q/E with Z/U beside it.</summary>
+/// <summary>Free-flying observation camera (`--freecam`, docs/architecture.md) driving the session
+/// camera with no aircraft in the world. WASD/arrows move, Q/E (or Z/U) go down/up, RMB-held mouse
+/// looks and the wheel sets speed; a gamepad mirrors it. Deliberately has NO collision, and pitch
+/// is clamped short of vertical with roll never applied, so the view cannot tumble.
+/// ⚠ Never bind a movement key another action already uses (C cycles the mesh lab's culling, Space
+/// fires the guns). This camera polls raw key state, so a shared key moves it as a side effect.
+/// That is why the vertical pair is Q/E with Z/U beside it.</summary>
 public sealed partial class SpectatorCamera : Node
 {
     /// <summary>Base movement speed in m/s, before the boost/slow modifiers. TUNE.</summary>
@@ -76,8 +75,9 @@ public sealed partial class SpectatorCamera : Node
     private float _orbitYaw, _orbitPitch, _orbitDist;
 
     /// <summary>A free camera over <paramref name="camera"/>. The pad half reads the flight sticks
-    /// of <paramref name="playerIndex"/>'s seat (<see cref="StickDeviceState.Live"/>), or the
-    /// suite's <paramref name="sticks"/>. So a stick control bound on a camera row moves it.</summary>
+    /// of <paramref name="playerIndex"/>, this machine's local player and never a network roster
+    /// seat (<see cref="StickDeviceState.Live"/>), or the suite's <paramref name="sticks"/>. So a
+    /// stick control bound on a camera row moves it.</summary>
     public SpectatorCamera(Camera3D camera, Vector3 position, Vector3 lookAt,
         int[]? padDevices = null, bool useKeyboard = true, int playerIndex = 0, IDeviceState? sticks = null)
     {
@@ -171,19 +171,14 @@ public sealed partial class SpectatorCamera : Node
 
     public override void _UnhandledInput(InputEvent @event)
     {
+        // ⚠ The target press is an event, never polled: a polled edge fires behind a host that
+        // already consumed the key (BL-279). Read before the switch, so a mouse button bound to
+        // it still reaches the look and wheel cases.
+        if (IsLockPress(@event))
+            CycleLock();
+
         switch (@event)
         {
-            // ⚠ The target key is handled here, never polled like the axes below it. This camera
-            // reads raw key state, which bypasses GUI focus and SetInputAsHandled, so a polled
-            // edge would also fire for a host that has already spoken for the key (BL-279).
-            case InputEventKey { Keycode: Key.F, Pressed: true, Echo: false }
-                when _useKeyboard && !KeyboardCaptured:
-                CycleLock();
-                break;
-            case InputEventJoypadButton { ButtonIndex: JoyButton.X, Pressed: true } padButton
-                when ReadsPad(padButton.Device):
-                CycleLock();
-                break;
             case InputEventMouseButton { ButtonIndex: MouseButton.Right } rmb:
                 _looking = rmb.Pressed;
                 Input.MouseMode = _looking ? Input.MouseModeEnum.Captured : Input.MouseModeEnum.Visible;
@@ -260,6 +255,28 @@ public sealed partial class SpectatorCamera : Node
         UpdateReadout();
     }
 
+    /// <summary>Whether one pressed control is among <paramref name="bindings"/>. A key binding
+    /// matches when every modifier it names is <paramref name="held"/>, so a bare key still fires
+    /// under Shift. Pure, so the matching unit-tests without an
+    /// input event.</summary>
+    internal static bool IsBound(IReadOnlyList<Binding> bindings, DeviceId device, ControlKind kind,
+        int index, KeyModifiers held = KeyModifiers.None)
+    {
+        foreach (var binding in bindings)
+        {
+            if (binding.Device == device && binding.Control.Kind == kind && binding.Control.Index == index
+                && (binding.Control.Modifiers & ~held) == KeyModifiers.None)
+                return true;
+        }
+
+        return false;
+    }
+
+    private static KeyModifiers HeldModifiers(InputEventWithModifiers e) =>
+        (e.ShiftPressed ? KeyModifiers.Shift : KeyModifiers.None)
+        | (e.CtrlPressed ? KeyModifiers.Ctrl : KeyModifiers.None)
+        | (e.AltPressed ? KeyModifiers.Alt : KeyModifiers.None);
+
     private void UpdateReadout()
     {
         if (_readout == null)
@@ -308,6 +325,23 @@ public sealed partial class SpectatorCamera : Node
         int next = OrbitLock.Next(_lockScan, _camera.Position, current);
         if (next >= 0)
             FollowNode(_lockNodes[next]);
+    }
+
+    // The target key's press, read off the event against CameraLockTarget's own bindings so a
+    // rebind moves it. A flight stick raises no event, so a stick button bound here stays inert.
+    private bool IsLockPress(InputEvent @event)
+    {
+        var bindings = _keyActions.Map.Bindings(InputAction.CameraLockTarget);
+        return @event switch
+        {
+            InputEventKey { Pressed: true, Echo: false } key when _useKeyboard && !KeyboardCaptured =>
+                IsBound(bindings, DeviceId.Keyboard, ControlKind.Key, (int)key.Keycode, HeldModifiers(key)),
+            InputEventJoypadButton { Pressed: true } pad when ReadsPad(pad.Device) =>
+                IsBound(bindings, SeatPad, ControlKind.Button, (int)pad.ButtonIndex),
+            InputEventMouseButton { Pressed: true } click when _useKeyboard =>
+                IsBound(bindings, DeviceId.Mouse, ControlKind.Mouse, (int)click.ButtonIndex),
+            _ => false,
+        };
     }
 
     // Whether this seat may read `device`, the event-side twin of the Pads.For gate the polled

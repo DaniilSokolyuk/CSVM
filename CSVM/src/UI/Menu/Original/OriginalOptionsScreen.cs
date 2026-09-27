@@ -483,6 +483,7 @@ public sealed class OriginalOptionsScreen : IOriginalScreenModule
             InputAction.SnapLookMode, InputAction.TrackTarget, InputAction.SmoothLookMode,
             InputAction.SelectChaseView,
             InputAction.LookBack, InputAction.LookCenter, InputAction.FreeLook,
+            InputAction.ZoomIn, InputAction.ZoomOut,
         },
         new[]
         {

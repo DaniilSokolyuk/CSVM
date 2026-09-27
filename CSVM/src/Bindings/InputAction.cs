@@ -141,4 +141,9 @@ public enum InputAction
     // sticks alone, since every key and pad button already skips (StickSkip). Appended because the
     // enum is positional.
     SkipCutscene,
+
+    // The external camera's zoom axis, numpad + and - by default. This port's own pair; appended
+    // because the enum is positional.
+    ZoomIn,
+    ZoomOut,
 }

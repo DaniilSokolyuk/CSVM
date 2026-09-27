@@ -19,9 +19,9 @@ public sealed record IaWrapupSnapshot(
 /// <summary>
 /// Where the menu should stand when it comes back, said semantically so the host never names a
 /// screen. Each presentation maps a destination into its own graph on
-/// <see cref="IMenuPresentation.Activate"/>: two presentations may land the same destination on
-/// entirely different screens, and a destination a graph lacks maps to the nearest one it has.
-/// The hierarchy is closed: only these five destinations exist.
+/// <see cref="IMenuPresentation.Activate"/>, so two presentations may land the same destination on
+/// entirely different screens. A destination a graph lacks maps to the nearest one it has.
+/// The hierarchy is closed: only these seven destinations exist.
 /// </summary>
 public abstract record MenuReturnDestination
 {
@@ -44,6 +44,7 @@ public abstract record MenuReturnDestination
     /// mission.</summary>
     public static MenuReturnDestination ForLaunch(MenuExit exit) => exit switch
     {
+        CampaignMissionExit { Profile.Length: 0, Net: not null } => new CoopGuestReturn(null),
         CampaignMissionExit mission => new CabinReturn(mission.Profile),
         LaunchExit { InstantAction: not null } => InstantAction,
         _ => TopLevel,
@@ -76,3 +77,14 @@ public sealed record CabinReturn(string Profile) : MenuReturnDestination;
 /// profile has already completed leaves the profile exactly as it found it, and the closing film is
 /// gated on the result (<c>Session/Campaign/ClosingCinema.cs</c>).</summary>
 public sealed record DebriefReturn(string Profile, int MissionSeq, bool MissionWon) : MenuReturnDestination;
+
+/// <summary>A co-op guest back from its host's mission, onto the host's boards again. It carries
+/// the guest's own attempt for the host's debrief, or null when it flew nothing. A guest
+/// whose link to the host has ended lands on the Connection page instead, which says why.</summary>
+public sealed record CoopGuestReturn(CSVM.Session.Campaign.MissionAttempt? Attempt) : MenuReturnDestination;
+
+/// <summary>Back into the Multiplayer Lobby a Dogfight was launched from, on its Game Scores page. It
+/// carries the match's final lines, best first, because the session that counted them is freed
+/// before the page draws. A lobby whose link has ended lands on the Connection page instead.
+/// </summary>
+public sealed record LobbyReturn(IReadOnlyList<DogfightScore> Scores) : MenuReturnDestination;

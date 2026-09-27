@@ -111,7 +111,7 @@ public sealed class OriginalAssetManifest
     /// <summary>The manifest schema. Bump it when the derivation changes what Original needs: the
     /// composed-section table, the rows Original does not draw or draws optionally, the
     /// script-named files, or what <see cref="Check"/> accepts as a readable file.</summary>
-    public const int Schema = 8;
+    public const int Schema = 10;
 
     /// <summary>The extraction stamp schema Original refuses to read a tree below: the loaders'
     /// own expectation, which the decoded menu layout's first reader raised, so a tree extracted
@@ -129,13 +129,19 @@ public sealed class OriginalAssetManifest
         "HardPoints", "Paint", "Purchase", "MessageBox",
     };
 
-    // The files the GUI scripts name outside the layout and Original draws anyway: the two pointer
-    // bitmaps, the 3D font, and the plane construction screen's two export plaques, which the
-    // script names and no layout row does. Their paths come from the layout's own external-asset
-    // list; a layout that does not name one falls back to the graphics directory.
+    // Files the GUI scripts name outside the layout, which Original draws anyway. They are the two
+    // pointer bitmaps, the 3D font, the construction screen's two export plaques, and the art of
+    // the inline multiplayer screens. Paths come from the layout's external-asset list, else the
+    // graphics directory.
     private static readonly string[] ScriptNamed =
     {
         "activepointerz.png", "passivepointerz.png", "arial8.tga", "PX_B_ReadyToExport.png", "PX_B_CancelExport.png",
+        "MP_OPTIONSBACKGROUND.JPG", "MP_GAMESBACKGROUND.JPG", "MP_ERRORMESSAGEBACKGROUND.JPG", "MP_GAMESALPHA.PNG",
+        "MP_B_RADIO.PNG", "MP_B_SMALL.PNG", "MP_B_MEDIUM.PNG", "MP_B_LARGE.PNG", "MP_B_EXITMULTIPLAYER.PNG",
+        "MP_B_CHECKBOXLARGE.PNG", "MP_LOBBY_BACKGROUND.JPG", "MP_LOBBY_MISSION.PNG", "MP_LOBBY_PLANE.PNG",
+        "MP_LOBBY_AMMO.PNG", "MP_LOBBY_STATSCREEN.PNG", "MP_LOBBY_TABLARGE.PNG", "MP_LOBBY_TABSMALL.PNG",
+        "MP_B_RADIO8STATESSM.PNG", "MP_B_CHECKBOX8STATES.PNG", "MP_B_CHECKBOX.PNG", "MP_B_LISTBOXARROW.PNG",
+        "MP_PLANEICONSTOPFRONT.PNG",
     };
 
     // Rows of a composed section whose art Original never draws, each with why. The keys are
@@ -146,10 +152,10 @@ public sealed class OriginalAssetManifest
         ["Audio.AP_B_MUSIC"] = "the In-Game Music checkbox, whose mute a slider that reaches zero already offers",
         ["Audio.AP_D_SQuality"] = "the Sound Quality tier, which no mixer this port runs on has an equivalent of",
         ["PassengerCabin.PC_B_SAVE"] = "SAVE GAME, deactivated in the original and never drawn",
-        ["MessageBox.MP_P_BACKGROUND"] = "the multiplayer error box, which has no local counterpart",
-        ["MessageBox.MP_B_LEFT"] = "the multiplayer error box, which has no local counterpart",
-        ["MessageBox.MP_B_CENTER"] = "the multiplayer error box, which has no local counterpart",
-        ["MessageBox.MP_B_RIGHT"] = "the multiplayer error box, which has no local counterpart",
+        ["MessageBox.MP_P_BACKGROUND"] = "the multiplayer error box, whose errors the shared box raises",
+        ["MessageBox.MP_B_LEFT"] = "the multiplayer error box, whose errors the shared box raises",
+        ["MessageBox.MP_B_CENTER"] = "the multiplayer error box, whose errors the shared box raises",
+        ["MessageBox.MP_B_RIGHT"] = "the multiplayer error box, whose errors the shared box raises",
         ["MessageBox.MA_B_LEFT"] = "the About box's unused answers, it being the one-button box",
         ["MessageBox.MA_B_RIGHT"] = "the About box's unused answers, it being the one-button box",
     };

@@ -47,7 +47,8 @@ internal readonly record struct FlightCheckState(
     object? Profile, int MissionSeq, int Player, bool Wingman,
     bool PilotChangePlane, bool WingChangePlane,
     OwnedPlane? Pilot, object? PilotAmmo, object? PilotOrdnance,
-    OwnedPlane? Wing, object? WingAmmo, object? WingOrdnance);
+    OwnedPlane? Wing, object? WingAmmo, object? WingOrdnance,
+    bool Guest = false, bool Ready = false);
 
 /// <summary>
 /// The flight check screen (<c>Campaign Flight Check.png</c>, <c>FLIGHTCHECK.SCRIPT</c>,
@@ -430,7 +431,8 @@ public sealed class CampaignFlightCheckPage : CampaignPage
             Flow.Profile, Flow.MissionSeq, Player, HasWingman,
             Flow.Feature.ChangePlaneAllowed(PilotSlot), Flow.Feature.ChangePlaneAllowed(WingmanSlot),
             pilot, pilot?.Ammo, pilot?.Ordnance,
-            wing, wing?.Ammo, wing?.Ordnance);
+            wing, wing?.Ammo, wing?.Ordnance,
+            Flow.Feature.IsGuest, Flow.Feature.GuestReady);
     }
 
     // Every row this screen draws, composed from the profile and the mission's wingman flag: the
@@ -459,7 +461,10 @@ public sealed class CampaignFlightCheckPage : CampaignPage
         }
 
         rows.Add(new FlightRow("RETURN TO BRIEFING", string.Empty, FlightRowKind.ReturnToBriefing));
-        rows.Add(new FlightRow("FLY MISSION", string.Empty, FlightRowKind.FlyMission));
+
+        // A co-op guest's launch is the host's, so its last button says it is ready instead.
+        string fly = !Flow.Feature.IsGuest ? "FLY MISSION" : Flow.Feature.GuestReady ? "CANCEL READY" : "READY";
+        rows.Add(new FlightRow(fly, string.Empty, FlightRowKind.FlyMission));
         return rows;
     }
 

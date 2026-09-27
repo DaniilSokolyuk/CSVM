@@ -175,6 +175,8 @@ public static class DefaultBindings
         b.Keys(InputAction.LookRight, Key.Kp9, Key.Kp6, Key.Kp3);
         b.Keys(InputAction.LookCenter, Key.Kp5);
         b.Keys(InputAction.LookBack, Key.Kp0).Buttons(InputAction.LookBack, JoyButton.RightStick);
+        b.Keys(InputAction.ZoomIn, Key.KpAdd);
+        b.Keys(InputAction.ZoomOut, Key.KpSubtract);
         b.Stick(InputAction.LookAimUp, JoyAxis.RightY, -1, 0f);
         b.Stick(InputAction.LookAimDown, JoyAxis.RightY, 1, 0f);
         b.Stick(InputAction.LookAimLeft, JoyAxis.RightX, -1, 0f);

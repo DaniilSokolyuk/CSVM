@@ -10,16 +10,13 @@ using Godot;
 namespace CSVM.UI.Overlays;
 
 /// <summary>
-/// The collision wireframe overlay (key C): every built collider in the session drawn as
-/// coloured lines, so "is this solid?" is answerable by looking rather than by reading a census.
-/// Collision is a flight-build option; pressing C without <c>--collision</c> prints why and draws
-/// nothing rather than an empty overlay that reads as "nothing here is collidable". World and
-/// aircraft geometry hangs shapes on <see cref="CollisionShape3D"/> nodes; solid clutter attaches
-/// shared shapes straight to a region body's RID, read back through the physics server. ⚠ Only
-/// the server-side <c>BodyGetShape*</c> getters are used on those; a <c>ShapeOwner*</c> call
-/// would rebuild the body from nodes it lacks and silently empty it. The drawing follows each
-/// shape's <c>Disabled</c> flag, so a kill's collider swap shows live. Colour is the resolved
-/// surface id a touch will actually select, not the raw stamp. Full decode: docs/architecture.md.
+/// The collision wireframe overlay (key F20): every built collider in the session drawn as
+/// coloured lines, so "is this solid?" is answered by looking. Without <c>--collision</c>, F20
+/// prints why and draws nothing rather than an empty overlay. Solid clutter hangs shared shapes
+/// straight on a region body's RID. ⚠ Read those only through the server-side
+/// <c>BodyGetShape*</c> getters; a <c>ShapeOwner*</c> call rebuilds the body from nodes it lacks
+/// and silently empties it. The drawing follows each shape's <c>Disabled</c> flag and colours by
+/// the resolved surface id; the full decode is in docs/architecture.md.
 /// </summary>
 public sealed partial class ColliderOverlay : Node
 {
@@ -142,7 +139,7 @@ public sealed partial class ColliderOverlay : Node
 
     public override void _UnhandledKeyInput(InputEvent @event)
     {
-        if (@event is not InputEventKey { Pressed: true, Echo: false, Keycode: Key.C })
+        if (@event is not InputEventKey { Pressed: true, Echo: false, Keycode: Key.F20 })
         {
             return;
         }
@@ -150,7 +147,7 @@ public sealed partial class ColliderOverlay : Node
         GetViewport().SetInputAsHandled();
     }
 
-    /// <summary>C: show or hide the wireframes. Each show walks the current tree so a destructible
+    /// <summary>F20: show or hide the wireframes. Each show walks the current tree so a destructible
     /// swap cannot leave the overlay holding drawings parented to freed nodes.</summary>
     public void Toggle()
     {

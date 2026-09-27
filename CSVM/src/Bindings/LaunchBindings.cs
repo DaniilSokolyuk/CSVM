@@ -31,10 +31,10 @@ public static class LaunchBindings
     /// </summary>
     public static void Configure(bool deterministic) => _readsSaved = ReadSavedKeymaps && !deterministic;
 
-    /// <summary>That player's whole profile, for a seat that reads several contexts. Players are
-    /// numbered from 1, so a zero-based seat index passes <c>index + 1</c>. Player 1's stick rows
-    /// come from the active stick profiles, never from the keymap file (<see cref="StickRows"/>).
-    /// </summary>
+    /// <summary>That player's whole profile, for a seat that reads several contexts. Players are this
+    /// machine's own, numbered from 1, so a zero-based local player passes <c>index + 1</c>; a
+    /// network roster seat is not one. Player 1's stick rows come from the active stick profiles,
+    /// never from the keymap file (<see cref="StickRows"/>).</summary>
     public static BindingProfile Profile(int player, DeviceId pad, bool readsKeyboard)
     {
         var profile = _readsSaved

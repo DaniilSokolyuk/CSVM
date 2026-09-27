@@ -885,6 +885,10 @@ internal static class InstantActionSuites
         // C1 world's scenery would stand there too and crash them mid-hold.
         ctx.EvictCollidableWorlds();
 
+        // ⚠ Do not remove this eviction. The stunt runs fly aircraft through C1's zone positions in
+        // the host's one physics space. A cached collidable C1 world from an earlier suite crashes them there.
+        ctx.EvictCollidableWorlds();
+
         var planesGamez = GameZ.Load(ctx.PlanesGamezPath);
         var weaponDefs = WeaponDefs.Load(ctx.ZrdrPath, null);
         var textures = new TextureArchive(texturesPath);

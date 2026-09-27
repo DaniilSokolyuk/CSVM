@@ -1,4 +1,5 @@
 using System;
+using CSVM.Bindings;
 using CSVM.Flight.Airframe;
 using CSVM.Utils;
 using Godot;
@@ -20,7 +21,8 @@ public enum CameraView
     /// prints beside this name.</summary>
     Look,
 
-    /// <summary>The look-behind view: numpad 0, the right-stick click, or <c>--view=back</c>.</summary>
+    /// <summary>The look-behind view: Look Back held (numpad 0 or the right-stick click by
+    /// default), or <c>--view=back</c>.</summary>
     Back,
 
     /// <summary>The pad look-around, a continuously variable twin of the numbered views rather
@@ -112,9 +114,9 @@ public sealed class CameraController
 
     private readonly Camera3D _camera;
 
-    // A key, already gated on whether this player flies the keyboard at all, so the controller
-    // never learns about pad devices or window focus.
-    private readonly Func<Key, bool> _keyDown;
+    // A named action as this player's keymap resolves it. A rebound Look Back or zoom follows the
+    // binding, and the controller never learns about devices or window focus.
+    private readonly Func<InputAction, bool> _held;
 
     // The view pinned for the whole run (--view=): 0 is nothing pinned, PinnedBackView
     // (--view=back) the look-behind and PinnedFlybyView the flyby. A pinned numpad DIGIT is a
@@ -154,12 +156,12 @@ public sealed class CameraController
     private float _orbitYaw, _orbitPitch, _orbitDist; // free orbit-camera state while paused
     private CameraView _viewPrev = CameraView.Chase; // the view the last logged frame was drawn from
 
-    public CameraController(Camera3D camera, CamParams cam, Func<Key, bool> keyDown, int pinnedView,
+    public CameraController(Camera3D camera, CamParams cam, Func<InputAction, bool> held, int pinnedView,
         PilotViewMode viewMode = PilotViewMode.Chase, Vector3 cockpitCameraOffset = default,
         Func<float>? staticDraw = null)
     {
         _camera = camera;
-        _keyDown = keyDown;
+        _held = held;
         _pinnedView = pinnedView;
         ViewMode = viewMode;
         _camParams = cam;
@@ -268,13 +270,11 @@ public sealed class CameraController
         Head.Reset();
     }
 
-    /// <summary>The look-behind view is on: numpad 0 held, the run pinned it with
-    /// <c>--view=back</c>, or <paramref name="padClick"/>, this player's right-stick
-    /// click, read by the host the same way it reads every other pad button. It beats the snap
-    /// cluster, as the original's own placement does: its look-behind arm never reaches the
-    /// head-look controller.</summary>
-    public bool BackActive(bool padClick = false) =>
-        _keyDown(Key.Kp0) || _pinnedView == PinnedBackView || padClick;
+    /// <summary>The look-behind view is on: <see cref="InputAction.LookBack"/> held on any control
+    /// it is bound to, or the run pinned it with <c>--view=back</c>. It beats the snap cluster, as
+    /// the original's own placement does: its look-behind arm never reaches the head-look
+    /// controller.</summary>
+    public bool BackActive() => _held(InputAction.LookBack) || _pinnedView == PinnedBackView;
 
     /// <summary>One frame of the pilot's head, in the shape the original's own controller takes it
     /// (<c>FUN_0042d010(floor, autohead)</c>): the view placing the frame hands the elevation floor
@@ -487,13 +487,13 @@ public sealed class CameraController
 
     /// <summary>Advance the numpad +/- zoom axis one frame: the target via <see
     /// cref="ZoomTarget"/>, then the shown trim chasing it at <see cref="ZoomSmoothRate"/> (the
-    /// same law <see cref="HeadLook.Approach"/> names). Reads the injected key state directly,
-    /// like <see cref="BackActive"/> does, so the host polls no pad
-    /// device for it. ⚠ Call only where <see cref="Orbit"/> is not also running this frame, the
-    /// weapon lab's held orbit reads the same two keys for its own dolly.</summary>
+    /// same law <see cref="HeadLook.Approach"/> names). Reads the two zoom actions through the
+    /// injected keymap, like <see cref="BackActive"/> does. ⚠ Call only where <see cref="Orbit"/>
+    /// is not also running this frame, the weapon lab's held orbit reads the same two actions for
+    /// its own dolly.</summary>
     public void UpdateZoom(float dt)
     {
-        _zoomTarget = ZoomTarget(_zoomTarget, _keyDown(Key.KpAdd), _keyDown(Key.KpSubtract), dt);
+        _zoomTarget = ZoomTarget(_zoomTarget, _held(InputAction.ZoomIn), _held(InputAction.ZoomOut), dt);
         _zoomShown = HeadLook.Approach(_zoomShown, _zoomTarget, ZoomSmoothRate, dt);
     }
 
@@ -549,6 +549,21 @@ public sealed class CameraController
         // orthonormality drift compound frame over frame until it trips the "not normalized" assert.
         var current = _camera.Basis.GetRotationQuaternion();
         _camera.Basis = new Basis(current.Slerp(desired.GetRotationQuaternion(), tRot));
+    }
+
+    /// <summary>The chase view of another aircraft, the out-of-lives pilot's spectating camera. A
+    /// <paramref name="fresh"/> target is taken at its settled pose, so a switch cuts rather than
+    /// sweeping across the field.</summary>
+    public void Watch(float dt, in Transform3D pose, bool fresh)
+    {
+        if (fresh)
+        {
+            Head.Reset();
+            RestoreExternalFov();
+        }
+
+        // A step long enough that both smoothings land in one go is the settled pose.
+        Chase(fresh ? 10f : dt, pose.Origin, pose.Basis);
     }
 
     /// <summary>Place the camera at its settled pose immediately, spawn, respawn and the weapon

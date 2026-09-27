@@ -347,6 +347,64 @@ public class SessionSpecParserTests
         Assert.True(s.ForceBuiltInPresentation);
     }
 
+    /// <summary>A join value is an address with an optional port. An IPv6 address is bracketed,
+    /// which tells its own colons from the port's. A value naming no port falls back to the
+    /// door's default.</summary>
+    [Theory]
+    [InlineData("127.0.0.1", "127.0.0.1", 47500)]
+    [InlineData("127.0.0.1:47600", "127.0.0.1", 47600)]
+    [InlineData("host.example:80", "host.example", 80)]
+    [InlineData("[::1]", "::1", 47500)]
+    [InlineData("[fe80::1%eth0]:47600", "fe80::1%eth0", 47600)]
+    [InlineData("::1", "::1", 47500)]
+    [InlineData("127.0.0.1:0", "127.0.0.1", 47500)]
+    [InlineData("127.0.0.1:notaport", "127.0.0.1", 47500)]
+    public void AJoinValueSplitsIntoAnAddressAndAPort(string value, string address, int port)
+    {
+        var parsed = SessionSpec.ParseJoin(value);
+        Assert.Equal(address, parsed.Address);
+        Assert.Equal(port, parsed.Port);
+    }
+
+    /// <summary>A host value is a bare port on every interface, or an address and a port binding
+    /// that one. The wildcard is what a player on a network needs; a scripted run names the
+    /// loopback address instead, so nothing asks about the firewall.</summary>
+    [Theory]
+    [InlineData("47600", "*", 47600)]
+    [InlineData("127.0.0.1:47600", "127.0.0.1", 47600)]
+    [InlineData("127.0.0.1", "127.0.0.1", 47500)]
+    [InlineData("99999", "*", 47500)]
+    [InlineData("", "*", 47500)]
+    public void AHostValueSplitsIntoABindAddressAndAPort(string value, string bind, int port)
+    {
+        var parsed = SessionSpec.ParseHost(value);
+        Assert.Equal(bind, parsed.Bind);
+        Assert.Equal(port, parsed.Port);
+    }
+
+    /// <summary>The two network flags reaching the spec, and their absence leaving it local.
+    /// </summary>
+    [Fact]
+    public void TheNetworkFlagsReachTheSpec()
+    {
+        var local = SessionSpec.Parse(new[] { "--vs" });
+        Assert.Null(local.NetHostPort);
+        Assert.Null(local.NetJoin);
+        Assert.Equal("*", local.NetHostBind);
+
+        var bare = SessionSpec.Parse(new[] { "--vs", "--net-host" });
+        Assert.Equal(47500, bare.NetHostPort);
+        Assert.Equal("*", bare.NetHostBind);
+
+        var host = SessionSpec.Parse(new[] { "--vs", "--net-host=127.0.0.1:47600" });
+        Assert.Equal(47600, host.NetHostPort);
+        Assert.Equal("127.0.0.1", host.NetHostBind);
+
+        var guest = SessionSpec.Parse(new[] { "--vs", "--net-join=127.0.0.1:47600" });
+        Assert.Null(guest.NetHostPort);
+        Assert.Equal("127.0.0.1:47600", guest.NetJoin);
+    }
+
     /// <summary>The enhanced-pass bisect doors: none closed by default, each flag closes its own
     /// bit, and several on one line accumulate rather than replacing each other.</summary>
     [Fact]

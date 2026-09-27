@@ -28,7 +28,10 @@ Names only, deliberately: a gloss here would be a second description of the same
 exactly how `PROJECT_CONTEXT.md`'s day-to-day table drifted from this page. One flag, one description.
 
 **Modes and content, what gets built**
-`--viewer` · `--fly` · `--stunt` · `--vs` · `--vs-kills` · `--vs-time` · `--coop` · `--freecam` · `--anim-lab` · `--menu` · `--skip-intro` · `--intro` · `--chapter` · `--stage` · `--node` · `--plane` · `--players` · `--mission` · `--scenario` · `--ia` · `--campaign` · `--play-anim` · `--movie` · `--presentation` · `--force-builtin`
+`--viewer` · `--fly` · `--stunt` · `--vs` · `--vs-kills` · `--vs-time` · `--vs-lives` · `--vs-no-respawn` · `--coop` · `--freecam` · `--anim-lab` · `--menu` · `--skip-intro` · `--intro` · `--chapter` · `--stage` · `--node` · `--plane` · `--players` · `--mission` · `--scenario` · `--ia` · `--campaign` · `--play-anim` · `--movie` · `--presentation` · `--force-builtin`
+
+**Multiplayer, the wire a match flies over**
+`--net-host` · `--net-join`
 
 **Placement, where the subject starts and which way it faces**
 `--pos` · `--direction` · `--lookat` · `--view` · `--spawn` · `--campos` · `--spawn-at` · `--spawn-dir`
@@ -52,7 +55,7 @@ exactly how `PROJECT_CONTEXT.md`'s day-to-day table drifted from this page. One 
 `--dump-markers` · `--dump-weapons` · `--dump-loadout` · `--dump-flight` · `--dump-config` · `--dump-mips` · `--dump-ai` · `--dump-sticks` · `--dump-tilegrid` · `--run-tests` · `--damage-test` · `--effects-test` · `--hud-font-test`
 
 **Logging and profiling**
-`--log` · `--perf` · `--gc-types` · `--debug-anim` · `--anim-lod` · `--hitch-inject`
+`--log` · `--perf` · `--gc-types` · `--debug-anim` · `--debug-net` · `--anim-lod` · `--hitch-inject`
 
 **Rendering probes, is this thing drawing at all?**
 `--tex-override` · `--tex-census` · `--no-fog` · `--no-flare` · `--no-clutter` · `--clutter-templates` · `--cloud-jitter` · `--no-zone-cull` · `--sky-zone` · `--mips` · `--no-cockpit-pass` · `--graphics` · `--no-ssao` · `--no-ssr` · `--no-glow` · `--no-soft-shadows`
@@ -92,21 +95,21 @@ the shared selection (`--debug-select`), the node lab (`--debug-nodelab`), the w
 **Written exceptions to "one flag, one bullet":** `--spawn-dir` shares `--spawn-at`'s bullet, since
 the pair is one mechanism, so `Grep` the partner's name to find it; `--debug-nodelab` and
 `--debug-damage` each carry a short opener bullet plus the full behaviour under their lab's own
-section further down. The counts reconcile as **155 index entries, 155 parser flags and 156 bullet
+section further down. The counts reconcile as **157 index entries, 157 parser flags and 158 bullet
 lines**.
 
 ## Flags
 - `--viewer` (the static inspection view: the parked-plane orbit, or with `--chapter=` the static world for deterministic weather, fog and edge screenshots. It hosts three labs, always built and needing no extra flag: the damage lab on **F19**, the livery lab on **L** and the mesh lab on **M**. All three start hidden, so an unadorned `--viewer` screenshot matches the pre-paint viewer. F19 toggles the damage lab as a whole, slider panel and HUD gauges together; the panel's own checkbox controls the gauges while it is up. **P** halts the simulation and **`.`** advances one frame)
 - `--debug-livery[=N]` (`--viewer` only: open the livery panel at launch and, with N, step the pattern N times first, one scripted screenshot then exercises the stepper + repaint + widget sync, not just the layout; same role as `--debug-scoreboard`/`--debug-join`)
 - `--debug-mesh[=spec]` (open the **mesh lab** at launch with its modes preset. The subject is the parked plane in `--viewer` and the run's selection elsewhere, where it stands in for the M press; the panel is hidden in a `--screenshot` run. Comma-separated tokens, unknown ones reported: `normals[=corners]`, `color=provenance|direction|winding`, `wire[=seams|seamsonly]`, `boxes`, `enginewire`, `cull=double|single|inverted`, `source=flat|smooth|negated`, `headlight`, `ambient=off`, `sun=<energy>`, `dir=x/y/z` (slashes; the direction the light travels), `cycle=N`, `force`, `restore`)
-- `--collision[=show]` (**build the world's colliders in a mode that otherwise builds none**: `--freecam`, `--anim-lab` and `--viewer` build no `StaticBody3D` at all, so what is solid there is unmeasurable without it (WORLD-9). `=show` also opens the **C** collider-wireframe overlay, colouring each wireframe by the surface id its body resolves to. The id is per body, not per polygon: the colour is what the engine selects. It prints per-id counts and the on and off transitions separately (WORLD-10). In `--viewer` it builds colliders but binds no overlay (C is the mesh lab's cull cycler))
-- `--debug-colliders` (open the **C** collider-wireframe overlay **without** forcing the collision
+- `--collision[=show]` (**build the world's colliders in a mode that otherwise builds none**: `--freecam`, `--anim-lab` and `--viewer` build no `StaticBody3D` at all, so what is solid there is unmeasurable without it (WORLD-9). `=show` also opens the **F20** collider-wireframe overlay, colouring each wireframe by the surface id its body resolves to. The id is per body, not per polygon: the colour is what the engine selects. It prints per-id counts and the on and off transitions separately (WORLD-10). In `--viewer` it builds colliders but no overlay)
+- `--debug-colliders` (open the **F20** collider-wireframe overlay **without** forcing the collision
   build first; the opener that always builds is `--collision=show`. This is how the "no collision
   here" notice (WORLD-9) is exercised in `--freecam`/`--anim-lab`, which build none on their own;
   pass `--collision` alongside it to populate the overlay there. In a flight mode, or after
   `--collision`, the colliders already exist and the overlay just opens against them. Distinct from
   `--debug-collision`, which draws the flown plane's own probe, not the world's)
-- `--debug-classoverlay` (open the **H** colour-by-class overlay at launch, in
+- `--debug-classoverlay` (open the **F21** colour-by-class overlay at launch, in
   `--freecam`/`--anim-lab`/`--fly`/`--stunt`. It tints every world mesh by what it is rather than what it looks like: destructible red, from the `DestructibleRegistry.Resolve` climb a weapon hit takes, so a door that only looks breakable
   reads as scenery; facade pink; clutter green;
   everything else scenery blue. It is rebuilt on every H press, so a death never tints a freed node, and it is not keyed on `SceneBuilder.SurfaceMeta`, which answers what a bullet does here. Debug-only: goldens are unaffected)
@@ -173,14 +176,31 @@ lines**.
   condition, accepted, not guarded against, since the mode's win/lose flow is a later item. The
   built-in menu's Dogfight map screen carries this as a row too, under the same rule, each flag
   beating only the row it names)
+- `--vs-lives=N` (with `--vs`, how many deaths a pilot has before it stays down and watches the
+  rest of the match, on every machine. Default `0`, no limit. The Multiplayer Lobby's Limited Lives
+  box carries the same setting, and spelling this flag out beats it)
+- `--vs-no-respawn` (with `--vs`, a downed pilot stays on the crash camera until it presses the
+  respawn key itself, rather than coming back on the timer. The Multiplayer Lobby's Auto Respawn box
+  unchecked is the same rule, and spelling this flag out beats the box)
+- `--net-host[=port]`, `--net-host=address:port` (open a listen server and fly this session as its
+  host, the scripted twin of the menu's multiplayer door over the same socket. A bare flag takes
+  port 47500 on IPv4's wildcard, the stable global IPv6 address and `::1`, a number sets the port,
+  and `address:port` binds that one address, IPv6 in brackets. ⚠ A scripted run names `127.0.0.1`: a wildcard
+  bind is what puts a Windows firewall dialog on somebody's screen. A host waits for nobody and
+  flies alone until a guest arrives)
+- `--net-join=address[:port]` (join the match at that address and fly this session as a guest,
+  the port defaulting to 47500 and an IPv6 address written in brackets. The launch holds at the
+  load screen until the link stands or 30 seconds pass, because a guest with no host has no seats
+  to fly. The roster it flies is the host's, so the plane this end picked is a request, not a
+  promise)
 - `--coop` (plain splitscreen free flight defaults to **FFA**, every
   human on their own team (`AimAssist.TeamOfPilot`), so aim assist, world turrets and AI gunners
   treat the other humans as hostile. `--coop` opts a plain `--fly`/`--stunt` session into one
   shared human team instead, the same team Instant Action puts its wingmen on
   (`AimAssist.PlayerTeam`). Has no effect with `--vs`, Dogfight's FFA is explicit and outranks it,
   logged as a warning if both are given)
-- `--freecam` (**spectator mode**: the live chapter world with **no aircraft at all**, seen from a free-flying camera. RMB looks, WASD and Q/E move, Shift and Ctrl scale the speed, the wheel sets the base. There is no collision. It starts at the mission's spawn position, which `--pos=`/`--direction=` override. **P** halts the simulation and **`.`** advances one frame. Left-click selects, **PgUp**/**PgDn** walk the ancestor ladder, **M** opens the mesh lab and **C** the collider wireframes. Wins over `--fly`/`--stunt`/`--viewer`/`--damage`)
-- `--anim-lab` (**the animation debugger**: the chapter world as a quiet stage (no ON_STARTUP defs, no startanims) under a deterministic fixed-dt clock. The camera is the freecam, and clicking an object locks the camera onto it. Transport is an on-screen panel with **P** pause, **`.`** step, **R** restart and **F** the def picker; **M** and **C** work here too. The picker lists every def; the timeline draws authored start times against the ticks the runtime fired. The lab UI is hidden in a `--screenshot` run unless `--debug-anim-ui` forces it. Wins over the other modes)
+- `--freecam` (**spectator mode**: the live chapter world with **no aircraft at all**, seen from a free-flying camera. RMB looks, WASD and Q/E move, Shift and Ctrl scale the speed, the wheel sets the base. There is no collision. It starts at the mission's spawn position, which `--pos=`/`--direction=` override. **P** halts the simulation and **`.`** advances one frame. Left-click selects, **PgUp**/**PgDn** walk the ancestor ladder, **M** opens the mesh lab and **F20** the collider wireframes. Wins over `--fly`/`--stunt`/`--viewer`/`--damage`)
+- `--anim-lab` (**the animation debugger**: the chapter world as a quiet stage (no ON_STARTUP defs, no startanims) under a deterministic fixed-dt clock. The camera is the freecam, and clicking an object locks the camera onto it. Transport is an on-screen panel with **P** pause, **`.`** step, **R** restart and **F** the def picker; **M** and **F20** work here too. The picker lists every def; the timeline draws authored start times against the ticks the runtime fired. The lab UI is hidden in a `--screenshot` run unless `--debug-anim-ui` forces it. Wins over the other modes)
 - `--play-anim=<name>` (implies `--anim-lab`: resolve the def(s) carrying that ANIMATION_NAME and play them at launch, exactly the way bootstrap pass 3 starts a startanim, anchored defs once per anchor, unanchored ones globally resolved, and auto-frame the orbit camera on the played def's anchor (fallback: its first resolved target node; `--pos`/`--direction` suppress the auto-frame). An unknown name logs and leaves the stage quiet)
 - `--seed=N` (**the session's master seed**: every random draw comes from a named subsystem stream derived from it as `splitmix64(master ^ fnv1a(name))`. **Default 1 under `--det`, `--anim-lab` and `--effects-test`, drawn from the clock otherwise**, so a bare `--fly` gets a random spawn, liveries and spread; the resolved value prints as `rng: master seed N`, and passing it back replays the run. An unpinned session advances its master per flight, so flying again is a new draw. Weather zones, wave composition and terrain placement do not vary. `--paint-seed=N` overrides the paint stream alone)
 - `--debug-anim-ui` (implies `--anim-lab`: force the lab's def picker + timeline visible in a scripted `--screenshot`, the timeline-verification path, since the whole lab UI is otherwise hidden there to keep shots byte-identical; the same house convention as `--debug-livery`/`--debug-scoreboard`)
@@ -198,6 +218,7 @@ lines**.
   page's row, which can also name a frame cap), then the `display.vsync` config key (`true` turns
   it on), then off, uncapped. `--det` reads no saved option; the `[perf] vsync` line names the winner)
 - `--debug-anim` (log every live animation motion's target node, world position **and rotation** once a second, rotation because a spinning prop (`OBJECT_MOTION`) turns in place and a position-only line reads identically whether or not it runs. It also prints each `If`/`Elseif` condition on its first evaluation and thereafter only when its verdict flips, and every ambient `SOUND_NODE` emitter's host, position, distance, range and playing state. The `dist` column is the range to the nearest of the session's audio listeners, one per pane, and names it; that is a range, not a loudness)
+- `--debug-net` (a network match's desync counters once a wall second: the session's own send and receive counts, state and fire samples dropped as sequence gaps, late arrivals, reliable events out of their causal order, and every remote aeroplane's buffer reads by feed with its extrapolation error. Logged under `core` and shown in the top-left corner while a session holds a wire; nothing without one)
 - `--log=<spec>` (**console log filter**: a comma list of `cat`, `cat:level`, `*`, `*:level`, or a bare `level`, over the nine categories `anim world flight weapons sound perf test ui core` and the four levels `error warn info debug`. A bare category means debug, a bare level sets every category; the default is `info`, and **warnings and errors are never suppressible**. **It moves the console threshold only: every `Log` line at every level also goes to `.scratch/logs/<mode>-<stamp>.log`** (`logs\` in an exported build), line-flushed. `--debug-anim` implies `--log=anim:debug,sound:debug`)
 - `--anim-lod=N` (our answer to the data's `ANIMATION_LOD` condition, a **quality setting**, not a fact about the world. Default 2 = the reader's `HIGH`, the only tier anything in this install asks for, so every LOD-gated branch runs (the refinery/dock/lighthouse light sequences, the muzzle bursts, the wing-light blinks). Lower it purely to A/B what the original hid on slow hardware)
 - `--hitch-inject=[alloc:]<ms>[@frame]` (inject a synthetic stall of known magnitude, so `HitchMonitor` has something deterministic to verify against. It fires once, on the stated frame in `HitchMonitor.FrameCount`'s own space, never the sim frame, since the injector has to work with no session built at all; a bare `<ms>` fires at frame 300. The default form busy-waits; the `alloc:` prefix burns the same wall time allocating and discarding 4 KB buffers, the only way to move the GC columns on demand. **The frame must clear the grace window in wall time, not frame count** (PERF-12))
@@ -364,8 +385,8 @@ A miss logs `select miss ... tested=N map_scale=M`. Rung names are `cs_name`, ne
 **Ctrl+click** also flips the struck leaf in the cyan-outlined **export set** (node lab, below).
 
 **M** attaches the mesh lab to the selected rung's subtree and nothing else; M again, or selecting
-something else, puts that subtree back as built. **C** draws the collider wireframes (see `--collision`);
-in `--viewer` C stays the mesh lab's cull cycler. Scripted twin: `--debug-mesh=<spec>`.
+something else, puts that subtree back as built. **F20** draws the collider wireframes (see `--collision`);
+in `--viewer` C is the mesh lab's cull cycler. Scripted twin: `--debug-mesh=<spec>`.
 
 ## The node lab, `N` (`--freecam` / `--anim-lab`)
 

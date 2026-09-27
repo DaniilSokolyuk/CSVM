@@ -14,6 +14,8 @@ What this build plays:
 - Instant Action's four mission types: dogfighting an ace, dogfighting a squadron, attacking
   a zeppelin, and stunt flying against the clock.
 - 2 to 4-player splitscreen Dogfight deathmatch, and free flight.
+- Network play: the Dogfight deathmatch and campaign co-op, hosted from the menu and joined by
+  LAN search or by IP address.
 - 11 aircraft and 8 chapter worlds, in the original's liveries, animated and with sound.
 - Guns and rockets, AI aircraft that patrol, engage and evade, turrets, zeppelins, and world
   objects that take damage and die.

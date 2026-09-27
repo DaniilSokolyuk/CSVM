@@ -49,6 +49,21 @@ and the scoped `PushConsoleSink` redirect console lines, so a plain class that l
 without an engine. Categories, levels, the file-line grammar, the `--log=` filter and the sink
 path: [../org/logging.md](../org/logging.md). `HitchSidecar.cs` shares this sink's stem.
 
+## src/Utils/LocalNetworks.cs
+The IPv4 networks this machine sits on, for the LAN search: `Ipv4()` lists the address and mask of
+every adapter that is up and not the loopback, and an empty list when the system will not say, so a
+search still asks at the limited broadcast. It lives here because `CSVM.Net` may not name
+`System.Net`, and Godot's interface list carries no masks. `Launcher.cs` hands it to the door as
+`NetPlayFeature.LanNetworks`; `Net/LanBroadcast.cs` turns it into addresses.
+
+## src/Utils/HostAddress.cs
+The addresses a host names to its guests. `StableGlobalIPv6()` is the first global unicast IPv6
+address that is neither temporary (a privacy address) nor deprecated, so never a ULA, link-local
+or Teredo one; `LanIPv4()` is the private IPv4 address on an adapter with a gateway. Windows reads
+`SuffixOrigin` and the DAD state, Linux reads `/proc/net/if_inet6`, and neither read throws.
+`Choose`, `ChooseLan` and `ParseLinuxTable` take data, so a unit test supplies the candidates.
+`EnetTransport` binds the stable address, and `NetCarrier` hands both reads to the door.
+
 ## src/Utils/BuildVersion.cs
 The build's own version, read once from `application/config/version` in `project.godot`, which is
 the number's one home. Three surfaces state it back so a report names its build without being

@@ -2,9 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using CSVM.Flight;
 using CSVM.Flight.Hangar;
 using CSVM.Flight.Modes;
 using CSVM.Flight.Weapons;
+using CSVM.Net;
+using CSVM.Session;
 using CSVM.Session.Campaign;
 using CSVM.UI.Boards;
 using CSVM.UI.Campaign;
@@ -163,6 +166,36 @@ public sealed class OriginalPresentation : IMenuPresentation
     /// rows of the screen and not a box.</summary>
     public const string CampaignDeleteAid = "campaign-delete";
 
+    /// <summary>The aid value that opens the cabin with its network door open over the aids'
+    /// loopback door. Its colon argument is how many guests are on the wire.</summary>
+    public const string CampaignCoopAid = "campaign-coop";
+
+    /// <summary>The aid value that shows a joined co-op guest following the aids' loopback host.
+    /// Its colon argument names the host's board: cabin (the default), briefing, flightcheck,
+    /// ready, planeselection, ammo or debrief.</summary>
+    public const string CampaignCoopGuestAid = "campaign-coop-guest";
+
+    /// <summary>The aid value that shows a co-op host's flight check with two guests on the aids'
+    /// loopback wire. The first is Ready and the second not, so FLY MISSION waits.</summary>
+    public const string CampaignCoopReadyAid = "campaign-coop-ready";
+
+    /// <summary>The aid value that opens the Multiplayer Connection page.</summary>
+    public const string ConnectionAid = "connection";
+
+    /// <summary>The aid value that opens the games list over a LAN answering with the aids' sample
+    /// games.</summary>
+    public const string ConnectionGamesAid = "connection-games";
+
+    /// <summary>The <see cref="ConnectionGamesAid"/> argument for a LAN that answers nothing, so the
+    /// Searching box stands.</summary>
+    public const string ConnectionSearchingAid = "searching";
+
+    /// <summary>The aid value that opens the Multiplayer Lobby over the aids' loopback wire with two
+    /// guests on it. Its first colon argument names the view: host (the default), guest (Ready) or
+    /// waiting (a guest not yet Ready). The second names the tab: mission (the default), plane,
+    /// ammo, rockets or scores, which lands a finished match first.</summary>
+    public const string LobbyAid = "lobby";
+
     /// <summary>The campaign aid values Original shares with Built-in, each over the scratch
     /// profile store: the empty profile screen, the two-player one, the cabin, the table of
     /// contents, the book on the last mission flown, the briefing (with its seconds argument),
@@ -172,7 +205,7 @@ public sealed class OriginalPresentation : IMenuPresentation
     {
         "campaign-empty", "campaign-roster", "campaign-cabin", "campaign-previous", "campaign-scrapbook",
         "campaign-briefing", "campaign-flightcheck", "campaign-ammo", "campaign-planeselection", "campaign-hangar",
-        CampaignDeleteAid,
+        CampaignDeleteAid, CampaignCoopAid, CampaignCoopGuestAid, CampaignCoopReadyAid,
     };
 
     /// <summary>The cabin's palette: the shared cabin board's, with the mission pull-down's words
@@ -276,6 +309,10 @@ public sealed class OriginalPresentation : IMenuPresentation
     /// null while the presentation has no layer.</summary>
     internal ShotViewer? PhotoViewer => _shotViewer;
 
+    /// <summary>The board the view last composed, for a suite telling a repaint from a quiet frame:
+    /// each recompose hands the view a new one.</summary>
+    internal ComposedBoard? ShownBoard => _view?.Board;
+
     /// <summary>The board palette the shell's inks resolve to: list text in the file-wide
     /// disabled grey with the active white for the focused row, plaque labels in the paper
     /// button's own three colours.</summary>
@@ -353,7 +390,8 @@ public sealed class OriginalPresentation : IMenuPresentation
                 screenSizes: ResolutionSetting.ScreenSizes,
                 screens: MonitorSetting.Screens,
                 controls: host.Features.TryGet<ControlsFeature>(out var controls) ? controls : null,
-                joinRoster: _devices);
+                joinRoster: _devices,
+                net: host.Features.TryGet<NetPlayFeature>(out var net) ? net : null);
             _controlsSeats = host.Features.TryGet<ControlsFeature>(out var rebinds) ? new MenuControlsSeats(rebinds) : null;
             _palette = PaletteFor(_shell.Inks);
             _preferencesPalette = PaletteFor(_shell.PreferencesInks, _shell.Inks);
@@ -420,6 +458,23 @@ public sealed class OriginalPresentation : IMenuPresentation
             if (!_shell.Campaign.ShowScrapbook(debrief.Profile, debrief.MissionSeq, debrief.MissionWon))
             {
                 Log.Warn("ui", $"original presentation: debrief return could not seat '{debrief.Profile}'; the profile screen shows instead");
+            }
+        }
+        else if (destination is CoopGuestReturn guest)
+        {
+            // Back onto the host's boards, or onto the Connection page saying why the link ended.
+            if (!_shell.Campaign.ShowGuestDebrief(guest.Attempt))
+            {
+                _shell.ReturnToConnection();
+            }
+        }
+        else if (destination is LobbyReturn landing)
+        {
+            // The lobby the match was launched from, on its scores, or the Connection page saying
+            // why the link ended.
+            if (!_shell.Lobby.Land(landing.Scores))
+            {
+                _shell.ReturnToConnection();
             }
         }
         else if (aid.Length > 0 && OpenCampaignAid(aid))
@@ -497,6 +552,19 @@ public sealed class OriginalPresentation : IMenuPresentation
                     break;
                 case CreditsAid:
                     _shell.Open(OriginalScreen.Credits);
+                    break;
+                case ConnectionAid:
+                    _shell.Connection.OpenConnection();
+                    break;
+                case ConnectionGamesAid:
+                case ConnectionGamesAid + ":" + ConnectionSearchingAid:
+                    _shell.StandInNetDoor(NetDoorAid.Searching(silent: aid.EndsWith(ConnectionSearchingAid, StringComparison.Ordinal)));
+                    _shell.Connection.OpenConnection();
+                    _shell.Connection.SearchLan();
+                    _shell.StepNet(0.0);
+                    break;
+                case string lobby when lobby == LobbyAid || lobby.StartsWith(LobbyAid + ":", StringComparison.Ordinal):
+                    OpenLobbyAid(lobby[LobbyAid.Length..].TrimStart(':'));
                     break;
                 case CreditsAid + ":" + CreditsAboutAid:
                     // The screen opens on ABOUT, its first row, so one accept raises the box.
@@ -668,6 +736,16 @@ public sealed class OriginalPresentation : IMenuPresentation
         var size = _view.GetViewportRect().Size;
         var fit = BoardFit.For(size.X, size.Y);
         changed |= TickBriefing(dt);
+        // The network door is stepped every frame whatever shows. A guest arriving, a search
+        // answer or a hang-up then lands without waiting for a screen to ask.
+        changed |= _shell.StepNet(dt);
+        if (_shell.TakeNetExit() is { } launched)
+        {
+            _host.Audio.EndMixPreview();
+            _host.Exit(launched);
+            return;
+        }
+
         // Text capture is set before the poll: the name screen's letters must be text, not
         // cursor aliases, for the frame that reads them.
         _host.Seats[0].CapturingText = _shell.CapturingText;
@@ -903,6 +981,63 @@ public sealed class OriginalPresentation : IMenuPresentation
         _controlsSeats.Sync(pollers);
     }
 
+    // The lobby posed over the aids' wire. The shown door is opened through the screen itself, so it
+    // goes by the pilot's name the way a player's own lobby does.
+    private void OpenLobbyAid(string argument)
+    {
+        string[] parts = argument.Split(':');
+        bool waiting = parts[0] == "waiting";
+        bool guestView = parts[0] == "guest" || waiting;
+        string tab = parts.Length > 1 ? parts[1] : parts[0] is "host" or "guest" or "waiting" ? string.Empty : parts[0];
+        var (host, guests) = NetDoorAid.DogfightDoors();
+        var shown = guestView ? guests[waiting ? 1 : 0] : host;
+        _shell!.StandInNetDoor(shown);
+        if (guestView)
+        {
+            host.OpenDogfightHost(NetSeats.MaxPlayers - 1);
+        }
+        else
+        {
+            _shell.Lobby.OpenHost();
+        }
+
+        foreach (var guest in guests)
+        {
+            guest.OpenJoin();
+        }
+
+        NetDoorAid.SettleDogfight(host, guests);
+        if (guestView)
+        {
+            _shell.Lobby.OpenGuest();
+        }
+
+        NetDoorAid.PoseDogfight(host, guests);
+        if (tab == "scores")
+        {
+            // Game Scores fills only on the way back from a match, so every door lands one.
+            var scores = NetDoorAid.PlayedScores(host);
+            foreach (var door in guests.Prepend(host).Where(door => door != shown))
+            {
+                door.Dogfight?.Land(scores);
+            }
+
+            _shell.Lobby.Land(scores);
+            NetDoorAid.SettleDogfight(host, guests);
+        }
+
+        _shell.Lobby.ShowTab(
+            tab switch
+            {
+                "plane" => LobbyTab.Plane,
+                "ammo" or "rockets" => LobbyTab.Ammo,
+                "scores" => LobbyTab.Scores,
+                _ => LobbyTab.Mission,
+            },
+            rockets: tab == "rockets");
+        _shell.StepNet(0.0);
+    }
+
     private void OpenGameOptionsAid(string aid)
     {
         _shell!.Options.OpenGameOptions();
@@ -986,6 +1121,32 @@ public sealed class OriginalPresentation : IMenuPresentation
                 }
 
                 break;
+            case CampaignCoopAid:
+                // The cabin with its network door open over the aids' loopback door, the same pose
+                // as Built-in's aid of this name. The colon argument is the guests on its wire.
+                _shell.Campaign.ShowCabin(CampaignAidProfiles.Pilot);
+                int.TryParse(argument, System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out int guests);
+                var door = NetDoorAid.Host(guests, out _);
+                _shell.StandInNetDoor(door);
+                NetDoorAid.OpenCoopHost(door, CampaignAidProfiles.MissionsFlown, localPlayers: 1);
+                _shell.StepNet(0.0);
+                argument = string.Empty;
+                break;
+            case CampaignCoopGuestAid:
+                PoseCoopGuest(argument);
+                argument = string.Empty;
+                break;
+            case CampaignCoopReadyAid:
+                _shell.Campaign.ShowCabin(CampaignAidProfiles.Pilot);
+                var ready = NetDoorAid.Host(2, out _, out var guestEnds);
+                _shell.StandInNetDoor(ready);
+                NetDoorAid.OpenCoopHost(ready, CampaignAidProfiles.MissionsFlown, localPlayers: 1);
+                _shell.Campaign.ShowMissionScreen(OriginalScreen.CampaignFlightCheck);
+                _shell.StepNet(0.0);
+                NetDoorAid.AnswerReady(ready, guestEnds[0], _shell.Campaign.SeatedAirframe ?? HangarFeature.DefaultAirframe);
+                _shell.StepNet(0.0);
+                break;
             case "campaign-previous":
                 _shell.Campaign.ShowCabin(CampaignAidProfiles.Pilot);
                 _shell.Campaign.ShowMissionScreen(OriginalScreen.CampaignPreviousMissions);
@@ -1047,6 +1208,36 @@ public sealed class OriginalPresentation : IMenuPresentation
         }
 
         return true;
+    }
+
+    // The guest as the host's boards leave it, three humans on the wire and this guest the second.
+    // The third is Ready on the check, so a shot shows another's mark beside this guest's own.
+    private void PoseCoopGuest(string board)
+    {
+        var host = CampaignAidProfiles.Store(seeded: true, progressed: true).Load(CampaignAidProfiles.Pilot);
+        ushort airframes = CampaignFeature.HangarAirframes(host);
+        byte flown = CampaignAidProfiles.MissionsFlown;
+        var flow = board switch
+        {
+            "briefing" => new CoopFlowMessage(NetCoopScreen.Briefing, flown, 1, 1, 0, 3, flown, false, airframes, 0, 0),
+            "flightcheck" or "planeselection" or "ammo" =>
+                new CoopFlowMessage(NetCoopScreen.FlightCheck, flown, 1, 1, 0, 3, flown, false, airframes, 0, 0),
+            "ready" => new CoopFlowMessage(NetCoopScreen.FlightCheck, flown, 1, 1, 0b100, 3, flown, false, airframes, 0, 0),
+            "debrief" => new CoopFlowMessage(NetCoopScreen.Debrief, (byte)(flown - 1), 2, 1, 0, 3, flown, true, airframes, 0b11, 4500),
+            _ => new CoopFlowMessage(NetCoopScreen.Cabin, flown, 1, 1, 0, 3, flown, false, airframes, 0, 0),
+        };
+
+        _shell!.StandInNetDoor(NetDoorAid.CoopGuest(flow, ready: board == "ready"));
+        _shell.Connection.OpenConnection();
+        _shell.StepNet(0.0);
+        if (board == "planeselection")
+        {
+            _shell.Campaign.ShowMissionScreen(OriginalScreen.CampaignPlaneSelection);
+        }
+        else if (board == "ammo")
+        {
+            _shell.Campaign.ShowMissionScreen(OriginalScreen.CampaignAmmo);
+        }
     }
 
     // --debug-join=N, once: N device-less seats with distinct cursors, the last one selected, so

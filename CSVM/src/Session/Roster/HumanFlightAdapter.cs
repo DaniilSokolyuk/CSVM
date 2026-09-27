@@ -107,10 +107,16 @@ internal sealed class HumanFlightAdapter
     {
         bool verbose = pi == 0; // the per-plane detail lines are identical for every player
         string tag = _human.RigCount > 1 ? $"P{pi + 1} " : "";
-        // Each player flies their own pick; an Instant Action mission read off a file overrides
-        // this for every human alike (PlaneRoster.InstantActionOverride settles which do). A
-        // mission's own swap outranks both: it names the airframe the script hands the player.
+        // A seat flown on another machine. No pane exists for it, so everything hung on a camera,
+        // a pad or this window is skipped. The aeroplane, its paint, its loadout, its damage and
+        // its spawn are built exactly as a local seat's.
+        var seat = pi < _human.NetSeats.Count ? _human.NetSeats[pi] : null;
+        bool remote = seat is { IsLocal: false };
+        // Each player flies their own pick; an Instant Action mission overrides it for every human
+        // alike (PlaneRoster.InstantActionOverride settles which do). A mission's own swap outranks
+        // both. In a network match the roster's pick comes first: every peer builds the same field.
         string planeName = swap?.PlaneNode
+            ?? (seat is { PlaneNode.Length: > 0 } ? seat.PlaneNode : null)
             ?? _human.InstantActionPlayerPlaneNode
             ?? (_policy.PlaneNames.Count == 0
                 ? _policy.PlaneName
@@ -161,7 +167,7 @@ internal sealed class HumanFlightAdapter
             PinnedViewMode = _policy.ViewMode,
             AutoHeadTurn = _policy.AutoHeadTurn,
             PinnedLook = _policy.PinnedLook,
-            HudParent = rig.Viewport,
+            HudParent = remote ? null : rig.Viewport,
             // Null when the airframe ships no cockpit1, the rig then hides nothing, as before B11.
             Cockpit = CockpitVisibility.Bind(planeModel, planeBuilder.CockpitInterior),
             CockpitInterior = planeBuilder.CockpitInterior,
@@ -180,7 +186,13 @@ internal sealed class HumanFlightAdapter
         controller.Bind(new FlightControllerBuild
         {
             PlayerIndex = pi,
+            // The keymap file and the sticks are this machine's player's, not the roster seat's.
+            LocalPlayer = MenuSeatOf(pi),
             IsHumanPiloted = true,
+            // A seat flown elsewhere takes its pose out of this history, not a flight model.
+            // The buffer's presence IS that ownership, so it is built here and nowhere else.
+            // The session fills it from the samples that seat's owner sends.
+            RemotePoses = remote ? new Net.RemotePoseBuffer() : null,
             // one scripted sequence per player ('|'-separated); the last covers the rest
             HoldSegments = _policy.HoldSets == null ? null
                 : _policy.HoldSets[Math.Min(pi, _policy.HoldSets.Length - 1)],
@@ -202,15 +214,18 @@ internal sealed class HumanFlightAdapter
             Projectiles = _world.Projectiles,
             HumanPositions = _world.HumanPositions,
             // ⚠ Pass the null through. Null and empty are DIFFERENT bindings to Pads.For: null
-            // reads every connected pad (the single-player default, which AssignPads returns for
-            // one player), empty reads none. Coalescing here flew a single player pad-dead.
-            PadDevices = _human.PadAssignment?[pi],
-            UseKeyboard = pi == 0,
-            MouseCaptureAllowed = _policy.MouseCaptureAllowed,
+            // reads every connected pad (what AssignPads returns for one player), empty reads none.
+            // Coalescing flew a single player pad-dead; a remote seat takes empty, it reads none.
+            PadDevices = remote ? Array.Empty<int>() : PadsOf(MenuSeatOf(pi)),
+            // The keyboard is this machine's first seat's, which on a guest is not seat 0.
+            UseKeyboard = !remote && MenuSeatOf(pi) == 0,
+            MouseCaptureAllowed = !remote && _policy.MouseCaptureAllowed,
             // The whole messages.json table, not just the weapon rows: the pilot HUD words its
             // auto-land prompt out of the same file.
             Strings = _aircraft.WeaponMessages,
-            AllowPause = true,
+            // A pause key belongs to a seat somebody is sitting at. A remote pilot's pause is
+            // their own machine's business, and must not halt this one's simulation.
+            AllowPause = !remote,
             Team = _human.InstantActionActive || _human.Coop ? AimAssist.PlayerTeam : null,
             Shake = new PlaneShake(_aircraft.Shakes),
         });
@@ -327,48 +342,51 @@ internal sealed class HumanFlightAdapter
         }
 
         // Every readout this pane draws for its pilot belongs to the controller's own FlightHud,
-        // which owns the per-frame feed; nothing here writes one after assembly.
+        // which owns the per-frame feed; nothing here writes one after assembly. None of it is
+        // built for a remote seat: there is no pane to draw it in and no camera to aim it by.
         var pilotHud = controller.PilotHud;
-
-        // The original's heading tape, rebuilt from the chapter's own HUD
-        // textures (compassticks2/compasstxt ship in every chapter's archive).
-        pilotHud.Compass = CompassTape.Build(_aircraft.Textures);
-        if (verbose && pilotHud.Compass != null)
-            Log.Info("flight", $"compass: heading tape from compassticks2/compasstxt");
-
-        // The cockpit dials (altimeter / speedometer / damage display), rebuilt
-        // from the plane's own gauges subtree in planes.zbd + the chapter's
-        // HUD textures (needle/lowalt/stall/<plane>_damage/hilite/hatchptrn).
-        pilotHud.Gauges = GaugeCluster.Build(_aircraft.PlanesGamez, planeName, _aircraft.Textures,
-            stats.DestroyableParts);
-        if (pilotHud.Gauges is { } gauges)
+        if (!remote)
         {
-            var damage = controller.Damage;
-            if (damage != null)
-                gauges.PartFraction = name =>
-                    damage.Parts.TryGetValue(name, out var s) ? s.Fraction : 1f;
-            if (verbose)
-                Log.Info("flight", $"gauges: altimeter/speedometer/damage dial from the plane's gauges subtree");
-        }
+            // The original's heading tape, rebuilt from the chapter's own HUD
+            // textures (compassticks2/compasstxt ship in every chapter's archive).
+            pilotHud.Compass = CompassTape.Build(_aircraft.Textures);
+            if (verbose && pilotHud.Compass != null)
+                Log.Info("flight", $"compass: heading tape from compassticks2/compasstxt");
 
-        // The bitmap-font proof overlay: draw the sample string on this pane so a 1P view
-        // and a 4P pane can be compared (--hud-font-test). Set before the controller
-        // enters the tree, its _Ready adds this to the HUD canvas.
-        if (_aircraft.HudFont != null && _policy.HudFontTest)
-        {
-            pilotHud.FontTest = new HudFontTest(_aircraft.HudFont, _policy.HudFontTestText);
-            if (verbose)
-                Log.Info("flight", $"hud-font-test: '{_policy.HudFontTestText}' via 5pointhud font");
-        }
+            // The cockpit dials (altimeter / speedometer / damage display), rebuilt
+            // from the plane's own gauges subtree in planes.zbd + the chapter's
+            // HUD textures (needle/lowalt/stall/<plane>_damage/hilite/hatchptrn).
+            pilotHud.Gauges = GaugeCluster.Build(_aircraft.PlanesGamez, planeName, _aircraft.Textures,
+                stats.DestroyableParts);
+            if (pilotHud.Gauges is { } gauges)
+            {
+                var damage = controller.Damage;
+                if (damage != null)
+                    gauges.PartFraction = name =>
+                        damage.Parts.TryGetValue(name, out var s) ? s.Fraction : 1f;
+                if (verbose)
+                    Log.Info("flight", $"gauges: altimeter/speedometer/damage dial from the plane's gauges subtree");
+            }
 
-        // The gun aiming reticle: the ballistic impact point of the selected gun
-        // group at the convergence distance, drawn as the game's pipper, visibly
-        // trailing the nose in a hard turn, on the rounds in steady flight.
-        if (_aircraft.ReticleTex != null && controller.Loadout != null)
-        {
-            pilotHud.Reticle = ImpactReticle.Build(_aircraft.ReticleTex, rig.Camera);
-            if (verbose)
-                Log.Info("flight", $"gun reticle: ballistic impact point via impact_point.png");
+            // The bitmap-font proof overlay: draw the sample string on this pane so a 1P view
+            // and a 4P pane can be compared (--hud-font-test). Set before the controller
+            // enters the tree, its _Ready adds this to the HUD canvas.
+            if (_aircraft.HudFont != null && _policy.HudFontTest)
+            {
+                pilotHud.FontTest = new HudFontTest(_aircraft.HudFont, _policy.HudFontTestText);
+                if (verbose)
+                    Log.Info("flight", $"hud-font-test: '{_policy.HudFontTestText}' via 5pointhud font");
+            }
+
+            // The gun aiming reticle: the ballistic impact point of the selected gun
+            // group at the convergence distance, drawn as the game's pipper. It visibly
+            // trails the nose in a hard turn, and sits on the rounds in steady flight.
+            if (_aircraft.ReticleTex != null && controller.Loadout != null)
+            {
+                pilotHud.Reticle = ImpactReticle.Build(_aircraft.ReticleTex, rig.Camera);
+                if (verbose)
+                    Log.Info("flight", $"gun reticle: ballistic impact point via impact_point.png");
+            }
         }
 
         // Visible damage, phase 1: the object, unconditionally. Phase 2 (the sink and the stops)
@@ -385,7 +403,9 @@ internal sealed class HumanFlightAdapter
         // The data-driven crash rig is built AFTER the controller enters the tree
         // (below), so the crash def's reset states read valid global transforms.
 
-        if (_world.Sounds != null && _world.SoundDefs != null)
+        // Never on a remote seat. This stack is the sound of the aeroplane you are sitting in, and
+        // that pilot is sitting in theirs, on their own machine.
+        if (!remote && _world.Sounds != null && _world.SoundDefs != null)
         {
             var audio = new FlightAudio { MixGain = _human.MixGain };
             audio.Setup(_world.Sounds, _world.SoundDefs, stats, _aircraft.WeaponDefs, _world.SoundGroups);
@@ -397,7 +417,7 @@ internal sealed class HumanFlightAdapter
         // This player's stunt run: player 1 flies the loaded instance, everyone else an
         // independent copy of the same zones, own progress, own clock. Never on a swap, which
         // would restart the clock and stack a second run HUD (see AirframeSwapRequest).
-        if (swap == null && _human.StuntZones != null)
+        if (swap == null && !remote && _human.StuntZones != null)
         {
             var run = pi == 0 ? _human.StuntZones : _human.StuntZones.ForAnotherPlayer();
             controller.Stunt = run;
@@ -467,7 +487,7 @@ internal sealed class HumanFlightAdapter
 
         // Dogfight (--vs): the per-pane match timer/K-D/leader line + kill banner, bound to the
         // match GameSession built before this loop ran; kill facts arrive later via Downed.
-        if (_human.VersusMatch is { } versus)
+        if (!remote && _human.VersusMatch is { } versus)
         {
             // Rigs is the SAME list GameSession keeps live for the whole session, every seat
             // already exists (BuildRigs ran before this loop), only .Controller fills in as each
@@ -480,30 +500,34 @@ internal sealed class HumanFlightAdapter
 
         // One per human pane, in EVERY flight session unlike VersusHud: built unconditionally
         // because generators spawn hostiles mid-session, and it draws nothing with an empty pool.
-        var targetHud = TargetHud.Build(pi, rig.Camera, _world.Projectiles);
-        pilotHud.TargetHud = targetHud;
-        targetHud.FogRange = _world.FogRange;   // the spyglass's range gate, null on a bare rig
-        if (verbose)
-            Log.Info("flight", $"targeting HUD: selected-target marker (brackets + label, edge arrow off screen)");
-
-        // The player's target selection: one per human pane, each with its own pool, the cycles
-        // are sorted against THIS plane's pose, so they cannot be shared. GameSession binds
-        // TargetSubParts later, once the zeppelins exist.
-        controller.Targeting = new TargetSelection { NearestAfterKill = _policy.NearestAfterKill };
-        controller.InitialTarget = _policy.TargetSelect;   // --target=, the scripted twin
-
-        // ⚠ Bind on EVERY pane, not only under --debug-markers: it is what TargetHud.OwnTeam reads
-        // this pane's side off, and the pilot-index derivation it falls back to is the
-        // wingman-in-the-marker bug.
-        targetHud.Own = controller;
-
-        // --debug-markers: the same HUD marks every live aircraft instead of one hostile. Own also
-        // keeps it from marking the aircraft the camera is sitting on.
-        if (_policy.DebugMarkers)
+        // A remote seat picks its own targets on its own machine, so it takes neither.
+        if (!remote)
         {
-            targetHud.MarkAll = true;
+            var targetHud = TargetHud.Build(pi, rig.Camera, _world.Projectiles);
+            pilotHud.TargetHud = targetHud;
+            targetHud.FogRange = _world.FogRange;   // the spyglass's range gate, null on a bare rig
             if (verbose)
-                Log.Info("flight", $"--debug-markers: marking EVERY live aircraft (red hostile / blue own side)");
+                Log.Info("flight", $"targeting HUD: selected-target marker (brackets + label, edge arrow off screen)");
+
+            // The player's target selection: one per human pane, each with its own pool. The
+            // cycles are sorted against THIS plane's pose, so they cannot be shared. GameSession
+            // binds TargetSubParts later, once the zeppelins exist.
+            controller.Targeting = new TargetSelection { NearestAfterKill = _policy.NearestAfterKill };
+            controller.InitialTarget = _policy.TargetSelect;   // --target=, the scripted twin
+
+            // ⚠ Bind on EVERY pane, not only under --debug-markers. It is what TargetHud.OwnTeam
+            // reads this pane's side off, and the pilot-index derivation it falls back to is the
+            // wingman-in-the-marker bug.
+            targetHud.Own = controller;
+
+            // --debug-markers: the same HUD marks every live aircraft instead of one hostile. Own also
+            // keeps it from marking the aircraft the camera is sitting on.
+            if (_policy.DebugMarkers)
+            {
+                targetHud.MarkAll = true;
+                if (verbose)
+                    Log.Info("flight", $"--debug-markers: marking EVERY live aircraft (red hostile / blue own side)");
+            }
         }
 
         // Every player's start comes from ONE call: a grid start is not decomposable, since no
@@ -515,15 +539,20 @@ internal sealed class HumanFlightAdapter
         // player path. FlightModel.UsesAiForcePath carries why this is a construction argument
         // rather than the original's own pointer-compare-against-the-player test.
         var camParams = _aircraft.CamParamsFor(planeName);
+        // A remote seat passes no camera, the same null an AI rig passes. The chase rig, the head
+        // look and every camera write inside Setup are then not built at all.
         controller.Setup(new FlightModel(stats, aiForcePath: !controller.IsHumanPiloted),
-            rig.Camera, camParams, start.Pos, start.LookAt,
+            remote ? null : rig.Camera, camParams, start.Pos, start.LookAt,
             start.ThrottleFrac, start.SpeedMps, cockpitCameraOffset: planeBuilder.CockpitCameraOffset);
         // The Danger Zone eye, framed off the airframe's own chase distance and aimed at the pose
         // the controller draws, which is the controller node's own transform.
-        var scatter = Rng.Stream(Rng.Photograph);
-        controller.Photograph = DangerZonePhotograph.Build(rig.Camera, controller.Cockpit,
-            () => controller.GlobalTransform, camParams.Dist, scatter.Randf, airframe: controller);
-        controller.AddChild(controller.Photograph);
+        if (!remote)
+        {
+            var scatter = Rng.Stream(Rng.Photograph);
+            controller.Photograph = DangerZonePhotograph.Build(rig.Camera, controller.Cockpit,
+                () => controller.GlobalTransform, camParams.Dist, scatter.Randf, airframe: controller);
+            controller.AddChild(controller.Photograph);
+        }
         // --weapon-lab: a flight session whose aircraft is pinned at the spawn pose. Set after
         // Setup, so the pin, captured at the first held sim step, takes the pose Setup just wrote.
         if (_policy.WeaponLab)
@@ -536,9 +565,10 @@ internal sealed class HumanFlightAdapter
         controller.ExhaustSmoke = ExhaustSmoke.Build(planeModel, _aircraft.Textures, controller,
             _world.Ambience);
 
-        // The ambient speed cue is chapter data, not an aircraft-model effect: one private copy
-        // per player so splitscreen panes do not see another pilot's ahead-of-plane wisps.
-        if (!_policy.EmptyStage)
+        // The ambient speed cue is chapter data, not an aircraft-model effect. One private copy
+        // per player, so splitscreen panes do not see another pilot's ahead-of-plane wisps. It is
+        // drawn ahead of a camera, so a remote seat, which has none, takes no copy.
+        if (!remote && !_policy.EmptyStage)
         {
             controller.SpeedCue = SpeedCue.Build(_world.ChapterZrdrPath, _aircraft.Textures, _worldRoot,
                 _world.Ambience,
@@ -548,6 +578,13 @@ internal sealed class HumanFlightAdapter
         controller.Name = $"player{pi + 1}";
         rig.Controller = controller;
         _worldRoot.AddChild(controller);
+        // ⚠ Hide a remote seat's pilot HUD the frame it enters the tree. A human-piloted rig
+        // builds its own canvases in _Ready, and an empty one still carries the telemetry line
+        // and the message stack. A seat with no pane would paint those over the local view.
+        if (remote)
+        {
+            controller.SetPilotHudVisible(false);
+        }
 
         // Data-driven crash: a per-player crash AnimRuntime playing the compiled def. Built here,
         // once the controller (and its plane model) are in the tree, so the crash def's reset
@@ -568,7 +605,12 @@ internal sealed class HumanFlightAdapter
         // This pilot's own airframe onto its own visual layer, LAST, so everything the lines above
         // hung on the model travels with it. The only camera that drops the layer is this pane's
         // spyglass, whose eye stands inside the aeroplane (docs/architecture/Session.md).
-        SplitScreen.SetVisualLayer(planeModel, SplitScreen.OwnAirframeLayer(pi));
+        if (!remote)
+        {
+            // Never a remote seat: no camera here looks out of that aeroplane. The band is four
+            // layers wide, so a seat past the fourth would wrap onto a pane's own.
+            SplitScreen.SetVisualLayer(planeModel, SplitScreen.OwnAirframeLayer(pi));
+        }
     }
 
     public AssemblyState CaptureState() =>
@@ -590,19 +632,41 @@ internal sealed class HumanFlightAdapter
     /// mission hands over carries its own fit (see <see cref="AirframeSwapRequest"/>).</summary>
     private LoadoutChoice? MenuFitFor(int pi, AirframeSwapRequest? swap)
     {
-        if (swap != null || _policy.LoadoutOverride != null || pi < 0 || pi >= _policy.MenuLoadouts.Count)
+        int menu = MenuSeatOf(pi);
+        if (swap != null || _policy.LoadoutOverride != null)
         {
             return null;
         }
 
-        return _policy.MenuLoadouts[pi];
+        // A seat flown elsewhere carries its own pilot's fit, so every machine builds it alike.
+        if (menu < 0)
+        {
+            return _human.SeatFit?.Invoke(pi);
+        }
+
+        if (menu >= _policy.MenuLoadouts.Count)
+        {
+            return null;
+        }
+
+        return _policy.MenuLoadouts[menu];
     }
 
     /// <summary>Pane <paramref name="pi"/>'s custom-built plane, or null to fly the stock
     /// airframe. Empty on every launch that did not come off the launchscreen, so the scripted
     /// paths (<c>--plane=</c>, <c>--det</c>) never see one.</summary>
     private Flight.Hangar.CustomPlaneDef? CustomPlaneFor(int pi) =>
-        pi >= 0 && pi < _policy.MenuCustomPlanes.Count ? _policy.MenuCustomPlanes[pi] : null;
+        MenuSeatOf(pi) is int menu && menu >= 0 && menu < _policy.MenuCustomPlanes.Count ? _policy.MenuCustomPlanes[menu] : null;
+
+    // Which of this machine's menu seats flies seat pi. The menu lists only the local seats, and a
+    // guest's own seat stands behind its host's in the roster. A seat flown elsewhere has none.
+    private int MenuSeatOf(int pi) => Net.NetSeats.LocalOrdinal(_human.NetSeats, pi);
+
+    // The pads a local player was given. The assignment lists this machine's players only, so it is
+    // indexed by the local player and never by the roster seat. Null passes through (every pad).
+    private int[]? PadsOf(int localPlayer) => _human.PadAssignment is not { } assignment
+        ? null
+        : localPlayer >= 0 && localPlayer < assignment.Length ? assignment[localPlayer] : Array.Empty<int>();
 
     public readonly record struct AssemblyState(int MeshInstances, string WhatSuffix,
         ulong PaintRngState, IReadOnlyList<FlightStart>? Starts);

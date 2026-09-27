@@ -1,9 +1,16 @@
 # Security policy
 
-CSVM is an offline desktop application. Its code opens no network sockets and contacts no
-server: multiplayer is splitscreen on one machine, and there is no update check, telemetry
-or account. What the build does do is parse a lot of binary and JSON that came off disk,
-which is where its realistic security surface is.
+CSVM is a desktop application that contacts no server: there is no update check, no
+telemetry and no account. It does open a UDP socket, but only where the player asks for
+one. Hosting a multiplayer match from the menu's multiplayer door opens a listen server on
+a port the player chooses, and optionally asks the router to forward it. While it hosts, a
+second socket on UDP port 47501 answers LAN game searches with the host's name and session
+details. Joining opens an outbound connection to an address the player typed or picked from
+the LAN games list, and that list is filled by a broadcast query from a socket the player's
+Connect opens. Nothing listens otherwise, and a
+splitscreen or single-player session opens no socket at all. What the build does do in
+every session is parse a lot of binary and JSON that came off disk, which is where its
+realistic security surface is.
 
 ## Supported versions
 
@@ -37,6 +44,11 @@ person's project. If you would like to be named in the advisory, say so.
 - The extraction (the in-game Extract screen, the `--extract` flag and the repo's
   `Extract.ps1` that launches it) and how it handles the install path it is given.
 - The release zip's contents differing from what the release page's SHA-256 says they are.
+- The multiplayer listener while a player is hosting: what a peer can send a host over the
+  match's own messages, and the port mapping the host asks its router for.
+- The LAN discovery responder while a player is hosting. It answers only a well-formed query,
+  a bounded number per frame, and its reply is never larger than the query, so a report of it
+  answering anything else or amplifying traffic is in scope.
 
 ## Out of scope
 

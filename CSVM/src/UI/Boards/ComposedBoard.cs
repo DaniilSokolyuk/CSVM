@@ -305,6 +305,11 @@ public sealed record BoardLine(
     /// through <see cref="BoardMarquee"/>, since only the renderer can measure it.</summary>
     public bool Marquee { get; init; }
 
+    /// <summary>Whether the line is an edit box's text, kept on one line inside
+    /// <see cref="BoardLine.Width"/>. A wider one is clipped to the box showing its end, where the
+    /// caret and the next character are. Its start scrolls out to the left.</summary>
+    public bool KeepEnd { get; init; }
+
     /// <summary>The pad control drawn where <see cref="GlyphSlot"/> stands in the text, or null for
     /// a line of words alone. ⚠ The gap after the glyph is the renderer's, since only it can measure
     /// the picture. A composer that spaces the words itself breaks the line on another face. A line

@@ -59,6 +59,14 @@ public sealed partial class MissionRadio : Node
     /// their definitions' QUEUE tolerance.</summary>
     public int Dropped { get; private set; }
 
+    /// <summary>How long ago the cues queued now were raised, set only while a guest catches up on
+    /// a late director event. Such a call speaks from where the host's is, and skips what the
+    /// host already said.</summary>
+    public float LateBy { get; set; }
+
+    /// <summary>Lines a late call skipped because the host had already finished saying them.</summary>
+    public int SkippedLate { get; private set; }
+
     /// <summary>The definition name on air, or null when the channel is silent.</summary>
     public string? OnAir => _lineLeft > 0f && _onAir != null ? _onAir.Current : null;
 
@@ -201,7 +209,8 @@ public sealed partial class MissionRadio : Node
             Cue = name,
             Lines = lines,
             Tolerance = tolerance,
-            Delay = delay,
+            Delay = delay - Math.Max(0f, LateBy),
+            Late = LateBy > 0f,
             Speaker = speakerId,
         });
         Log.Debug("sound", $"radio queue cue={name} lines={lines.Count} wait<={tolerance:0.#}s pending={_queue.Count}");
@@ -239,6 +248,8 @@ public sealed partial class MissionRadio : Node
     // call has nothing left to say.
     private bool StartNextLine(RadioCall call)
     {
+        double offset = call.Late ? SkipOverdue(call) : 0.0;
+        call.Late = false;
         while (call.Next < call.Lines.Count)
         {
             string line = call.Lines[call.Next++];
@@ -250,14 +261,35 @@ public sealed partial class MissionRadio : Node
             call.Current = line;
             _player.Stream = stream;
             _player.VolumeDb = Mathf.LinearToDb(Math.Max(def.Volume, 0.0001f));
-            _player.Play();
-            _lineLeft = (float)stream.GetLength();
+            _player.Play((float)offset);
+            _lineLeft = (float)(stream.GetLength() - offset);
+            offset = 0.0;
             LinesStarted++;
             Log.Debug("sound", $"radio line={line} cue={call.Cue} len={_lineLeft:0.0}s");
             return true;
         }
 
         return false;
+    }
+
+    // A late call's overdue is how far past its delay it starts. The lines inside it are skipped,
+    // and the offset into the next one is returned.
+    private double SkipOverdue(RadioCall call)
+    {
+        var lengths = new List<double>(call.Lines.Count - call.Next);
+        for (int i = call.Next; i < call.Lines.Count; i++)
+        {
+            lengths.Add(_stream(call.Lines[i]) is { } s && _defs.ContainsKey(call.Lines[i]) ? s.GetLength() : 0.0);
+        }
+
+        var (index, offset) = LateStart.Into(lengths, -call.Delay);
+        for (int i = 0; i < index; i++)
+        {
+            SkippedLate += lengths[i] > 0.0 ? 1 : 0;
+        }
+
+        call.Next += index;
+        return offset;
     }
 
     // ⚠ The tolerance clock runs only while the channel is busy: QUEUE is how long a line will wait
@@ -272,6 +304,12 @@ public sealed partial class MissionRadio : Node
             if (!busy)
             {
                 continue;
+            }
+
+            // A late call is not overdue while the channel is held: the host's copy waited too.
+            if (call.Late)
+            {
+                call.Delay = Math.Max(0f, call.Delay);
             }
 
             call.Waited += dt;
@@ -297,6 +335,7 @@ public sealed partial class MissionRadio : Node
         public float Delay;
         public float Waited;
         public float Tolerance;
+        public bool Late;
         public int Speaker = NoSpeaker;
 
         public bool Names(string name) =>
