@@ -83,6 +83,31 @@ internal static class CoopDropoffSuites
         ctx.Note($"{chapter}/{folder}: the drop poses the episode owner and holds the other human");
     }
 
+    // One human's aeroplane, flown in at the given point, shared with the network cutscene suite.
+    internal static FlightController BuildPlane(TestContext ctx, TextureArchive textures,
+        ProjectilePool pool, int index, Vector3 at)
+    {
+        var model = new PlaneBuilder(GameZ.Load(ctx.PlanesGamezPath), textures).Build(PlaneNode);
+        var plane = new FlightController
+        {
+            PlaneModel = model,
+            Collider = PlaneCollider.Build(model),
+            PlayerIndex = FlightRoster.ShooterIdBase + index,
+            IsHumanPiloted = true,
+            Projectiles = pool,
+            UseKeyboard = false,
+            PadDevices = Array.Empty<int>(),
+            AllowPause = false,
+            Team = AimAssist.PlayerTeam,
+            Name = $"CoopDropoffPlayer{index}",
+        };
+        plane.AddChild(model);
+        ctx.Host.AddChild(plane);
+        plane.Setup(new FlightModel(PlaneStats.Load(ctx.ZrdrPath, PlaneNode)), null, new CamParams(),
+            at, at + Vector3.Forward, 0f, 0f);
+        return plane;
+    }
+
     private static void Drive(TestContext ctx, TestWorld world, string missionZrdr, StringBuilder report)
     {
         string? anim = ReplacingAnimOf(world, MissionCutscenes.AnimNames(missionZrdr));
@@ -234,30 +259,6 @@ internal static class CoopDropoffSuites
             pool.Free();
             textures.Dispose();
         }
-    }
-
-    private static FlightController BuildPlane(TestContext ctx, TextureArchive textures,
-        ProjectilePool pool, int index, Vector3 at)
-    {
-        var model = new PlaneBuilder(GameZ.Load(ctx.PlanesGamezPath), textures).Build(PlaneNode);
-        var plane = new FlightController
-        {
-            PlaneModel = model,
-            Collider = PlaneCollider.Build(model),
-            PlayerIndex = FlightRoster.ShooterIdBase + index,
-            IsHumanPiloted = true,
-            Projectiles = pool,
-            UseKeyboard = false,
-            PadDevices = Array.Empty<int>(),
-            AllowPause = false,
-            Team = AimAssist.PlayerTeam,
-            Name = $"CoopDropoffPlayer{index}",
-        };
-        plane.AddChild(model);
-        ctx.Host.AddChild(plane);
-        plane.Setup(new FlightModel(PlaneStats.Load(ctx.ZrdrPath, PlaneNode)), null, new CamParams(),
-            at, at + Vector3.Forward, 0f, 0f);
-        return plane;
     }
 
     // The mission's own cutscene definition that raises the re-placement callback, read out of the

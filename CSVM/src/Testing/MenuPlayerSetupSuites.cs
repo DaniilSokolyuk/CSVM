@@ -85,7 +85,8 @@ internal static class MenuPlayerSetupSuites
 
     [Suite("menu-controls-seats",
         "The rebinding screen's own join, which is the only door to a second player's keymap: "
-        + "Options reaches the screen on player 1 alone with a hint inviting a free pad, a pad seat "
+        + "Options reaches the screen on player 1 alone with a hint inviting a free pad, the clear "
+        + "gesture drops an action row's highlighted control where the loadout gesture alone does not, a pad seat "
         + "joining there becomes player 2 on the Player stepper, an accepted rebind on that seat "
         + "writes player 2's keymap file and nobody else's, a device-less seat gets no player row "
         + "at all because it would have nothing to capture with, and a seat that leaves takes its "
@@ -147,6 +148,7 @@ internal static class MenuPlayerSetupSuites
         Has(ctx, "the stepper stops at the top of the range rather than wrapping", "4.00x", menu.ShownRowText);
         controls.Cancel();
         menu.Drive(Up);
+        ClearGesture(ctx, menu, controls);
 
         var padInput = new MenuInput { Pads = new[] { 0 } };
         padInput.Prime();
@@ -179,6 +181,27 @@ internal static class MenuPlayerSetupSuites
         menu.Drive(MenuCommands.None);
         ctx.Check(controls.Players.Count == 1 && controls.Player == 1,
             $"the pad leaving takes its row with it and the screen falls back to player 1 ({controls.Players.Count} rows, player {controls.Player})");
+    }
+
+    // The clear on the first action row. The footer names Delete and Backspace, the loadout gesture
+    // alone leaves the row, and the clear drops its highlighted control. Ends on the Player stepper.
+    private static void ClearGesture(TestContext ctx, LaunchMenu menu, ControlsFeature controls)
+    {
+        for (int i = 0; i < 3; i++)
+            menu.Drive(Down);
+        var action = controls.Actions[0];
+        int held = controls.Bindings(action).Count;
+        Has(ctx, "an action row's footer names the clear keys", "Del / Backspace / Y  Unbind", menu.ShownFooter);
+        ctx.Check(held > 0, $"the first action row holds a control to clear ({action})");
+        menu.Drive(new MenuCommands { Loadout = true });
+        ctx.Check(controls.Bindings(action).Count == held && !controls.Dirty,
+            $"the loadout gesture alone clears nothing ({controls.Bindings(action).Count} of {held})");
+        menu.Drive(new MenuCommands { Unbind = true });
+        ctx.Check(controls.Bindings(action).Count == held - 1 && controls.Dirty,
+            $"the clear drops the highlighted control ({controls.Bindings(action).Count} of {held})");
+        controls.Cancel();
+        for (int i = 0; i < 3; i++)
+            menu.Drive(Up);
     }
 
     // Which row of the context on screen names that action, found rather than counted: the shipped

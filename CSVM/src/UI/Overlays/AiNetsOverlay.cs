@@ -399,7 +399,7 @@ public sealed partial class AiNetsOverlay : Node
             root.SetAnchorsPreset(Control.LayoutPreset.FullRect);
             _hud = new Label
             {
-                // Below the class overlay's readout (H), which sits at y=200..220.
+                // Below the class overlay's readout (F21), which sits at y=200..220.
                 Position = new Vector2(12, 260),
                 Modulate = new Color(0.7f, 1f, 0.8f),
             };

@@ -131,6 +131,30 @@ public class TextureArchiveTests
             System.Array.ConvertAll(frames, archive.IsAdditive));
     }
 
+    // A disposed archive refuses a read from a folder exactly as it does from a zip. The battery
+    // reads unpacked folders and a player's install reads zips, so any leniency in the folder shape
+    // hides a closed-archive read from every suite.
+
+    [Fact]
+    public void AFolderArchiveRefusesAReadAfterDisposeLikeAZip()
+    {
+        var folder = new TextureArchive(DecalDir());
+        Assert.NotNull(folder.ReadPngBytes("probe_plain"));
+        folder.Dispose();
+        Assert.Throws<System.ObjectDisposedException>(() => folder.ReadPngBytes("probe_plain"));
+    }
+
+    [Fact]
+    public void AZipArchiveRefusesAReadAfterDispose()
+    {
+        string zip = Path.Combine(TestData.TempDir(), "texture.zip");
+        System.IO.Compression.ZipFile.CreateFromDirectory(DecalDir(), zip);
+        var archive = new TextureArchive(zip);
+        Assert.NotNull(archive.ReadPngBytes("probe_plain"));
+        archive.Dispose();
+        Assert.Throws<System.ObjectDisposedException>(() => archive.ReadPngBytes("probe_plain"));
+    }
+
     [Fact]
     public void AnArchiveOverAnEmptyDirectoryHasNoMissesYet()
     {

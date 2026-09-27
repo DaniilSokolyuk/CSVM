@@ -20,18 +20,20 @@ public enum ArchiveIntent
     /// disposal so effects can build at any playhead time.</summary>
     Lab,
 
-    /// <summary>A test-harness suite: both archives are `using` locals of the build, scoped
-    /// entirely to it, neither flag is set.</summary>
+    /// <summary>A test-harness suite. The sound archive is a `using` local of the build. The
+    /// texture archive belongs to the built <c>TestWorld</c>, whose scene reads it after the build.
+    /// Neither flag is set, so the world runtime still retires its puffer factory. The suites and
+    /// their counting factories are written against that runtime.</summary>
     Suite,
 }
 
-/// <summary>The five archives one chapter world needs, opened together because every caller
-/// (`GameSession`, the anim lab, the test harness) opens the same five, plus the
-/// <see cref="WorldSession.Options"/> lifetime flags <see cref="ArchiveIntent"/> implies, so a
-/// caller sets them by naming its intent, not by hand.
+/// <summary>The five archives one chapter world needs, opened together because every caller opens
+/// the same five (`GameSession`, the anim lab, the test harness). They come with the
+/// <see cref="WorldSession.Options"/> lifetime flags <see cref="ArchiveIntent"/> implies. A caller
+/// sets those by naming its intent, not by hand.
 /// ⚠ <see cref="OpenFor"/> only opens the archives and states the two flags; it does not dispose
 /// anything. Ownership past its return is each caller's own (session fields, lab fields, the
-/// harness's own <c>using</c> locals).</summary>
+/// harness's <c>TestWorld</c> and its <c>using</c> sound archive).</summary>
 public sealed class SessionArchives
 {
     public required GameZ Gamez { get; init; }

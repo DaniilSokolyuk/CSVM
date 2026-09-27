@@ -130,6 +130,39 @@ public class PauseStateTests
     }
 
     [Fact]
+    public void AnOfflinePauseHoldsTheClock()
+    {
+        var state = new PauseState();
+
+        state.TryToggle(playerIndex: 0);
+
+        Assert.True(state.Halted);
+        Assert.True(state.ClockHeld);
+    }
+
+    [Fact]
+    public void AnOverlayPauseRaisesTheSheetAndLeavesTheClockRunning()
+    {
+        var state = new PauseState { Overlay = true };
+
+        state.TryToggle(playerIndex: 0);
+
+        Assert.True(state.Paused);
+        Assert.True(state.Halted);
+        Assert.False(state.ClockHeld);
+    }
+
+    [Fact]
+    public void AResultsBoardStillHoldsTheClockUnderAnOverlayPause()
+    {
+        var state = new PauseState { Overlay = true };
+
+        state.Raise(HaltReason.Ended);
+
+        Assert.True(state.ClockHeld);
+    }
+
+    [Fact]
     public void APauseCannotBeRaisedWithoutAnOwner()
     {
         var state = new PauseState();

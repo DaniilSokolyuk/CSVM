@@ -1910,7 +1910,7 @@ public static class Probes
     // for the same discovery done from the shell.
     private static List<string> DiscoverMissions(string dataRoot, string chapter)
     {
-        var dir = Path.Combine(dataRoot, "extracted", chapter);
+        var dir = Extraction.ZbdTree.Folder(dataRoot, chapter);
         var missions = new List<string>();
         if (!Directory.Exists(dir))
         {

@@ -94,6 +94,17 @@ public sealed partial class CutsceneController : Node
     /// path"). Unbound, every episode hands off at its definition's end.</summary>
     public Func<bool>? EndingLanded;
 
+    /// <summary>Raised after a skip ends an episode on this end. It carries the skipper, the
+    /// episode's <see cref="EpisodeKey"/> and <see cref="EpisodeOrdinal"/>, and whether the skip
+    /// came through <see cref="TakeSkip"/>. The skipper is then a seat, else a local pane index.
+    /// A network host announces the skip to its guests from here; unbound everywhere else.</summary>
+    public Action<int, int, int, bool>? Skipped;
+
+    /// <summary>Set on a network guest only, where the host decides every skip. A skip input sends
+    /// the ask (skipper, key, ordinal) through this and ends nothing here. The episode ends when the
+    /// host's decision reaches <see cref="TakeSkip"/>.</summary>
+    public Action<int, int, int>? SkipAsked;
+
     // The rest of the mission-script host's codes the intro definitions author. Each is the whole
     // message: the definition it sits in never qualifies it
     // (docs/formats/anim-definitions/cutscenes.md).
@@ -139,13 +150,23 @@ public sealed partial class CutsceneController : Node
     // otherwise leave the picture running at the raised rate for the rest of the episode.
     private readonly HashSet<Key> _keysDown = new();
     private readonly HashSet<(int Device, JoyButton Button)> _padsDown = new();
+    // Episodes each definition has owned on this end, by name key. An episode's ordinal counts
+    // these, so every end names the same episode the same way.
+    private readonly Dictionary<int, int> _episodesByKey = new();
+    // The host's skip for an episode this end has not armed yet, applied once it does. A guest's
+    // replay can start an episode after the host's skip of it arrives.
+    private (int Key, int Ordinal, int Skipper)? _pendingSkip;
     private bool _scriptedHold;
+    // The stick's skip, re-read through its own reader each tick like the keys above; null while
+    // no stick is holding the fast-forward.
+    private Func<bool>? _stickHeld;
     // Is the AI held by the mission start's own park rather than by a playing definition? The lift
     // is the bootstrap definition's reset, so this says which of the two owns the release.
     private bool _startParked;
     private bool _fastForwardLogged;
     private AnimRuntime? _runtime;
     private IReadOnlyList<PlayerRig> _rigs = Array.Empty<PlayerRig>();
+    private PlayerRig? _scriptedPlayer;
     private Func<IReadOnlyList<FlightController>>? _aiPlanes;
     private Node3D? _cutsceneCamera;
     // The node the code being dispatched was raised from, which is the aircraft a capture
@@ -248,6 +269,15 @@ public sealed partial class CutsceneController : Node
     /// do, and the first of those ends with the aeroplane still on the hook.</summary>
     public string? Anim { get; private set; }
 
+    /// <summary>The current (or last) episode's definition as a wire key: the name key of
+    /// <see cref="Anim"/>. Zero before any episode.</summary>
+    public int EpisodeKey { get; private set; }
+
+    /// <summary>How many episodes the current (or last) episode's definition has owned on this end,
+    /// this one included. With <see cref="EpisodeKey"/> it names one episode on every machine.
+    /// </summary>
+    public int EpisodeOrdinal { get; private set; }
+
     /// <summary>The human this episode belongs to: the one whose mission trigger started it
     /// (<see cref="Own"/>), or the scripted player where no trigger named one, which is every
     /// mission intro. The airframe swap rebuilds THIS rig, so a guest who flies the capture cone
@@ -265,8 +295,9 @@ public sealed partial class CutsceneController : Node
     public MeshInstance3D? CardMesh => _cardMesh;
 
     // The scripted player's rig: P1's, the one aeroplane an authored `player` token means. It is
-    // what an unclaimed episode owns, so a 1P session and every mission intro resolve to P1.
-    private PlayerRig? ScriptedPlayer => _rigs.Count > 0 ? _rigs[0] : null;
+    // what an unclaimed episode owns, so a 1P session and every mission intro resolve to P1. On a
+    // network guest that is the host's P1 rather than the guest's own pane.
+    private PlayerRig? ScriptedPlayer => _scriptedPlayer ?? (_rigs.Count > 0 ? _rigs[0] : null);
 
     // The one pilot the staged `player` marker poses and the re-placement moves: the episode owner's,
     // which is the scripted player's in an unclaimed episode and in every 1P session. There is
@@ -395,10 +426,13 @@ public sealed partial class CutsceneController : Node
 
     /// <summary>The session's rigs and its live AI aircraft, once both exist. Re-applies whatever
     /// state the codes already asked for, which is how a cutscene that started during the world
-    /// build reaches the aircraft built after it.</summary>
-    public void BindRigs(IReadOnlyList<PlayerRig> rigs, Func<IReadOnlyList<FlightController>> aiPlanes)
+    /// build reaches the aircraft built after it. The scripted player is given only where it is not
+    /// the first pane, which is on a network guest: the host's seat 0 there.</summary>
+    public void BindRigs(IReadOnlyList<PlayerRig> rigs, Func<IReadOnlyList<FlightController>> aiPlanes,
+        PlayerRig? scriptedPlayer = null)
     {
         _rigs = rigs;
+        _scriptedPlayer = scriptedPlayer;
         _aiPlanes = aiPlanes;
         StageFlownAirframe();
         if (!Playing)
@@ -490,6 +524,9 @@ public sealed partial class CutsceneController : Node
             // lost its claim on the episode's owner too, and an unclaimed episode is the scripted
             // player's.
             _episodeOwner = slotWins ? _ownerRig : null;
+            EpisodeKey = Anim == null ? 0 : NetWorldLink.NameKey(Anim);
+            _episodesByKey.TryGetValue(EpisodeKey, out int seen);
+            EpisodeOrdinal = _episodesByKey[EpisodeKey] = seen + 1;
             _owner = null;
             _ownerRig = null;
             // The owner's own aeroplane into the node table as the episode takes the session, not
@@ -541,7 +578,7 @@ public sealed partial class CutsceneController : Node
     public void Tick()
     {
         LiftMissionStartPark();
-        if (!Playing)
+        if (!Playing || TakePendingSkip())
         {
             return;
         }
@@ -578,14 +615,36 @@ public sealed partial class CutsceneController : Node
             return false;
         }
 
-        Log.Info("anim", $"cutscene '{Anim}' skipped by P{playerIndex + 1}");
-        if (Anim != null)
+        if (SkipAsked != null)
         {
-            _runtime?.Stop(Anim);
+            Log.Info("anim", $"cutscene '{Anim}' #{EpisodeOrdinal}: P{playerIndex + 1} asks the host to skip");
+            SkipAsked(playerIndex, EpisodeKey, EpisodeOrdinal);
+            return true;
         }
 
-        Restore("skipped");
+        EndBySkip(playerIndex, false);
         return true;
+    }
+
+    /// <summary>A skip decided elsewhere, for the episode named by <paramref name="key"/> and
+    /// <paramref name="ordinal"/>: the host taking a guest's ask, or a guest taking the host's
+    /// decision. True when it ended the playing episode. A skip of an episode this end has not
+    /// armed yet is held until it is. One for an episode already over is dropped, so a late or
+    /// repeated skip can never end the next film.</summary>
+    public bool TakeSkip(int key, int ordinal, int playerIndex)
+    {
+        _pendingSkip = (key, ordinal, playerIndex);
+        if (TakePendingSkip())
+        {
+            return true;
+        }
+
+        if (_pendingSkip != null)
+        {
+            Log.Info("anim", $"cutscene: a skip of episode {key:x8} #{ordinal} by P{playerIndex + 1} held until it can take");
+        }
+
+        return false;
     }
 
     /// <summary>Takes an input the session offered the skip and the skip declined, and holds the
@@ -614,6 +673,26 @@ public sealed partial class CutsceneController : Node
     /// either arms the rate, and the episode's own gate below still decides whether it may.
     /// </summary>
     public void HoldFastForward(bool held) => _scriptedHold = held;
+
+    /// <summary>A stick's skip press, which raises no input event. It gets the same skip a key or
+    /// pad press gets. When that is declined, it holds the fast-forward while <paramref name="held"/>
+    /// reads true. True when it skipped; <paramref name="playerIndex"/> is as for
+    /// <see cref="Skip"/>.</summary>
+    public bool TakeStickPress(int playerIndex, Func<bool> held)
+    {
+        ArgumentNullException.ThrowIfNull(held);
+        if (Skip(playerIndex))
+        {
+            return true;
+        }
+
+        if (Playing && !Skippable)
+        {
+            _stickHeld = held;
+        }
+
+        return false;
+    }
 
     private static bool AuthorsCode(AnimDefinition def)
     {
@@ -730,6 +809,7 @@ public sealed partial class CutsceneController : Node
         _keysDown.Clear();
         _padsDown.Clear();
         _scriptedHold = false;
+        _stickHeld = null;
         _fastForwardLogged = false;
     }
 
@@ -751,7 +831,12 @@ public sealed partial class CutsceneController : Node
     {
         _keysDown.RemoveWhere(key => !Input.IsKeyPressed(key));
         _padsDown.RemoveWhere(pad => !Input.IsJoyButtonPressed(pad.Device, pad.Button));
-        bool down = _scriptedHold || _keysDown.Count > 0 || _padsDown.Count > 0;
+        if (_stickHeld != null && !_stickHeld())
+        {
+            _stickHeld = null;
+        }
+
+        bool down = _scriptedHold || _keysDown.Count > 0 || _padsDown.Count > 0 || _stickHeld != null;
         _fastForward.Held = down && !Skippable && !HeldForEnding;
         if (!_fastForward.Held || _fastForwardLogged)
         {
@@ -889,6 +974,52 @@ public sealed partial class CutsceneController : Node
         }
 
         return true;
+    }
+
+    // Ends the playing episode for a held skip once that episode has armed one. Drops the skip
+    // once its episode is over: an ordinal at or below the count started, not the one playing.
+    private bool TakePendingSkip()
+    {
+        if (_pendingSkip is not { } skip)
+        {
+            return false;
+        }
+
+        bool current = Playing && skip.Key == EpisodeKey && skip.Ordinal == EpisodeOrdinal;
+        _episodesByKey.TryGetValue(skip.Key, out int started);
+        if (!current)
+        {
+            if (skip.Ordinal <= started)
+            {
+                Log.Info("anim", $"cutscene: a skip of episode {skip.Key:x8} #{skip.Ordinal} dropped, that episode is over");
+                _pendingSkip = null;
+            }
+
+            return false;
+        }
+
+        if (!Skippable || KeepsTheShot())
+        {
+            return false;
+        }
+
+        _pendingSkip = null;
+        EndBySkip(skip.Skipper, true);
+        return true;
+    }
+
+    private void EndBySkip(int playerIndex, bool decidedElsewhere)
+    {
+        int key = EpisodeKey;
+        int ordinal = EpisodeOrdinal;
+        Log.Info("anim", $"cutscene '{Anim}' skipped by P{playerIndex + 1}");
+        if (Anim != null)
+        {
+            _runtime?.Stop(Anim);
+        }
+
+        Restore("skipped");
+        Skipped?.Invoke(playerIndex, key, ordinal, decidedElsewhere);
     }
 
     private void Act(int code)
@@ -1143,9 +1274,18 @@ public sealed partial class CutsceneController : Node
             ? AnimRuntime.WorldTransform(_playerMarker, out _)
             : (Transform3D?)null;
         var owner = OwnerPilot;
+        bool ownerIsPane = false;
         foreach (var pilot in Pilots())
         {
+            ownerIsPane |= ReferenceEquals(pilot, owner);
             pilot.StageAt(ReferenceEquals(pilot, owner) ? pose : null);
+        }
+
+        // A networked owner flying on another machine. This end's copy of that seat is in no pane.
+        // The film is about that aeroplane on every end, so it rides the marker here too.
+        if (!ownerIsPane)
+        {
+            owner?.StageAt(pose);
         }
     }
 

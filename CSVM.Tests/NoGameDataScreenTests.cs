@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using CSVM.UI.Screens;
 using Xunit;
 
@@ -45,11 +46,25 @@ public class NoGameDataScreenTests
     }
 
     [Fact]
-    public void EachReaderIsToldTheExtractionTheirOwnBuildShips()
+    public void TheInstructionNamesTheExtractPressAndNoScript()
     {
-        Assert.Contains("Extract.cmd", NoGameDataScreen.Instruction(exported: true));
-        Assert.Contains("ExtractAssets.ps1", NoGameDataScreen.Instruction(exported: false));
-        Assert.DoesNotContain("Extract.cmd", NoGameDataScreen.Instruction(exported: false));
+        Assert.Contains("Extract", NoGameDataScreen.Instruction);
+        Assert.DoesNotContain(".cmd", NoGameDataScreen.Instruction);
+        Assert.DoesNotContain(".ps1", NoGameDataScreen.Instruction);
+    }
+
+    [Fact]
+    public void EachProblemHasItsOwnTitleAndTheStaleBodiesNameBothSchemas()
+    {
+        var titles = new[] { DataProblem.Missing, DataProblem.Incomplete, DataProblem.Older, DataProblem.Newer }.Select(NoGameDataScreen.Title).ToList();
+        Assert.Equal(4, titles.Distinct().Count());
+
+        string older = NoGameDataScreen.Body(DataProblem.Older, 2);
+        Assert.Contains("older", older);
+        Assert.Contains("data version 2", older);
+        Assert.Contains($"this build reads {CSVM.Session.Launch.ExtractionStamp.Schema}", older);
+        Assert.Contains("newer", NoGameDataScreen.Body(DataProblem.Newer, 9));
+        Assert.Contains(NoGameDataScreen.Instruction, NoGameDataScreen.Body(DataProblem.Missing, null));
     }
 
     private sealed class TempDir : System.IDisposable

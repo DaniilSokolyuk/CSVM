@@ -242,6 +242,16 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   flight tick's own steps (forces, contact, damage) out; they share the accumulator and belong
   together. *Cross-refs:* `BL-1015`, `BL-1016` (the same shape in `GameSession.cs` and
   `OriginalOptionsScreen.cs`), `docs/architecture/Flight.md`.
+- `BL-1045` `[Bug]` `[S]` `[Next: code]` `[Impact: low]` `[Evidence: trace]` **A throttle lever bound
+  on two stick models reads at least half throttle when one of the two is unplugged.**
+  *Evidence:* `AnalogAxes.LeverPosition` (`CSVM/src/Flight/Airframe/AnalogAxes.cs`) decides presence
+  per source, not per binding: one connected stick model makes the whole stick source count, and
+  the stick value is read over every stick binding on the row. The unplugged model's axis reads 0,
+  which a full axis maps to 0.5, and `Math.Max` then holds the lever at half or more. The
+  single-lever case (the shipped VKB profiles) is unaffected, because an unplugged stick leaves no
+  connected model and the lever is released. *Fix shape:* read the stick value over the bindings
+  whose model `AnalogAxes.Connected` lists, not over the whole row. *Cross-refs:*
+  `docs/architecture/Bindings.md` (`LeverTakeover`), `CSVM.Tests/ThrottleLeverTests.cs`.
 
 ## Environment & world
 
@@ -738,6 +748,23 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   four modules duplicate them; a page module that reaches back into the form's fields for its
   layout is the form in another file. *Cross-refs:* `BL-1014`, `BL-1015`,
   `docs/menu-presentations.md`, `docs/architecture/UI.md`.
+- `BL-1046` `[Bug]` `[S]` `[Next: code]` `[Impact: low]` `[Evidence: trace]` **A throttle lever
+  resting near the end the player pushes toward cannot be captured that way round.**
+  *Evidence:* `StickCapture` (`CSVM/src/Bindings/StickCapture.cs`) takes the lever's position at arm
+  as its baseline and captures once it travels `MoveThreshold` (0.5). The VKB R's lever rests at
+  -0.57 with full at -1, so pushing to full travels 0.43 and captures nothing. The player moves it
+  the other way, which captures, and gets the opposite invert. *Fix shape:* for the lever row,
+  measure travel against the axis's whole range (or the end not yet reached) rather than a fixed
+  distance from rest, or prompt the player to move the lever to the idle end first. *Cross-refs:*
+  `BL-693` (the gamepad capture's constants), `CSVM.Tests/StickCaptureTests.cs`.
+- `BL-1047` `[Bug]` `[S]` `[Next: code]` `[Impact: low]` `[Evidence: trace]` **Two unnamed sticks
+  bound on one row read alike in the KEYS AND BUTTONS page's Stick column.** *Evidence:*
+  `StickLabels.Column` (`CSVM/src/Sticks/StickLabels.cs`) drops the `Stick` prefix and the model of a
+  stick with no profile name, since the column is half a panel wide; two such sticks on one
+  row both print as "Button 5 +1". The remake Controls screen keeps the model and tells them apart,
+  and a named stick ("R") is unaffected. *Fix shape:* fall back to the short model id (`231D/0200`)
+  when two unnamed models share a row. *Cross-refs:* `docs/architecture/Sticks.md` (`StickLabels`),
+  `CSVM/src/UI/Menu/Original/KeysStickColumn.cs`.
 
 ## Splitscreen
 
@@ -809,6 +836,23 @@ usual.
   cross-pane body-hide visually at the controls with 2+ cockpit-view pilots in the same session.
   *Cross-refs:* `PLAN-cockpit-view` B11 ("Splitscreen posture"), `BL-389` (splitscreen weapon
   mix, same playtest family).
+
+- `BL-1017` `[Tuning]` `[S]` `[Next: decode]` `[Impact: low]` `[Evidence: decoded]` **Seat colours:
+  the eight authored dwords are read channel-order-unproven, and seats 8 to 15 are invented.**
+  *Evidence:* the per-pilot table at `00628eb4` holds eight dwords and zeros from `00628ed4`; it is
+  indexed unchecked at `00495893` and `00497ae6` and each entry is stored to the aircraft at
+  `+0x1060`, where a search for a reader finds only those writers. So which channel the consumer
+  takes first is undetermined. `Net/NetSeats.cs` reads each entry's three stored bytes as red,
+  green, blue, the reading under which the set comes out red, blue, green, yellow, magenta, lime,
+  teal and violet, and derives seats 8 to 15 as the channel-wise complement of seats 0 to 7 (light
+  twins that collide with none of the authored ones). Both are TUNE. *Fix shape:* find the consumer
+  of the aircraft's `+0x1060` dword and read the channel order off it; then judge the eight against
+  a capture of the original's own lobby or marker colours, and judge the derived eight at the
+  controls once a match runs more than eight seats. *⚠ Traps:* the original's pilot index is
+  1-based and its eighth pilot reads one dword past the table, so do not reproduce that read as
+  fidelity; the remake gives every seat a colour on purpose. *Cross-refs:* `docs/architecture/Net.md`
+  (the player ceiling rule, `NetSeats.cs`), `docs/org/multiplayer-spawn.md`, `UI/SplitScreen.cs`'s own `Colors4` (a separate invention,
+  for panes rather than seats).
 
 ## Missions, modes & campaign
 
@@ -893,6 +937,84 @@ usual.
   inferred. Dropping the var also closes that divergence.
 
 ## Misc
+
+- `BL-1018` `[Tuning]` `[S]` `[Next: code]` `[Impact: low]` `[Evidence: trace]` **The guest clock
+  slew's window, rate bound and snap threshold are all invented.** *Evidence:* `Net/NetClockSlew.cs`
+  walks a guest's offset onto host time over `ConvergeSeconds = 2.0` at no more than
+  `MaxRateOffset = 0.10` of real time, and applies a reading more than `SnapSeconds = 5.0` out at
+  once. Nothing in the original's networking was decoded for any of the three; they are chosen so a
+  correction is invisible over a couple of seconds and a lost link does not leave the guest walking
+  for a minute. *Fix shape:* judge them against a real link once a match runs: the window and the
+  bound against how a corrected timestamp reads at the controls (an aeroplane's interpolation is
+  what shows a clock walking), the threshold against the observed `Snaps` count, which is exposed
+  for that reason. A rising `Snaps` says the window or the threshold is wrong, not that the link
+  is. *⚠ Traps:* do not raise the rate bound to make convergence quicker; host time running well
+  off real time is the thing the walk exists to avoid. *Cross-refs:* `Net/AircraftStateCadence.cs` and
+  `Net/RemotePoseBuffer.cs` (send rate and interpolation buffer, judged in the same sitting). The feed now has a live
+  reading: `net-match-state` measures a target of 6.000 s and one snap on both guests off the
+  ordinary match-state tick, so the threshold can be judged against a real link rather than
+  against nothing. `Net/NetClockPing.cs`'s `RetrySteps = 60`, how long an unanswered clock
+  question waits before it is asked again, is invented the same way and is judged in the same
+  sitting against how often a lossy link leaves the round trip unmeasured.
+
+- `BL-1025` `[Tuning]` `[S]` `[Next: look]` `[Impact: low]` `[Evidence: trace]` **The host's
+  match-state tick rate is a guess at what the clock readout needs.** *Evidence:*
+  `Net/MatchStateCadence.cs` repeats the match state every `TickStepInterval = 60` simulation
+  steps, one second at the fixed step, chosen because the versus HUD prints whole seconds and a
+  faster tick spends the wire on digits nobody sees. Nothing in the original was decoded for it:
+  the original's client runs its own countdown and is told only the end. *Fix shape:* judge it on
+  a real link with the HUD clock in view. A guest's clock lags the host by up to one tick, so the
+  reading is whether the count-down ever visibly jumps or stalls; the same tick is what feeds
+  `NetClockSlew`, so `BL-1018`'s window and this rate are judged in one sitting. *⚠ Traps:* the
+  ending never waits for this tick (it is sent where it happens), so slowing the rate delays only
+  the clock, and the reading must not be taken from a match that ended.
+
+- `BL-1026` `[Feature]` `[S]` `[Next: decide]` `[Impact: low]` `[Evidence: trace]` **A guest's
+  rematch key does nothing in a network match.** *Evidence:* `GameSession.RestartMatch` refuses
+  outright off the host, because a guest that restarted would zero its own board and fly a round
+  nobody else is in; `net-match-state` asserts that refusal. The host's R restarts the round for
+  everybody. So a guest at a wrap-up board presses R and sees nothing happen, with no line saying
+  why. *Fix shape:* either a rematch request on the wire the host may answer (which needs a rule
+  for who may ask and what happens when two ask), or the guest's board dropping the Restart item
+  and saying the host calls the rematch. The second is a board change alone and settles the
+  silence; the first is a lobby question. *⚠ Traps:* do not let a guest's request restart the
+  match directly, the host is the only writer of match state.
+
+- `BL-1041` `[Tuning]` `[S]` `[Next: look]` `[Impact: low]` `[Evidence: trace]` **The soak's
+  position-error bars are regression tripwires, not what a player accepts.** *Evidence:*
+  `Testing/NetSoakSuites.cs` flies a scripted Dogfight through four loopback cells and fails a
+  cell whose worse direction exceeds its bar (mean/worst metres): clean 0.25/0.5, 50 ms and 5 per
+  cent loss 1.5/3, 100 ms and 10 per cent 2/6, 200 ms and 20 per cent 3.5/10. The seeded run
+  measures 0.01/0.01, 0.57/0.89, 0.81/3.03 and 1.43/4.67, so each bar is the measurement with two
+  to three times headroom. Nothing says a player notices 3 m of worst error at 200 ms, or that
+  1.5 m at 50 ms is fine. *Fix shape:* fly a two-machine match over a shaped link with
+  `--debug-net` up, note at which cell a remote aeroplane first reads as wrong (a jump, a lag
+  behind its own tracers), and set the bars from that instead. *⚠ Traps:* the error is read after
+  the fitted lag is removed, so a large render delay does not show here at all; judge the delay
+  (`RemotePoseBuffer.BufferDelaySeconds`) separately. *Cross-refs:* `BL-1018` (the same sitting).
+
+- `BL-1043` `[Tuning]` `[S]` `[Next: look]` `[Impact: low]` `[Evidence: trace]` **The router
+  mapping's lease length and renewal fractions are chosen, and its permanent-lease fallback has
+  met no real router.** *Evidence:* `Net/UpnpLease.cs` asks `LeaseSeconds = 3600`, renews at
+  `RenewAtFraction = 0.5` of the grant and retries a failed renewal after `RetryFraction = 0.125`.
+  The hour bounds what a crashed host leaves open; the fractions leave room for three retries,
+  each paying a whole gateway search, before the lease runs out, which `UpnpLeaseTests` asserts.
+  Every test runs over a fake gateway, so no router has yet answered a finite lease, error 725
+  (permanent leases only) or a delete of a stale mapping. *Fix shape:* host through a home router
+  with UPnP on, read the `upnp mapping` and `upnp renewal` log lines and the router's own mapping
+  table across more than one renewal, then kill the process and confirm the next host's stale
+  clear removes the entry. Shorten the lease if routers keep stale entries visibly long. *⚠ Traps:*
+  never widen the stale clear past the exact remembered port; a range delete would take another
+  program's mapping on the same router.
+
+- `BL-1044` `[Feature]` `[M]` `[Next: code]` `[Impact: low]` `[Evidence: trace]` **A co-op guest
+  flies only its first local player; a second pad at the guest's machine gets no plane.**
+  *Evidence:* `CampaignFeature.BuildExit` gives a guest `Math.Min(1, pads)` seats, and
+  `NetSeats.CoopField` seats one plane per peer. *Fix shape:* a pick per local seat (airframe, fit,
+  name, Ready); `NetSeats.CoopField` seating several seats per peer; `NetSession.LocalSeat`, the
+  guest's `LocalOrdinal` and its menu seats handling several; `Admit` counting a guest's local
+  seats against the four-human co-op cap. *⚠ Traps:* the Ready gate must wait on every local seat,
+  not one per machine.
 
 - `BL-284` `[Bug]` `[Blocked: CAP-34]` `[M]` `[Next: look]` `[Impact: low]` `[Evidence: footage]` **Wing-light flare: soft round glow vs the original's sharp star burst.** Follow-up from
   `BL-119`: with the blink at the measured ~1 frame, the flare reads as a compact soft amber glow,

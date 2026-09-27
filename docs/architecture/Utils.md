@@ -49,6 +49,21 @@ and the scoped `PushConsoleSink` redirect console lines, so a plain class that l
 without an engine. Categories, levels, the file-line grammar, the `--log=` filter and the sink
 path: [../org/logging.md](../org/logging.md). `HitchSidecar.cs` shares this sink's stem.
 
+## src/Utils/LocalNetworks.cs
+The IPv4 networks this machine sits on, for the LAN search: `Ipv4()` lists the address and mask of
+every adapter that is up and not the loopback, and an empty list when the system will not say, so a
+search still asks at the limited broadcast. It lives here because `CSVM.Net` may not name
+`System.Net`, and Godot's interface list carries no masks. `Launcher.cs` hands it to the door as
+`NetPlayFeature.LanNetworks`; `Net/LanBroadcast.cs` turns it into addresses.
+
+## src/Utils/HostAddress.cs
+The addresses a host names to its guests. `StableGlobalIPv6()` is the first global unicast IPv6
+address that is neither temporary (a privacy address) nor deprecated, so never a ULA, link-local
+or Teredo one; `LanIPv4()` is the private IPv4 address on an adapter with a gateway. Windows reads
+`SuffixOrigin` and the DAD state, Linux reads `/proc/net/if_inet6`, and neither read throws.
+`Choose`, `ChooseLan` and `ParseLinuxTable` take data, so a unit test supplies the candidates.
+`EnetTransport` binds the stable address, and `NetCarrier` hands both reads to the door.
+
 ## src/Utils/BuildVersion.cs
 The build's own version, read once from `application/config/version` in `project.godot`, which is
 the number's one home. Three surfaces state it back so a report names its build without being
@@ -281,7 +296,7 @@ block, where the same predicate drives both window hiding and the interactive ru
 
 ## src/Utils/OptionsStore.cs
 Process-wide, version-tolerant JSON persistence for `OptionsDef`: the graphics mode and difficulty words, the four
-display settings (monitor index, resolution, display mode, V-Sync), the four volume levels, the nearest-after-a-kill targeting switch, the default view a flight opens in and the automatic head turn. One file, `user://options.json`,
+display settings (monitor index, resolution, display mode, V-Sync), the four volume levels, the nearest-after-a-kill targeting switch, the default view a flight opens in, the automatic head turn and the remembered install folder (fully qualified or dropped). One file, `user://options.json`,
 independent of `Session/Campaign/CampaignProfileStore.cs`. A missing or malformed file reads as empty, an unknown version invalidates it, an
 unknown value drops only that field, and a field the file does not carry reads as never set, which is why adding a field does not bump
 `Version`. Four reads hold that one contract: a word set (`DisplayWords`, `DifficultyWords` and `ViewWords` hold the vocabularies, whose resolved tier and view mode belong to `Flight`), a shape predicate for the

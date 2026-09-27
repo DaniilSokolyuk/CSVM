@@ -5,8 +5,9 @@
 # mark of the web a browser download leaves (the Zone.Identifier stream), and the driver
 # does what packaging/README.md tells a reader to do, in its order, recording at each
 # step what that reader sees: the download lands in Downloads, Explorer's own extraction
-# unzips it, CSVM.exe is double-clicked before any extraction (the no-game-data screen),
-# Extract.cmd is double-clicked and answered the way its prompt says, then CSVM.exe is
+# unzips it, CSVM.exe is double-clicked before any extraction (the screen that offers to
+# extract), the extraction runs through CSVM.exe --headless --extract (the one step a script
+# cannot take the way a reader does, since the in-game button needs a click), then CSVM.exe is
 # run for the menu and for a flight. Every double-click is done twice: once through the
 # shell, which is where SmartScreen and the attachment manager put their dialogs, and
 # once as a plain process, which is what "Run anyway" leads to, so the run records the
@@ -171,66 +172,47 @@ $steps.unzip = [ordered]@{
     files         = @(Get-ChildItem $App -Recurse -File).Count
     rootListing   = @(Get-ChildItem $App | ForEach-Object { $_.Name })
     motwOnExe     = Get-Motw (Join-Path $App 'CSVM.exe')
-    motwOnCmd     = Get-Motw (Join-Path $App 'Extract.cmd')
-    motwOnPs1     = Get-Motw (Join-Path $App 'Extract.ps1')
     error         = $unzipError
 }
-Write-Step ('unzipped {0} files in {1}s by {2}; CSVM.exe mark: {3}; Extract.cmd mark: {4}' -f
-    $steps.unzip.files, $steps.unzip.seconds, $unzipMethod, $steps.unzip.motwOnExe, $steps.unzip.motwOnCmd)
+Write-Step ('unzipped {0} files in {1}s by {2}; CSVM.exe mark: {3}' -f
+    $steps.unzip.files, $steps.unzip.seconds, $unzipMethod, $steps.unzip.motwOnExe)
 
-# What the README says happens when CSVM.exe is started before the extraction: a screen
-# naming the step. Through the shell first, for the warning a stranger meets.
+# What the README says happens when CSVM.exe is started before the extraction: the screen
+# that offers to extract. Through the shell first, for the warning a stranger meets.
 $steps.exeBeforeExtractShell = Watch-ShellLaunch -Name 'exe-before-extract-shell' -FilePath (Join-Path $App 'CSVM.exe') -WorkingDirectory $App -Seconds 25
 $runs = @()
 $runs += Invoke-Run -Name 'no-game-data' -Arguments @() -Seconds 30
 
-# Step 2 of the README: double-click Extract.cmd. The install is not where the probe looks,
-# so the mapped retail folder is given a path the probe checks (C:\Games\Crimson Skies),
-# which makes the double-click path answerable with a single Enter, as the prompt says.
+# Step 2 of the README: extract. The in-game screen takes a click no script may give
+# (the Extract button, the folder picker), so the driver runs the same pipeline through the
+# exported exe's headless flag, with the mapped install passed directly and the bundled
+# tools\unzbd.exe found beside the exe as a player's run finds it.
 $install = Get-ChildItem $Root -Directory | Where-Object {
     (Test-Path (Join-Path $_.FullName 'ZBD')) -and (Test-Path (Join-Path $_.FullName 'GOSDATA\ASSETS'))
 } | Select-Object -First 1
-$probePath = 'C:\Games\Crimson Skies'
-$installArgument = ''
+$installPath = ''
 if ($install) {
-    try {
-        New-Item -ItemType Directory -Path 'C:\Games' -Force | Out-Null
-        New-Item -ItemType Junction -Path $probePath -Target $install.FullName -ErrorAction Stop | Out-Null
-        if (-not (Test-Path (Join-Path $probePath 'ZBD'))) { throw 'junction does not resolve' }
-        Write-Step ('retail install {0} reachable as {1}' -f $install.FullName, $probePath)
-    } catch {
-        Write-Step ('no junction ({0}); the install path is passed as the dropped-folder argument' -f $_.Exception.Message)
-        $installArgument = $install.FullName
-    }
+    $installPath = $install.FullName
+    Write-Step ('retail install {0}' -f $installPath)
 } else {
-    Write-Step 'no retail install is mapped; Extract.cmd will report that'
+    Write-Step 'no retail install is mapped; the extraction will refuse the empty path'
 }
 
-$steps.extractShell = Watch-ShellLaunch -Name 'extract-shell' -FilePath (Join-Path $App 'Extract.cmd') -WorkingDirectory $App -Seconds 20
-
-# The real extraction, with the console captured and the prompt answered by Enter, which
-# is what the README's reader does when the probe found their install.
 $extractDir = Join-Path $Out 'extract'
 New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
-Write-Step 'running Extract.cmd with its prompts answered by Enter'
+Write-Step 'running CSVM.exe --headless -- --extract=<install>'
 $info = New-Object Diagnostics.ProcessStartInfo
-$info.FileName = "$env:WINDIR\System32\cmd.exe"
-$cmdArgs = '/c "' + (Join-Path $App 'Extract.cmd') + '"'
-if ($installArgument) { $cmdArgs = '/c ""' + (Join-Path $App 'Extract.cmd') + '" "' + $installArgument + '""' }
-$info.Arguments = $cmdArgs
+$info.FileName = Join-Path $App 'CSVM.exe'
+# --flag=value keeps the flag outside the quotes, or Godot reads the whole token as one path.
+$info.Arguments = '--headless -- --extract="' + $installPath + '"'
 $info.WorkingDirectory = $App
 $info.UseShellExecute = $false
-$info.RedirectStandardInput = $true
 $info.RedirectStandardOutput = $true
 $info.RedirectStandardError = $true
 $extractWatch = [Diagnostics.Stopwatch]::StartNew()
 $proc = [Diagnostics.Process]::Start($info)
 $outTask = $proc.StandardOutput.ReadToEndAsync()
 $errTask = $proc.StandardError.ReadToEndAsync()
-# One Enter for "Press Enter to use the first one", one for the pause that holds the window.
-$proc.StandardInput.WriteLine('')
-$proc.StandardInput.WriteLine('')
-$proc.StandardInput.Close()
 $finished = $proc.WaitForExit(900000)
 if (-not $finished) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
 $extractSeconds = [int]$extractWatch.Elapsed.TotalSeconds
@@ -240,18 +222,19 @@ $extractedDir = Join-Path $App 'extracted'
 $extractedFiles = @(Get-ChildItem $extractedDir -Recurse -File -ErrorAction SilentlyContinue)
 $extractedBytes = ($extractedFiles | Measure-Object Length -Sum).Sum
 $steps.extract = [ordered]@{
-    command       = $cmdArgs
+    command       = $info.Arguments
     finished      = $finished
     exitCode      = $(if ($finished) { $proc.ExitCode } else { $null })
     seconds       = $extractSeconds
     files         = $extractedFiles.Count
     megabytes     = [math]::Round($extractedBytes / 1MB, 1)
     folder        = $extractedDir
+    stamped       = (Test-Path (Join-Path $extractedDir 'VERSION.json'))
     stdoutHead    = @((Read-Lines (Join-Path $extractDir 'stdout.txt')) | Select-Object -First 40)
     stdoutTail    = @((Read-Lines (Join-Path $extractDir 'stdout.txt')) | Select-Object -Last 15)
     stderrLines   = @(Read-Lines (Join-Path $extractDir 'stderr.txt')).Count
 }
-Write-Step ('Extract.cmd exit={0} in {1}s; extracted {2} files, {3} MB' -f $steps.extract.exitCode, $extractSeconds, $steps.extract.files, $steps.extract.megabytes)
+Write-Step ('--extract exit={0} in {1}s; extracted {2} files, {3} MB, stamped={4}' -f $steps.extract.exitCode, $extractSeconds, $steps.extract.files, $steps.extract.megabytes, $steps.extract.stamped)
 
 # Step 3 of the README: double-click CSVM.exe. Through the shell for the warning, then as a
 # process for the menu itself, the log location, the version line and the save folder.

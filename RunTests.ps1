@@ -562,6 +562,12 @@ function Merge-EngineShards {
         if ($shard.ExitCode -ne 0 -and $shard.ExitCode -ne 1) {
             $problems += "$($shard.Label): Godot exited $($shard.ExitCode) though it wrote a report; log at $($shard.Log)"
         }
+        # The editor survives a render instance still alive at exit and reports it on stderr; an
+        # exported build crashes on the same teardown, so the line is the export's crash seen early.
+        $errPath = "$($shard.Log).err"
+        if ((Test-Path $errPath) -and (Select-String -Path $errPath -Pattern 'Pages in use exist at exit' -SimpleMatch -Quiet)) {
+            $problems += "$($shard.Label): a render instance was still alive at exit, which crashes an exported build in its teardown; see $errPath"
+        }
         $slowest = [math]::Max($slowest, [double]$json.phaseTotals.wallSeconds)
         $binaries[[string]$json.binary.md5] = 1
         $totals[[string][int]$json.shard.selectedTotal] = 1

@@ -27,7 +27,7 @@ internal static class MenuOriginalControlsSuites
         + "mouse row hands the mouse between the stick and head-look a press at a time over the "
         + "authored Mouse Sensitivity slider, and whose "
         + "KEYS AND BUTTONS button opens the decoded KEYS page on its Movement tab with the seven "
-        + "category strips, the three column heads and CANCEL CHANGES authored left of ACCEPT "
+        + "category strips, the three authored column heads beside the port's Stick head and CANCEL CHANGES authored left of ACCEPT "
         + "CHANGES, a click on a control cell arms a capture on that row's own action and slot, "
         + "Escape abandons it with the live keymap untouched, a second capture binds the key it is "
         + "given, ACCEPT CHANGES returns to the CONTROLS page and writes player 1's keymap file "
@@ -152,13 +152,13 @@ internal static class MenuOriginalControlsSuites
         int heads = 0;
         foreach (var line in board.Lines)
         {
-            if (line.Text is "Action" or "Control A" or "Control B")
+            if (line.Text is "Action" or "Control A" or "Control B" or "Stick")
             {
                 heads++;
             }
         }
 
-        ctx.Check(heads == 3, $"the page draws its three authored column heads ({heads})");
+        ctx.Check(heads == 4, $"the page draws its three authored column heads and the port's Stick head ({heads})");
     }
 
     // A capture armed on one cell: Escape abandons it, a second one binds, and ACCEPT CHANGES is

@@ -112,6 +112,7 @@ concrete members and composes them its own way.
 | `PlayerSetupFeature` | the seats claimed by input-source identity (four at most, seat 0 never leaving), the aircraft roster (`BuildRoster`), each seat's cursor, the two-stage pick and its fit, the per-mode gate, Dogfight's kill target and time limit with their steppers, `Choices`, `BuildExit` for Dogfight | the pad behind a seat (asked of the presentation through `MenuSeatDevices`), the join gesture, the split-pane or seat-strip drawing |
 | `HangarFeature` | one scratch build at a time over a `CustomPlaneStore` and an optional `IHangarWallet`, the three starts, the airframe pick with its changed-since gate and the defaults ask's three answers, the per-tab operations, the purchase gate in the original's words, `Commit`, `DeleteSaved`, the labels and name rules | the nine-screen walk or the tab bar, the dropdowns, the dialog idiom |
 | `ControlsFeature` | the seats it can edit and their staged keymaps, the context and action cursors, the capture and the steal it names first, `Accept`, `Cancel`, `ResetSeat` | which page the rows are split across, the tabs or columns they are drawn in, the join that raises a second seat's row |
+| `NetPlayFeature` | the port and the address, the socket a host or a join opens, the stage, link, peer and port-mapping readouts, the timeout on a join, `BuildLaunch`, `Close` | the carrier and the port mapper (both injected as delegates), the board's rows, the roster, the seats and the session |
 | `CampaignFeature` | the profile store, roster and seated profile, `ContinuePlayer` and `DeletePlayer` with their refusals, the mission position and its briefing state and reveal progress, the intents between screens, `CommitLoadout`, `CommitPlanes`, `ExportPlane`, the flight field, the wallet, `BuildExit` | the screen stack, the cursor, the refusal line, the modal, the working copies before ACCEPT, the reveal's clock |
 
 The rule that makes two presentations replaceable: a feature never references a presentation, and
@@ -422,7 +423,7 @@ consumed by `Launcher.OnMenuExit`. The hierarchy is closed:
 
 | Exit | Carries | The consumer's action |
 |---|---|---|
-| `LaunchExit` | chapter, one `MenuSeatChoice` per seat, `MenuMode`, an `InstantActionDef` for Instant Action, a `VersusRules` for Dogfight | derive the session spec from the CLI plus the payload, bind the seats' pads, build |
+| `LaunchExit` | chapter, one `MenuSeatChoice` per seat, `MenuMode`, an `InstantActionDef` for Instant Action, a `VersusRules` for Dogfight, a `MenuNetLaunch` for a networked one | derive the session spec from the CLI plus the payload, bind the seats' pads, build |
 | `CampaignMissionExit` | the profile name, the `cm_sequence` position, one `MenuSeatChoice` per joined human | the same, over the campaign's story position |
 | `QuitExit` | nothing | quit the process |
 | `OptionsApplyExit` | the graphics-mode and difficulty words, the four display settings, the four volume levels, the nearest-after-a-kill switch, the controller-rumble toggle, the opening view and the automatic head turn | save every one of them, then one frame later end the presentation and show it again at its top level |
@@ -443,6 +444,15 @@ under the map list on its Dogfight map screen. Original offers neither, because 
 is remake-designed with no authored layout section to take a widget, so its Dogfight launches carry
 the defaults or whatever the flags say. A presentation that wants the rules on a screen reads the
 feature's two values and steps them; nothing in the launch leg changes.
+
+A networked Dogfight leaves through the same exit with one more field. `MenuNetLaunch` is the open
+transport and which end owns the match, built by `NetPlayFeature.BuildLaunch` and taken by the
+session, which from then on steps it and closes it; the door keeps only the router's port mapping,
+so it can give that back when the flight ends. The local two-seat minimum does not apply to such a
+launch, since the opponent is at another machine. Built-in offers the door as the Mode screen's
+last row. Original does not, for the same reason it offers no match rules: its Dogfight screen is
+remake-designed with no authored layout section to take one. The feature is shared, so a board
+there is rows and a sink, not a second mechanism.
 
 ## Return
 
@@ -548,7 +558,10 @@ hub's figures preview, `plane-construction:overweight` on a build past its capac
 `plane-construction:defaults` with the airframe swap's three-button question standing over an
 edited build and
 `plane-paint:decals` standing the nose decal picker open as its five-across grid, `campaign`
-and the shared scratch-store campaign poses, `campaign-delete`), and any other value opens that 
+and the shared scratch-store campaign poses, `campaign-delete`, `connection` on the Multiplayer
+Connection page, and `connection-games` and `connection-games:searching` on the LAN games list
+over an in-process network holding five sample games, one of another build version, or none, and `lobby[:host|guest[:tab]]` on
+the Multiplayer Lobby over an in-process wire with two guests), and any other value opens that 
 presentation's top level. Built-in's values and output stay stable whatever presentation is added.
 
 A new presentation's aids follow the same rules: they select a screen of its own graph, they never

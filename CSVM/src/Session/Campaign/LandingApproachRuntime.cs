@@ -29,6 +29,10 @@ public sealed partial class LandingApproachRuntime : Node
     // Which humans an `auto` row is offering the prompt to right now, by player index: the prompt is
     // per pane, so only the human inside the sphere sees it and only they can press it.
     private readonly HashSet<int> _offered = new();
+    // A replicated trigger's own humans who pressed while offered, by player index. Held from the
+    // press until the prompt goes away. The host's copy reaches the sphere a buffer delay after this
+    // aeroplane did, and a one-frame press would be over by then.
+    private readonly HashSet<int> _pressing = new();
     // The humans passing the row under test, in player order. A field so the per-row scan allocates
     // nothing on a tick that fires nothing, which is nearly all of them.
     private readonly List<PlayerRig> _passing = new();
@@ -48,6 +52,10 @@ public sealed partial class LandingApproachRuntime : Node
         Name = "LandingApproaches";
     }
 
+    /// <summary>Raised with the row's index in the bound table and the human whose flying started
+    /// it, after the row's definition has started. The host sends it on from here.</summary>
+    public event Action<int, PlayerRig>? Started;
+
     /// <summary>How many rows bound to a node this world built. Zero when the mission carries none
     /// of the chapter's approach animations, which is the original's own load-time rejection.
     /// </summary>
@@ -64,6 +72,42 @@ public sealed partial class LandingApproachRuntime : Node
     /// <summary>The player index of the human whose flying started <see cref="LastStarted"/>, for a
     /// suite and the log; null before anything has started.</summary>
     public int? LastStartedBy { get; private set; }
+
+    /// <summary>A guest's trigger: it offers the prompt to its own humans and records their
+    /// button, and starts a row only when <see cref="StartRow"/> says the host did.</summary>
+    public bool Replicated { get; private set; }
+
+    /// <summary>Hands the decision to the host. ⚠ One way: a trigger that both decided and
+    /// replayed would start a row twice, once from each machine's own copy of the flyer.</summary>
+    public void Replicate() => Replicated = true;
+
+    /// <summary>Starts row <paramref name="id"/> for <paramref name="by"/> because the host did.
+    /// False when this world never bound that row.</summary>
+    public bool StartRow(int id, PlayerRig by)
+    {
+        ArgumentNullException.ThrowIfNull(by);
+        if (_runtime == null)
+        {
+            return false;
+        }
+
+        RefreshBindings();
+        foreach (var bound in _bound)
+        {
+            if (bound.Id == id)
+            {
+                _latched.Add(id);
+                Start(bound, by);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Whether this replicated trigger's human <paramref name="playerIndex"/> has pressed
+    /// the auto-land while offered it, and is still offered it.</summary>
+    public bool Pressing(int playerIndex) => _pressing.Contains(playerIndex);
 
     /// <summary>Binds the resolved rows to the built world. Rows whose approach node the build
     /// never created are dropped, so <see cref="Armed"/> counts what can actually fire.
@@ -88,6 +132,7 @@ public sealed partial class LandingApproachRuntime : Node
         _boundIds.Clear();
         _latched.Clear();
         _offered.Clear();
+        _pressing.Clear();
         RefreshBindings();
 
         if (_bound.Count > 0)
@@ -106,6 +151,7 @@ public sealed partial class LandingApproachRuntime : Node
         _offered.Clear();
         if (_runtime == null || _cutscene is not { Playing: false })
         {
+            _pressing.Clear();
             return;
         }
         if (RefreshBindings() > 0)
@@ -114,6 +160,13 @@ public sealed partial class LandingApproachRuntime : Node
         }
         if (_bound.Count == 0 || _humans?.Invoke() is not { Count: > 0 } humans)
         {
+            _pressing.Clear();
+            return;
+        }
+
+        if (Replicated)
+        {
+            OfferOnly(humans);
             return;
         }
 
@@ -131,7 +184,7 @@ public sealed partial class LandingApproachRuntime : Node
             {
                 if (OfferAutoLand(bound) is { } presser)
                 {
-                    Start(bound.Approach, presser);
+                    Start(bound, presser);
                     return;
                 }
                 continue;
@@ -144,9 +197,35 @@ public sealed partial class LandingApproachRuntime : Node
 
             // First one wins, in player order: two humans entering the volume on the same tick
             // start the row once, and it belongs to the lower-numbered of them.
-            Start(bound.Approach, _passing[0]);
+            Start(bound, _passing[0]);
             return;
         }
+    }
+
+    // A replicated trigger's tick: the prompt for this machine's own humans and the button they
+    // pressed under it, and no start. A seat flown elsewhere is skipped, since its own machine
+    // offers it the prompt.
+    private void OfferOnly(IReadOnlyList<PlayerRig> humans)
+    {
+        foreach (var bound in _bound)
+        {
+            if (!bound.Approach.Auto)
+            {
+                continue;
+            }
+
+            CollectPassing(bound, humans);
+            foreach (var rig in _passing)
+            {
+                if (rig.Controller is { RemoteOwned: false } plane && _offered.Add(rig.Index)
+                    && plane.AutoLandPressed())
+                {
+                    _pressing.Add(rig.Index);
+                }
+            }
+        }
+
+        _pressing.IntersectWith(_offered);
     }
 
     // The humans this row passes for, in player order. The original's own two guards are here, in
@@ -225,8 +304,9 @@ public sealed partial class LandingApproachRuntime : Node
     // for every definition this chapter's table can reach, which is where the original's
     // per-instance registration lands (CutsceneController.HostDefinitions), and the trigger call
     // writes the slot itself, reading `_startingFor` for the human as it goes.
-    private void Start(LandingApproach approach, PlayerRig by)
+    private void Start(Bound bound, PlayerRig by)
     {
+        var approach = bound.Approach;
         _startingFor = by;
         int started;
         try
@@ -241,6 +321,7 @@ public sealed partial class LandingApproachRuntime : Node
         LastStarted = approach.Anim;
         LastStartedBy = by.Index;
         Log.Info("world", $"landings: '{approach.Node}' flown by P{by.Index + 1}, started '{approach.Anim}' ({started} definition(s))");
+        Started?.Invoke(bound.Id, by);
     }
 
     private readonly record struct Bound(int Id, LandingApproach Approach, Node3D Node, Node3D? Arm);

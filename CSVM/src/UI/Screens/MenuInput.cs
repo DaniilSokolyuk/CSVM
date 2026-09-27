@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Text;
 using CSVM.Bindings;
+using CSVM.Flight.Airframe;
+using CSVM.Sticks;
 using CSVM.UI.Boards;
 using CSVM.Utils;
 using Godot;
@@ -59,14 +60,17 @@ public sealed class MenuInput
     /// <summary>The horizontal twin of <see cref="PadMove"/>, same reason.</summary>
     public int PadMoveX;
 
-    /// <summary>The characters typed this frame, "" for none, keyboard only, edge-detected per
-    /// key. Shift gives a letter's upper case and any other key's US-layout shifted symbol. Polled
-    /// like everything else here rather than read off an input event, so one screen's text and its
-    /// navigation share a clock.</summary>
+    /// <summary>The characters typed since the last poll, "" for none, keyboard only, one per press.
+    /// Read off <see cref="TypedText.Live"/>, so each is the character the pilot's own keyboard
+    /// layout produced, where a polled key would name only a US key position.</summary>
     public string Typed = string.Empty;
 
     /// <summary>Backspace pressed this frame (edge), the deletion half of <see cref="Typed"/>.</summary>
     public bool Erase;
+
+    /// <summary>A paste chord pressed since the last poll (edge), keyboard only. The box that takes
+    /// it reads <see cref="Clipboard"/>.</summary>
+    public bool Paste;
 
     /// <summary>Whether this poll moved the seat from one device to the other, a board hint's cue to
     /// recompose. The rule and the counting are <see cref="ActiveDevice"/>'s, the same handover the
@@ -85,6 +89,11 @@ public sealed class MenuInput
     /// context, nothing else here reads it, and its only other use is in flight, so it can mean
     /// one thing everywhere the menu offers a fit to edit.</summary>
     public bool Loadout;
+
+    /// <summary>Clear the highlighted control on a rebinding page (edge): Delete or Backspace, or the
+    /// loadout gesture from a pad or a stick. The loadout's own key is left out, since a letter is no
+    /// key a player reaches for to clear something.</summary>
+    public bool Unbind;
 
     /// <summary>Open the Instant Action Table of Contents (edge). INVENTED: the original picks a
     /// preset with a mouse on a list that shares its page with the dropdowns, so there is no
@@ -106,9 +115,8 @@ public sealed class MenuInput
     // the same number from their own bindings (DefaultBindings), which is where it is tunable.
     private const float StickDeadzone = 0.5f;
 
-    // The keys a text field takes a character from. Deliberately wider than any box's accept rule:
-    // a character the box refuses has to reach the box for the box to cue its reject sound, and a
-    // key that types nothing at all is silent instead.
+    // The keys that type a character on a US layout, which text entry takes off the cursor
+    // bindings. The characters themselves come from TypedText, not from these keys.
     private static readonly Key[] TextKeys = BuildTextKeys();
 
     // One timing rule for both cursor axes, shared with TapHoldButton's hold instead of a pair of
@@ -117,10 +125,6 @@ public sealed class MenuInput
     private readonly HoldToRepeat _repeatX = new(RepeatInitial, RepeatInterval);
     private readonly HoldToRepeat _repeatPad = new(RepeatInitial, RepeatInterval);
     private readonly HoldToRepeat _repeatPadX = new(RepeatInitial, RepeatInterval);
-
-    // Previous state of every text key, in TextKeys order, for the same edge detection the
-    // buttons get.
-    private readonly bool[] _textPrev = new bool[TextKeys.Length];
 
     // This seat's hardware, as the binding model addresses it. Deliberately not exposed: it answers
     // for SeatPads and nothing else, so a rebinding screen capturing a Flight or Camera control
@@ -138,9 +142,16 @@ public sealed class MenuInput
     private readonly PlayerActions _keys;
     private readonly PlayerActions _padOnly;
 
-    // The keyboard half alone, over the pad-muted state, and which side the hints name.
+    // The keyboard half alone, over the pad-muted state, and which side the hints name. The flight
+    // sticks alone tell the hints a stick's press from a gamepad's.
     private readonly PlayerActions _keysOnly;
+    private readonly PlayerActions _sticksOnly;
+    private readonly StickSplit _sticksAlone;
     private readonly ActiveDevice _device = new();
+
+    // The stick profiles this seat's menu rows follow, asked per tick so a set started after this
+    // seat is still followed.
+    private readonly Func<StickProfileSet?> _stickProfiles;
 
     private PlayerActions _typingKeys;
 
@@ -151,13 +162,39 @@ public sealed class MenuInput
     // stale and is rebuilt on the next read rather than on every one.
     private bool _typingStale;
 
+    // How far into TypedText.Live this seat has read, its pastes too, and the frame it last read on.
+    private long _typedMark = TypedText.Live.Count;
+    private long _pasteMark = TypedText.Live.Pastes;
+    private ulong _typedFrame = TypedText.Live.Frame;
+
     private bool _acceptPrev, _backPrev, _padBackPrev, _startPrev, _loadoutPrev, _presetsPrev;
-    private bool _erasePrev;
+    private bool _erasePrev, _unbindPrev;
     private int _dirPrev, _dirXPrev, _dirPadPrev, _dirPadXPrev;
 
+    // The stick profile revision this seat's menu rows were last merged from.
+    private int _stickRevision = -1;
+
+    // The player this seat loaded the keymap of, 0 until LoadSavedKeymap. Sticks read only for
+    // player 1, so a seat that never learns its player, or a joined one, reads none.
+    private int _player;
+
+    /// <summary>A seat over the live stick roster and profiles. Only player 1 reads the sticks, once
+    /// <see cref="LoadSavedKeymap"/> has named the player.</summary>
     public MenuInput()
+        : this(() => StickPump.Roster, () => StickProfiles.Live)
     {
-        _devices = new SeatDeviceState(SeatPads, () => Pads);
+    }
+
+    /// <summary>A seat over the stick roster and profile set given, for a suite with a fake stick.
+    /// The <paramref name="player"/> argument seats it without <see cref="LoadSavedKeymap"/>, which
+    /// would read the user's keymap folder.</summary>
+    public MenuInput(Func<StickRoster?> sticks, Func<StickProfileSet?> stickProfiles, int player = 0)
+    {
+        ArgumentNullException.ThrowIfNull(sticks);
+        _stickProfiles = stickProfiles ?? throw new ArgumentNullException(nameof(stickProfiles));
+        _player = player;
+        var stickState = new StickDeviceState(() => _player - 1, sticks);
+        _devices = new SeatDeviceState(SeatPads, () => Pads, sticks: stickState);
         _padMuted = new SeatDeviceState(SeatPads, () => Pads, readsPads: false);
         var map = DefaultBindings.MapFor(InputContext.Menu, SeatPads);
 
@@ -167,13 +204,18 @@ public sealed class MenuInput
         _typingKeys = new PlayerActions(TypingMap(map), true);
         _padOnly = new PlayerActions(map, false);
         _keysOnly = new PlayerActions(map, true);
+        _sticksOnly = new PlayerActions(map, false);
+        _sticksAlone = StickSplit.SticksOnly(_devices);
         _live = _keys;
     }
 
-    /// <summary>The keys a text field takes a character from, in the order <see cref="Typed"/>
-    /// reports them. Wider than either name box's accept rule on purpose, so a refused character
-    /// still arrives and the box can cue its reject sound.</summary>
+    /// <summary>The keys that type a character on a US layout: letters, digits, space and the
+    /// punctuation row. <see cref="TypingMap"/> drops every binding on one of them.</summary>
     public static IReadOnlyList<Key> TypeableKeys => TextKeys;
+
+    /// <summary>The text a paste inserts, read when a box takes a <see cref="Paste"/>. A seam so a
+    /// suite can hand a box its clipboard without writing the pilot's own.</summary>
+    public static Func<string> Clipboard { get; set; } = DisplayServer.ClipboardGet;
 
     /// <summary>This seat's live menu keymap, the object a rebinding screen edits. Editing it moves
     /// the bindings this poller reads on its next frame, since the readers hold the map itself; call
@@ -200,6 +242,52 @@ public sealed class MenuInput
                 return pads.Length == 0 ? "keyboard" : $"keyboard + {pads}";
             return pads.Length == 0 ? "no device" : pads;
         }
+    }
+
+    /// <summary>Whether a key event is a paste chord: Ctrl+V (Cmd+V on macOS) or Shift+Insert, the
+    /// two a Windows edit box pastes on. AltGr arrives as Ctrl and Alt together, so a chord carrying
+    /// Alt is a layout's third level rather than a paste.</summary>
+    public static bool IsPasteChord(InputEventKey key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        if (!key.Pressed || key.Echo || key.AltPressed)
+        {
+            return false;
+        }
+
+        return (key.Keycode == Key.V && key.IsCommandOrControlPressed() && !key.ShiftPressed)
+            || (key.Keycode == Key.Insert && key.ShiftPressed && !key.CtrlPressed);
+    }
+
+    /// <summary>Whether a key event is a copy chord: Ctrl+C (Cmd+C on macOS) or Ctrl+Insert, under
+    /// <see cref="IsPasteChord"/>'s rule for Alt. A hosting door copies its address on it.</summary>
+    public static bool IsCopyChord(InputEventKey key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        if (!key.Pressed || key.Echo || key.AltPressed || key.ShiftPressed)
+        {
+            return false;
+        }
+
+        return (key.Keycode == Key.C && key.IsCommandOrControlPressed())
+            || (key.Keycode == Key.Insert && key.CtrlPressed);
+    }
+
+    /// <summary>The board reader a flight session gives the player at zero-based
+    /// <paramref name="playerIndex"/>. It reads the keyboard for the first player only, the pads
+    /// <paramref name="pads"/> names, and that player's saved menu keymap. Loading the keymap is what
+    /// seats it, so the first player's pause menus read the sticks and follow the stick profiles.
+    /// </summary>
+    public static MenuInput ForSessionSeat(int playerIndex, int[]? pads) =>
+        ForSessionSeat(playerIndex, pads, () => StickPump.Roster, () => StickProfiles.Live);
+
+    /// <summary>The same seat over the stick roster and profile set given, for a suite.</summary>
+    public static MenuInput ForSessionSeat(
+        int playerIndex, int[]? pads, Func<StickRoster?> sticks, Func<StickProfileSet?> stickProfiles)
+    {
+        var input = new MenuInput(sticks, stickProfiles) { Keyboard = playerIndex == 0, Pads = pads };
+        input.LoadSavedKeymap(playerIndex + 1);
+        return input;
     }
 
     /// <summary>Whether an unbound pad is pressing Start, the join gesture. Static because the
@@ -257,31 +345,6 @@ public sealed class MenuInput
         return actions.Held(negative) ? -1 : actions.Held(positive) ? 1 : 0;
     }
 
-    /// <summary>The characters the typeable keys produce this frame: each key whose state rose
-    /// since <paramref name="prev"/>, in table order, Shift deciding a letter's case and the
-    /// symbol any other key prints.
-    /// <paramref name="prev"/> is the caller's edge state, updated in place and sized from
-    /// <see cref="TypeableKeys"/> so it cannot fall out of step with the table. Public so text
-    /// entry unit-tests; it reads no device itself.</summary>
-    public static string TypedFrom(Func<Key, bool> down, bool shift, bool[] prev)
-    {
-        ArgumentNullException.ThrowIfNull(down);
-        ArgumentNullException.ThrowIfNull(prev);
-        if (prev.Length != TextKeys.Length)
-            throw new ArgumentException($"edge state must be {TextKeys.Length} long", nameof(prev));
-
-        var typed = new StringBuilder();
-        for (int i = 0; i < TextKeys.Length; i++)
-        {
-            bool held = down(TextKeys[i]);
-            if (held && !prev[i])
-                typed.Append(CharFor(TextKeys[i], shift));
-            prev[i] = held;
-        }
-
-        return typed.Length > 0 ? typed.ToString() : string.Empty;
-    }
-
     /// <summary>The menu keymap with every binding on a typeable key dropped, which is what
     /// <see cref="TextEntry"/> reads. A letter bound to a cursor action would otherwise walk the
     /// cursor on every second character typed into a name field. The rule is the key's typeability
@@ -313,14 +376,16 @@ public sealed class MenuInput
     /// words or as a glyph. Empty where this seat reaches none, which leaves the hint off rather
     /// than naming a control the player does not have.</summary>
     public ControlLine Hint(string template, InputAction action) =>
-        ControlLine.For(template, Map, action, _device.Side, Keyboard);
+        ControlLine.For(template, Map, action, _device.Side, Keyboard, _device.OnStick);
 
     /// <summary>Puts this seat on the menu keymap <paramref name="player"/> saved, in place, so the
     /// map this poller's readers hold is the one that changed. Anything the file does not carry
     /// stays at its shipped default, and under the launch gate no file is read at all
-    /// (<see cref="LaunchBindings"/>). Called once the seat knows which player it is.</summary>
+    /// (<see cref="LaunchBindings"/>). Called once the seat knows which player it is. Player 1 also
+    /// reads the sticks, and its stick rows follow the active stick profiles from then on.</summary>
     public void LoadSavedKeymap(int player)
     {
+        _player = player;
         Map.Fill(LaunchBindings.Map(player, InputContext.Menu, SeatPads, readsKeyboard: true));
         RebindsApplied();
     }
@@ -329,7 +394,7 @@ public sealed class MenuInput
     public void Poll(float dt)
     {
         ReadDevices();
-        DeviceMoved = _device.Observe(_keysOnly.Current, _padOnly.Current, Keyboard);
+        DeviceMoved = _device.Observe(_keysOnly.Current, _padOnly.Current, Keyboard, _sticksOnly.Current);
         Move = StepAxis(RawDir(), ref _dirPrev, _repeat, dt);
         MoveX = StepAxis(RawDirX(), ref _dirXPrev, _repeatX, dt);
         PadMove = StepAxis(RawPadDir(), ref _dirPadPrev, _repeatPad, dt);
@@ -360,6 +425,10 @@ public sealed class MenuInput
         Presets = presets && !_presetsPrev;
         _presetsPrev = presets;
 
+        bool unbind = RawUnbind();
+        Unbind = unbind && !_unbindPrev;
+        _unbindPrev = unbind;
+
         int active = ScanActivePad();
         if (active >= 0)
             LastActivePad = active;
@@ -376,6 +445,7 @@ public sealed class MenuInput
         _startPrev = RawStart();
         _loadoutPrev = RawLoadout();
         _presetsPrev = RawPresets();
+        _unbindPrev = RawUnbind();
         _dirPrev = RawDir();
         if (_dirPrev != 0)
             _repeat.Press();
@@ -392,54 +462,12 @@ public sealed class MenuInput
         PrimeText();
         // Seeds the handover's own counts too, so a button still held from whatever raised this
         // screen is not read as the press that hands the hints to the other device.
-        _device.Observe(_keysOnly.Current, _padOnly.Current, Keyboard);
-        Accept = Back = PadBack = Start = Loadout = Presets = DeviceMoved = false;
+        _device.Observe(_keysOnly.Current, _padOnly.Current, Keyboard, _sticksOnly.Current);
+        Accept = Back = PadBack = Start = Loadout = Presets = Unbind = DeviceMoved = false;
     }
-
-    // The Key enum's letter, digit and punctuation values ARE their ASCII codes, so the unshifted
-    // character is the key. Shift cases a letter and takes every other key to the US-layout symbol
-    // printed above it, the one layout the Key names describe; a box's accept rule, not this table,
-    // decides which of those it takes (the unlocking pilot name ends in Shift+1).
-    private static char CharFor(Key key, bool shift)
-    {
-        if (key == Key.Space)
-            return ' ';
-        char c = (char)(int)key;
-        if (key is >= Key.A and <= Key.Z)
-            return shift ? c : char.ToLowerInvariant(c);
-        return shift ? ShiftedUs(c) : c;
-    }
-
-    // The US-layout shifted row: the digits and the punctuation keys BuildTextKeys polls.
-    private static char ShiftedUs(char c) => c switch
-    {
-        '1' => '!',
-        '2' => '@',
-        '3' => '#',
-        '4' => '$',
-        '5' => '%',
-        '6' => '^',
-        '7' => '&',
-        '8' => '*',
-        '9' => '(',
-        '0' => ')',
-        '\'' => '"',
-        ',' => '<',
-        '-' => '_',
-        '.' => '>',
-        '/' => '?',
-        ';' => ':',
-        '=' => '+',
-        '[' => '{',
-        '\\' => '|',
-        ']' => '}',
-        '`' => '~',
-        _ => c,
-    };
 
     // The letters, the digit row, the space bar and then the punctuation, in that order. The
-    // punctuation is every printable non-alphanumeric key a US layout reports unshifted; it is
-    // polled so a name box has a character to refuse rather than the press vanishing in here.
+    // punctuation is every printable non-alphanumeric key a US layout reports unshifted.
     private static Key[] BuildTextKeys()
     {
         var keys = new List<Key>();
@@ -472,21 +500,28 @@ public sealed class MenuInput
         PadMove = PadMoveX = 0;
     }
 
-    // A key still held from whatever opened the screen must not type itself into the field.
+    // A character typed before the screen opened must not land in its field.
     private void PrimeText()
     {
-        for (int i = 0; i < TextKeys.Length; i++)
-            _textPrev[i] = KeyDown(TextKeys[i]);
+        _typedMark = TypedText.Live.Count;
+        _pasteMark = TypedText.Live.Pastes;
+        _typedFrame = TypedText.Live.Frame;
         _erasePrev = KeyDown(Key.Backspace);
         Typed = string.Empty;
-        Erase = false;
+        Erase = Paste = false;
     }
 
-    // Every typeable key pressed this frame, plus Backspace. Shift decides case, which is what lets
-    // a profile name read as the original's own mixed-case roster does, and the shifted symbols.
+    // What the keyboard typed since the last poll, plus Backspace. A seat that missed a frame
+    // (a pause board opened over a flight) drops what arrived meanwhile, as a prime would.
     private void PollText()
     {
-        Typed = TypedFrom(KeyDown, KeyDown(Key.Shift), _textPrev);
+        ulong frame = TypedText.Live.Frame;
+        bool reading = frame - _typedFrame <= 1;
+        _typedFrame = frame;
+        string typed = TypedText.Live.Since(ref _typedMark);
+        Typed = Keyboard && reading ? typed : string.Empty;
+        bool pasted = TypedText.Live.PastedSince(ref _pasteMark);
+        Paste = Keyboard && reading && pasted;
         bool erase = KeyDown(Key.Backspace);
         Erase = erase && !_erasePrev;
         _erasePrev = erase;
@@ -516,6 +551,7 @@ public sealed class MenuInput
     // taken from the live field because a caller sets it after construction.
     private void ReadDevices()
     {
+        FollowStickProfiles();
         if (_typingStale)
         {
             _typingKeys = new PlayerActions(TypingMap(_keys.Map), Keyboard);
@@ -531,6 +567,18 @@ public sealed class MenuInput
         _live.Poll(_devices);
         _padOnly.Poll(_devices);
         _keysOnly.Poll(_padMuted);
+        _sticksOnly.Poll(_sticksAlone);
+    }
+
+    // A plug, or a stick settling into the generic default, changes the active profiles. The menu
+    // rows are replaced in place, so every reader of Map sees them. Seat 1 only.
+    private void FollowStickProfiles()
+    {
+        if (_player == StickDeviceState.OwningSeat + 1 && _stickProfiles() is { } set
+            && set.MergeIfChanged(Map, InputContext.Menu, ref _stickRevision))
+        {
+            RebindsApplied();
+        }
     }
 
     private int RawPadDir() => Dir(_padOnly, InputAction.MenuUp, InputAction.MenuDown);
@@ -554,5 +602,8 @@ public sealed class MenuInput
     private bool RawLoadout() => _live.Held(InputAction.MenuLoadout);
 
     private bool RawPresets() => _live.Held(InputAction.MenuPresets);
+
+    private bool RawUnbind() =>
+        KeyDown(Key.Delete) || KeyDown(Key.Backspace) || _padOnly.Held(InputAction.MenuLoadout);
 
 }

@@ -13,10 +13,24 @@ namespace CSVM.Session.Roster;
 /// spawner keeps its shape.</summary>
 public readonly record struct LaunchedVehicle(FlightController? Aircraft, SurfaceVehicle? Vessel)
 {
+    /// <summary>The spawner declined to build: this end replicates its generator aircraft from
+    /// the host, so the cycle's slot is handed back and nothing is counted.</summary>
+    public static LaunchedVehicle Refusal => new(null, null) { Refused = true };
+
     public bool IsEmpty => Aircraft == null && Vessel == null;
+
+    /// <summary>Whether this is <see cref="Refusal"/>.</summary>
+    public bool Refused { get; init; }
 
     public static implicit operator LaunchedVehicle(FlightController? aircraft) => new(aircraft, null);
 }
+
+/// <summary>One generator aircraft launch as the host made it. It holds the live generator's
+/// index, the launch counter the name was formed from and the patrol net's index in that
+/// generator's list. It also holds the pose, velocity and lever the aircraft left on. A replicating end rebuilds the launch from
+/// this alone, through <see cref="AiGeneratorRuntime.LaunchReplicated"/>.</summary>
+public readonly record struct GeneratorAircraftLaunch(int Generator, int LaunchOrdinal, int Net,
+    Vector3 Position, Vector3 Drop, Vector3? Velocity, bool CarrierDrop, float? Throttle);
 
 /// <summary>Runs a mission's enemy generators (M4 B6 + F20): each loaded
 /// <see cref="EnemyGeneratorDef"/> gets a <see cref="GeneratorCycle"/> and spawns AI aircraft
@@ -78,6 +92,7 @@ public sealed partial class AiGeneratorRuntime : Node
     private readonly Func<AiNet, Func<Vector3?>?>? _trailerTarget;
     private readonly Func<int, string?, string?, bool> _host;
     private Func<int, string?, string?, bool>? _inner;
+    private bool _replaying;
 
     /// <param name="trailerTarget">Where an anchored net's trailer target is, per net;
     /// null leaves every generated patroller on its net's authored coordinates. One generator's
@@ -140,11 +155,26 @@ public sealed partial class AiGeneratorRuntime : Node
         }
     }
 
+    /// <summary>Raised after every aircraft a generator launched on its own cycle, with the
+    /// aircraft. An Instant Action release is not a launch here, since it builds nothing.</summary>
+    public event Action<GeneratorAircraftLaunch, FlightController>? AircraftLaunched;
+
     /// <summary>The launch counter the instance names of this mission's launches run on: it
     /// starts at 0 with the generators and advances once per successful launch across all of
     /// them, which is what makes a name unique (docs/formats/mission-entities/enemy-generators.md).
     /// Read it BEFORE the spawn whose name it forms.</summary>
     public int LaunchOrdinal { get; private set; }
+
+    /// <summary>Whether this end's generator aircraft come from the host rather than its own
+    /// cycles (<see cref="Replicate"/>).</summary>
+    public bool Replicated { get; private set; }
+
+    /// <summary>Whether the spawner should refuse this launch: this end replicates, and the call
+    /// is not the replay of a host launch.</summary>
+    public bool RefusesOwnAircraft => Replicated && !_replaying;
+
+    /// <summary>Launches this end's own cycles came due for and the spawner refused.</summary>
+    public int RefusedLaunches { get; private set; }
 
     /// <summary>Generators that survived the load drops.</summary>
     public int LiveCount => _live.Count;
@@ -230,6 +260,59 @@ public sealed partial class AiGeneratorRuntime : Node
             Log.Info("flight", $"egen: generator '{gen.Def.Node}' host died: launches for {GeneratorCycle.HostDeathGraceSeconds:0} s more, then disabled permanently");
         }
         return dying;
+    }
+
+    /// <summary>Hands this end's generator aircraft to the host. The cycles keep their own timers
+    /// and doors, but the spawner refuses every aircraft launch they come due for. The host's
+    /// launches arrive through <see cref="LaunchReplicated"/>. Surface hulls are not affected.</summary>
+    public void Replicate() => Replicated = true;
+
+    /// <summary>Builds the host's launch on this end with the host's net pick, pose and launch
+    /// counter. Returns the aircraft, or null when the generator, the net or the build is missing.
+    /// No take-off run is started, since the host's samples fly the copy.</summary>
+    public FlightController? LaunchReplicated(in GeneratorAircraftLaunch launch)
+    {
+        if (launch.Generator < 0 || launch.Generator >= _live.Count)
+        {
+            Log.Info("flight", $"egen: replicated launch names generator {launch.Generator}, this end has {_live.Count}");
+            return null;
+        }
+        var gen = _live[launch.Generator];
+        if (launch.Net < 0 || launch.Net >= gen.Nets.Count)
+        {
+            Log.Info("flight", $"egen: replicated launch from '{gen.Def.Node}' names net {launch.Net}, the generator has {gen.Nets.Count}");
+            return null;
+        }
+        var net = gen.Nets[launch.Net];
+        SpawnedNet[gen.Def.Node] = net.Name;
+        var pos = launch.Position;
+        var pilot = AiPilot.HoldingCourse(pos, pos + launch.Drop);
+        pilot.Patrol = new AiNetFollower(net, Rng.NewSystemRandom(Rng.Ai),
+            trailerTarget: _trailerTarget?.Invoke(net));
+        // The spawner forms the name from the counter, so it reads the host's value.
+        LaunchOrdinal = launch.LaunchOrdinal;
+        LaunchedVehicle launched;
+        _replaying = true;
+        try
+        {
+            launched = _spawn(gen.Def, pos, pos + launch.Drop, pilot);
+        }
+        finally
+        {
+            _replaying = false;
+        }
+        LaunchOrdinal = launch.LaunchOrdinal + 1;
+        if (launched.Aircraft is not { } controller)
+        {
+            Log.Info("flight", $"egen: replicated launch from '{gen.Def.Node}' built no aircraft");
+            return null;
+        }
+        if (launch.Velocity is { } velocity)
+            controller.Activate(pos, pos + launch.Drop, velocity,
+                carrierDrop: launch.CarrierDrop, launchThrottle: launch.Throttle);
+        gen.SpawnCount++;
+        Log.Info("flight", $"egen: '{gen.Def.Node}' replicated launch #{launch.LaunchOrdinal}: '{controller.Name}' at ({pos.X:0},{pos.Y:0},{pos.Z:0}) patrolling net '{net.Name}'");
+        return controller;
     }
 
     /// <summary>One session-simulation step of every live cycle, door transitions included.</summary>
@@ -416,7 +499,8 @@ public sealed partial class AiGeneratorRuntime : Node
 
         // The cyclic net pick (choose_nets is cyclic on every authored file; 'random' falls back
         // to cyclic here until something authors it). The spawned pilot patrols it.
-        var net = gen.Nets[gen.NetCursor % gen.Nets.Count];
+        int netIndex = gen.NetCursor % gen.Nets.Count;
+        var net = gen.Nets[netIndex];
         gen.NetCursor++;
         SpawnedNet[gen.Def.Node] = net.Name;
 
@@ -424,6 +508,13 @@ public sealed partial class AiGeneratorRuntime : Node
         pilot.Patrol = new AiNetFollower(net, Rng.NewSystemRandom(Rng.Ai),
             trailerTarget: _trailerTarget?.Invoke(net));
         var launched = _spawn(gen.Def, pos, pos + drop, pilot);
+        if (launched.Refused)
+        {
+            gen.Cycle.SpawnRemoved();
+            RefusedLaunches++;
+            Log.Info("flight", $"egen: '{gen.Def.Node}' launch refused: this end's generator aircraft come from the host");
+            return;
+        }
         if (launched.Vessel is { } vessel)
         {
             // A hull runs the host's take-off path and joins its net where the path ends; it is
@@ -462,12 +553,16 @@ public sealed partial class AiGeneratorRuntime : Node
             controller.Activate(pos, pos + drop, velocity,
                 carrierDrop: launchThrottle == null, launchThrottle: launchThrottle);
         gen.SpawnCount++;
-        LaunchOrdinal++;
+        int ordinal = LaunchOrdinal++;
         controller.Downed += (_, _) => gen.Cycle.SpawnRemoved();
         if (gen.LaunchPath is { } runPoints)
         {
             StartTakeOffRun(gen, controller, runPoints, pos, forward, net.Name);
         }
+        AircraftLaunched?.Invoke(
+            new GeneratorAircraftLaunch(_live.IndexOf(gen), ordinal, netIndex, pos, drop, launchVelocity,
+                launchThrottle == null, launchThrottle),
+            controller);
         Log.Info("flight", $"egen: '{gen.Def.Node}' spawn #{gen.SpawnCount}: '{controller.Name}' dropped at ({pos.X:0},{pos.Y:0},{pos.Z:0}) patrolling net '{net.Name}', active {gen.Cycle.Active}/{gen.Def.MaxActive}{(gen.Def.VehicleParams != null ? $", params '{gen.Def.VehicleParams}'" : "")}");
     }
 

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -18,14 +19,23 @@ public static class BindingLabels
     /// <summary>What a row prints when the action is bound to nothing.</summary>
     public const string Unbound = "unbound";
 
+    /// <summary>The caption prefix of a stick identity ("R", or the model when no profile names it),
+    /// null for any other device. Registered by the stick side, which keeps this namespace free of
+    /// it, as <see cref="LaunchBindings.StickRows"/> does; unset, a stick reads as a pad.</summary>
+    public static Func<DeviceId, string?>? StickName { get; set; }
+
     /// <summary>An action's caption: the original's own keybind-page string where it binds that
-    /// action, else the enum name with its words separated, so <c>FireRockets</c> reads as "Fire
-    /// Rockets". The original's captions read under their category heading, which is why the
+    /// action. Otherwise it is the enum name with its words separated, so <c>FireRockets</c> reads as
+    /// "Fire Rockets". The throttle lever has a caption of its own. The original's captions read under their category heading, which is why the
     /// targeting ones carry no "Target" prefix.</summary>
     public static string Name(InputAction action)
     {
         if (Original(action) is { } original)
             return original;
+        // Parenthesised so it reads beside the original's "Throttle Up" and "Throttle 0/8" rows as
+        // one more way to set the same lever.
+        if (action == InputAction.ThrottleLever)
+            return "Throttle (lever)";
 
         string name = action.ToString();
         var text = new StringBuilder(name.Length + 8);
@@ -41,15 +51,22 @@ public static class BindingLabels
 
     /// <summary>One control's caption, device included, because two pads' identical buttons are two
     /// different bindings and a row that hid the device would read as a duplicate.</summary>
-    public static string Describe(Binding binding)
+    public static string Describe(Binding binding) => Describe(binding, StickName);
+
+    /// <summary><see cref="Describe(Binding)"/> with the stick names taken from
+    /// <paramref name="stickName"/> instead of the registered <see cref="StickName"/>.</summary>
+    public static string Describe(Binding binding, Func<DeviceId, string?>? stickName)
     {
         var c = binding.Control;
+        if (stickName?.Invoke(binding.Device) is { } stick)
+            return stick + " " + StickControl(c);
         return c.Kind switch
         {
             ControlKind.Key => BindingControl.Prefix(c.Modifiers) + KeyName((Key)c.Index),
             ControlKind.Button => "Pad " + Spaced(EnumName<JoyButton>(c.Index)),
             ControlKind.Axis => "Pad " + Spaced(EnumName<JoyAxis>(c.Index)) + (c.Sign < 0 ? " -" : " +"),
             ControlKind.Mouse => "Mouse " + Spaced(EnumName<MouseButton>(c.Index)),
+            ControlKind.FullAxis => "Axis " + c.Index.ToString(CultureInfo.InvariantCulture) + (c.Inverted ? " inverted" : string.Empty),
             _ => "Hat " + c.Index.ToString(CultureInfo.InvariantCulture) + " " + c.Direction,
         };
     }
@@ -88,6 +105,23 @@ public static class BindingLabels
         for (int i = 1; i < actions.Count; i++)
             text.Append(i == actions.Count - 1 ? " and " : ", ").Append(Name(actions[i]));
         return text.ToString();
+    }
+
+    /// <summary>A stick control by number, counted from 1 as VKB's configuration tool and Windows
+    /// count, so the label matches the stick's own software. The profile file and
+    /// <c>--dump-sticks</c> keep the raw 0-based index. Hat 0 is the only hat most sticks have, so
+    /// it drops its number.</summary>
+    public static string StickControl(BindingControl c)
+    {
+        string index = (c.Index + 1).ToString(CultureInfo.InvariantCulture);
+        return c.Kind switch
+        {
+            ControlKind.Button => "Button " + index,
+            ControlKind.Axis => "Axis " + index + (c.Sign < 0 ? " -" : " +"),
+            ControlKind.FullAxis => "Axis " + index + (c.Inverted ? " inverted" : string.Empty),
+            ControlKind.Hat => (c.Index == 0 ? "Hat " : "Hat " + index + " ") + c.Direction,
+            _ => c.Kind + " " + index,
+        };
     }
 
     // The original's own caption for an action it binds, quoted from its keybind pages

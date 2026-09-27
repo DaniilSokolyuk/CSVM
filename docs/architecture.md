@@ -52,6 +52,7 @@ GameZ→Godot builders, and the animation runtime that drives the world.
 - `src/Mech3/ClutterTemplates.cs`, the `templates.zrd` reader: each clutter decoration model's authored substitution table, scale range and fade distances.
 - `src/Mech3/FogVolumes.cs`, the `fogvol.zrd` reader + the gamez `fvol*` volume census: what the ambient cloud field scatters, and where.
 - `src/Mech3/Zrdr.cs`, zrdr extraction reader (zip or dir) + `ZrdrDict`, the key/[values…] view over a reader's list.
+- `src/Mech3/GamePath.cs`, splits a path out of game data on `\` and `/` alike on every host, where `System.IO.Path` splits `\` on Windows only.
 - `src/Mech3/LandingApproaches.cs`, a chapter's `landings.zrd` approach table resolved against the gamez: volume, attitude cone, speed band.
 - `src/Mech3/Pickups.cs`, a mission's compact `pickups.zrd` sensor and radius table, the spheres the ladder switch tests against.
 - `src/Mech3/MissionCutscenes.cs`, the animation names a mission's own `cutscenes\` reader files define: the authored mark of mid-mission choreography.
@@ -105,6 +106,7 @@ GameZ→Godot builders, and the animation runtime that drives the world.
 - `src/Mech3/SoundFalloff.cs`, the original's positional gain law: a distance, a `RANGE` pair and a `VOLUME` to decibels, pure and engine-free.
 - `src/Mech3/MusicPlayer.cs`, the state-driven score: one 2D streaming channel for menu, cabin and mission, with the decoded battle hold.
 - `src/Mech3/MissionRadio.cs`, the mission radio queue: the non-positional voice channel the campaign's objective callouts, VO dialogue chains and combat voice lines speak on.
+- `src/Mech3/LateStart.cs`, engine-free: the clip and offset a run of back-to-back clips stands at when started late.
 - `src/Mech3/SoundDefs.cs`, sounds.json parser: SETS `snd_*` → `SoundDef`; `LoadGroups` → the weighted-random `SOUND_GROUPS` + their dialogue chains.
 - `src/Mech3/CombatVoice.cs`, the combat-voice chain: roster `accentID` → `voice.zrd` pool → pilot VO id → clip defs, plus the mission's voice prewarm set.
 - `src/Mech3/Anim/TemplateStage.cs`, the effect-template stage as one module: pool-slot arithmetic, placement and following, copy identity, reveal and retire.
@@ -125,6 +127,7 @@ only `Airframe`, and nothing else in `Flight` names `Hangar`.
 - `src/Flight/Airframe/ZeppelinBroadside.cs`, the pure broadside law: the decoded side arc, the per-cannon deploy machine and re-fire timer, the lead and gasbag picks.
 - `src/Flight/Airframe/ZeppelinDamage.cs`, the pure zeppelin kill arithmetic: the survivor count over the `healthy` list, the engine recount, the gasbag gate, stages.
 - `src/Flight/Airframe/ZeppelinMotion.cs`, the kinematic zeppelin motion law: forward-only net flight under the record's limits, the eased steer law, the stop approach.
+- `src/Flight/Airframe/ZeppelinReplica.cs`, a network guest's zeppelin: the original's chase onto the host's dead-reckoned samples.
 - `src/Flight/Airframe/FlightReentryLatch.cs`, flight's consumed-input latch: a control still held when flight regains input reads as released on every command it is bound to.
 - `src/Flight/Airframe/DisablingIntensity.cs`, the decoded `SONIC`/`FLASH` intensity plateau and `FLASH`'s facing test, on squared distances; feeds wash and stun.
 - `src/Flight/Airframe/SmokeScreens.cs`, the smoke screen's stun trap: the world's active screens walked over the roster each sim step, the cone rule, the wash cadence.
@@ -135,6 +138,8 @@ only `Airframe`, and nothing else in `Flight` names `Hangar`.
 - `src/Flight/Airframe/FlightModel.cs`, the arcade velocity-vector flight physics: thrust/drag/gravity/lift, stall, calibrated control rates.
 - `src/Flight/Airframe/StickRamp.cs`, the keyboard stick as an accumulator: a held key ramps the axis at 2.5/s, release or reversal drops it to centre in one frame.
 - `src/Flight/Airframe/MouseFlight.cs`, the mouse as a stick: a cursor offset over the pane per axis, each deadzoned and rescaled, plus the autogyro exchange; engine-free.
+- `src/Flight/Airframe/AnalogAxes.cs`, the pad share of the flight command through the pad curve and the flight-stick share linear, plus the lever read that releases on an unplugged stick.
+- `src/Flight/Airframe/StickSplit.cs`, a device-state filter passing a seat's flight sticks alone or everything but them, so pad and stick rows of one keymap resolve apart.
 - `src/Flight/Airframe/PropAnimator.cs`, spins the collected prop/rotor discs about their local axes, throttle-scaled (idle floor 0.4); `--fly` only.
 - `src/Flight/Airframe/ExhaustSmoke.cs`, the original's code-built exhaust trail: near-black smoke whose strength charges from the commanded lever running ahead of the live one.
 - `src/Flight/Airframe/FuelTank.cs`, the flown tank: burns with the lever, and a dry one freezes the throttle lever where it stands. Engine-free.
@@ -319,6 +324,7 @@ else in `UI`, and nothing names `Labs`.
 - `src/UI/Boards/SliderTrack.cs`, a slider's track as a pointer sees it: the slot, the thumb on it, and the clamped value a press, a drag or a sideways step lands on.
 - `src/UI/Boards/BoardFit.cs`, how the original's fixed 800x600 dialog space lands on any window: one uniform scale, the board centred, the rest letterboxed.
 - `src/UI/Boards/ComposedBoard.cs`, what a composed screen is made of: a backdrop that may be a movie, fills, pictures, strokes, lines, plaques and flowed lists in draw order.
+- `src/UI/Boards/BoardMarquee.cs`, how far a one-line caption too wide for its box has scrolled: rest, scroll, rest, return, and the pin a deterministic run holds it at.
 - `src/UI/Boards/ComposedBoardView.cs`, the Godot half of the boards: a composed board drawn through `BoardFit` at nearest filtering, the art and movie cache, the hint band.
 - `src/UI/Boards/BoardPalette.cs`, the ink a campaign board writes in, one palette per background family.
 - `src/UI/Boards/SeatStrip.cs`, the shape both presentations' player chip strip shares: the face, the corner inset, the cell a chip centres in, and the ink a seat takes.
@@ -352,6 +358,7 @@ else in `UI`, and nothing names `Labs`.
 **`UI.Screens`**, the launchscreen, boot, cinema and load screens, the pause, results and wrap-up boards, and the seat input they poll.
 
 - `src/UI/Screens/MenuInput.cs`, one player's menu input source: keyboard flag, a `Pads` binding, edge and auto-repeat polling, and the typed characters a field needs.
+- `src/UI/Screens/TypedText.cs`, the typed-character feed every menu seat reads: each key event's own character under the pilot's layout, and the paste chords.
 - `src/UI/Screens/MenuSeatDevices.cs`, the pad side of the shared player setup: seat 0's claimed pad, the join and sign-on gestures, hotplug, the flight binding.
 - `src/UI/Screens/MenuControlsSeats.cs`, the rebinding screen's seat bookkeeping for any presentation: which seats it offers, their pad identities and staged keymaps.
 - `src/UI/Screens/ShotGrid.cs`, the Danger Zone photographs' grid rule and the cursor that walks the grid, engine-free.
@@ -378,7 +385,9 @@ else in `UI`, and nothing names `Labs`.
 - `src/UI/Screens/MissionEndFade.cs`, the mission-end black-out, painting `CampaignDirector.LeavingFade` onto a full-screen rect every frame, one instance per rig.
 - `src/UI/Screens/SessionStartFade.cs`, the cover a session starts under, painting `StartCover`'s ramp over the HUD and the world until the session's first real frame, then up from dark.
 - `src/UI/Screens/BuildStamp.cs`, the build's version as `CSVM v<version>` in the menu's bottom-right corner, once for the window and over every presentation; hidden in flight.
-- `src/UI/Screens/NoGameDataScreen.cs`, the screen shown instead of the menu when the data root holds no extraction: what is missing, and the extraction step that fills it.
+- `src/UI/Screens/NoGameDataScreen.cs`, the extraction screen shown instead of the menu when the data root holds no extraction, an unfinished one, or one stamped under another schema: the install folder, Extract, progress, failures.
+- `src/UI/Screens/ExtractionFlow.cs`, the extraction screen's engine-free state: the stale decision, the pre-fill, and a run on a worker marshalled to the main thread by a per-frame tick.
+- `src/UI/Screens/InstallPicker.cs`, the install folder picker: Godot's own directory dialog embedded in the window, with pad buttons to go up a folder and take the one shown.
 - `src/UI/Screens/SelectionService.cs`, the shared `--freecam` and `--anim-lab` selection: click-pick, the `cs_name` ancestor ladder, a breadcrumb and a highlight box.
 - `src/UI/Screens/ExportSet.cs`, the node lab's Ctrl+click export set: cyan outlines, the breadcrumb's count, and one combined glTF at world transforms.
 
@@ -403,14 +412,15 @@ else in `UI`, and nothing names `Labs`.
 
 - `src/UI/Overlays/MissionMap.cs`, the one chart drawer every screen showing a mission's map shares: the sheet at its crop, the reveal's pins, and an icon placed by world position.
 - `src/UI/Overlays/ObjectivesHud.cs`, the campaign mission's objectives readout, drawn on the pause screen alone, one instance per rig.
-- `src/UI/Overlays/ColliderOverlay.cs`, the collider wireframes (C): every built collision shape drawn, coloured by the surface id it resolves to.
-- `src/UI/Overlays/ClassOverlay.cs`, the colour-by-class overlay (H): every drawn mesh tinted destructible, facade, clutter or scenery, a findable-targets view.
+- `src/UI/Overlays/ColliderOverlay.cs`, the collider wireframes (F20): every built collision shape drawn, coloured by the surface id it resolves to.
+- `src/UI/Overlays/ClassOverlay.cs`, the colour-by-class overlay (F21): every drawn mesh tinted destructible, facade, clutter or scenery, a findable-targets view.
 - `src/UI/Overlays/AiNetsOverlay.cs`, the AI patrol-net overlay (F13): the chapter's nets as coloured graphs with labels, plus a live leash per AI aircraft.
 - `src/UI/Overlays/TileGridOverlay.cs`, the map-edge tile-grid overlay (`--debug-tilegrid`): every ground tile tinted by repetition band, so one band is one block.
 - `src/UI/Overlays/NodeLabels.cs`, floating `cs_name` labels over scene nodes (`--debug-names`, no key): meshes or all, anchored on mesh centres and de-cluttered.
 - `src/UI/Overlays/MarkerOverlay.cs`, the `--viewer` firepoint, pylon and target overlay (K): coloured gizmos with de-cluttered labels.
 - `src/UI/Overlays/PhotoModeHud.cs`, photo mode's fading hint line and its Escape or pad-B way out; it raises an event and decides nothing.
 - `src/UI/Overlays/PerfHud.cs`, the frame-cost readout (F14): fps, current frame cost and worst recent frame, once for the window, drawn above the launchscreen too.
+- `src/UI/Overlays/NetReadout.cs`, the `--debug-net` corner readout: a network match's desync counters, the line the launcher logs once a second, built only under the flag.
 - `src/UI/Overlays/TargetingOverlay.cs`, the targeting overlay (F15): a line from every gunner to its acquired target, coloured by the gate holding the trigger.
 - `src/UI/Overlays/DebugKillTarget.cs`, the kill key (F17): kills player 1's selected target through its own death path; inert on a turret, which has no health key.
 - `src/UI/Overlays/DebugMarkerToggle.cs`, the all-aircraft markers key (F16): writes `TargetHud.MarkAll` on every human pane at once, the key twin of `--debug-markers`.
@@ -457,6 +467,10 @@ else in `UI`, and nothing names `Labs`.
 - `src/UI/Menu/MenuIdleSource.cs`, a seat's input source with no device behind it, idle every frame; the screenshot aid's extra players.
 - `src/UI/Menu/FreeFlightFeature.cs`, Free Flight as a shared feature: the chapter roster, the pick, the launch gate and the typed exit.
 - `src/UI/Menu/InstantActionFeature.cs`, Instant Action as a shared feature: the decoded option sets, the typed setup state, the built def.
+- `src/UI/Menu/NetPlayFeature.cs`, the multiplayer door as a shared feature: the port and address, the socket, the link readouts, the session advert, the wire a launch takes.
+- `src/UI/Menu/DogfightLobby.cs`, the Multiplayer Lobby's state over the network lobby: the host's options and rounds, the player list, picks and Ready, chat, and the launch gate.
+- `src/UI/Menu/CoopDoorText.cs`, the words the campaign's network door is drawn in: the host's band, the advertised session's name, the join and waiting boards' status lines.
+- `src/UI/Menu/NetDoorAid.cs`, the loopback multiplayer doors the screenshot aids stand on: no socket, no router, a campaign host already advertising.
 - `src/UI/Menu/Original/OriginalShell.cs`, the Original presentation's screen graph over the decoded layout, and its five partials below.
 - `src/UI/Menu/Original/OriginalShellDialog.cs`, the shell's own standing messagebox (a `partial`): `RaiseDialog`, the `DIALOG:*` answer keys, the box's rows and how it composes over the screen.
 - `src/UI/Menu/Original/OriginalCheats.cs`, the shell's three typed cheats (a `partial`): each screen's authored region, its latch, the arming click and what a word fires.
@@ -466,6 +480,7 @@ else in `UI`, and nothing names `Labs`.
 - `src/UI/Menu/Original/OriginalDropList.cs`, the one open-dropdown window rule every Original page stands on: the authored window, the hidden rows outside it, the arrows and the thumb.
 - `src/UI/Menu/Original/SliderControl.cs`, the shell's continuous control: a slider row's hold-and-move under the pointer, and the clamped sideways step.
 - `src/UI/Menu/Original/OriginalOptionsScreen.cs`, the five pages behind the Options hub's doors as one standalone module: the Game Options and VIDEO tables, AUDIO's slider rows, the seat chooser and the seven category tabs of rebinding.
+- `src/UI/Menu/Original/KeysStickColumn.cs`, the KEYS AND BUTTONS page's split of a row's bindings between Control A/B and the port's Stick column.
 - `src/UI/Menu/Original/OriginalCredits.cs`, the shell's credits screen (a `partial`): the painted background pane, ABOUT drawn disabled, the DONE plaque.
 - `src/UI/Menu/Original/OriginalJoinBoard.cs`, the join board as one standalone module: the crew manifest, the articles of the crew, and the one place a pad signs onto a seat.
 - `src/UI/Menu/Original/OriginalSeats.cs`, the shell's two sortie screens (a `partial`): the chapters, the windowed aircraft column, FLY.
@@ -475,6 +490,8 @@ else in `UI`, and nothing names `Labs`.
 - `src/UI/Menu/Original/OriginalPauseBoard.cs`, the Original presentation's pause screen: the mission's own `escape.zrd` sheet over the held world, on the same seam.
 - `src/UI/Menu/Original/OriginalHangarScreen.cs`, the hangar as one standalone module: the name screen, the tabbed hub, the totals page, the inventory.
 - `src/UI/Menu/Original/OriginalCampaignScreen.cs`, the campaign as one standalone module: the ten decoded screens over the shared board component.
+- `src/UI/Menu/Original/OriginalConnectionScreen.cs`, the Multiplayer Connection page and the LAN games list as one standalone module over the network door: the ways, the search, a join followed on a messagebox.
+- `src/UI/Menu/Original/OriginalLobbyScreen.cs`, the Multiplayer Lobby as one standalone module: its four tabs, the player list and Ready, chat, LAUNCH! and Leave Game.
 - `src/UI/Menu/Original/OriginalPresentation.cs`, the Original presentation node: the shell drawn through `ComposedBoardView`, seats polled.
 - `src/UI/Menu/Original/OriginalArtSizes.cs`, the art measurer every `OriginalShell` host hands it: one art name answered with its pixel size, cached, a movie's read off its sequence header.
 - `src/UI/Menu/Original/OriginalAvailability.cs`, Original's availability answer before entry: a refusal reason, or the loaded layout.
@@ -506,6 +523,8 @@ determinism repo-wide; read `docs/verification.md` first.
 - `src/Utils/HitchMonitor.cs`, the always-on frame-hitch detector: a frame far costlier than its recent neighbours gets a record; it logs nothing itself.
 - `src/Utils/HitchSidecar.cs`, the hitch detector's write path: queues a tripped record and drains it to one `[perf] hitch` line plus one JSON sidecar line.
 - `src/Utils/HoldToRepeat.cs`, tap-versus-hold timing for one button: an initial delay, then a repeat every interval until release.
+- `src/Utils/HostAddress.cs`, the stable global IPv6 address and the LAN IPv4 address a host names to its guests, with the temporary, deprecated, ULA and link-local addresses excluded.
+- `src/Utils/LocalNetworks.cs`, the IPv4 address and mask of every adapter that is up, read from the system for the LAN search, outside `Net` because that may not name `System.Net`.
 - `src/Utils/Log.cs`, the diagnostic log: a fixed category vocabulary over four levels, a filtered console and an always-complete file sink (`.scratch/logs/`, `logs/` in an exported build).
 - `src/Utils/MasterVolume.cs`, the developer gain on bus 0: `--volume=` over the `audio.volume` key over silence in a repo run, resolution only, with the player's mix a separate product underneath it.
 - `src/Utils/MonitorSetting.cs`, the screen the window sits on: the machine's screens labelled, the saved index dropped where no screen answers to it, and the one place the window's screen is set.
@@ -596,6 +615,7 @@ delegate to, in six sub-namespaces, one folder each. `Launch` sits on top and no
 - `src/Session/Campaign/LandingApproachRuntime.cs`, the mid-mission cutscene trigger: `landings.zrd` rows tested against each flying human, and the auto-land offer.
 - `src/Session/Campaign/LadderSwitch.cs`, the rope-ladder switch as an engine-free rule and state machine, plus the co-op holder rule deciding which human owns it.
 - `src/Session/Campaign/LadderSwitchRuntime.cs`, that switch flown against the built world: the per-human attitude and sensor read, and the definitions it starts.
+- `src/Session/Campaign/NetPositionalStartLink.cs`, the landing rows and the ladder switch over the wire: the host decides over the whole field and a guest replays the start for the named seat.
 
 **`Session.Roster`**, who is flying and how each got an aeroplane.
 
@@ -612,7 +632,7 @@ delegate to, in six sub-namespaces, one folder each. `Launch` sits on top and no
 - `src/Session/Roster/SpectateHandoff.cs`, the shared pane handoff for a downed pilot whose teammates fly on: the wreck pinned, a spectator camera in the freed pane.
 - `src/Session/Roster/AirframeSwap.cs`, the three `CALLBACK` codes that hand the player a different airframe in mid mission, and the def and node each names.
 - `src/Session/Roster/GeneratorCycle.cs`, the decoded egen launch timing law for one generator, pure and engine-free: composed periods, hold-not-cancel, the credit.
-- `src/Session/Roster/AiGeneratorRuntime.cs`, runs a mission's egen generators (`--generators`): the load drops, the cycle stepping, each launch's spawn or release.
+- `src/Session/Roster/AiGeneratorRuntime.cs`, runs a mission's egen generators (`--generators`): the load drops, the cycle stepping, each launch's spawn or release, and a guest's replay of the host's launches.
 - `src/Session/Roster/AiVoiceRuntime.cs`, wires the combat-voice dispatcher into a session: the speakers, the damage sources, and the flat radio queue every line plays on.
 
 **`Session.World`**, the simulation step and the non-aeroplane things in the world.
@@ -625,6 +645,8 @@ delegate to, in six sub-namespaces, one folder each. `Launch` sits on top and no
 - `src/Session/World/ScriptedPathVehicles.cs`, one mission's scripted-path vehicles: the snap onto waypoint 0, the freeze, `START_TAXI`'s release, the handoff back.
 - `src/Session/World/SurfaceVehicleRuntime.cs`, builds and steps a mission's `mode ship` hulls: a library-root copy placed on the water, indexed on the runtime.
 - `src/Session/World/ZeppelinRuntime.cs`, runs a mission's zeppelins (`--zeppelins`): the placement, the net flight, the per-part damage and kill, the script's arms.
+- `src/Session/World/NetWorldLink.cs`, the host-owned world over the wire: AI aircraft as launch, pose, fire, hit, presence and death messages, zeppelin and surface-vehicle paths as periodic samples, destructible health, stage changes and deaths as events, and warp picks.
+- `src/Session/World/NetCutsceneLink.cs`, the cutscene skip over the wire: a guest's skip asks the host, and the host's skip ends the named episode on every guest.
 - `src/Session/World/ZeppelinRuntime.Cannons.cs`, the broadside half of that partial: the cannon wiring, the target and arc gate, the anims and the rounds fired.
 - `src/Session/World/TurretEmplacementRuntime.cs`, the world AA emplacements: placed against the built world, in the shared aim pool, stepped after the airships.
 
@@ -635,6 +657,8 @@ delegate to, in six sub-namespaces, one folder each. `Launch` sits on top and no
 - `src/Session/Objectives/ObjectiveSites.cs`, the flown campaign mission's flagged target sites as targeting candidates, rebuilt from their live source every frame.
 - `src/Session/Objectives/ObjectZoneGate.cs`, gives each flown object the zone its own altitude earns against the cloud band, so the band hides what is on its far side.
 - `src/Session/Objectives/NetTrailerTargets.cs`, resolves a patrol net's trailer name (`player`, a zeppelin) to a live position, so an anchored net rides its target.
+- `src/Session/Objectives/NetDirectorLink.cs`, the objectives graph over the wire: the host publishes every event its graph raises, stamped with its clock, and a guest's replicated graph replays them in order.
+- `src/Session/Objectives/NetDirectorCatchUp.cs`, a guest's catch-up on a late director event: applies it, then advances the timers, cutscenes and sounds it started by how late it arrived.
 
 ### `src/Bindings/`, the input binding model
 
@@ -643,7 +667,9 @@ for. The registry that turns a device identity into a live pad and the map that 
 both sit on top of these types.
 
 - `src/Bindings/DeviceId.cs`, which device a binding is on, as a value: the one keyboard, the one mouse, or a joypad named by its stable hardware string.
-- `src/Bindings/BindingControl.cs`, the tagged control: a key, a button, a mouse button, one signed half of an axis past a deadzone, or one hat direction.
+- `src/Bindings/BindingControl.cs`, the tagged control: a key, a button, a mouse button, one signed half of an axis past a deadzone, a whole axis over an action pair, or one hat direction.
+- `src/Bindings/AxisPairs.cs`, the four action pairs a full-axis binding drives and which member is the positive side, plus the absolute lever row, shared by the map, the store and capture.
+- `src/Bindings/LeverTakeover.cs`, when a bound throttle lever commands the throttle: only after it moves, until another command arrives while it is still.
 - `src/Bindings/Binding.cs`, one control on one named device, plus `ControlValue`, the held/how-far pair every resolution returns.
 - `src/Bindings/IDeviceState.cs`, the tick's raw hardware state addressed by device identity; the seam that keeps resolution engine-free.
 - `src/Bindings/GodotDeviceState.cs`, the live `IDeviceState` over Godot's `Input` singleton, resolving an identity to an index through a `DeviceRegistry`.
@@ -654,6 +680,8 @@ both sit on top of these types.
 - `src/Bindings/ActionMap.cs`, one player's keymap: which control fires which action, with assignment taking a control off every action that held it.
 - `src/Bindings/ControlCapture.cs`, what a rebinding screen may capture, and the release-first scan that turns a press into a binding on the seat's identity.
 - `src/Bindings/ICaptureDevices.cs`, the hardware a capture reads through: one reader per context, with the pad identity that context's bindings sit on.
+- `src/Bindings/StickCapture.cs`, the stick half of a capture: 128 buttons, hat directions, and axes measured from where they rested, a full axis on a pair or lever row.
+- `src/Bindings/IStickDevices.cs`, the seam a capture learns a seat's stick identities through, so this namespace never names the stick library.
 - `src/Bindings/SeatCaptureDevices.cs`, one seat's capture readers, a `SeatDeviceState` per context over one pad list, on that context's placeholder identity.
 - `src/Bindings/BindingLabels.cs`, what a rebinding screen prints: an action's name, a control's keycap name, and a row that counts what it is not showing.
 - `src/Bindings/ActionSnapshot.cs`, the tick's resolved values, so two consumers reading one action in one tick get the same answer. No edges and no history.
@@ -663,8 +691,33 @@ both sit on top of these types.
 - `src/Bindings/BindingProfile.cs`, one seat's whole input: a map and a `PlayerActions` per context, plus the keyboard gate that applies to all of them.
 - `src/Bindings/ActiveDevice.cs`, which side of a seat's hardware produced its last real input, and which of an action's bindings a prompt on that side names.
 - `src/Bindings/BindingStore.cs`, the versioned JSON keymap file, one per player under `user://`, falling back per action to the shipped default.
-- `src/Bindings/LaunchBindings.cs`, where a seat's keymap comes from when the seat is built: the player's saved file, or the shipped defaults.
+- `src/Bindings/LaunchBindings.cs`, where a seat's keymap comes from when the seat is built: the player's saved file, or the shipped defaults, plus seat 1's stick rows.
+- `src/Bindings/IStickRows.cs`, the seam seat 1's keymap is completed through from the stick profiles, so this namespace never names the stick library.
 - `src/Bindings/PadRumble.cs`, one seat's controller rumble on the original's own effect table, routed to the pads that seat's bindings read.
+
+### `src/Sticks/`, flight sticks through SDL2
+
+The DirectInput-only sticks Godot's SDL3 does not see, read through the pinned `SDL2.dll` and
+filling only the models Godot's pad roster lacks.
+
+- `src/Sticks/StickModel.cs`, a stick's identity as a value: the USB vendor and product id every unit of one model reports, printed `231D/0201`.
+- `src/Sticks/Stick.cs`, a device listed but unopened (`StickListing`), and an opened one with its axis, button and hat counts (`Stick`).
+- `src/Sticks/IStickNative.cs`, the stick library as the roster sees it: pump, list, open, close and raw reads, the seam a test fakes.
+- `src/Sticks/Sdl2Sticks.cs`, `SDL2.dll` loaded by absolute path and reduced to its DirectInput joystick backend, behind `IStickNative`.
+- `src/Sticks/StickRoster.cs`, the gap-filling roster: hot-plug, the input gate, normalised reads, identical units merged per model, the roster log.
+- `src/Sticks/StickQuirks.cs`, the built-in per-model axis corrections (the VKB twists read negated), applied at the roster's one native axis read.
+- `src/Sticks/StickDeviceState.cs`, the sticks as an `IDeviceState` keyed by model identity (`stick:231D/0201`), read by seat 1 alone.
+- `src/Sticks/StickPump.cs`, the node that loads SDL2 once per process, publishes the live roster and pumps it each frame; hosts `--dump-sticks`.
+- `src/Sticks/StickProfile.cs`, one model's bindings in one layout: companions, short name, the ignore flag, rows per context, and rows kept unread.
+- `src/Sticks/StickProfileStore.cs`, the profile files: shipped texts read-only, the user directory the only save target, atomic and versioned.
+- `src/Sticks/StickProfileResolver.cs`, which file is active per connected model (companions, then user over shipped, then name), and the rows it yields.
+- `src/Sticks/StickProfileSet.cs`, the profiles in force, re-selected on every roster change; merges seat 1's keymap and saves an accepted screen.
+- `src/Sticks/StickSkip.cs`, seat 1's stick skip press and held state for cinemas, boot cards and in-world cutscenes, read off the stick rows alone.
+- `src/Sticks/StickProfiles.cs`, the engine side: `res://data/stick_profiles/`, `user://stick_profiles/`, and the one live set.
+- `src/Sticks/StickScreens.cs`, the rebinding screens' save split (player 1's stick rows to the profile files, never the keymap file) and the profiles folder opener.
+- `src/Sticks/StickLabels.cs`, a stick's caption prefix for the rebinding screens: its profile's short name, else `Stick` and its model (the Stick column drops the latter).
+- `src/Sticks/StickShape.cs`, the flight-stick shape test: three axes or more, axes 0 and 1 resting near centre in the roster's rest sample.
+- `src/Sticks/GenericStickDefault.cs`, the in-memory default for the one stick-shaped unprofiled model: X, Y, Rz, Z lever, two fire buttons, hat menus.
 
 ### `src/Video/`, the MPEG-1 cinema decoder
 
@@ -687,10 +740,84 @@ It holds no engine type, so it runs in a plain unit test; formats and evidence a
 - `src/Video/MoviePlayback.cs`, a movie on a clock: the picture due now as RGBA, timed by the frames' own timestamps, looping endlessly on a play count of zero.
 - `src/Video/CinemaPlayback.cs`, a cinema playing with its sound: clamped PCM out, the picture clocked by what the device has played, the two streams' start times taken against each other.
 
+### `src/Extraction/`, turning the player's install into `extracted/`
+
+The in-engine extraction: finding the player's install, then one module per format plus the run
+that joins them. Only `RememberedInstall` touches the engine, so every decoder runs in a plain unit
+test; entries are in [`architecture/Extraction.md`](architecture/Extraction.md), the output layout
+in [`formats/extraction.md`](formats/extraction.md).
+
+- `src/Extraction/InstallLocator.cs`, the case-insensitive install lookup: the segment walk, the picked-folder check with its mis-pick messages, and the per-platform candidate list.
+- `src/Extraction/RememberedInstall.cs`, the last-used install folder, kept in `user://options.json` to pre-fill the next picker.
+- `src/Extraction/RofExtraction.cs`, the non-ZBD half of an extraction: both UI archives, the `.BM` PNGs, the cinemas, `ui_strings.json` and `menu_layout.json`, from resolved paths.
+- `src/Extraction/RofTree.cs`, the one upper case the rof tree is written in and the name mapping every writer and reader of it shares.
+- `src/Extraction/RofArchive.cs`, the `.rof` UI archive read from memory: the directory tree walked without inflating, each member inflated on demand.
+- `src/Extraction/BmTexture.cs`, one paint-shop `.BM` split into its shading map and its three paint-region masks as RGB.
+- `src/Extraction/PngWriter.cs`, a managed 24-bit RGB PNG encoder, so no image library or engine type is needed to write the `.BM` PNGs.
+- `src/Extraction/PeStringTable.cs`, the Win32 `STRINGTABLE` resources read out of a PE file's bytes, with no Win32 call.
+- `src/Extraction/UiStringTable.cs`, the `ui_strings.json` rows: string-table text joined to its `RESOURCE.H` symbol and split from its `[FONTID]` tag.
+- `src/Extraction/MovieCopy.cs`, the install's `.mpg` cinemas copied verbatim under upper-case names, skipping a copy already at the source's length.
+- `src/Extraction/MenuLayoutDecoder.cs`, `LAYOUT.CSV`, `SCRAPBOOK.CSV`, `RESOURCE.H` and the GUI scripts decoded into `menu_layout.json`.
+- `src/Extraction/ZbdExtraction.cs`, the ZBD half of extraction: every archive through unzbd, then `messages.json`, the optional unzip and the stamp, off the main thread.
+- `src/Extraction/ZbdPlan.cs`, the ZBD half's pure rules: the archive-name mode map, output naming, the up-to-date and unzip rules, and the stderr notes.
+- `src/Extraction/ZbdTree.cs`, the one case the ZBD half writes (folders upper, file names lower) and the chapter and mission path mapping its writer and readers share.
+- `src/Extraction/ZbdProgress.cs`, the ZBD runner's options, per-step progress report with its console lines, and result totals with the closing summary.
+- `src/Extraction/UnzbdTool.cs`, the bundled unzbd as a child process: its platform file name and release path, one run with both streams drained, and its identity for the stamp.
+- `src/Extraction/ExtractionRun.cs`, the whole extraction in order (install check, ZBD half, `.rof` half, stamps) with one progress stream, cancel, summary and exit code, for `--extract` and the extraction screen.
+- `src/Extraction/ExtractionStampWriter.cs`, writes `extracted/VERSION.json` without a BOM, merging one half's field and the engine's schema into what is there.
+
+### `src/Net/`, the network seam
+
+What carries bytes between peers: the in-process carrier the suites run on, the ENet carrier a
+match ships over, the Steam carrier behind a build define, and the one place a build picks between
+them. Only the ENet carrier and the port mapping name an engine type, so a session cannot learn
+what it is being carried by. The
+original's own message set, with ids and guarantees, is in [`org/multiplayer-messages.md`](org/multiplayer-messages.md).
+
+- `src/Net/INetTransport.cs`, the carrier a session sends bytes over: the peer roster, one send per payload with its reliability class and channel, and the listener arrivals are reported to.
+- `src/Net/LoopbackConditions.cs`, one direction's wire conditions as a value: a latency, a symmetric jitter about it and a loss probability, every draw from a caller-supplied `Random`.
+- `src/Net/LoopbackTransport.cs`, transports wired to each other in one process through delivery queues: nothing arrives until a step, so a suite owns delivery time and makes its own reorders.
+- `src/Net/EnetTransport.cs`, the shipped carrier: the seam over Godot's ENet peer, hosting on a port or joining by address, with every roster change and payload reported out of one poll.
+- `src/Net/SteamTransport.cs`, the Steam carrier's place in the seam with no SDK behind it: every way in throws "not built with the Steamworks SDK", and `SteamBuild` is the `CSVM_STEAM` define.
+- `src/Net/NetCarrier.cs`, which carrier a match runs over, chosen once: the door's registration and the command line both open through it, and a build define is the whole of the choice.
+- `src/Net/UpnpPortMap.cs`, a best-effort port mapping through Godot's UPnP client: five outcomes a host can show, never a throw, and never required for a match to be joinable.
+- `src/Net/UpnpLease.cs`, the router mapping's rules behind a gateway seam: no add behind a non-public external address, a finite lease, the stale mapping cleared by exact port, and when the door renews.
+- `src/Net/IgdAddress.cs`, a gateway's external address read without the engine: its kind (public, private, carrier-shared, reserved) and the description and SOAP text a direct question is made of.
+- `src/Net/UpnpPortMemory.cs`, the one port this machine last mapped, kept in the user directory so the next run can clear what a crash left.
+- `src/Net/UpnpPinholeMap.cs`, a best-effort IPv6 pinhole in the host's router through the IGD v2 firewall service, found by SSDP and asked over SOAP: never a throw, never required.
+- `src/Net/UpnpPinhole.cs`, the IPv6 pinhole's rules behind a gateway seam: no add without a global address, a service and a status that allows it, a finite lease renewed by UniqueID, a crashed run's pinhole cleared only inside its lease.
+- `src/Net/IgdPinhole.cs`, the IPv6 firewall service's SSDP, description and SOAP text read without the engine, and the global-address check a pinhole needs.
+- `src/Net/UpnpPinholeMemory.cs`, the one IPv6 pinhole this machine last opened, with its lease end, kept in the user directory so the next run can clear what a crash left.
+- `src/Net/NetLobby.cs`, a carrier's first listener before any session binds it: the host's session advert and closing word out, the latest of each in, every other payload held for the session.
+- `src/Net/NetBuildVersion.cs`, the build's MAJOR.MINOR two peers compare before they play, patch ignored and unknown playing only with unknown, and the lobby's `0x56` message that carries it.
+- `src/Net/LanDiscovery.cs`, the LAN search's datagram pair outside the carrier: a query and a reply of one width, so a responder never amplifies, and the `ILanSocket` seam.
+- `src/Net/LanResponder.cs`, an open door's answer to a LAN search: each well-formed query answered with the advert and game port, a bounded count per frame.
+- `src/Net/LanSearch.cs`, a guest's broadcast search in rounds under fresh tokens, one query to each target a round: the games that answered, dropped after a round without an answer.
+- `src/Net/LanBroadcast.cs`, where a search asks: the limited broadcast and each IPv4 network's directed broadcast once, since Windows sends the limited one out of one adapter.
+- `src/Net/LoopbackLan.cs`, the in-process datagram network the suites and aids search on: broadcast to a port, no real socket, no firewall dialog.
+- `src/Net/LanDiscoverySocket.cs`, the shipped `ILanSocket` over Godot's UDP peer with broadcast allowed, the second type allowed to name a Godot networking type.
+- `src/Net/NetMessages.cs`, the message vocabulary: one struct per message, each declaring its type word and reliability class, over a shared four-byte header.
+- `src/Net/NetWorldMessages.cs`, the host-owned world's messages: an AI's pose, fire and hit claim, a generator launch, a zeppelin's and a surface vehicle's path sample, and the world event.
+- `src/Net/NetCoopMessages.cs`, the co-op boards' lobby messages: the host's flow one guest follows (screen, mission, round, Ready mask, hangar, result) and a guest's pick and Ready under a round.
+- `src/Net/NetDogfightMessages.cs`, the Multiplayer Lobby's messages: the host's options under a round, the player list, and one chat line.
+- `src/Net/NetPositionalMessages.cs`, the positional start: a landing row the host started and for which seat, the ladder holder, and a guest's held auto-land button.
+- `src/Net/NetMessageWriter.cs`, the writer and reader cursors every message is packed and unpacked through: little-endian primitives, quantised unit fields, fixed-width text.
+- `src/Net/NetClockSlew.cs`, a guest's offset onto host time, walked to each fresh reading over a bounded window rather than written, with one-way readings read forward by half the measured round trip.
+- `src/Net/NetClockPing.cs`, the guest's question and the host's answer that measure the round trip, asked every ten seconds as the original's ping is.
+- `src/Net/NetHandshake.cs`, what a host hands a joining guest before either flies: the master seed every stream derives from, and the host's session clock at send.
+- `src/Net/NetSeat.cs`, one pilot's place in a match: peer, team, local flag, callsign, airframe, paint, seat index and signed score, with the seat index as the whole identity.
+- `src/Net/NetSeats.cs`, the roster's rules: eight pilots admitted behind sixteen-wide tables, the original's authored seat colours, and what makes a roster well formed.
+- `src/Net/RemotePoseBuffer.cs`, one remote aircraft's received samples and the pose to draw it at now: placed by sequence on the sender's timeline, played out a fixed delay behind at the fitted sender clock rate, extrapolated along the newest velocity up to a cap, then held, with a tally of its reads and misses.
+- `src/Net/AircraftStateCadence.cs`, when an owner puts its own aeroplane on the wire, in simulation steps, and the per-seat sequence each sample carries.
+- `src/Net/MatchStateCadence.cs`, when a host repeats the match clock, in simulation steps: a second between ticks, and every change sent where it happens instead.
+- `src/Net/NetChannels.cs`, which channel a message rides: one per seat for state and another per seat for fire, since sequenced discard is per sender and channel, and one for the join and every reliable event.
+- `src/Net/NetSession.cs`, a session's own end of the wire: typed sends under each type's declared class, dispatch to per-type handlers, the join a host answers with and a guest checks, the host's relay between guests, and the counters a suite reads.
+- `src/Net/NetInstruments.cs`, one machine's desync counters over its own traffic: sequence gaps as drops, stale and late arrivals, and reliable events out of their causal order.
+
 ### Session root and tests
 
 - `src/Pads.cs`, single owner of "which gamepads exist": the phantom-device policy, the launch-time roster split, the focus gate and `--no-pads`.
-- `src/SessionPaths.cs`, resolves the extracted-data paths (per-chapter gamez/texture/zrdr, per-mission zrdr) under a data root, unpacked folder or `.zip`.
+- `src/SessionPaths.cs`, resolves the extracted-data paths (per-chapter gamez/texture/zrdr, per-mission zrdr) under a data root in `ZbdTree`'s case, unpacked folder or `.zip`.
 - `src/SessionSpec.cs`, the launch args as one immutable, engine-free value: `Parse` parses **and** resolves, plus the pure arg parsers the tests reach.
 
 - `CSVM.Tests/`, the xUnit project (`dotnet test`): engine-free reader units on hand-authored fixtures + `extracted/` golden counts, skipped when absent; plus eight former in-engine suites moved here as `Probes.*`/plain-static/`StuntMission`/`GaugeCluster` facts.

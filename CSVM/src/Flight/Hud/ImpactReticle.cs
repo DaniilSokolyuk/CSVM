@@ -34,7 +34,7 @@ public sealed partial class ImpactReticle : Control
         var path = Path.Combine(rimageDir, file);
         if (!File.Exists(path))
         {
-            Log.Info("flight", $"[reticle] no {file} in {rimageDir}, gun reticle off (run ExtractRof.ps1)");
+            Log.Info("flight", $"[reticle] no {file} in {rimageDir}, gun reticle off (extract the game data again on the Extract screen)");
             return null;
         }
         var img = Image.LoadFromFile(path);

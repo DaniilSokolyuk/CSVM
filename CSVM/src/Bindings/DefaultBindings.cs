@@ -5,13 +5,11 @@ using Godot;
 namespace CSVM.Bindings;
 
 /// <summary>The keymap the game ships with, as data: one <see cref="ActionMap"/> per
-/// <see cref="InputContext"/>, reproducing `docs/controls.md` binding for binding. It is the
-/// fallback every load falls back to, per action, so a file that cannot be read costs the player
-/// the actions it named and nothing else.
-/// ⚠ No default is a hat binding, and nothing else may author one either. Godot reports a d-pad as
-/// four buttons (`GodotDeviceState`), so a hat binding and a d-pad button binding would be one
-/// physical control under two encodings that <see cref="ActionMap.SameControl"/> reads as
-/// different, and two actions could hold it at once.
+/// <see cref="InputContext"/>, reproducing `docs/controls.md` binding for binding. Every load falls
+/// back to it per action, so an unreadable file costs the player only the actions it named.
+/// ⚠ No default is a hat binding, and nothing may author one on a pad. Godot reports a d-pad as
+/// four buttons (`GodotDeviceState`). A hat and a d-pad button are one control read as two, so two
+/// actions could hold it at once.
 /// ⚠ A pad default names <see cref="AnyPad"/>, not a real pad. <see cref="MapFor"/> substitutes the
 /// seat's own identity, because the shipped set cannot know a hardware string.</summary>
 public static class DefaultBindings
@@ -39,6 +37,8 @@ public static class DefaultBindings
     {
         InputAction.SelectChaseView,
         InputAction.MenuJoin,
+        InputAction.ThrottleLever,
+        InputAction.SkipCutscene,
     };
 
     /// <summary>Which context owns that action. Every member of <see cref="InputAction"/> has
@@ -113,6 +113,10 @@ public static class DefaultBindings
             b.Keys(InputAction.ThrottleSet0 + eighths, (Key)((int)Key.Key1 + eighths));
         }
 
+        // The absolute lever ships unbound, since neither a keyboard nor a pad has a lever. A pad
+        // stick bound here would drop to half throttle whenever its spring centred it.
+        b.Leave(InputAction.ThrottleLever);
+
         // The two weapons sit under the mouse hand as well, the left button firing the guns and the
         // right the rockets, which is where a pilot flying with the mouse reaches for them. This
         // port's own rows: the original binds no mouse button to anything.
@@ -171,6 +175,8 @@ public static class DefaultBindings
         b.Keys(InputAction.LookRight, Key.Kp9, Key.Kp6, Key.Kp3);
         b.Keys(InputAction.LookCenter, Key.Kp5);
         b.Keys(InputAction.LookBack, Key.Kp0).Buttons(InputAction.LookBack, JoyButton.RightStick);
+        b.Keys(InputAction.ZoomIn, Key.KpAdd);
+        b.Keys(InputAction.ZoomOut, Key.KpSubtract);
         b.Stick(InputAction.LookAimUp, JoyAxis.RightY, -1, 0f);
         b.Stick(InputAction.LookAimDown, JoyAxis.RightY, 1, 0f);
         b.Stick(InputAction.LookAimLeft, JoyAxis.RightX, -1, 0f);
@@ -213,6 +219,10 @@ public static class DefaultBindings
         // Joining is any control on a pad no seat owns yet, which is a gesture rather than a
         // binding: every control it watches already belongs to another menu action here.
         b.Leave(InputAction.MenuJoin);
+
+        // The skip ships unbound on the keyboard and the pad, because any key and any pad button
+        // already skips a cutscene. A stick has no such reading, so its default is a stick row.
+        b.Leave(InputAction.SkipCutscene);
         return b;
     }
 

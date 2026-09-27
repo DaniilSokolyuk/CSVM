@@ -352,16 +352,16 @@ internal static class MenuOriginalSuites
         ctx.Check(audio.Cues.Count == 1 && audio.Cues[0] == OriginalCues.Rollover,
             $"and cues one rollover through the host's audio ({string.Join(",", audio.Cues)})");
         var multiplayer = Row(shell, "MM_B_MULTIPLAYER");
-        ctx.Check(multiplayer is { Enabled: false }, $"the Multiplayer plaque has no destination yet and is disabled");
+        ctx.Check(multiplayer is { Enabled: true }, $"the Multiplayer plaque is live over the network door");
         if (multiplayer != null)
         {
             Press(host, seat, Pointer(fit, multiplayer.X + 5f, multiplayer.Y + 5f));
-            ctx.Check(shell.FocusedKey == "MM_B_QUIT" && audio.Cues.Count == 1,
-                $"a pointer over the disabled Multiplayer plaque moves nothing and cues nothing ({shell.FocusedKey}, {audio.Cues.Count})");
+            ctx.Check(shell.FocusedKey == OriginalShell.MultiplayerKey && audio.Cues.Count == 2,
+                $"a pointer over the Multiplayer plaque takes the focus and cues a rollover ({shell.FocusedKey}, {audio.Cues.Count})");
         }
 
         Press(host, seat, Pointer(fit, campaign.X + 5f, campaign.Y + 5f));
-        ctx.Check(shell.FocusedKey == OriginalShell.CampaignKey && audio.Cues.Count == 2,
+        ctx.Check(shell.FocusedKey == OriginalShell.CampaignKey && audio.Cues.Count == 3,
             $"the Campaign plaque is live over the campaign feature: a pointer over it takes the focus and cues a rollover ({shell.FocusedKey}, {audio.Cues.Count})");
         var board = shell.Compose();
         ctx.Check(board.Overlays.Count == 1 && board.Overlays[0].Pictures.Count == 1,
@@ -682,7 +682,7 @@ internal static class MenuOriginalSuites
             $"a Built-in request re-selects it and Show stands the launchscreen up ({host.Selected})");
         ctx.Check(menu?.ShownScreen == "Mode" && menu.ShownRowText == "Free Flight",
             $"at its own top level, the Mode screen ({menu?.ShownScreen}, {menu?.ShownRowText})");
-        ctx.Check(menu?.ShownRowCount == 6, $"whose sixth row is the Options door ({menu?.ShownRowCount})");
+        ctx.Check(menu?.ShownRowCount == 7, $"whose last two rows are the Options and multiplayer doors ({menu?.ShownRowCount})");
     }
 
     // Built-in's Options route: the last Mode row opens Options, and Right steps the difficulty to
@@ -700,7 +700,9 @@ internal static class MenuOriginalSuites
         }
 
         Press(host, seat, Up);
-        ctx.Check(menu.ShownRowText == LaunchMenu.OptionsRow, $"Up from Free Flight wraps onto Options ({menu.ShownRowText})");
+        Press(host, seat, Up);
+        ctx.Check(menu.ShownRowText == LaunchMenu.OptionsRow,
+            $"Up from Free Flight wraps onto the multiplayer door, and again onto Options ({menu.ShownRowText})");
         Press(host, seat, Accept);
         ctx.Check(menu.ShownScreen == "Options" && menu.ShownRowCount == 16 && menu.ShownRowText == "Difficulty: Normal",
             $"Accept opens the Options screen with its sixteen rows, the difficulty stepper first ({menu.ShownScreen}, {menu.ShownRowCount}, {menu.ShownRowText})");

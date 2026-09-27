@@ -141,8 +141,7 @@ public sealed class HangarAirframePage : HangarPage
         art = null;
         if (Flow.DataRoot is { } root)
         {
-            var path = Path.Combine(root, "extracted", "rof", "ASSETS", "GRAPHICS",
-                $"PX_{airframe}_BLUEPRINT.TGA");
+            var path = Extraction.RofTree.Under(root, $"ASSETS/GRAPHICS/PX_{airframe}_BLUEPRINT.TGA");
             if (ArtImage.TryLoad(path) is { } image)
             {
                 art = new HangarArt(image, Flow.AirframeName(airframe));

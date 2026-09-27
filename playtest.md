@@ -714,8 +714,9 @@ is a judgement on our own remake.
   exported build reads the development tree and neither case is what a recipient sees. *Look for:*
   - (a) with game data present, the menu comes up with its music and the menu cues audible at a
     sensible level, without a `--volume=` argument anywhere;
-  - (b) with no `extracted\`, the no-game-data screen names `Extract.cmd` and stays up until Esc,
-    rather than a menu over a world that cannot build.
+  - (b) with no `extracted\`, the in-game extraction screen comes up with the install folder field
+    and Extract focused, and stays up until Extract finishes or Esc quits, rather than a menu over
+    a world that cannot build.
   *Blocks:* nothing tracks the outcome; a fail mints a new `BL`. The export's own default is what
   is under test here; a player retunes the mix on Preferences' AUDIO page afterwards.
 

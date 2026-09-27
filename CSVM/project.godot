@@ -10,7 +10,7 @@ config/name="CSVM"
 ; The build's one version number. The engine reads it at startup for the log's first line and the
 ; launchscreen's corner, ExportRelease.ps1 reads it back to name the zip, and the Windows export
 ; stamps it into the exe's file properties. Bump it here and nowhere else.
-config/version="0.1.0"
+config/version="0.2.0"
 run/main_scene="res://scenes/Main.tscn"
 config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 
@@ -19,6 +19,7 @@ config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 window/size/viewport_width=1280
 window/size/viewport_height=720
 window/size/no_focus=true
+window/size/no_focus.template=false
 
 [dotnet]
 
@@ -34,6 +35,8 @@ textures/default_filters/anisotropic_filtering_level=4
 ; cross-node z-fight tie-break in SceneBuilder). Godot allocates 16 vec4 slots per
 ; instance, so the 65536 default caps at ~4096 mesh instances; C4 (4234) and C5 (4746)
 ; overflow it, flooding "Too many instances" errors AND silently dropping node_bias on
-; the overflow (decals z-fight again). 262144 = ~16384 instances, headroom for the
-; largest chapter plus item-7 border tiles. (M2-polish-2 item 2.)
-limits/global_shader_variables/buffer_size=262144
+; the overflow (decals z-fight again). 262144 (~16384 instances) held one world with
+; headroom, but a network harness suite holds three sessions' worlds in one process,
+; and inside a shard of sixty suites that overflowed it again. 1048576 = ~65536
+; instances, 16 MB, room for three of the largest chapter and the shard's residue.
+limits/global_shader_variables/buffer_size=1048576
