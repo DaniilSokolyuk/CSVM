@@ -586,6 +586,15 @@ from the screen and flies.
 **⚠ Traps.** Agents never drive the keyboard or mouse or put a game window in the foreground; the
 in-game flow is the author's to click through.
 
+**Verified (orchestrator, Sandbox half).** `packaging\BuildThirdPartyNotices.ps1` regenerates the
+Windows notice with no change beyond its platform stamps. `RunSandbox.ps1 -Driver
+sandbox\PublicRelease.ps1 -MapReadOnly <install> -Networking` on the zip exported from linux-port at
+948be7d9 (196 files) passes every step: the zip carries the mark of the web and the shell unzip
+propagates it, SmartScreen is recorded on each shell launch, `CSVM.exe` with no data draws its own
+window with no app dialog (the screen that offers to extract), `--headless -- --extract` exits 0 in
+15 s with 1,668 files and the stamp, and the menu and a C1 flight run on the machine's own
+extraction. The author's local Extract flow and flight are still owed.
+
 # Wave B, Linux build
 
 ## B11 ☑ Linux `unzbd`: WSL toolchain and a musl build called from `ExportRelease.ps1`
