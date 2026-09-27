@@ -245,6 +245,26 @@ public sealed class AnimProgram
         return program;
     }
 
+    /// <summary>True when a listed reader path sits under the shared <c>common\zrdr</c> tree.</summary>
+    internal static bool IsSharedPath(string path) => GamePath.HasFolder(path, "common/zrdr");
+
+    /// <summary>A reader file's stem as the <c>ANIMATION_DEFINITION_FILE</c> lists name it: the
+    /// leaf without <c>.zrd</c>/<c>.json</c> and without a duplicate's <c>-N</c> suffix. The
+    /// extraction writes <c>planes\player.zrd</c> as <c>player-1.zrd.json</c>, beside an unrelated
+    /// <c>player.zrd.json</c>. ⚠ Split through <see cref="GamePath"/>: a listed path is a Windows
+    /// path on every host.</summary>
+    internal static string StemOf(string pathOrFile)
+    {
+        var leaf = GamePath.FileName(pathOrFile);
+        while (leaf.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+            || leaf.EndsWith(".zrd", StringComparison.OrdinalIgnoreCase))
+            leaf = leaf[..leaf.LastIndexOf('.')];
+        int dash = leaf.LastIndexOf('-');
+        if (dash > 0 && dash < leaf.Length - 1 && leaf.AsSpan(dash + 1).ToString().All(char.IsDigit))
+            leaf = leaf[..dash];
+        return leaf;
+    }
+
     /// <summary>The shared-scope reader files a mission sees, by stem: the closure of the shared
     /// <c>anim.zrd</c> index plus the shared entries of the chapter's <c>cam_anim.zrd</c> and the
     /// mission's <c>mis_anim.zrd</c>. Null when the index is absent, which leaves the scope
@@ -300,24 +320,6 @@ public sealed class AnimProgram
             return Array.Empty<string>();
         }
         return MissionCutscenes.ListedPaths(root);
-    }
-
-    private static bool IsSharedPath(string path) =>
-        path.Replace('/', '\\').Contains("\\common\\zrdr\\", StringComparison.OrdinalIgnoreCase);
-
-    // A reader file's stem as the ANIMATION_DEFINITION_FILE lists name it: the leaf without
-    // ".zrd"/".json", and without the "-N" suffix the extraction appends to a duplicate name
-    // (planes\player.zrd is extracted as player-1.zrd.json beside an unrelated player.zrd.json).
-    private static string StemOf(string pathOrFile)
-    {
-        var leaf = Path.GetFileName(pathOrFile.Replace('/', '\\'));
-        while (leaf.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
-            || leaf.EndsWith(".zrd", StringComparison.OrdinalIgnoreCase))
-            leaf = Path.GetFileNameWithoutExtension(leaf);
-        int dash = leaf.LastIndexOf('-');
-        if (dash > 0 && dash < leaf.Length - 1 && leaf.AsSpan(dash + 1).ToString().All(char.IsDigit))
-            leaf = leaf[..dash];
-        return leaf;
     }
 
     // Definition identity: (anchor name, animation name), exactly how the compiled

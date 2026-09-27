@@ -51,6 +51,7 @@ GameZ→Godot builders, and the animation runtime that drives the world.
 - `src/Mech3/ClutterTemplates.cs`, the `templates.zrd` reader: each clutter decoration model's authored substitution table, scale range and fade distances.
 - `src/Mech3/FogVolumes.cs`, the `fogvol.zrd` reader + the gamez `fvol*` volume census: what the ambient cloud field scatters, and where.
 - `src/Mech3/Zrdr.cs`, zrdr extraction reader (zip or dir) + `ZrdrDict`, the key/[values…] view over a reader's list.
+- `src/Mech3/GamePath.cs`, splits a path out of game data on `\` and `/` alike on every host, where `System.IO.Path` splits `\` on Windows only.
 - `src/Mech3/LandingApproaches.cs`, a chapter's `landings.zrd` approach table resolved against the gamez: volume, attitude cone, speed band.
 - `src/Mech3/Pickups.cs`, a mission's compact `pickups.zrd` sensor and radius table, the spheres the ladder switch tests against.
 - `src/Mech3/MissionCutscenes.cs`, the animation names a mission's own `cutscenes\` reader files define: the authored mark of mid-mission choreography.

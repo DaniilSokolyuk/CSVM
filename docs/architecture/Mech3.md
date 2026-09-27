@@ -209,6 +209,12 @@ Zrdr extraction reader (zip or unpacked dir): `LoadFile`, `LoadFileOrEmpty`, con
 `LoadMatchingFiles`, name-predicate `LoadFilesNamed` (for families with nothing to sniff, e.g. the
 `ne0*` nets), and `ZrdrDict`, the key/[values…] view over a reader's alternating list.
 
+## src/Mech3/GamePath.cs
+Splits a path the game's data names (`..\data\c1\m02\zrdr\cutscenes\cabpickup.zrd`) on `\` and `/`
+alike on every host: `FileName` for the leaf, `HasFolder` for a folder segment. `System.IO.Path`
+splits `\` on Windows only, so it keeps our own disk paths and never a game one. Callers:
+`MissionCutscenes` (the `cutscenes\` entries), `AnimProgram` (the scope gates' stems).
+
 ## src/Mech3/LandingApproaches.cs
 A chapter's `landings.zrd` approach table resolved against the gamez: each row names an animation
 and a world node, and that node carries a `cone`, `half_cone` or `sphere` child whose single

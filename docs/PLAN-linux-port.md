@@ -192,6 +192,27 @@ letter. Tests: `ZbdExtractionTests.TheOutputTakesUpperCaseFoldersALowerCaseNameA
 runner test's on-disk names, `SessionPathsTests.ALowerCaseChapterAndMissionMapToTheCaseTheExtractionWrites`
 and `EveryCampaignMissionResolvesToWhereTheExtractionWritesIt`, which fail on the old code.
 
+**One split for game paths (found on the Deck).** The readers name files by Windows install path
+(`..\data\c1\m02\zrdr\cutscenes\cabpickup.zrd`), and `System.IO.Path` splits on `\` on Windows only.
+`MissionCutscenes` and `AnimProgram.StemOf` turned such a path into `\` form and asked `Path` for
+the leaf, so on Linux every leaf was the whole path: no mission found its `cutscenes\` files, and
+the shared and chapter anim gates matched no stem, which loaded no reader definition at all.
+Nothing was logged beyond the census lines. `Mech3/GamePath.cs` now splits a game path on both
+separators on every host, and both callers go through it. The sweep of every other `Path` call and
+`\` comparison found no further game path reaching `Path`: the interp script names
+(`support\c1\adjust.gw`, compared whole by `Clutter`, `LensFlareRig`, `MissionSetup` and
+`TextureArchive.MipBias`) are the same bytes in a Linux extraction, zip entries use `/`, texture,
+sound and bitmap names carry no separator, and the remaining backslash values in the data
+(`IMAGE_PATH`, `SOUND_PATH`, a C3 node name) are read by nothing. Verified in WSL on an exported
+tarball, headless `--run-tests` over a Linux-extracted tree: the old build fails
+`dropoff-placement`, `cutscene-handoff-unposed`, `landings-hangar-drop-gate` and
+`campaign-coop-dropoff` (empty cutscene lists) and logs `0 reader` defs with 189 shared files
+skipped; the new build passes all four with the counts a Windows run logs for the same missions
+(C3/M01: 786 defs, 28 reader, 88 shared skipped). Tests: `GamePathTests`, and
+`MissionCutscenesTests`' listed-path cases, which compare against literals rather than `Path`;
+`GamePathTests.NoSourceNormalisesAPathToBackslashesForTheHostToSplit` fails on the old code on
+Windows too.
+
 **Verified.** The full battery passes on the merged branch: units 4,886 (3 data skips), engine 383 of 383, 19 golden shots hash-identical.
 
 Output comparison, run by the item agent: `ExtractRof.ps1 -Source <install>\GOSDATA\ASSETS -Dest
