@@ -376,7 +376,9 @@ public sealed class DamageVisuals
             if (_panels.TryGetValue("pdp" + n, out var torn))
             {
                 torn.Visible = true;
-                Utils.Log.Info("flight", $"damage panel: {anim} on ({partName} {healthFraction * 100f:0}%)");
+                // Debug, not Info: this runs on the contact tick, and a console line there costs
+                // about 2 ms each (docs/verification.md PERF-35). The file sink still records it.
+                Utils.Log.Debug("flight", $"damage panel: {anim} on ({partName} {healthFraction * 100f:0}%)");
                 // the parked stand-in: a firepuffer burning in place at the panel
                 // (the flight path plays the authored def through the sink below)
                 if (DamageEffectSink == null && FreeTrailPuffer() is { } puffer)
@@ -458,7 +460,9 @@ public sealed class DamageVisuals
         if (DamageEffectSink != null)
         {
             DamageEffectSink(anim);
-            Utils.Log.Info("anim", $"damage stage: {anim} on ({partName} {fraction * 100f:0}%)");
+            // ⚠ Keep this at Debug: it runs inside the contact tick, where a console line costs
+            // about 2 ms (docs/verification.md PERF-35).
+            Utils.Log.Debug("anim", $"damage stage: {anim} on ({partName} {fraction * 100f:0}%)");
         }
         else if (_panelTrailPool.Count == 0 && !_noRuntimeLogged)
         {

@@ -224,103 +224,8 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   clear and the hull does not (CM13's dbase arch on dzpath2) in both games; if the original passes,
   sweep the player's probes too. *Cross-refs:* `PlaneStats.CollisionProbes`, `docs/formats/vehicle.md`.
 
-- `BL-1040` `[Bug]` `[S]` `[Next: code]` `[Impact: low]` `[Evidence: data]` **A mounted FLARE
-  (`wep_15`) shows its blue star burst on the rack before it is fired.** *Verdict at the controls:*
-  "FLARE shows the explosion sprite (blue star) while unfired". *Evidence:* the round's `FLYOUT`
-  `MODEL` is `reararc`, whose subtree carries `rapolys` (the body) and `sflsh` (the flash sprite),
-  both `active: true` in the chapter record (`extracted/C1/gamez/nodes.json`). What turns `sflsh`
-  off is the deploy definition `deploy_reararc`'s `RESET_STATE`
-  (`extracted/C1/cam_anim/reararc-deploy_reararc.json`: `rapolys` true, `sflsh` false); its
-  sequences then activate `sflsh`, scale it 1 to 2 over 0.3 s, fade it in over 0.05 s and out over
-  2.25 s, deactivate it, and call `rear_flash_effect` at 4.0 s. `Projectile.BuildFlyoutBody`
-  instances the prototype root through `SceneBuilder.BuildSubtree` at each node's own ACTIVE bit and
-  never applies the definition's reset state, and `PylonOrdnance` hangs that copy on the pylon, so
-  the sprite draws on the rack, and on the round from release unless the flight runs the
-  definition. *Fix shape:* a flyout body applies its `MODEL_ANIMATION` definition's `RESET_STATE` at
-  instancing (`AnimRuntime` poses pooled library copies that way, `RunResetStateEvents`), so `sflsh`
-  starts hidden; whether the in-flight round runs `deploy_reararc` at all is the second thing to
-  read. *⚠ Traps:* do not hide `sflsh` by name; the reset state is the authored rule, and the other
-  `FLYOUT` models' definitions are read for the same shape before the flare is assumed alone.
-  *Playtest after fix:* a plane loaded with FLARE, on the ground and in flight, the rack shows the
-  body only; fire one, the star appears when the round goes off. *Cross-refs:*
-  `docs/org/ordnanceTypes.md` (`wep_15`), `PylonOrdnance.cs`, `git log --grep=BL-1040`.
-
 ## Flight model & collision physics
 
-- `BL-562` `[Perf]` `[M]` `[Next: data]` `[Impact: low]` `[Evidence: data]` `[CM11]` **CM11 (C2/M02) still spends a single physics tick of about 36 ms on the sortie's
-  first part destruction, and about 130 to 138 ms on the first tick after the world build.** *Evidence (traced):* the bracketed
-  instrument (`PhysicsTickCost`, `--perf`'s `phys_tick_ms` / `phys_tick_max_ms` / `phys_hz`), with a
-  temporary sub-scope Stopwatch splitting one whole `FlightController.SimStep`, over three
-  78-sim-second `--no-det` runs of 150 windows each, one aeroplane and nobody at the controls with
-  17 AI aircraft alive. Median `phys_hz` is 60.0 in every run and 4 to 10 windows of 150 exceed
-  16.7 ms. (a) The FIRST tick after the build costs 130 to 138 ms, 95 ms of it the 20 animation
-  runtimes' first `Advance` (46,355 index rows walked over five cold `FindAll` misses, plus a 29 ms
-  first sim step); it is the world-build settling regime, not flight. (b) **The collision sweep is
-  ruled out.** The 36 to 43 ms tick a player meets in flight is the sortie's FIRST part destruction:
-  on the step where the pilot's right wing reaches 0 % against `g1176/col_buildings` the whole step
-  costs 36.1 / 36.6 / 37.0 ms across the three runs, of which `AircraftContactResolver.Resolve`
-  holds 35.6 / 36.2 / 36.4, `IContactEffects.SpendDamage` 29.1 / 29.5 / 29.7 and `ShatterStruck`
-  4.6 / 4.7 / 4.8, while the sweep costs 0.35 to 0.41 ms and `UnEmbed`'s single `Overlaps` 0.04 ms,
-  with no collection anywhere across the step. What that `SpendDamage` does is start the damage
-  presentation for the first time (`rightwing_damage_effects`, the `pdpanel6` / `pdpanel1` /
-  `pdpanel2` swaps, `player_fuelleak`); an earlier graze in the same sortie that destroyed no part
-  spends 0.73 ms there. Only one part destruction happens per unattended run, so whether the second
-  costs the same or the first is paying a warm-up is unmeasured. The sweep's own worst step over the
-  three runs is 2.9 / 5.3 / 2.9 ms: the 2.9 ms is the session's first sweep and is managed
-  first-call cost (0.4 ms of it in the physics server), and the 5.3 ms is one `CenterRayContact` ray
-  that struck nothing, so no collider is answerable for it and the report the query fills never
-  reads above 0.00 ms. (c) **The 33 to 36 ms steps carrying `gc=1/1/0` were the AI target ranking
-  reading the world's node names on every tick, and that is fixed.** A per-phase allocation meter
-  (`--perf`'s `[perf] alloc` line, `sim_alloc_b=`, now permanent) puts 98 % of a settled tick's
-  allocation in `SimPhase.CapturedAiAircraft` at about 309,000 B per tick, and a temporary bisect
-  inside it lands on `TargetPool.CollectOwners` (251,904 B per tick over 164 calls, 81 % of the
-  tick) and `TargetPool.NameOf` (about 36 KB per tick over 197 calls, 12 %). Both are Godot
-  node-name reads: every AI shooter asks every ranked structure candidate for its whole gamez
-  ancestor chain on every physics tick, and each ancestor's name comes back as a fresh string, a
-  finalizable `StringName` wrapper and a `DisposablesTracker` entry, which is the finalization rate
-  the pause follows (PERF-20). Measured and ruled out in the same pass: the AI pilot decision (15 to
-  21 B per tick), the collision sweep (308 B), the ray casts (about 2.9 KB) and the whole `_Process`
-  pass except `Flight` (about 13.8 KB per frame). The ancestor chain is now cached on the
-  destructible instance, keyed by the anchor's parent so an authored re-parent re-walks. Two before
-  and three after runs on the same rig (78 sim seconds, `--no-det`, one aeroplane, nobody at the
-  controls): `CapturedAiAircraft` 309,000 to 57,100 B per tick, `alloc_mb_s` 19.2 to 19.7 down to
-  4.1 to 5.6, `fin_per_s` about 60,500 down to about 9,300, per-10-wall-second collections gc0=4
-  gc1=4 down to gc0=1 gc1=1 (gc2=0 in the settled regime both ways), `pause_per_s_ms` 25 to 41 down
-  to 3.5 to 8.5. Worst tick per window over the last 60 windows: mean 31.7 and 36.7 ms down to 8.3,
-  9.5 and 15.6; windows over 16.7 ms 20 and 21 of 60 down to 3, 3 and 9 of 60; maximum 116 and 123
-  ms down to 55, 72 and 91. Median `phys_hz` stays 60.0. The spread across the three after-runs is
-  fight variance under `--no-det`, so the GC terms are the stable measure (PERF-20). What is left on
-  the tick is `TargetPool.NameOf` at about 42 KB per tick over 220 calls, then
-  `Enumerator[AiRatingBias]` boxing in `AiTargetRanking.MatchedBias`'s `foreach` over an
-  `IReadOnlyList`. The 50 ms `AnimRuntime.Advance` step is not a fourth class: window 240, two
-  seconds in, reads 49 to 57 ms with only about 21 ms of it named by any simulation phase, and sits
-  inside the first GC window's 211 ms of pause over 16 gen-0, 15 gen-1 and 7 gen-2 collections, so
-  it belongs with (a). *Decision:* measure a second part destruction in the same sortie first,
-  since whether the 36 ms is a per-destruction cost or the first one's warm-up is unmeasured and
-  decides which of the two is worth touching. *Fix shape:* (b) next. (b) is now a
-  question about the damage presentation rather than about collision: decide whether the first
-  damage-stage start is spread off the contact tick, which touches `SpendDamage` and the damage
-  pools, not the sweep. (a) is worth a separate look only if a cutscene handoff or a mid-mission
-  stage build repeats it. *⚠ Traps:* **the sweep premise is dead**: the sweep is under 2 % of the
-  step it sits in on the spiking tick, so do not re-derive a sweep cost from a tick maximum or from
-  the `HumanAircraft` phase maximum that holds it. A gen-1 GC pause lands inside whichever
-  sub-scope of a bracket happens to be open, so read the GC counters across the same span before
-  naming the term a bracket reports (`docs/verification.md` PERF-34). **The cap-exhaustion premise
-  is dead**, the entry used to claim 72, 102 and 177 ms ticks discarding about six sim steps each
-  against Godot's default `max_physics_steps_per_frame` of 8; over four paired 83-second runs on the
-  current build no window's worst tick reaches 133 ms, so nothing exhausts the cap. **Do not chase
-  the sustained step** either: the ~39 ms step and half-speed sim the entry once claimed were a
-  misreading of Godot's `physics_ms` monitor, which holds the WORST tick of the last wall second
-  (`docs/verification.md` PERF-1). The recurring 18 to 25 ms band that dominated every earlier
-  reading was the ungated once-a-sim-second telemetry print, one write per live aircraft in the same
-  tick (PERF-23); it is gated and gone, so do not re-derive it. Compare durations in sim seconds,
-  never wall seconds; state which mode a re-measurement flew (the numbers here are `--no-det` with
-  nobody at the controls, so they under-weight projectiles and destruction cascades); and do not
-  raise `max_physics_steps_per_frame`, which deepens the catch-up spiral rather than recovering
-  lost steps. The per-sim-step query objects those ray casts build are now reused rather than made
-  fresh (`GodotWorldQuery`), so a re-measurement of the tick meets a different allocator than C22's.
-  *Cross-refs:* `PLAN-M5-polish-6` C22, `docs/verification.md` PERF-1, PERF-19, PERF-20, PERF-23
-  and PERF-34.
 - `BL-1014` `[Cleanup]` `[L]` `[Next: decide]` `[Impact: none]` `[Evidence: trace]` **`FlightController.cs`
   is 4490 lines and changes for unrelated reasons; the responsibilities that have their own
   state and rules leave as real modules.** *Evidence:* one review range added 1045 lines to the
@@ -337,6 +242,16 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   flight tick's own steps (forces, contact, damage) out; they share the accumulator and belong
   together. *Cross-refs:* `BL-1015`, `BL-1016` (the same shape in `GameSession.cs` and
   `OriginalOptionsScreen.cs`), `docs/architecture/Flight.md`.
+- `BL-1045` `[Bug]` `[S]` `[Next: code]` `[Impact: low]` `[Evidence: trace]` **A throttle lever bound
+  on two stick models reads at least half throttle when one of the two is unplugged.**
+  *Evidence:* `AnalogAxes.LeverPosition` (`CSVM/src/Flight/Airframe/AnalogAxes.cs`) decides presence
+  per source, not per binding: one connected stick model makes the whole stick source count, and
+  the stick value is read over every stick binding on the row. The unplugged model's axis reads 0,
+  which a full axis maps to 0.5, and `Math.Max` then holds the lever at half or more. The
+  single-lever case (the shipped VKB profiles) is unaffected, because an unplugged stick leaves no
+  connected model and the lever is released. *Fix shape:* read the stick value over the bindings
+  whose model `AnalogAxes.Connected` lists, not over the whole row. *Cross-refs:*
+  `docs/architecture/Bindings.md` (`LeverTakeover`), `CSVM.Tests/ThrottleLeverTests.cs`.
 
 ## Environment & world
 
@@ -507,34 +422,6 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   replaced; `git log --grep=BL-305`. Do not reopen either ID; IDs are never reused, per this
   file's own rule).
 
-- `BL-1027` `[Bug]` `[M]` `[Next: code]` `[Impact: high]` `[Evidence: feel]` `[C1]` **A bright band
-  along a ground polygon's edge paints over the tree cards standing in front of it in C1, after
-  BL-997's depth prepass.** *Verdict at the controls:* the ground seen through a tree card's soft
-  alpha reads darker, and a band along the edge of a larger ground polygon reads full bright through
-  the same card, so the band is that ground drawn on top of the card; the near card is not the thing
-  painted over, which answers the question BL-1027's amendment left open. Second pose, freecam at
-  x -2089 y 156 z -3919 in C1 (`Screenshots/crimsonskies_2026-09-20_07-42-54-631.png`, the red box);
-  the first at `--pos="-1595.425,182.281,-4843.352" --direction="-0.21242,0.01919,-0.97699"`
-  (`Screenshots/crimsonskies_2026-09-19_23-41-17-262.png`). *Evidence:* BL-997 fixed card against
-  card (`depth_prepass_alpha` on the blended MultiMesh variant, `Clutter.cs` `ShaderCode`);
-  `SceneBuilder`'s world-surface blended variants still carry `depth_draw_never`; C1 carries 573
-  blended and 543 scissored world surfaces and 7 blended card kinds
-  (`--hide-alpha=blend-surfaces,scissor-surfaces,blend-cards,scissor-cards`, the isolation door,
-  `git log --grep=BL-1027`). The seeded captures along the first heading put card pixels lost to a
-  world surface at 0, and `clutter-card-depth`'s card-over-terrain case reads lost=0, so neither
-  reproduces either frame. *Fix shape:* reproduce at the second pose first, where the cards are near;
-  name the band's surface class with the isolation door (a blended world surface drawn after the
-  card, sorted on its centroid, is the shape the verdict points at); then the draw order between the
-  world's blended surfaces and the cards. *⚠ Traps:* the blend-or-scissor verdict is per texture
-  family (`TextureArchive.SoftAlphaTrees`) and is not the knob. The seeded captures at the first pose
-  do not reproduce it, so a zero from that instrument is not a pass. *Playtest after fix:* both poses
-  in `--fly`, the band behind the cards reads through their soft edge like the rest of the ground.
-  *On closing:* decide whether `--hide-alpha` and the `SceneBuilder.AlphaOf` registry stay as
-  diagnostics (then `docs/cli.md` keeps the flag bullet and the world log keeps its census line) or
-  leave with the fix; a door with no owner after its item closes is what this item's isolation
-  door becomes otherwise. *Cross-refs:* `git log --grep=BL-997`, `git log --grep=BL-1027`,
-  `INSTR-91`.
-
 - `BL-1037` `[Bug]` `[M]` `[Next: code]` `[Impact: high]` `[Evidence: feel]` **Under Enhanced
   Graphics, faint diagonal bands cross the water and the aircraft's self-shadow carries noise; the
   item also takes the sun's penumbra filter down to SoftHigh.** *Verdict at the controls:* after `BL-803`'s fix
@@ -564,49 +451,6 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   Enhanced, still and turning, the water flat; then a chase view with the sun across the airframe,
   its shadow on itself clean. *Cross-refs:* `git log --grep=BL-803`, `SHOT-42`, `docs/cli.md` (the
   four doors), `docs/PLAN-enhanced-graphics-2.md`.
-
-- `BL-1038` `[Bug]` `[M]` `[Next: code]` `[Impact: high]` `[Evidence: trace]` `[CM01]` **The trees
-  of an island the mission deactivates stand on open water in CM01.** *Verdict at the controls:*
-  "Trees from a deactivated island still are active", a curved file of palms on the sea at
-  `--pos="-1430.753,149.389,-1818.664" --direction="-0.64273,-0.01762,-0.76589"`
-  (`Screenshots/crimsonskies_2026-09-20_07-25-14-063.png`). *Evidence:* `Clutter.cs`
-  `PlaceOnWorld` walks the world's children and partition nodes and stamps every polygon carrying a
-  template's ground texture, and every placement of one kind is baked into one MultiMesh; the walk
-  reads no node's ACTIVE bit and nothing maps a stamp back to the node it was stamped under, so
-  `AnimRuntime.SetSubtreeActive`, which writes `Visible` on the subtree, cannot reach the island's
-  stamps. Whether the island's terrain is hidden by its own record's ACTIVE bit (`WorldBuilder`
-  `applyActive`) or by the mission's area verb (`SetSubtreeActiveByIndex`) is the first thing to
-  read off CM01's script. *Fix shape:* carry the stamping node's gamez index on each placement; a
-  subtree activation hides and shows the instances under it the way a dead decoration's are taken
-  out, and a placement under a node born inactive starts hidden. *⚠ Traps:* not a placement rule
-  change: the stamps are right, their visibility is not. Do not filter the walk by the ACTIVE bit
-  alone; a script can activate a subtree later and its trees must come with it. The rolling window
-  past the map edge copies from `ExportedKinds` and must follow its source stamp. *Playtest after
-  fix:* CM01 at the pose above, no trees on the water, and the island's trees present wherever its
-  terrain is. *Cross-refs:* `docs/formats/clutter.md`, `docs/architecture/Mech3.md` (`Clutter`),
-  `git log --grep=BL-1029` (the further-mesh walk on the same builder).
-
-- `BL-1039` `[Bug]` `[S]` `[Next: code]` `[Impact: low]` `[Evidence: data]` **The wing-light flare
-  is a `Facade`/`SphericalY` model in the plane data and is drawn as a fixed one-sided quad, so the
-  position lights do not turn to the camera.** *Verdict at the controls:* "Position lights on planes
-  dont turn towards camera". *Evidence:* `extracted/planes/nodes.json`'s `wing_flare1` and
-  `wing_flare2` reference model 1261, and `extracted/planes/models.json` model 1261 is
-  `model_type: Facade`, `facade_mode: SphericalY`, `lighting: false`, the classification the placed
-  `cloudparent` facades, C1's `docklight_flare` and the templates clutter's glow stamps carry, all of
-  which pose through `csky_facade.gdshaderinc`'s `csky_facade_spherical`
-  (`git log --grep=BL-998`, `git log --grep=BL-1013`). `PlaneBuilder.FlareMaterial` is a
-  `StandardMaterial3D` with no billboard, and its comment records why: Godot's billboard mode
-  flattened the star burst into a blob (`BL-119`). That mode is the camera basis, which rolls with
-  the eye; the original's SphericalY is a look-at from the eye's position that keeps the card's own
-  up, decoded at BL-998 (`FUN_00539390`). *Fix shape:* the flare quad takes a ShaderMaterial
-  including `csky_facade.gdshaderinc` and posing through
-  `csky_facade_spherical(origin, CAMERA_POSITION_WORLD)` like the clutter's glow stamps; the
-  additive tint, the blink and the `OmniLight3D` untouched. *⚠ Traps:* not `BillboardMode`; that is
-  the rejected fix, for the reason BL-998 found. The star-burst shape stays `BL-284`'s. *Playtest
-  after fix:* any player plane but the Bloodhawk, wing lights on, an orbit from nose through side to
-  tail in the chase view: the flare visible and facing you all the way round, and not rolling in a
-  bank. *Cross-refs:* `BL-284` (the shape half; its view-dependence half is answered here),
-  `CAP-34`, `docs/formats/gamez.md` (the model classification).
 
 ## Effects & animation runtime
 
@@ -639,49 +483,6 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   whether the original has this effect at all: `BL-090` already calls the 0.99 `injure_anims`
   entry that drives it "plausibly an authoring leftover", present on 1 of 11 aircraft, so the
   capture may delete the feature rather than tune it.
-
-- `BL-285` `[Bug]` `[S]` `[Next: decode]` `[Impact: low]` `[Evidence: decoded]` **The decoded
-  exhaust smoke is ported and measures about half the original's density at a matched slam.**
-  *Verdict at the controls:* against CAP-21, "its a lot denser in the original"; the AI aircraft's
-  trails (`git log --grep=BL-969`) draw and read right. The matched-speed compare below stands as
-  the measurement; no further look is owed, the next step is the decode of the draw path. *Evidence:* the original's exhaust
-  smoke is its one code-built puffer, a near-black 0.4 m trail per `exhaust%d` marker whose opacity
-  charges from the commanded lever running ahead of the live one and decays at 1.5/s
-  (`FUN_004afa20`, `FUN_004afbc0`, fed from `FUN_0048e580`; decode in `docs/formats/effects.md`,
-  "Aircraft throttle-rise exhaust"). `Flight.Airframe.ExhaustSmoke` ports it in place of the borrowed
-  `nitropuffN` puffers and the invented 0.25 threshold gate, which had no counterpart: every
-  constant is now decoded and none is left to tune. The decode reproduces both ends CAP-21 bounds,
-  a 1/8 step peaking at opacity 0.013 and an idle-to-full slam at 0.356, out 3.9 sim-s later (the
-  footage's plume is gone about 2.8 wall-s after the slam, 3.9 sim-s at the capture's 1.39 ratio).
-  *Measured at matched speed:* `--lever=` (`docs/cli.md`) presses the throttle digit row on a
-  schedule, so a headless capture can fly the footage's own input history: idle from the spawn, one
-  `8` press at 10 sim-s, the chase camera 0.8 s after it, a Bloodhawk as CAP-21 flies, 1280x720.
-  The control is the same sim frame rendered again with the trail suppressed, so the difference
-  between the two frames is the plume and nothing else, and the footage is read the same way
-  against a background estimated per row from the band's own margins. Over the hundred rows a
-  hundred pixels below the wing line, the original darkens its background by 41% and 39% in its two
-  plumes, peaking at 62% and 72%, over median widths of 77 px and 60 px; the port darkens by 20%
-  in both, peaking at 36% and 41%, over 49 px each. The port therefore stands at about half the
-  original's opacity and about 0.7 of its width at the same moment of the same manoeuvre in the
-  same airframe, which confirms the verdict at the controls and rules the matched speed out as the
-  cause. *The question:* which term in the draw carries the missing factor, since the emitter has
-  none left. Three candidates, all in the renderer: the quad-rim fade in
-  `MultiMeshEmitterRenderer`'s shader, which ramps alpha over the outer 12% of each card edge and
-  is authored against additive rectangles over dark ground yet also applies to the mixed blend this
-  plume draws in; `Puffer.SizeScaleDefault`, the decoded radius-to-diameter 2; and the
-  `smoke101..103` alpha channel, mean 0.263 and peak 0.639, which caps one card at 0.23 opacity
-  under the slam's 0.355 birth alpha. None of the three is settled by the decode as it stands, so
-  the next step is the original's own draw path for a near-black mixed sprite, never a constant of
-  this emitter. ⚠ Traps: slam with a digit key, not the
-  throttle-up key. A held key moves the commanded lever at the slew's own rate, so the gap stays
-  one step's slew and the original shows nothing for it either. A scripted `--hold` feeds the
-  smoke no gap, since it bypasses the lever; `--lever=` is the capture flag that reaches the
-  plume. *Playtest after fix:* from idle at a steady
-  cruise, slam to full with the `8` digit key and watch from the chase camera as CAP-21 does around
-  12.5 s: near-black smoke from each exhaust, strongest about a second after the slam and gone
-  about four seconds after it, as wide and as dark near the tail as the footage's at the same
-  speed; a single 1/8 step at most a faint wisp, idle to 5/8 a plume about half as dark.
-  *Cross-refs:* `git log --grep=BL-285` (the port), `git log --grep=BL-969` (the AI trails).
 
 - `BL-934` `[Bug]` `[M]` `[Next: look]` `[Impact: high]` `[Evidence: feel]` **The dynamic enemy and
   ally voice lines dispatch in the suite and are now heard at the controls, but far more rarely
@@ -902,6 +703,23 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   four modules duplicate them; a page module that reaches back into the form's fields for its
   layout is the form in another file. *Cross-refs:* `BL-1014`, `BL-1015`,
   `docs/menu-presentations.md`, `docs/architecture/UI.md`.
+- `BL-1046` `[Bug]` `[S]` `[Next: code]` `[Impact: low]` `[Evidence: trace]` **A throttle lever
+  resting near the end the player pushes toward cannot be captured that way round.**
+  *Evidence:* `StickCapture` (`CSVM/src/Bindings/StickCapture.cs`) takes the lever's position at arm
+  as its baseline and captures once it travels `MoveThreshold` (0.5). The VKB R's lever rests at
+  -0.57 with full at -1, so pushing to full travels 0.43 and captures nothing. The player moves it
+  the other way, which captures, and gets the opposite invert. *Fix shape:* for the lever row,
+  measure travel against the axis's whole range (or the end not yet reached) rather than a fixed
+  distance from rest, or prompt the player to move the lever to the idle end first. *Cross-refs:*
+  `BL-693` (the gamepad capture's constants), `CSVM.Tests/StickCaptureTests.cs`.
+- `BL-1047` `[Bug]` `[S]` `[Next: code]` `[Impact: low]` `[Evidence: trace]` **Two unnamed sticks
+  bound on one row read alike in the KEYS AND BUTTONS page's Stick column.** *Evidence:*
+  `StickLabels.Column` (`CSVM/src/Sticks/StickLabels.cs`) drops the `Stick` prefix and the model of a
+  stick with no profile name, since the column is half a panel wide; two such sticks on one
+  row both print as "Button 5 +1". The remake Controls screen keeps the model and tells them apart,
+  and a named stick ("R") is unaffected. *Fix shape:* fall back to the short model id (`231D/0200`)
+  when two unnamed models share a row. *Cross-refs:* `docs/architecture/Sticks.md` (`StickLabels`),
+  `CSVM/src/UI/Menu/Original/KeysStickColumn.cs`.
 
 ## Splitscreen
 
@@ -973,6 +791,23 @@ usual.
   cross-pane body-hide visually at the controls with 2+ cockpit-view pilots in the same session.
   *Cross-refs:* `PLAN-cockpit-view` B11 ("Splitscreen posture"), `BL-389` (splitscreen weapon
   mix, same playtest family).
+
+- `BL-1017` `[Tuning]` `[S]` `[Next: decode]` `[Impact: low]` `[Evidence: decoded]` **Seat colours:
+  the eight authored dwords are read channel-order-unproven, and seats 8 to 15 are invented.**
+  *Evidence:* the per-pilot table at `00628eb4` holds eight dwords and zeros from `00628ed4`; it is
+  indexed unchecked at `00495893` and `00497ae6` and each entry is stored to the aircraft at
+  `+0x1060`, where a search for a reader finds only those writers. So which channel the consumer
+  takes first is undetermined. `Net/NetSeats.cs` reads each entry's three stored bytes as red,
+  green, blue, the reading under which the set comes out red, blue, green, yellow, magenta, lime,
+  teal and violet, and derives seats 8 to 15 as the channel-wise complement of seats 0 to 7 (light
+  twins that collide with none of the authored ones). Both are TUNE. *Fix shape:* find the consumer
+  of the aircraft's `+0x1060` dword and read the channel order off it; then judge the eight against
+  a capture of the original's own lobby or marker colours, and judge the derived eight at the
+  controls once a match runs more than eight seats. *⚠ Traps:* the original's pilot index is
+  1-based and its eighth pilot reads one dword past the table, so do not reproduce that read as
+  fidelity; the remake gives every seat a colour on purpose. *Cross-refs:* `docs/architecture/Net.md`
+  (the player ceiling rule, `NetSeats.cs`), `docs/org/multiplayer-spawn.md`, `UI/SplitScreen.cs`'s own `Colors4` (a separate invention,
+  for panes rather than seats).
 
 ## Missions, modes & campaign
 
@@ -1056,33 +891,93 @@ usual.
   position; `Pads.LogPads` records the roster so the next one reads off the log rather than being
   inferred. Dropping the var also closes that divergence.
 
-- `BL-1036` `[Tooling]` `[S]` `[Next: code]` `[Impact: high]` `[Evidence: trace]` **`ground-contact`
-  run before `instant-action-end` in the same `--run-tests` process makes the second one fail: its
-  aircraft stops moving, so which suites a shard happens to hold decides whether the battery is
-  green.** *Evidence:* `.\RunTests.ps1 -Filter 'suite:ground-contact,suite:instant-action-end'
-  -SkipUnits -SkipGoldens` fails every run on the hold checks, reporting `frames=180 slowest
-  step=0.00 m last=0.00 m boards=1` where the suite wants every frame of the 3 s hold to move.
-  `instant-action-end` passes alone, and passes after each of the other shard-5 predecessors tried,
-  so the pair is the whole condition. Shards are packed from `analysis/engine-suite-weights.json`,
-  which is why adding any suite anywhere can introduce or remove the pairing and the failure looks
-  like a flake. *Fix shape:* find what `ground-contact` leaves in the shared physics space (it
-  builds a collision world and sweeps it) and give the suite a teardown that returns the process to
-  the state the next suite assumes, rather than reordering shards around it. *⚠ Traps:* the
-  symptom is not load or timing; it reproduces on an idle machine with those two suites alone. Do
-  not tune a weight to separate them, that hides the leak and the next added suite re-pairs them.
-  *Priority:* ahead of the other tooling items. `BL-951` landed over this failure, and while the
-  pair stays red every battery result is ambiguous, since a 1-failed run has to be re-read by hand
-  to tell this pairing from a real regression. *Cross-refs:* `git log --grep=BL-951`.
-
 ## Misc
 
-- `BL-284` `[Bug]` `[Blocked: CAP-34]` `[M]` `[Next: look]` `[Impact: low]` `[Evidence: footage]` **Wing-light flare: soft round glow vs the original's sharp star burst; the view-dependence
-  half is `BL-1039`'s.** Follow-up from `BL-119`: with the authored one-sided quad restored
-  and the blink at the measured ~1 frame, the flare reads as a compact soft amber glow, much closer
-  than the old billboard blob, but the PT-03 reference still shows sharp radiating star points that
-  our plain radial `oil_liteflare` sprite does not produce. Whether the original draws the flare
-  from every angle is answered by data, the flare mesh is a `Facade`/`SphericalY` model
-  (`BL-1039` poses it so), and the orbit clip settles the star shape alone; any player plane works: `vehicle.zrd.json`
+- `BL-1018` `[Tuning]` `[S]` `[Next: code]` `[Impact: low]` `[Evidence: trace]` **The guest clock
+  slew's window, rate bound and snap threshold are all invented.** *Evidence:* `Net/NetClockSlew.cs`
+  walks a guest's offset onto host time over `ConvergeSeconds = 2.0` at no more than
+  `MaxRateOffset = 0.10` of real time, and applies a reading more than `SnapSeconds = 5.0` out at
+  once. Nothing in the original's networking was decoded for any of the three; they are chosen so a
+  correction is invisible over a couple of seconds and a lost link does not leave the guest walking
+  for a minute. *Fix shape:* judge them against a real link once a match runs: the window and the
+  bound against how a corrected timestamp reads at the controls (an aeroplane's interpolation is
+  what shows a clock walking), the threshold against the observed `Snaps` count, which is exposed
+  for that reason. A rising `Snaps` says the window or the threshold is wrong, not that the link
+  is. *⚠ Traps:* do not raise the rate bound to make convergence quicker; host time running well
+  off real time is the thing the walk exists to avoid. *Cross-refs:* `Net/AircraftStateCadence.cs` and
+  `Net/RemotePoseBuffer.cs` (send rate and interpolation buffer, judged in the same sitting). The feed now has a live
+  reading: `net-match-state` measures a target of 6.000 s and one snap on both guests off the
+  ordinary match-state tick, so the threshold can be judged against a real link rather than
+  against nothing. `Net/NetClockPing.cs`'s `RetrySteps = 60`, how long an unanswered clock
+  question waits before it is asked again, is invented the same way and is judged in the same
+  sitting against how often a lossy link leaves the round trip unmeasured.
+
+- `BL-1025` `[Tuning]` `[S]` `[Next: look]` `[Impact: low]` `[Evidence: trace]` **The host's
+  match-state tick rate is a guess at what the clock readout needs.** *Evidence:*
+  `Net/MatchStateCadence.cs` repeats the match state every `TickStepInterval = 60` simulation
+  steps, one second at the fixed step, chosen because the versus HUD prints whole seconds and a
+  faster tick spends the wire on digits nobody sees. Nothing in the original was decoded for it:
+  the original's client runs its own countdown and is told only the end. *Fix shape:* judge it on
+  a real link with the HUD clock in view. A guest's clock lags the host by up to one tick, so the
+  reading is whether the count-down ever visibly jumps or stalls; the same tick is what feeds
+  `NetClockSlew`, so `BL-1018`'s window and this rate are judged in one sitting. *⚠ Traps:* the
+  ending never waits for this tick (it is sent where it happens), so slowing the rate delays only
+  the clock, and the reading must not be taken from a match that ended.
+
+- `BL-1026` `[Feature]` `[S]` `[Next: decide]` `[Impact: low]` `[Evidence: trace]` **A guest's
+  rematch key does nothing in a network match.** *Evidence:* `GameSession.RestartMatch` refuses
+  outright off the host, because a guest that restarted would zero its own board and fly a round
+  nobody else is in; `net-match-state` asserts that refusal. The host's R restarts the round for
+  everybody. So a guest at a wrap-up board presses R and sees nothing happen, with no line saying
+  why. *Fix shape:* either a rematch request on the wire the host may answer (which needs a rule
+  for who may ask and what happens when two ask), or the guest's board dropping the Restart item
+  and saying the host calls the rematch. The second is a board change alone and settles the
+  silence; the first is a lobby question. *⚠ Traps:* do not let a guest's request restart the
+  match directly, the host is the only writer of match state.
+
+- `BL-1041` `[Tuning]` `[S]` `[Next: look]` `[Impact: low]` `[Evidence: trace]` **The soak's
+  position-error bars are regression tripwires, not what a player accepts.** *Evidence:*
+  `Testing/NetSoakSuites.cs` flies a scripted Dogfight through four loopback cells and fails a
+  cell whose worse direction exceeds its bar (mean/worst metres): clean 0.25/0.5, 50 ms and 5 per
+  cent loss 1.5/3, 100 ms and 10 per cent 2/6, 200 ms and 20 per cent 3.5/10. The seeded run
+  measures 0.01/0.01, 0.57/0.89, 0.81/3.03 and 1.43/4.67, so each bar is the measurement with two
+  to three times headroom. Nothing says a player notices 3 m of worst error at 200 ms, or that
+  1.5 m at 50 ms is fine. *Fix shape:* fly a two-machine match over a shaped link with
+  `--debug-net` up, note at which cell a remote aeroplane first reads as wrong (a jump, a lag
+  behind its own tracers), and set the bars from that instead. *⚠ Traps:* the error is read after
+  the fitted lag is removed, so a large render delay does not show here at all; judge the delay
+  (`RemotePoseBuffer.BufferDelaySeconds`) separately. *Cross-refs:* `BL-1018` (the same sitting).
+
+- `BL-1043` `[Tuning]` `[S]` `[Next: look]` `[Impact: low]` `[Evidence: trace]` **The router
+  mapping's lease length and renewal fractions are chosen, and its permanent-lease fallback has
+  met no real router.** *Evidence:* `Net/UpnpLease.cs` asks `LeaseSeconds = 3600`, renews at
+  `RenewAtFraction = 0.5` of the grant and retries a failed renewal after `RetryFraction = 0.125`.
+  The hour bounds what a crashed host leaves open; the fractions leave room for three retries,
+  each paying a whole gateway search, before the lease runs out, which `UpnpLeaseTests` asserts.
+  Every test runs over a fake gateway, so no router has yet answered a finite lease, error 725
+  (permanent leases only) or a delete of a stale mapping. *Fix shape:* host through a home router
+  with UPnP on, read the `upnp mapping` and `upnp renewal` log lines and the router's own mapping
+  table across more than one renewal, then kill the process and confirm the next host's stale
+  clear removes the entry. Shorten the lease if routers keep stale entries visibly long. *⚠ Traps:*
+  never widen the stale clear past the exact remembered port; a range delete would take another
+  program's mapping on the same router.
+
+- `BL-1044` `[Feature]` `[M]` `[Next: code]` `[Impact: low]` `[Evidence: trace]` **A co-op guest
+  flies only its first local player; a second pad at the guest's machine gets no plane.**
+  *Evidence:* `CampaignFeature.BuildExit` gives a guest `Math.Min(1, pads)` seats, and
+  `NetSeats.CoopField` seats one plane per peer. *Fix shape:* a pick per local seat (airframe, fit,
+  name, Ready); `NetSeats.CoopField` seating several seats per peer; `NetSession.LocalSeat`, the
+  guest's `LocalOrdinal` and its menu seats handling several; `Admit` counting a guest's local
+  seats against the four-human co-op cap. *⚠ Traps:* the Ready gate must wait on every local seat,
+  not one per machine.
+
+- `BL-284` `[Bug]` `[Blocked: CAP-34]` `[M]` `[Next: look]` `[Impact: low]` `[Evidence: footage]` **Wing-light flare: soft round glow vs the original's sharp star burst.** Follow-up from
+  `BL-119`: with the blink at the measured ~1 frame, the flare reads as a compact soft amber glow,
+  much closer than the old billboard blob, but the PT-03 reference still shows sharp radiating star
+  points that our plain radial `oil_liteflare` sprite does not produce. Whether the original draws
+  the flare from every angle is answered by data: the flare mesh is a `Facade`/`SphericalY` model,
+  and `PlaneBuilder`'s flare material poses it through `csky_facade_spherical`
+  (`git log --grep=BL-1039`). The orbit clip settles the star shape alone; any player plane works: `vehicle.zrd.json`
   wires `wing_lights_blink` (or `brigand`'s own `wing_lights_brigand`) into every player craft's
   `start_anims` except the Bloodhawk, which has neither the anim nor flare nodes. (Earlier notes
   here said only piratefighter/brigand carried it, that read `wing_light.zrd.json`'s two
@@ -1090,6 +985,7 @@ usual.
   wiring and is what the runtime actually plays from, per `WingLights.cs`'s doc comment.) Also riding
   here: `WingLightBlinker.LightEnergy = 1.0` is a declared TUNE, the def authors the point
   lights' range/colour only, no intensity.
-  ⚠ Traps: (a) re-adding the billboard is the rejected fix, PT-03's screenshot is against it.
+  ⚠ Traps: (a) Godot's billboard mode is the rejected fix, PT-03's screenshot is against it; the
+  facade look-at the flare takes reads the eye's position alone, so a bank cannot roll it.
   (b) don't edit or swap the sprite to fake the star: the star points may be the original engine's
   flare *rendering* (a cross-flare pass), not the texture asset, the orbit clip decides first.

@@ -1155,12 +1155,11 @@ public sealed partial class ProjectilePool : Node3D
         }
     }
 
-    /// <summary>Instances a weapon's <c>FLYOUT</c> <c>MODEL</c> body, its <c>.flt</c> prototype root
-    /// in the chapter gamez, as a fresh collision-exempt <see cref="Node3D"/>, returned unparented
-    /// for the caller to place. Shared by the in-flight rocket body and
-    /// <see cref="PylonOrdnance"/>'s mounted round, the same asset either way. Null when no world
-    /// scene is bound, the weapon carries no <c>FLYOUT</c> <c>MODEL</c>, or the gamez lacks the
-    /// prototype root.</summary>
+    /// <summary>Instances a weapon's <c>FLYOUT</c> <c>MODEL</c> prototype as a fresh, unparented,
+    /// collision-exempt body posed at its def's <c>RESET_STATE</c>. The in-flight round and
+    /// <see cref="PylonOrdnance"/> share it. A reset may hide the root, so the caller sets the
+    /// root's visibility. Null without a world scene, a <c>FLYOUT</c> <c>MODEL</c> or the
+    /// prototype root in this chapter's gamez.</summary>
     public Node3D? BuildFlyoutBody(WeaponDef weapon)
     {
         if (_flyoutScene == null || _flyoutGamez == null || weapon.Flyout?.Model is not { } modelName)
@@ -1178,6 +1177,8 @@ public sealed partial class ProjectilePool : Node3D
         // obstruct another round or the world hit-test; mounted ordnance must not be shootable either),
         // and the world builder would otherwise attach one.
         var inst = _flyoutScene.BuildSubtree(node, skip: null, collisionSkip: _ => true);
+        if (inst != null)
+            PoseAtResetState(inst, weapon);
         // Verification breadcrumb (once per model name): confirms the named prototype resolved and
         // instanced real geometry, without needing a lucky screenshot; then it goes quiet.
         if (inst != null && _flyoutLogged.Add(modelName))

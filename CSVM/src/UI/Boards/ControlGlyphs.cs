@@ -4,13 +4,25 @@ using Godot;
 
 namespace CSVM.UI.Boards;
 
-/// <summary>One control as a picture set addresses it, keyed the way <see cref="BindingControl"/>
-/// is: the kind, the index inside that kind, and the sign an axis binding names. Deadzone and
-/// modifiers are left out because they decide when a control fires, not what it looks like.</summary>
-public readonly record struct GlyphKey(ControlKind Kind, int Index, int Sign)
+/// <summary>One control as a picture set addresses it. It is keyed the way
+/// <see cref="BindingControl"/> is: kind, index, axis sign and hat direction. Deadzone and
+/// modifiers are left out, since they decide when a control fires and not how it looks.
+/// The Stick member holds the flight stick's caption prefix ("R"), and is null for other devices.
+/// ⚠ A stick's button 0 and a pad's A share kind and index, so without it a stick draws pad art.
+/// </summary>
+public readonly record struct GlyphKey(
+    ControlKind Kind, int Index, int Sign, HatDirection Direction = HatDirection.None, string? Stick = null)
 {
-    /// <summary>The key one binding's control sits on.</summary>
-    public static GlyphKey Of(BindingControl control) => new(control.Kind, control.Index, control.Sign);
+    /// <summary>The key one binding's control sits on, its stick named the way its caption is.</summary>
+    public static GlyphKey Of(Binding binding) => Of(binding, BindingLabels.StickName);
+
+    /// <summary><see cref="Of(Binding)"/> with the stick names taken from
+    /// <paramref name="stickName"/> instead of the registered one.</summary>
+    public static GlyphKey Of(Binding binding, System.Func<DeviceId, string?>? stickName)
+    {
+        var c = binding.Control;
+        return new(c.Kind, c.Index, c.Sign, c.Direction, stickName?.Invoke(binding.Device));
+    }
 }
 
 /// <summary>
@@ -41,11 +53,11 @@ public static class ControlGlyphs
         set => _set = value ?? new PromptFontGlyphs();
     }
 
-    /// <summary>The glyph that stands for <paramref name="control"/>, or null where the set draws
-    /// none and the line keeps its words.</summary>
-    public static GlyphKey? For(BindingControl control)
+    /// <summary>The glyph that stands for <paramref name="binding"/>'s control, or null where the set
+    /// draws none and the line keeps its words.</summary>
+    public static GlyphKey? For(Binding binding)
     {
-        var key = GlyphKey.Of(control);
+        var key = GlyphKey.Of(binding);
         return _set.Draws(key) ? key : null;
     }
 }
@@ -70,18 +82,27 @@ public abstract class ControlGlyphSet
 }
 
 /// <summary>
-/// The shipped set: pad controls as characters of PromptFont (SIL OFL 1.1), whose controller-neutral
-/// glyphs draw a face button as the four-button cluster with the pressed one filled, a d-pad direction
-/// as the cross with one arm filled and a stick direction as the stick with its arrow. Shoulders and
+/// The shipped set: pad controls as characters of PromptFont (SIL OFL 1.1). Its neutral glyphs
+/// draw a face button, d-pad or stick as its cluster, cross or stick, the pressed part marked. Shoulders and
 /// triggers use the font's Xbox-lettered glyphs, the font having no neutral ones. A button with no
-/// glyph, or every control when the font is missing, draws as a lettered plaque. It declines keys,
-/// mouse buttons and hats, so those seats keep the words <see cref="BindingLabels.Describe"/> gives.
+/// glyph, or every control when the font is missing, draws as a lettered plaque. A flight stick's
+/// button or hat draws as the font's flight stick followed by its <see cref="StickMark"/>. It
+/// declines keys, mouse buttons, pad hats and stick axes, so those keep the words
+/// <see cref="BindingLabels.Describe"/> gives.
 /// </summary>
 public sealed class PromptFontGlyphs : ControlGlyphSet
 {
     /// <summary>The font file. Named with an extension Godot does not import, so an export's import
     /// step leaves no untracked <c>.import</c> beside it; the export's include filter packs it.</summary>
     public const string FontPath = "res://data/promptfont.ttf.bin";
+
+    /// <summary>PromptFont's flight stick, the picture every stick control starts with.</summary>
+    public const string FlightStick = "\U0001F57D";
+
+    /// <summary>The stick caption that draws the flight stick mirrored, as a left hand holds it: the
+    /// name a HOSAS pair's left profile carries. TUNE: a convention, not a property of the device.
+    /// </summary>
+    public const string LeftHandStick = "L";
 
     // Metrics as fractions of the glyph's height, so the set scales with the line it sits on.
     // All TUNE: nothing in the original fixes them.
@@ -93,13 +114,59 @@ public sealed class PromptFontGlyphs : ControlGlyphSet
     private static FontFile? _face;
     private static bool _loaded;
 
+    /// <summary>Gets the font's face for a caller drawing its own PromptFont characters, or null
+    /// when the font file is missing.</summary>
+    public static FontFile? Font => Face();
+
+    /// <summary>What follows the flight stick for a stick control, or null for an axis, whose
+    /// number names nothing a player can find on the stick. A button is its number counted from 1,
+    /// as its caption counts, in the font's filled button digits. Button 28 is a filled 2 and a
+    /// filled 8. A hat direction is the d-pad arm, a hat being a small d-pad.</summary>
+    public static string? StickMark(GlyphKey key)
+    {
+        if (key.Kind == ControlKind.Hat)
+        {
+            return key.Direction switch
+            {
+                HatDirection.Up => "↟",
+                HatDirection.Down => "↡",
+                HatDirection.Left => "↞",
+                HatDirection.Right => "↠",
+                _ => null,
+            };
+        }
+
+        if (key.Kind != ControlKind.Button)
+        {
+            return null;
+        }
+
+        // PromptFont draws its filled digits 1 to 9 at U+24F5..U+24FD (Unicode's double-circled
+        // digits) and its filled 0 at U+24FF.
+        string number = (key.Index + 1).ToString(CultureInfo.InvariantCulture);
+        var digits = new System.Text.StringBuilder(number.Length);
+        foreach (char d in number)
+        {
+            digits.Append(d == '0' ? '⓿' : (char)('⓵' + (d - '1')));
+        }
+
+        return digits.ToString();
+    }
+
     /// <inheritdoc/>
-    public override bool Draws(GlyphKey key) => key.Kind is ControlKind.Button or ControlKind.Axis;
+    public override bool Draws(GlyphKey key) => key.Stick == null
+        ? key.Kind is ControlKind.Button or ControlKind.Axis
+        : StickMark(key) != null;
 
     /// <inheritdoc/>
     public override float Width(Font font, GlyphKey key, float height)
     {
-        if (Face() is { } face && Glyph(key) is { } glyph)
+        if (key.Stick != null && Face() is { } stickFace && StickMark(key) is { } mark)
+        {
+            return stickFace.GetStringSize(FlightStick + mark, HorizontalAlignment.Left, -1f, GlyphSize(height)).X;
+        }
+
+        if (key.Stick == null && Face() is { } face && Glyph(key) is { } glyph)
         {
             return face.GetStringSize(glyph, HorizontalAlignment.Left, -1f, GlyphSize(height)).X;
         }
@@ -116,7 +183,13 @@ public sealed class PromptFontGlyphs : ControlGlyphSet
             return;
         }
 
-        if (Face() is { } face && Glyph(key) is { } glyph)
+        if (key.Stick != null && Face() is { } stickFace && StickMark(key) is { } mark)
+        {
+            DrawStick(into, stickFace, key.Stick, mark, box, color);
+            return;
+        }
+
+        if (key.Stick == null && Face() is { } face && Glyph(key) is { } glyph)
         {
             // Centred on the font's line box, which is what keeps a glyph level with the words.
             int size = GlyphSize(box.Size.Y);
@@ -128,6 +201,28 @@ public sealed class PromptFontGlyphs : ControlGlyphSet
         }
 
         Plaque(into, font, Label(key), box, color);
+    }
+
+    // The flight stick, then its mark. The left hand's stick is mirrored about its own advance, so
+    // a HOSAS pair's two prompts tell the hands apart without a letter. ⚠ The transform is put back
+    // to identity after, as every other transformed draw on a board leaves it.
+    private static void DrawStick(CanvasItem into, FontFile face, string stick, string mark, Rect2 box, Color color)
+    {
+        int size = GlyphSize(box.Size.Y);
+        float baseline = box.Position.Y + ((box.Size.Y - face.GetHeight(size)) / 2f) + face.GetAscent(size);
+        float wide = face.GetStringSize(FlightStick, HorizontalAlignment.Left, -1f, size).X;
+        if (stick == LeftHandStick)
+        {
+            into.DrawSetTransform(new Vector2(box.Position.X + wide, 0f), 0f, new Vector2(-1f, 1f));
+            into.DrawString(face, new Vector2(0f, baseline), FlightStick, HorizontalAlignment.Left, -1f, size, color);
+            into.DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+        }
+        else
+        {
+            into.DrawString(face, new Vector2(box.Position.X, baseline), FlightStick, HorizontalAlignment.Left, -1f, size, color);
+        }
+
+        into.DrawString(face, new Vector2(box.Position.X + wide, baseline), mark, HorizontalAlignment.Left, -1f, size, color);
     }
 
     // Loaded once, as bytes: a res:// path read through FileAccess reaches the file in the project
@@ -192,6 +287,13 @@ public sealed class PromptFontGlyphs : ControlGlyphSet
     private static string Label(GlyphKey key)
     {
         string index = key.Index.ToString(CultureInfo.InvariantCulture);
+        if (key.Stick != null)
+        {
+            return key.Kind == ControlKind.Hat
+                ? key.Stick + " " + key.Direction.ToString().ToUpperInvariant()
+                : key.Stick + " " + (key.Index + 1).ToString(CultureInfo.InvariantCulture);
+        }
+
         if (key.Kind == ControlKind.Axis)
         {
             string dir = key.Sign < 0 ? "-" : key.Sign > 0 ? "+" : string.Empty;

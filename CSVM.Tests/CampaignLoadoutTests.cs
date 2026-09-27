@@ -176,6 +176,29 @@ public class CampaignLoadoutTests
         Assert.True(fit.IsStock);
     }
 
+    /// <summary>A co-op seat's fit crosses the wire as the stored values. It binds on the far
+    /// machine exactly as the pilot's own record binds at home. The launch's fit encodes back to
+    /// the same values, which is what a host sends for its own seats.</summary>
+    [Fact]
+    public void ACoopFitBindsOnTheFarMachineAsThePilotsOwnRecordBindsAtHome()
+    {
+        var plane = new OwnedPlane { Name = "Gypsy Magic", Ammo = new[] { 3, 4, 1, 0 }, Ordnance = new[] { 3, 3, 0, 0, 11, 3, 0, 0 } };
+        var wire = Net.CoopFit.Of(plane.Ammo, plane.Ordnance);
+        var stockFit = Stock.For("pdevastator")!;
+
+        var home = CampaignLoadout.For(plane, Stock).ApplyTo(stockFit);
+        var far = CampaignLoadout.For(wire, Stock)!.ApplyTo(stockFit);
+
+        Assert.Equal(home.Guns.Select(g => g.Ammo), far.Guns.Select(g => g.Ammo));
+        Assert.Equal(home.Hardpoints!.Stock, far.Hardpoints!.Stock);
+        Assert.Equal("magnesium", far.Guns[0].Ammo);
+        Assert.Equal(wire, CampaignLoadout.FitOf(CampaignLoadout.For(plane, Stock), Stock));
+
+        // ABLE-TO-FAIL CONTROL: a stock fit on the wire binds nothing, so the seat flies its base.
+        Assert.Null(CampaignLoadout.For(default(Net.CoopFit), Stock));
+        Assert.NotEqual(stockFit.Guns.Select(g => g.Ammo), far.Guns.Select(g => g.Ammo));
+    }
+
     [Fact]
     public void AFreshProfileFliesTheWingmanInTheSecondStarter()
     {

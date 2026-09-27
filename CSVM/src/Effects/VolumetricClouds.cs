@@ -117,10 +117,9 @@ public sealed partial class VolumetricClouds : Node3D
             return nlo + (v - lo) * (nhi - nlo) / max(hi - lo, 0.0001);
         }
 
-        // One cloud part in [-1, 1]^3 (Nubis): a mass of spheres shaped by kind (0 a cumulus with a
-        // flat base under a rounded top, 2 a tower's crown that fades out downwards, 3 a flat sheet),
-        // its surface carved into cauliflower billows by inverted Worley at two scales, then its rim
-        // frayed by a finer Perlin-Worley so the edge thins into wisps instead of a smooth outline.
+        // One cloud part in [-1, 1]^3 (Nubis). Kind shapes the spheres: 0 a flat-based cumulus, 2 a
+        // crown fading downwards, 3 a sheet. Inverted Worley billows it at two scales, and a finer
+        // Perlin-Worley frays the rim into wisps.
         float density(vec3 p, float seed, int kind) {
             vec3 q = p + seed * 11.7;
             float shape = -1.0;
@@ -411,10 +410,9 @@ public sealed partial class VolumetricClouds : Node3D
         float maxW = overcast ? OvercastMaxWidth : ScatteredMaxWidth;
         var cards = new List<Card>(OvercastCount * 6);
         float Rand() => (float)rng.NextDouble();
-        // An overcast deck closes the whole sky, so it keeps its full field and the authored clouds
-        // come on top.
-        // A scattered sky follows the original's own cloud count: a chapter that authors none keeps a
-        // sparse handful, one that places clusters gets a few clouds at each and little elsewhere.
+        // An overcast deck closes the sky, so it keeps its full field under the authored clouds. A
+        // scattered sky follows the original's count. A chapter with no clusters gets a sparse
+        // handful, and one with clusters gets a few clouds at each and little elsewhere.
         int backgroundCount = overcast ? OvercastCount : authored.Count == 0 ? SparseCount : SparseCount / 2;
         for (int i = 0; i < backgroundCount; i++)
         {

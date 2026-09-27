@@ -70,7 +70,8 @@ depends on that order.
 The in-engine scenario bodies, one module per domain: the emitter model, combat and ordnance,
 Instant Action, AI, targeting, wingmen, the campaign and its menus, music, zeppelins, damage and
 destroy choreography, animation and effects, the built world's data gates and censuses, and the
-landing, capture and coop surfaces. Each module holds one or more `[Suite("name", "what")]` bodies,
+landing, capture and coop surfaces, and the two-session network harness that stands a host and a
+guest `GameSession` up in one process over a loopback mesh. Each module holds `[Suite("name", "what")]` bodies,
 a `static void` taking a `TestContext`; `SuiteCatalog` discovers them by that attribute, so adding
 a suite means adding a marked body to the module that already covers its domain, or a new module
 when none does, and registering nothing anywhere else. The membership itself is the catalog's
@@ -96,7 +97,8 @@ Builds and frees a production-shaped, pooled effect-template stage for mesh-visi
 The launchscreen fixture a menu suite stands a `LaunchMenu` on. `Bare` builds a `MenuHost` over an
 empty `PresentationRegistry`, a silent `IMenuAudio` and a caller-owned exit list; `AddFeatures`
 registers the same Free Flight, Instant Action, player-setup, hangar, campaign and controls
-features the launcher wires; `Menu` returns a built launchscreen for a suite that reads nothing
-back from the host. Seat 0 joins through the setup feature, which is why the seat is added after
-the features, and the controls feature is registered in the form that saves nothing. Read
-`UI/Menu/MenuHost.cs` for the host itself.
+features the launcher wires; `Build` stands a launchscreen on a host over the suite's own
+`ScratchPlanes` store, and `Menu` does so on a bare host. Presentations take that store too, so no
+menu suite reads `user://Planes`; `DropScratchPlanes` removes it. Seat 0 joins through the setup
+feature, so it is added after the features; the controls feature is the form that saves nothing.
+A suite that drives the multiplayer door passes its own `netDoor`; `UI/Menu/MenuHost.cs` is the host.

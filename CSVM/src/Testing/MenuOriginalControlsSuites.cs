@@ -27,7 +27,7 @@ internal static class MenuOriginalControlsSuites
         + "mouse row hands the mouse between the stick and head-look a press at a time over the "
         + "authored Mouse Sensitivity slider, and whose "
         + "KEYS AND BUTTONS button opens the decoded KEYS page on its Movement tab with the seven "
-        + "category strips, the three column heads and CANCEL CHANGES authored left of ACCEPT "
+        + "category strips, the three authored column heads beside the port's Stick head and CANCEL CHANGES authored left of ACCEPT "
         + "CHANGES, a click on a control cell arms a capture on that row's own action and slot, "
         + "Escape abandons it with the live keymap untouched, a second capture binds the key it is "
         + "given, ACCEPT CHANGES returns to the CONTROLS page and writes player 1's keymap file "
@@ -57,10 +57,17 @@ internal static class MenuOriginalControlsSuites
         var seat = new ScriptedSeat();
         var player1 = new MenuInput { Keyboard = true };
         var registry = new PresentationRegistry();
+        var planes = MenuSuiteHost.ScratchPlanes(ctx, "menu-original-controls");
         registry.Register(PresentationId.BuiltIn, () => new BuiltInPresentation(
-            ctx.Host, ctx.ZrdrPath, ctx.DataRoot, string.Empty, new MenuInput { Keyboard = true }));
+            ctx.Host, ctx.ZrdrPath, ctx.DataRoot, string.Empty, new MenuInput { Keyboard = true })
+        {
+            Planes = planes,
+        });
         registry.Register(PresentationId.Original, () => new OriginalPresentation(
-            ctx.Host, ctx.DataRoot, layout, string.Empty, player1));
+            ctx.Host, ctx.DataRoot, layout, string.Empty, player1)
+        {
+            Planes = planes,
+        });
         var host = new MenuHost(registry, new MenuSuiteHost.SilentMenuAudio(), exits.Add);
         MenuSuiteHost.AddFeatures(host, ctx.DataRoot, (player, profile) =>
         {
@@ -92,6 +99,7 @@ internal static class MenuOriginalControlsSuites
             host.Deactivate();
             BindingStore.DirectoryOverride = previous;
             Godot.Input.MouseMode = Godot.Input.MouseModeEnum.Visible;
+            MenuSuiteHost.DropScratchPlanes(ctx, "menu-original-controls");
         }
     }
 
@@ -144,13 +152,13 @@ internal static class MenuOriginalControlsSuites
         int heads = 0;
         foreach (var line in board.Lines)
         {
-            if (line.Text is "Action" or "Control A" or "Control B")
+            if (line.Text is "Action" or "Control A" or "Control B" or "Stick")
             {
                 heads++;
             }
         }
 
-        ctx.Check(heads == 3, $"the page draws its three authored column heads ({heads})");
+        ctx.Check(heads == 4, $"the page draws its three authored column heads and the port's Stick head ({heads})");
     }
 
     // A capture armed on one cell: Escape abandons it, a second one binds, and ACCEPT CHANGES is

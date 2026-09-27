@@ -109,6 +109,19 @@ public class OriginalCoverageTests : IDisposable
             new[] { OriginalInstantActionScreen.ExitKey }),
         new("instant-action-wrapup", OriginalScreen.InstantActionWrapup, new[] { "MM_B_INSTANTACTION", WrapupStep },
             new[] { OriginalWrapupScreen.ContinueKey, OriginalInstantActionScreen.ExitKey }),
+        new("multiplayer-connection", OriginalScreen.Connection, new[] { OriginalShell.MultiplayerKey },
+            new[] { OriginalConnectionScreen.ExitKey }),
+        new("multiplayer-games", OriginalScreen.ConnectionGames,
+            new[] { OriginalShell.MultiplayerKey, OriginalConnectionScreen.ConnectKey },
+            new[] { OriginalConnectionScreen.CancelKey, OriginalConnectionScreen.ExitKey }),
+        new("multiplayer-lobby", OriginalScreen.Lobby, new[] { OriginalShell.MultiplayerKey, OriginalConnectionScreen.HostKey },
+            new[] { OriginalLobbyScreen.LeaveKey, OriginalConnectionScreen.ExitKey }),
+        new("multiplayer-lobby-plane", OriginalScreen.Lobby,
+            new[] { OriginalShell.MultiplayerKey, OriginalConnectionScreen.HostKey, OriginalLobbyScreen.PlaneTabKey },
+            new[] { OriginalLobbyScreen.LeaveKey, OriginalConnectionScreen.ExitKey }),
+        new("multiplayer-lobby-rockets", OriginalScreen.Lobby,
+            new[] { OriginalShell.MultiplayerKey, OriginalConnectionScreen.HostKey, OriginalLobbyScreen.AmmoTabKey, OriginalLobbyScreen.RocketsTabKey },
+            new[] { OriginalLobbyScreen.LeaveKey, OriginalConnectionScreen.ExitKey }),
         new("campaign-roster", OriginalScreen.CampaignRoster, new[] { OriginalShell.CampaignKey }, new[] { "CancelProfile" }),
         new("campaign-cabin", OriginalScreen.CampaignCabin, Cabin, new[] { "ReturnToMainMenu" }),
         new("campaign-memento", OriginalScreen.CampaignMemento, Then(Cabin, "ChangeMemento"), new[] { "CancelMemento", "ReturnToMainMenu" }),
@@ -177,7 +190,7 @@ public class OriginalCoverageTests : IDisposable
     {
         ["MainMenu.MM_B_CAMPAIGN"] = Edge.Driven("campaign-roster", OriginalShell.CampaignKey),
         ["MainMenu.MM_B_INSTANTACTION"] = Edge.Driven("instant-action", "MM_B_INSTANTACTION"),
-        ["MainMenu.MM_B_MULTIPLAYER"] = Edge.Disabled("MM_B_MULTIPLAYER", "network play; the 22 multiplayer scripts have no layout and no local counterpart"),
+        ["MainMenu.MM_B_MULTIPLAYER"] = Edge.Driven("multiplayer-connection", OriginalShell.MultiplayerKey),
         ["MainMenu.MM_B_PREFERENCES"] = Edge.Driven("options", "MM_B_PREFERENCES"),
         ["MainMenu.MM_B_CREDITS"] = Edge.Driven("credits", OriginalShell.CreditsDoorKey),
         ["Credits.CR_B_Exit"] = Edge.Driven("credits", OriginalShell.CreditsExitKey),
@@ -740,9 +753,16 @@ public class OriginalCoverageTests : IDisposable
         // door is live and the walk edits a copy nothing writes back.
         var controls = new ControlsFeature();
         controls.AddSeat(1, ControlsProfile(), new SeatCaptureDevices(MenuControlsSeats.PadOf, Array.Empty<int>), true);
+        // A network door that hosts on a lone in-process wire and joins nothing. Nobody answers on
+        // its in-process LAN, so the games list stands on its Searching box.
+        var lan = new CSVM.Net.LoopbackLan();
+        var net = new NetPlayFeature(
+            (_, _, _) => CSVM.Net.LoopbackTransport.Mesh(1, CSVM.Net.LoopbackConditions.Perfect, new Random(1))[0],
+            (_, _) => throw new InvalidOperationException("the walk joins nothing"),
+            lan: lan.Bind);
         return new OriginalShell(layout, new FreeFlightFeature(), setup, measure,
             hangar: hangar, planes: planes, campaign: campaign, profiles: () => store, dataRoot: dataRoot,
-            controls: controls);
+            controls: controls, net: net);
     }
 
     private sealed record Journey(

@@ -278,6 +278,16 @@ public sealed class DestructibleRegistry
         /// that had no parent then.</summary>
         internal ulong CachedOwnerTreeParent { get; set; }
 
+        /// <summary>The anchor's Godot name as <c>TargetPool.NameOf</c> last read it, null before
+        /// the first read. Held for the reason <see cref="CachedOwnerTree"/> is. It is re-read when
+        /// <see cref="CachedAnchorNameParent"/> no longer names the anchor's parent, since a
+        /// reparent is what lets Godot rename a node to keep siblings unique.</summary>
+        internal string? CachedAnchorName { get; set; }
+
+        /// <summary>The instance id <see cref="CachedAnchorName"/> was read under, 0 for an anchor
+        /// that had no parent then.</summary>
+        internal ulong CachedAnchorNameParent { get; set; }
+
         /// <summary>Re-seeds this pool from a mission record, the zeppelin case (M4 F18):
         /// <c>zeppelins.json</c> authors per-part hp (<c>gasbags</c> 80–400,
         /// <c>cannon_health</c> 200) that overrides the def's own <c>HEALTH</c> where present.

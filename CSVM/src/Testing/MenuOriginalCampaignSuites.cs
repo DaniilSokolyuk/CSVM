@@ -87,16 +87,21 @@ internal static class MenuOriginalCampaignSuites
         }
 
         var store = new CampaignProfileStore(Path.Combine(root, "Profiles"));
+        var planes = MenuSuiteHost.ScratchPlanes(ctx, "menu-original-campaign");
         var exits = new List<MenuExit>();
         var audio = new RecordingAudio();
         var seat = new ScriptedSeat();
         var registry = new PresentationRegistry();
         registry.Register(PresentationId.BuiltIn, () => new BuiltInPresentation(
-            ctx.Host, ctx.ZrdrPath, ctx.DataRoot, string.Empty, new MenuInput { Keyboard = true }));
+            ctx.Host, ctx.ZrdrPath, ctx.DataRoot, string.Empty, new MenuInput { Keyboard = true })
+        {
+            Planes = planes,
+        });
         registry.Register(PresentationId.Original, () => new OriginalPresentation(
             ctx.Host, ctx.DataRoot, layout, string.Empty, new MenuInput { Keyboard = true })
         {
             CampaignProfiles = store,
+            Planes = planes,
         });
         var host = new MenuHost(registry, audio, exits.Add);
         MenuSuiteHost.AddFeatures(host, ctx.DataRoot);
@@ -185,7 +190,15 @@ internal static class MenuOriginalCampaignSuites
         ctx.Check(File.ReadAllText(Path.Combine(store.DirFor(Pilot), "profile.json")) == CampaignProfileStore.Serialize(CampaignProfileDef.NewProfile(Pilot))
             && store.LastPlayed == Pilot, $"the store holds exactly a fresh profile and the last-played record");
         ctx.Check(!host.Seats[0].CapturingText, $"and the seat no longer captures text on the cabin");
-        ctx.Check(shell.Rows.Count == 5 && shell.FocusedKey == "NextMission", $"the cabin's five plaques, focus on NEXT MISSION ({shell.FocusedKey})");
+        // The cabin's five authored plaques and the remake's network door beside them, nothing else.
+        string[] cabin =
+        {
+            nameof(BoardButton.NextMission), nameof(BoardButton.PreviousMissions), nameof(BoardButton.PlaneConstruction),
+            nameof(BoardButton.ReturnToMainMenu), nameof(BoardButton.ChangeMemento), OriginalCampaignScreen.CoopDoorKey,
+        };
+        var keys = shell.Rows.Select(row => row.Key).ToList();
+        ctx.Check(keys.Count == cabin.Length && cabin.All(keys.Contains) && shell.FocusedKey == nameof(BoardButton.NextMission),
+            $"the cabin's five plaques and HOST CO-OP, focus on NEXT MISSION ({string.Join(",", keys)}; {shell.FocusedKey})");
         Press(host, seat, Down);
         Press(host, seat, Accept);
         ctx.Check(shell.Screen == OriginalScreen.CampaignPreviousMissions && shell.Rows.Count == 5,

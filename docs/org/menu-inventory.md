@@ -65,7 +65,7 @@ own callbacks and economy are [`hangar.md`](hangar.md), the mission-end book
 | Distinct `IDS_*` symbols `LAYOUT.CSV` names | **152**, of which **149** resolve to text |
 | UI sound files | **8** |
 | Original screens in this plan's scope | **28** of the 34 single-player screens (25 built; the 3 remaining Preferences pages stand behind doors drawn disabled) |
-| Layout-stated navigation edges in the original | **46** (31 driven by Original, 2 realised as the wingman slot's row, 3 drawn disabled, 10 out of scope; see [Coverage](#coverage)) |
+| Layout-stated navigation edges in the original | **46** (32 driven by Original, 2 realised as the wingman slot's row, 2 drawn disabled, 10 out of scope; see [Coverage](#coverage)) |
 
 ## Part 1: Built-in as it stands
 
@@ -110,7 +110,8 @@ Briefing, FlightCheck, Ammo, PlaneSelection, Scrapbook, ScrapbookZoom.
 ### Launchscreen transitions
 
 47 edges. Trigger names use the footer's own vocabulary: Accept is Enter / A, Back is Esc / B,
-Loadout is L / Y, Presets is P / X.
+Loadout is L / Y, Presets is P / X. On the Controls screen's action rows the unbind is
+Del / Backspace / Y; the L key does not unbind.
 
 | From | Trigger | To |
 |---|---|---|
@@ -296,6 +297,14 @@ named in it; `WaveEdit` is the twelfth and has no aid, which is the warning unde
 | `campaign-planeselection[:export]` | plane selection, or its export messagebox | `Campaign` |
 | `campaign-hangar` | the hangar over the profile's wallet | `Campaign` → `Hangar` |
 | `campaign-fly` | walks a real profile to Fly Mission and launches | `Campaign` |
+| `campaign-coop[:guests]` | the cabin with the co-op network door open over a loopback wire holding that many guests (0 by default), its band and remote chips drawn; Original draws the same pose with its CLOSE NETWORK plaque | `Campaign` |
+| `campaign-coop-guest[:board]` | Original only: a co-op guest joined to a loopback host, standing on the board the host names (`cabin` by default, `briefing`, `flightcheck`, `ready`, `planeselection`, `ammo`, `debrief`), the host's rows greyed and the guest band drawn; `ready` is the check after the guest's Ready, `debrief` the host's won result | `Campaign` |
+| `campaign-coop-ready` | Original only: a co-op host's flight check with two guests, the first Ready and the second not, so FLY MISSION is greyed and the strip's chips say Ready | `Campaign` |
+| `connection` | Original only: the Multiplayer Connection page | out of scope |
+| `connection-games[:searching]` | Original only: the LAN games list over an in-process LAN answering with five sample games, one of another build version, or with none so the Searching box stands | out of scope |
+| `lobby[:host\|guest[:mission\|plane\|ammo\|rockets\|scores]]` | Original only: the Multiplayer Lobby as its host or first guest, over an in-process wire with two guests, Time 5 and Limited Lives set, the first guest Ready and one chat line from each, on the named tab | out of scope |
+| `network-coopjoin` | the Network board of a guest joined over the loopback to a campaign host, the session named in its status | `Network` |
+| `network-coopwait` | that guest's waiting board | `Network` |
 | `loadboard[:mission_type]` | the load screen's blackboard, over the menu, writing that mission type's own dialog | out of scope |
 | `loadboard-campaign[:CM]` | the load screen's chart sheet for that campaign mission, `CM01` by default, over the menu; it reads the memento off a `--campaign=` profile the same way | out of scope |
 | `pauseboard[:CM[:done]]` | the Original presentation's pause sheet for that campaign mission, `CM01` by default, with that many of its objectives marked. A `--campaign=<profile>:<seq>` beside it hangs that profile's own memento, the way a real pause does; without one the sheet hangs the seeded pin-up | out of scope |
@@ -430,11 +439,12 @@ families (pointer clicks on the rows' rectangles, keyboard cursor commands walki
 pad cursor commands walking up and left), once over the hand-authored fixture layout and once over
 the install's own `menu_layout.json` and art. Every `ScriptToExe` edge of an in-scope section must
 have an entry saying how Original realises it, and the entry is checked against the shell. The
-tally over the install: 33 screens (every `OriginalScreen`) reached and left with no open campaign,
-build or dialog behind; 56 journeys by 3 families; 46 edges of which **43 are driven** (the row is
-pressed and the target screen shows), **2 are realised as the wingman slot's row** (`FC_B_CHANGEPLANEW`
-and `FC_B_CHANGEAMMOW` are the pilot's plaques at the wingman's slot, present exactly when the
-mission flies a wingman) and **1 is drawn disabled** (`MM_B_MULTIPLAYER`); 0 dead ends. The wrap-up
+tally over the install: 35 screens (every `OriginalScreen`) reached and left with no open campaign,
+build or dialog behind; 58 journeys by 3 families; 46 edges of which **44 are driven** (the row is
+pressed and the target screen shows, `MM_B_MULTIPLAYER` opening the Connection page) and **2 are
+realised as the wingman slot's row** (`FC_B_CHANGEPLANEW` and `FC_B_CHANGEAMMOW` are the pilot's
+plaques at the wingman's slot, present exactly when the mission flies a wingman); none is drawn
+disabled and there are 0 dead ends. The wrap-up
 page is reached the way a flown mission reaches it, by handing the shell one ended mission's frozen
 numbers, since no row anywhere opens it. The exits are checked too: Quit as a `QuitExit`, ACCEPT CHANGES as a
 `OptionsApplyExit`, FLY on Free Flight and Fly Mission on Instant Action as a `LaunchExit`,
@@ -446,8 +456,9 @@ device mapping behind them is the seats' own tests.
 ### In scope and out of scope
 
 Decision 5 puts everything `LaunchMenu` hosts in scope. Mapping that onto the original's 34
-single-player screens leaves **30 in and 4 out**, before the 22 multiplayer screens, which are all
-out (CSVM's Dogfight is splitscreen on `dogfight_ace` spawns, not the original's network play).
+single-player screens leaves **30 in and 4 out**, before the 22 multiplayer screens. Of those, the
+Connection page and the LAN games list are built as the campaign co-op's way in, and the
+Multiplayer Lobby with its four tab pages as the networked Dogfight's; the rest stay out.
 
 **In scope (30):** MainMenu; Preferences, GameOptions, Audio, Video, ControlsPrefs, Keys; Credits;
 InstantAction, IA_WrapUp; Campaign, PassengerCabin, MomentoSelection, FlightCheck, PlaneSelection,
@@ -467,9 +478,73 @@ four volume levels on the second, the graphics mode, the display mode and the V-
 third. ControlsPrefs and Keys stand
 over the shared `ControlsFeature`, so all four page doors (`PF_B_GAMEOPTIONS`, `PF_B_AUDIO`,
 `PF_B_VIDEO`, `PF_B_CONTROLS`) are live.
-Multiplayer is network play with no local counterpart, so `MM_B_MULTIPLAYER` draws its disabled
-frame and takes no input. `MM_B_CREDITS` is live and opens the credits screen, which is built
+`MM_B_MULTIPLAYER` is live wherever the shell has a network door, and opens the Connection page
+([The multiplayer screens](#the-multiplayer-screens)); a shell built without one draws it disabled.
+`MM_B_CREDITS` is live and opens the credits screen, which is built
 whole: the pane, both buttons, the About box and the right-button line.
+
+### The multiplayer screens
+
+The multiplayer scripts use the `CC` library and place every widget inline, so the corners below
+are the scripts' own, in 800x600 board pixels, and `OriginalConnectionScreen` holds them as
+constants rather than reading a layout.
+
+- **Connection** (`MP_OPTIONSBACKGROUND.JPG`). The script places five `MP_B_RADIO.PNG` radios at
+  x 50, y 98, 134, 171, 207 and 268 (four frames: greyed, normal, rollover, selected), MSN Gaming
+  Zone, LAN IPX, LAN TCP/IP, Internet and Modem-to-Modem, each label (langui 10001 to 10005) 33 px
+  right of its radio and its description (10008 to 10012) at x 83. The IP Address box stands 17 px
+  under the Internet radio, 150 x 18, its label 101 px left of it, and the phone box likewise under
+  Modem-to-Modem. Host (`MP_B_SMALL.PNG`) at (514, 424), Connect (`MP_B_MEDIUM.PNG`) at (610, 424),
+  Exit Multiplayer at (514, 559), Build Custom Plane at (117, 468), and the panel text (10524)
+  centred in x 59 to 388 at y 380. The capture draws every label and description black, a greyed
+  way included, and the live address box as a black outline over the page.
+- **The games list** (`MP_GAMESBACKGROUND.JPG`). The title (10067 over the way's name) at (69, 80);
+  five sort radios, the first two at y 116 and x 145 and 278, the rest at y 118 and x 414, 547 and
+  680, each under "Sort by:" (10068); five header columns from x 53, of widths 145, 100, 166, 145 and 115,
+  their words (10069 to 10073) at y 149; up to twelve rows from y 175 at a 25 px pitch; the Auto
+  refresh checkbox (`MP_B_CHECKBOXLARGE.PNG`, eight frames) at (47, 507) and Create Game, Join Game
+  (`MP_B_LARGE.PNG`) and Exit (`MP_B_SMALL.PNG`) along y 507 at x 394, 529 and 665. The sorted column
+  wears `MP_GAMESALPHA.PNG` cropped to that column at alpha 80, tinted F2D08B. An empty list is
+  covered by the Searching box (`MP_ERRORMESSAGEBACKGROUND.JPG` at (254, 160), "Searching ..." in
+  red, its Cancel at (404, 310)), and asks again every second; a filled one asks every five seconds
+  only while Auto refresh is checked.
+- **What is ours.** Only LAN TCP/IP, which searches, and Internet, which joins the typed address,
+  are on the page, at the script's first two radio places (y 98 and 134) with its pitch, the IP
+  Address box at (184, 151) and the Internet description at y 177. MSN Gaming Zone, LAN IPX and
+  Modem-to-Modem, with the phone box, are left off since the remake has no carrier for them. Host
+  and Create Game open the Multiplayer Lobby as a Dogfight's host, skipping the original's host
+  box (game name and player cap); Build Custom Plane draws greyed. The Mission Environment column
+  names a co-op game's mission, or its shortcode when the name passes 24 characters, and a
+  Dogfight's environment. A join is followed on the shared message box: connecting, waiting on the host, or why
+  it ended. The multiplayer error box's errors (langui 10022, 10025) are raised in the shared box.
+- **The Multiplayer Lobby** (`MP_LOBBY_BACKGROUND.JPG`). The title (10046) at (60, 22), the
+  player count (10048) and the Ready header (10052) at y 54, the player list from (34, 83) at a
+  20 px pitch with its `MP_B_CHECKBOX.PNG` mark 230 px right of each name, and the chat pane at
+  (34, 373), 735 x 165, the speaker's name then the line 100 px right of it. The tab strip's four
+  tabs (10094, 10114, 10119, 10507) stand at y 24 from x 324, 442, 548 and 656, and the picked tab's
+  page (`MP_LOBBY_MISSION.PNG`, `_PLANE`, `_AMMO`, `_STATSCREEN`) at (314, 26). Mission Options
+  carries the Environment and Type boxes (`MP_B_LISTBOXARROW.PNG`), the victory radios
+  (`MP_B_RADIO8STATESSM.PNG`) with their Time and Score boxes, and the teams, lives and planes
+  checkboxes (`MP_B_CHECKBOX8STATES.PNG`); Select Plane the Default and Custom sub-tabs
+  (`MP_LOBBY_TABLARGE.PNG`), the plane box and the plane's icons (`MP_PLANEICONSTOPFRONT.PNG`) and
+  ratings; Select Ammo the Guns and Rockets sub-tabs (`MP_LOBBY_TABSMALL.PNG`), a box per gun slot
+  or per wing cell. Boot, Create Team, the Ready box (`MP_B_CHECKBOXLARGE.PNG`) and its Ready? label,
+  LAUNCH!, the chat box, Send and Leave Game stand on every tab.
+- **What is ours in the lobby.** Only Deathmatch flies, so Capture the Flag, Zeppelin vs Zeppelin,
+  the teams, Allow Custom Planes, Outlaw Components, Custom Planes and Boot draw greyed; guests fly
+  stock planes. A completed match's Exit lands every pilot back in the same lobby on Game Scores,
+  which shows that match's name, points, kills and deaths best first (Hits % stays blank), with
+  every Ready cleared for the next round. Game Scores is greyed until a match has landed. The own
+  name is drawn red in the list and the chat, and the player list shows its first eleven rows with
+  no scroll bar. Leave Game always lands on the Connection page. The host's options lock while it
+  is Ready, and any option change clears every Ready. A guest's plane and ammo picks stay live, and
+  a changed pick clears that guest's own Ready. The Lives box is greyed until Limited Lives is
+  ticked, then reads 3 (the remake's own default) and takes 1..99. A Built-in Dogfight host serves
+  an Original guest too: its launch waits for that guest's Ready and flies its pick on one of the
+  seven lobby environments.
+- **The cabin's network door.** Remake-only: a paper plaque in the `FC_B_CHANGEPLANE` convention at
+  (14, 40) reading HOST CO-OP or CLOSE NETWORK, with the host's band over a dark ground at y 14.
+  The original has no co-op campaign, so no script describes it.
 
 ### Screen by screen
 
@@ -478,7 +553,7 @@ behaviour: what a press does, what a rollover changes, what is disabled when.
 
 | Original screen | Built-in counterpart | Layout | Script decoded | Capture | Interaction evidence |
 |---|---|---|---|---|---|
-| MainMenu | Mode | 9 rows | this page | **none** | composition only; script text gives the six buttons and their targets, nothing about rollover, music or the flag movie. **Built as Original's top level** from the two panes and the six `B` rows with their four-frame strips: Campaign, Instant Action, Preferences (the Options screen), Credits and Quit react, Multiplayer draws the disabled frame and takes no input, and the movie's place is black. Quit terminates on the press with no confirm, which is `MAINMENU.SCRIPT`'s own `terminate` on `mm_b_quit` |
+| MainMenu | Mode | 9 rows | this page | **none** | composition only; script text gives the six buttons and their targets, nothing about rollover, music or the flag movie. **Built as Original's top level** from the two panes and the six `B` rows with their four-frame strips: Campaign, Instant Action, Preferences (the Options screen), Credits and Quit react, Multiplayer opens the Connection page over a network door (disabled on a shell built without one), and the movie's place is black. Quit terminates on the press with no confirm, which is `MAINMENU.SCRIPT`'s own `terminate` on `mm_b_quit` |
 | (none: remake-only) | Free Flight, Chapter, Plane | none | none | none | **Original's Free Flight door and screen, of our design under Decision 11.** The door is a text button in the `FC_B_CHANGEPLANE` paper-plaque convention beside the button frame, level with Campaign; the screen is the logo over two text lists (the shared chapter roster and the shared aircraft roster, the eleven stock airframes then the saved custom planes in an eleven-row window) with BACK and FLY plaques and a seat strip under the chapters. Seat 0 alone picks here; each joined seat picks on the per-seat aircraft screen below. Nothing on it is decoded |
 | (none: remake-only) | Dogfight, Chapter, Plane | none | none | none | **Original's Dogfight door and screen, of our design under Decision 11.** The door sits under the Free Flight door in the same plaque convention; the screen is the Free Flight screen's shape over the Dogfight gate (a second seat must join and confirm before FLY stands). The original's Multiplayer is network play and ships no split-screen Dogfight, so nothing here is decoded |
 | (none: remake-only) | the join strip and per-seat picks | none | none | none | **Original's join flow, of our design.** Start on an unclaimed pad joins a seat on either sortie screen, the Instant Action screen or the campaign flight check (the same gesture and pad bookkeeping as Built-in's, through `MenuSeatDevices`); seat 0's mouse, keyboard or pad picks the map and the aircraft and presses FLY, which is its own confirmation; with another pilot joined the per-seat walk's last confirm takes that press, so the sortie launches there rather than back on the sortie screen. On the campaign the walk is the flight check itself, one player's check at a time: that pilot's own device drives their check and the ammo and plane screens it opens, plus the mouse riding seat 0's source, and nothing else of seat 0's. The original has no join gesture |
@@ -489,7 +564,7 @@ behaviour: what a press does, what a rollover changes, what is disabled when.
 | Audio | (none) | 19 rows | no | `Preferences Audio.png` | layout only for the composition; three preview loops are script-bound; both plaques state `Preferences` as their edge. **Built as Original's AUDIO page**, `PF_B_AUDIO`'s destination: `AP_BACKGROUND` and `AP_T_TITLE` at their corners, then four volume levels on their own authored rows (a title in the `TITLEX` 137 column at the row's line, a slider in the same column 26 pixels under it, a description in the `DESCX` 348 column at width 310), with `AP_B_ACCEPTCHANGES` leaving as the options apply carrying every saved choice and `AP_B_CANCELCHANGES` returning to Preferences with the edits dropped. Each row's line is read off its own title widget rather than off a first row and a pitch: the authored titles run 266, 324, 381 and 434, a pitch of 58, 57, 53 and 53, so one number would misplace every row under the second. The three authored sliders are identical but for their line (`MinValue 1, MaxValue 100, CurrentValue 50`, `PF_B_SliderSlot.png` under `PF_B_Slider.png`, the press region the slot grown by `Left 0, Top -10, Right 1, Bottom -10`), and each is honoured as authored: "Music Volume", "Effects Volume" and "Voice Volume" keep their titles and their descriptions. Remake-only is row one, "Master", which takes the In-Game Music checkbox's authored row with the page's own title and description "Set the overall volume. It scales the three levels below it."; its slider stands at the slider column and offset rather than at `AP_B_MUSIC`'s own corner, that widget being a checkbox authored at X 259 on the title's own line. The range every slider takes is 0 to 100 rather than the authored 1 to 100, since one step below the authored floor is what makes a category mutable at all, which is the whole of what the In-Game Music checkbox did; the checkbox is therefore not drawn. A slider answers no Accept: the level moves under the pointer or by a sideways step of 5, clamped at both ends. The page draws the Preferences page's `PF_LOGO`, its own section authoring no logo pane. **The row that does not come back** is Sound Quality: the authored dropdown tiered a 2000-era mixer's sample rate and voice count, which is why the original had to quit and restart to change it (`IDS_AP_QUALITYCHANGED`), and Godot's mixer has no equivalent tier |
 | Video | (none) | 31 rows | no | `Preferences Video.png` | layout only for the composition; both plaques state `Preferences` as their edge. **Built as Original's VIDEO page**, `PF_B_VIDEO`'s destination: `VP_BACKGROUND` and `VP_T_TITLE` at their corners, then the settings on their own authored rows (a title in the `X` 18 column at the row's line, a control beside it, a description in the `X` 325 column), with `VP_B_ACCEPTCHANGES` leaving as the options apply carrying every saved choice and `VP_B_CANCELCHANGES` returning to Preferences with the edits dropped. Each row keeps its own geometry rather than a shared pitch: the authored lines run 270, 305, 342, 381, 417, 454, 494, 530, 565 and each control has its own column and width, so a fixed pitch would put no row where the artwork draws it. Remake-only are the rows built so far, held in the table in authored order because the cursor walks it. "Resolution" stands on its own authored line, a dropdown at `VP_D_Display`'s own column and width over the sizes the chosen screen can hold, keeping the authored description "Select the screen resolution." because that line describes what the row does here. Its words are enumerated per screen rather than shipped as a list, so it cannot offer a size the monitor cannot hold; Godot exposes no video-mode list, so the enumeration is the standard desktop sizes that fit inside the screen's own reported size, plus that size and the project default. A saved size the screen no longer offers shows as the project default rather than as the nearest one, which is the rule `ResolutionSetting` applies. "Monitor" stands on the authored Graphics line, the page's first row, a dropdown at `VP_D_Device`'s own column and width over the screens the engine reports, each labelled by the index it is saved as and the size that screen reports, described "Select the monitor the game opens on." Both its title and its description are the page's own, the authored pair naming a 3D card or a software renderer and this port having neither a card choice nor a software path. A saved index no screen answers to shows as the screen the window already stands on, which is the rule `MonitorSetting` applies and is the feature rather than an error path, a monitor being unpluggable between two launches. "Display Mode" stands on the authored Viewing Range line, a dropdown at `VP_D_View`'s own column and width reading Windowed, Borderless or Fullscreen, described "Select how the window sits on the screen. Borderless leaves the desktop beneath it."; it takes that row because the two above it are the monitor and the resolution, and its authored description names a draw distance the mission data owns. "V-Sync" stands on the authored Effects Level line, a dropdown at `VP_D_Effects`' own column and width reading On, Off, or one of the 60, 120 and 144 fps caps, described "Select the frame pacing. On follows the screen; off runs free, or to a frame cap."; one control carries both the choice and the cap, a cap meaning nothing while the loop waits for the screen. It takes that row because the three authored rows above it are where the monitor, the resolution and the display mode belong, which is the order those read in, and its authored description names a tier system this port has no counterpart for. "Enhanced Graphics" stands on the authored Shadows line, a checkbox drawn from `PF_B_CheckBoxSmall.png` at `VP_B_SHADOWS`' own corner, described "Select the lit world. Applies at once.", since the apply switches the running world. It takes the Shadows row because the sun shadows that row would have switched already ride the enhanced gate, and because that row's authored title box is the wide one a long title needs. Two numbers the section does not state are derived: a title box stops at the control beside it (every Video title but the Graphics one is authored 162 wide whatever stands to its right, and that one's 90 already stops short of `VP_D_Device` at 105), and a description the section gives no width wraps at the plaque column, the widthless `VP_T_ClutterDESC` and `VP_T_ShadowsDESC` being the two rows the plaques stand beside. The page draws the Preferences page's `PF_LOGO`, its own section authoring no logo pane. "View Distance" stands on the authored Objects Detail line, a dropdown at `VP_D_Objects`' own column and width reading Normal, Far, Very Far or Unlimited, how much further the clutter (buildings, poles, trees) draws before its far fade, the fog staying where it is (`Utils/ViewDistance.cs`); it draws dead until Enhanced Graphics is ticked and its description says it is Enhanced only, the faithful world keeping the original's own fade. It takes that line because it is the next under V-Sync, the original's own view-distance line carrying Display Mode. **The rows still empty** are Lighting Quality, Texture Quality and Clutter Detail, which do not come back: they were tiers for 2000-era hardware, and the knobs nearest to them here are either fidelity values the mission data owns or settings that cost nothing on a modern GPU. The Clutter Detail line is left blank rather than closed up, so Enhanced Graphics keeps the Shadows line the artwork draws it on |
 | ControlsPrefs | Options' Controls row | 12 rows | no | `still-t084-controls-page.png` | layout only for the composition; both plaques state `Preferences` as their edge and `CP_B_KEYS` states `Keys`. **Built as Original's CONTROLS page**, `PF_B_CONTROLS`' destination: `CP_BACKGROUND` and `CP_T_TITLE` at their corners, the KEYS AND BUTTONS door at its own, `CP_T_KeysDesc` as authored, and the two plaques with ACCEPT CHANGES left of CANCEL CHANGES as the section authors them. Remake-only is the first row: the seat chooser takes `CP_D_Fly`'s Controller Type box, a dropdown over the seats the shared feature holds reading "Player 1", described "Whose keymap KEYS AND BUTTONS edits. Each seat holds its own."; this port has no controller-type tier, every device being bindable on the page behind the door, and the seat is the one thing that page needs choosing. Joining is open here, which is what puts a second player's keymap on screen at all. **Mouse Sensitivity stands as authored**: `CP_S_MOUSE` is a `Z` slider row of the Audio page's family (`MinValue 1`, `MaxValue 100`, `CurrentValue 50`, `PF_B_SliderSlot.png` and `PF_B_Slider.png`), drawn with its slot and thumb and pressed through its own region (the 171x3 slot at X 142, Y 391 inset by `Left 0, Top -10, Right 1, Bottom -10`, so 170 by 23 at 142, 381). It steps the Fly scheme's sensitivity over this port's 0 to 100 scale ([../controls.md](../controls.md), "Flying with the mouse"), the original's having moved the desktop cursor. Remake-only on the same panel is the flying scheme, a two-value chooser reading "Look" or "Fly" on the `CP_T_MouseTitle` line, in the right half of the Controller Type box's column (`CP_D_Fly`'s X 134 and Width 175) so its arrow ends where the seat row's does, and stopping above the slider's region; the title reads "Mouse" and is narrowed to end where the chooser starts, and the panel's description is this port's, naming both controls. ACCEPT CHANGES writes the staged keymaps through the feature and CANCEL CHANGES drops them, both returning to Preferences; neither is the options apply, a keymap being no field of the options file |
-| Keys | Options' Controls row | 17 rows | no | `Keybinds Movement/Throttle/Targeting/Weapons/Views 1/Views 2/Other.png`, `still-t096-keys-and-buttons-page.png` | composition of all seven tabs; no interaction. **Built as Original's KEYS AND BUTTONS page**, `CP_B_KEYS`' destination: `KB_BACKGROUND` and `KB_T_TITLE` at their corners, the seven `KB_B_CAT` strips down the left column with the standing one in its depressed frame, the three authored column heads, the action list in `KB_L_Controls`' own window and pitch under a heading naming the standing category, `KB_B_RESET`, and the exit pair the section authors the other way round from every other leaf's, `KB_B_CANCELCHANGES` at X 202 left of `KB_B_ACCEPTCHANGES` at X 511 on one line at Y 550, which is what the still shows. **The seven tabs are the original's action groups, not this port's three keymaps.** Movement, Throttle, Weapons, Targeting, Views 1 and Views 2 name flight actions and take them; Other takes every action those six leave over, which is the session commands plus the whole of the menu and free-camera keymaps, since the original binds neither and a faithful strip would otherwise strand them. A tab claims each action exactly once, so a new action lands on Other rather than nowhere. **Control A and Control B are positions, not fields**: this port holds an unbounded list per action, so Control A prints the first control and Control B the second followed by the count it is not showing, and the slot cursor walks the whole list including the empty place past its end. A click on a cell arms a capture on that cell's own action and slot, the page swallowing the frame while one runs; Escape or the pad's Back abandons it. ACCEPT CHANGES writes the staged keymaps and CANCEL CHANGES drops them, both returning to ControlsPrefs. Remake-only: the category heading over the rows, the keyboard and pad focus, and two clamps the data forces, the authored list width putting its scrollbar at X 844 and the Control B column ending at X 815 against a plate that ends at 797, so each is clamped to the plate's own right edge |
+| Keys | Options' Controls row | 17 rows | no | `Keybinds Movement/Throttle/Targeting/Weapons/Views 1/Views 2/Other.png`, `still-t096-keys-and-buttons-page.png` | composition of all seven tabs; no interaction. **Built as Original's KEYS AND BUTTONS page**, `CP_B_KEYS`' destination: `KB_BACKGROUND` and `KB_T_TITLE` at their corners, the seven `KB_B_CAT` strips down the left column with the standing one in its depressed frame, the three authored column heads, the action list in `KB_L_Controls`' own window and pitch under a heading naming the standing category, `KB_B_RESET`, and the exit pair the section authors the other way round from every other leaf's, `KB_B_CANCELCHANGES` at X 202 left of `KB_B_ACCEPTCHANGES` at X 511 on one line at Y 550, which is what the still shows. **The seven tabs are the original's action groups, not this port's three keymaps.** Movement, Throttle, Weapons, Targeting, Views 1 and Views 2 name flight actions and take them; Other takes every action those six leave over, which is the session commands plus the whole of the menu and free-camera keymaps, since the original binds neither and a faithful strip would otherwise strand them. A tab claims each action exactly once, so a new action lands on Other rather than nowhere. **Control A and Control B are positions, not fields**: this port holds an unbounded list per action, so Control A prints the first control and Control B every other one joined by " / " (a caption too wide for its cell stays on one line, clipped to it, and scrolls, the remake's `Boards/BoardMarquee.cs`), and the slot cursor walks the whole list including the empty place past its end. A click on a cell arms a capture on that cell's own action and slot, the page swallowing the frame while one runs; Escape or the pad's Back abandons it. ACCEPT CHANGES writes the staged keymaps and CANCEL CHANGES drops them, both returning to ControlsPrefs. Remake-only: the category heading over the rows, the keyboard and pad focus, and two clamps the data forces, the authored list width putting its scrollbar at X 844 and the Control B column ending at X 815 against a plate that ends at 797, so each is clamped to the plate's own right edge |
 | Credits | (none: Built-in has no counterpart) | 3 rows | this page | **none** | `CREDITS.SCRIPT` decoded: the background pane, ABOUT, and the DONE plaque whose `ScriptToExe` is MainMenu; `gui_char` ends the script and runs `mainmenu.script` on Escape. **Built as Original's credits screen** from the full-screen pane the credit names are painted into, the two buttons over it, and both ways back landing on the top level. `CR_B_Exit` wears MomentoSelection's `MS_B_Done.png`; there is no `CR_B_Exit.png`. **ABOUT** raises the one-button box the press asks for: setting `@globals@OR.XR` switches the messagebox to the `ma_` widget set over `CR_AboutMessageBox.png` (505x416, centred at 147,92) and takes the skull icon, which stays `mb_p_icon` at its own place whatever the set. Its words are `uiData` 2108 (`0x0040a2cb`), langui 1301 formatted over the product id `FUN_004073d0` reads from `HKLM\SOFTWARE\Microsoft\Microsoft Games\Crimson Skies\1.0`, value `PID`, which falls back to `???` when the key or the value is absent, and `???` is what this port always shows, reading no registry. That row's `&&` is drawn as authored: every other langui row spells a literal ampersand singly (`Pratt & Whitney`), so the text widgets eat no `&`. **The right-button line** is read: `rbutton_update` activates a text widget at 288,308 in `0xffffff00` while the right button is held inside 287..353 by 313..333, its line built by shifting each character of an obfuscated literal down by three (`CREDITS.SCRIPT:63-72`), and the transitions count only inside that region, so a hold carried out of it leaves the line standing |
 | InstantAction | Environment, MissionType, Waves, WaveEdit, Wingmen, Plane, Presets | 48 rows | [`instant-action.md`](../formats/instant-action.md) | **none** | option sets, the ace's control hiding and the paged enemy rows are script-proven; the screen itself has never been seen. **Built as Original's Instant Action screen** from the section's rows over the shared feature: `IA_BackGround`, the `T` rows, the contents list in its 14-row window with its own scroll arrows and slider, the dropdowns on their authored lines, the enemy rows paged by `IA_B_UP`/`IA_B_DOWN`, the radio pair, View Story, Fly Mission and Exit; `IA_B_BUILD` opens the wallet-free hangar and `IA_B_CHANGEWEAPONS` the Weapon Loadout screen for the seat the radio pair names (both destinations remake readings, no layout row stating either edge). Remake-only: the Lives box, which the section authors no row for, a dropdown in the screen's own idiom standing with its own title on the clear line the layout leaves between the Wingmen and Mission rows (the line is found in the gaps between the authored boxes, never written down), reading Unlimited at zero and the count to nine over the same `InstantActionFeature.StepLives` the Built-in stepper writes, live where the ace duel blanks the enemy boxes and untouched by a contents row, no preset carrying a lives value. What the data does not settle is listed under Part 4 for `CAP-50` |
 | OrdinanceLayout (as Instant Action's Weapon Loadout) | `WingmanLoadout`, the plane pane's loadout | 31 rows | same | same | **Built as Original's Instant Action loadout screen** over the same section: the ammunition fields for the airframe's firable gun slots and the rocket fields for its pylons (left column pylons 1 to 4, right 5 to 8), each over the stock table's option list, the two diagram panes on the airframe's frame, `OL_T_PLANEINFO` naming the fitted aircraft, the focused field's description in its pane, `OL_B_ACCEPT` keeping the picks and `OL_B_CANCEL` or Back restoring the picks the screen opened on. Remake-only: the original reaches this section from the flight check alone |
@@ -592,7 +667,7 @@ screen degrades locally and stays usable. The runtime manifest
 (`CSVM/src/UI/Menu/Original/OriginalAssetManifest.cs`) derives that classification from the decoded
 layout on every start, so this section is the reading and the manifest is the enforcement. Over the
 install's own layout it classifies **99 required** and **63 optional** files, and over a complete
-extraction it reports no absence at all: `ExtractRof.ps1` copies the loose MPGs in, so the two
+extraction it reports no absence at all: the extraction copies the loose MPGs in, so the two
 movies the layout names are on disk with everything else.
 
 ⚠ **The manifest cannot be generated from `LAYOUT.CSV` alone.** The layout names 124 distinct art
@@ -621,7 +696,8 @@ which is why the required count is 94 layout names plus the five the scripts nam
 | `AP_`, `VP_`, `CP_`, `KB_` page art | 4 families | optional | the four remaining Preferences pages are out of scope, so no composed screen draws them |
 | `GN_B_ReturnToGame.Png` | 1 | optional | `[Preferences]`' in-flight way back; the menu's page offers `PC_B_ReturnMainMenu.png` instead |
 | `CR_AboutMessageBox.png` | 1 | **required** | the About box's own background, drawn by the credits screen's box |
-| `MessageBox`'s `MP_*` rows, its `MA_B_LEFT`/`MA_B_RIGHT`, and the art of every section outside the 23 | 3 + 27 | optional | no local counterpart for the multiplayer error box, and the About box is the one-button box, so its left and right rows never draw |
+| the Connection page's and the games list's art (`MP_OPTIONSBACKGROUND.JPG`, `MP_GAMESBACKGROUND.JPG`, `MP_ERRORMESSAGEBACKGROUND.JPG`, `MP_GAMESALPHA.PNG`, the `MP_B_` radio, small, medium, large, exit and checkbox strips) | 10 | **required** | script-named, since the multiplayer scripts carry no layout; drawn art may not be classed optional |
+| `MessageBox`'s `MP_*` rows, its `MA_B_LEFT`/`MA_B_RIGHT`, and the art of every section outside the 23 | 3 + 27 | optional | the multiplayer error box's errors are raised in the shared box, and the About box is the one-button box, so its left and right rows never draw |
 | `ui_strings.json` + `RESOURCE.H` | 2 | optional | 152 symbols referenced, 149 resolve; `UiStrings` falls back to an empty table, so the screens draw with no words rather than not at all |
 | `SCRAPBOOK.CSV` | 1 | optional | 461 rows; the book's extent is the file's extent, and without it the book lists nothing |
 | `MOUSECLICK`, `MOUSEOVER`, `ENTERTEXT`, `ENTERTEXT_ERROR` | 4 | optional | a silent menu is usable |
@@ -630,7 +706,7 @@ which is why the required count is 94 layout names plus the five the scripts nam
 | `PX_0..10_BLUEPRINT.TGA` | 11 | not classified | assembled at runtime; `IHangarPage.Art` already returns null on a miss |
 | scrapbook art | 238 files | not classified | assembled at runtime; a `Snap_*` row is already skipped when the file is not on disk |
 | paint `.BM` masks | 184 | not classified | assembled at runtime per pattern; 14 pattern folders, `FORTUNE` has all 62 skins, `BLCKSWAN` 5 |
-| `CrimFlag.MPG`, `Final.MPG` | 2 | optional | `LAYOUT.CSV` names both under `extracted/rof/ASSETS/GRAPHICS/MPG/`, where `ExtractRof.ps1` puts the install's loose MPGs; `CrimFlag.MPG` is the top level's and Preferences' backdrop, on an 8.0 s loop ([`../formats/cinemas.md`](../formats/cinemas.md)), and runs behind the five Preferences leaves too, which author no row of their own and show it in every leaf still; a screen whose movie is missing draws whole without it |
+| `CrimFlag.MPG`, `Final.MPG` | 2 | optional | `LAYOUT.CSV` names both under `extracted/rof/ASSETS/GRAPHICS/MPG/`, where the extraction puts the install's loose MPGs; `CrimFlag.MPG` is the top level's and Preferences' backdrop, on an 8.0 s loop ([`../formats/cinemas.md`](../formats/cinemas.md)), and runs behind the five Preferences leaves too, which author no row of their own and show it in every leaf still; a screen whose movie is missing draws whole without it |
 | `MM_BackGround.png`, `MM_SplashBackground.jpg` | 2 | not classified | neither appears in any layout row, and the shipped `MM_BackGround.png` is a placeholder reading "CS BACKGROUND" |
 
 **Not classified** means the manifest carries no entry: the name is assembled at runtime from a
@@ -716,8 +792,7 @@ the pointer changes; a plaque has three states that differ only in lettering col
 rest, orange under the pointer and red while held, the rollover arriving on the frame the hot
 point enters the box; a press fires on the release, never on the button-down (Quit held for 1.4 s
 did nothing until released); Multiplayer is a live plaque like the other five, and no take draws
-any plaque disabled, while Original keeps it in its disabled frame by the user's decision until
-multiplayer is implemented; nothing is drawn at `mm_t_title`; Quit ends the process on the release with
+any plaque disabled, which Original matches over its network door; nothing is drawn at `mm_t_title`; Quit ends the process on the release with
 no confirm, as `MAINMENU.SCRIPT` terminates on `mm_b_quit`; and the top level arrives with no
 plaque lit. The pointer is the active bitmap over a live button, a plaque, an edit box and an
 open dropdown's rows, the passive one over a roster row, a scrap and dead space, with the hotspot
@@ -744,7 +819,7 @@ the main menu's film too: a press arms the plaque it lands on and draws its held
 the release still on it activates anything, so a press released elsewhere fires nothing; the
 pointer's bitmap is set on an enter or a leave and never recomputed from what a new screen put
 under a still pointer; and `CrimFlag.MPG` plays behind the top level and Preferences,
-`ExtractRof.ps1` copying the install's loose MPGs in and every leaf still showing it still running
+the extraction copying the install's loose MPGs in and every leaf still showing it still running
 behind the page. Nothing the film shows of Preferences reads differently on Original today.
 Still unfilmed: every sound; whether any keyboard or pad focus exists at
 all (no take pressed a key outside an edit box, so Original's focus walk stays a remake
@@ -874,7 +949,7 @@ equivalence).
 
 ## The decoded layout
 
-`ExtractRof.ps1` emits `extracted/rof/menu_layout.json`: the 34 sections bound to their scripts,
+The extraction emits `extracted/rof/menu_layout.json`: the 34 sections bound to their scripts,
 both macro mechanisms resolved, every type's field order, the 46 `ScriptToExe` edges, the button
 colour tail and frame counts, the `ResID` → `RESOURCE.H` → string join with the symbol kept beside
 the text, each screen's script-created keys, the art the scripts name outside the layout,

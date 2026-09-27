@@ -886,10 +886,10 @@ public class OriginalOptionsTests
             OriginalOptionsScreen.ControlTabs[0].Rows.Select(r => r.Action).ToArray());
     }
 
-    /// <summary>The Throttle tab is the two lever keys and then the nine absolute eighths, which are
-    /// the digit row the original reserves for them.</summary>
+    /// <summary>The Throttle tab is the two lever keys and then the nine absolute eighths on the
+    /// original's digit row. The port's stick lever row comes last.</summary>
     [Fact]
-    public void TheThrottleTabCarriesTheNineEighthsBelowTheLeverPair()
+    public void TheThrottleTabCarriesTheNineEighthsBelowTheLeverPairAndTheLeverRowLast()
     {
         var rows = OriginalOptionsScreen.ControlTabs[1].Rows.Select(r => r.Action).ToArray();
 
@@ -900,7 +900,8 @@ public class OriginalOptionsTests
             Assert.Equal(InputAction.ThrottleSet0 + eighths, rows[2 + eighths]);
         }
 
-        Assert.Equal(11, rows.Length);
+        Assert.Equal(InputAction.ThrottleLever, rows[11]);
+        Assert.Equal(12, rows.Length);
     }
 
     /// <summary>The Targeting tab lists all eleven of the original's targeting actions in the
@@ -954,7 +955,7 @@ public class OriginalOptionsTests
     }
 
     [Fact]
-    public void ARowWithMoreControlsThanColumnsSaysHowManyItIsNotShowing()
+    public void ARowWithMoreControlsThanColumnsListsEveryOneInControlB()
     {
         var controls = Controls(out _, out _);
         var host = Host(controls: controls);
@@ -978,7 +979,7 @@ public class OriginalOptionsTests
 
         var text = host.Module.KeysCellText(0);
         Assert.Equal("M", text.A);
-        Assert.Equal("N, +1 more", text.B);
+        Assert.Equal("N / B", text.B);
     }
 
     [Fact]
@@ -996,6 +997,7 @@ public class OriginalOptionsTests
         Assert.Contains(board.Lines, l => l.Text == "Action");
         Assert.Contains(board.Lines, l => l.Text == "Control A");
         Assert.Contains(board.Lines, l => l.Text == "Control B");
+        Assert.Contains(board.Lines, l => l.Text == "Stick");
     }
 
     [Fact]

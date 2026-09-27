@@ -1,6 +1,7 @@
 #!/usr/bin/env pwsh
 # The content gate every harness's pre-commit hook calls: encoding, item IDs, golden prose,
-# comment caps, doc entries.
+# comment caps, doc entries, and the form of any Waiver: line in the commit's own message (read
+# off the command's -m and -F arguments; CheckWaiver.ps1 says what that check cannot know).
 #
 # THE ROOT IS THE WHOLE POINT. A hook runs as its own process in whatever directory the session
 # happens to be in, which is not necessarily the tree the commit will write to. Taking the hook's
@@ -31,12 +32,14 @@
 #   <hook payload on stdin> | ./CheckCommitContent.ps1
 #   ./CheckCommitContent.ps1 -Command 'git -C ../wt commit -m x'
 #   ./CheckCommitContent.ps1 -Root <path>      check one tree, no derivation
+#   ./CheckCommitContent.ps1 -Root . -Against <base>   CI: the comment caps' sentence scope is the PR
 #   ./CheckCommitContent.ps1 -ShowRoots -Command '...'   which tree that command would check
 #   ./CheckCommitContent.ps1 -SelfTest         exercise the whole gate against fixtures
 [CmdletBinding()]
 param(
     [string]$Command,
     [string[]]$Root,
+    [string]$Against,
     [switch]$ShowRoots,
     [switch]$SelfTest
 )
@@ -102,12 +105,14 @@ function Get-NamedTree {
     return ''
 }
 
-# git speaks forward slashes and PowerShell speaks backslashes; a trailing separator makes two
-# spellings of the same tree compare unequal, which is how a swept root gets checked twice.
+# git speaks forward slashes and Windows PowerShell speaks backslashes; a trailing separator makes
+# two spellings of the same tree compare unequal, which is how a swept root gets checked twice. The
+# separator is the OS's own, since a backslash path on macOS or Linux names nothing.
 function ConvertTo-NormalPath {
     param([string]$Path)
     if (-not $Path) { return '' }
-    return ($Path -replace '/', '\').TrimEnd('\')
+    $sep = [IO.Path]::DirectorySeparatorChar
+    return ($Path -replace '[\\/]', $sep).TrimEnd($sep)
 }
 
 function Resolve-Toplevel {
@@ -160,22 +165,131 @@ function Get-TargetRoots {
     return @()
 }
 
-# Runs every check against every root. Returns the failure report, empty when all clean.
+# The commit's arguments as the shell will hand them to git: the tokens after the commit
+# invocation up to the end of its statement, each with its quoting removed. A quoted token keeps a
+# separator inside it, which is why this is a tokenizer and not a split on ";".
+function Get-CommitArguments {
+    param([string]$CommandLine)
+    $m = [regex]::Match($CommandLine, $commitInvocation)
+    if (-not $m.Success) { return @() }
+    $rest = $CommandLine.Substring($m.Index + $m.Length)
+    $q = [char]39
+    $dq = '"[^"]*"'
+    $sq = $q + '(?:[^' + $q + ']|' + $q + $q + ')*' + $q
+    $bare = '[^\s;|&"' + $q + ']+'
+    $step = New-Object regex ('\G[ \t]*(?:(?<b>[;|&\r\n])|(?<w>(?:' + $dq + '|' + $sq + '|' + $bare + ')+))')
+    $unquote = New-Object regex ('"([^"]*)"|' + $q + '((?:[^' + $q + ']|' + $q + $q + ')*)' + $q)
+    $tokens = New-Object System.Collections.Generic.List[string]
+    $pos = 0
+    while ($pos -lt $rest.Length) {
+        $t = $step.Match($rest, $pos)
+        if (-not $t.Success -or $t.Length -eq 0 -or $t.Groups['b'].Success) { break }
+        $raw = $t.Groups['w'].Value
+        $tokens.Add($unquote.Replace($raw, {
+            param($x)
+            if ($x.Groups[1].Success) { return $x.Groups[1].Value }
+            return $x.Groups[2].Value.Replace([string]$q + $q, [string]$q)
+        }))
+        $pos = $t.Index + $t.Length
+    }
+    return $tokens.ToArray()
+}
+
+# The message a commit command carries, read the way git reads it: every -m/--message value as its
+# own paragraph, and every -F/--file file, a relative one resolved against the directory git runs
+# in (the -C tree, else the directory the command changes to, else this process's). Empty when the
+# message is not on the command line (an editor, -F -, -C/-c reusing a commit, a variable), and
+# then there is nothing to check; the waiver check covers only what it can read.
+function Get-CommitMessage {
+    param([string]$CommandLine, [string]$From)
+    if (-not $From) { $From = (Get-Location).Path }
+    $args2 = @(Get-CommitArguments -CommandLine $CommandLine)
+    if ($args2.Count -eq 0) { return '' }
+    $invocation = [regex]::Match($CommandLine, $commitInvocation).Value
+    $q = [char]39
+    $base = $From
+    $dashC = [regex]::Match($invocation, '(?:^|\s)-C\s+("[^"]*"|' + $q + '[^' + $q + ']*' + $q + '|[^\s]+)')
+    $moved = Get-ChangedDirectory -CommandLine $CommandLine
+    if ($dashC.Success) { $base = Get-UnquotedPath -Raw $dashC.Groups[1].Value }
+    elseif ($moved) { $base = $moved }
+    if (-not [IO.Path]::IsPathRooted($base)) { $base = Join-Path $From $base }
+
+    $parts = @()
+    $valueLong = '^--(?:author|date|trailer|cleanup|reuse-message|reedit-message|template|fixup|squash|pathspec-from-file)$'
+    $i = 0
+    while ($i -lt $args2.Count) {
+        $t = $args2[$i]
+        $i++
+        if ($t -eq '--') { break }
+        $kind = ''
+        $value = $null
+        $long = [regex]::Match($t, '^--(message|file)(?:=(.*))?$', 'Singleline')
+        if ($long.Success) {
+            $kind = $long.Groups[1].Value
+            if ($long.Groups[2].Success) { $value = $long.Groups[2].Value }
+            elseif ($i -lt $args2.Count) { $value = $args2[$i]; $i++ }
+        }
+        elseif ($t -match $valueLong) {
+            $i++
+            continue
+        }
+        elseif ($t -match '^-[a-zA-Z]') {
+            # A short cluster such as -am: the first letter taking a value takes the rest of the
+            # token, or the next token when the rest is empty.
+            for ($j = 1; $j -lt $t.Length; $j++) {
+                $c = $t[$j]
+                if ('mFCct'.IndexOf($c) -lt 0) { continue }
+                $attached = $t.Substring($j + 1)
+                if ($attached) { $value = $attached }
+                elseif ($i -lt $args2.Count) { $value = $args2[$i]; $i++ }
+                if ($c -ceq 'm') { $kind = 'message' }
+                elseif ($c -ceq 'F') { $kind = 'file' }
+                break
+            }
+        }
+        if ($null -eq $value) { continue }
+        if ($kind -eq 'message') { $parts += $value }
+        elseif ($kind -eq 'file' -and $value -ne '-') {
+            $path = if ([IO.Path]::IsPathRooted($value)) { $value } else { Join-Path $base $value }
+            if (Test-Path -LiteralPath $path -PathType Leaf) { $parts += [IO.File]::ReadAllText($path) }
+        }
+    }
+    return ($parts -join ([string][char]10 + [char]10))
+}
+
+# Runs every check against every root, and the waiver form check against the commit's message when
+# there is one. Returns the failure report, empty when all clean.
 function Invoke-Checks {
-    param([string[]]$Roots)
+    param([string[]]$Roots, [string]$Message)
     $failures = @()
     foreach ($r in $Roots) {
         if (-not (Test-Path -LiteralPath $r)) { continue }
         foreach ($c in $checks) {
             $script = Join-Path $scriptRoot $c.Script
             if (-not (Test-Path -LiteralPath $script -PathType Leaf)) { continue }
-            $out = & $script -Root $r 2>&1
+            # A CI checkout has no uncommitted lines, so the comment caps' sentence scope is read
+            # against the PR's base instead of HEAD.
+            $out = if ($Against -and $c.Script -eq 'CheckCommentCaps.ps1') {
+                & $script -Root $r -Against $Against 2>&1
+            } else {
+                & $script -Root $r 2>&1
+            }
             if ($LASTEXITCODE -eq 0) { continue }
             $failures += [pscustomobject]@{
                 Root  = $r
                 Check = $c.Name
                 Output = ($out | ForEach-Object { [string]$_ })
             }
+        }
+        if (-not $Message) { continue }
+        $waiver = Join-Path $scriptRoot 'CheckWaiver.ps1'
+        if (-not (Test-Path -LiteralPath $waiver -PathType Leaf)) { continue }
+        $out = & $waiver -Root $r -Message $Message 2>&1
+        if ($LASTEXITCODE -eq 0) { continue }
+        $failures += [pscustomobject]@{
+            Root  = $r
+            Check = 'waiver form'
+            Output = ($out | ForEach-Object { [string]$_ })
         }
     }
     return $failures
@@ -224,6 +338,13 @@ function Invoke-SelfTest {
     try {
         New-Item -ItemType Directory -Path $main -Force | Out-Null
         git -C $main init -q 2>&1 | Out-Null
+        # macOS's temp folder sits behind the /var -> /private/var link and git reports the
+        # physical path, so the expected roots are taken from git's own spelling.
+        if ($IsMacOS -or $IsLinux) {
+            $main = ConvertTo-NormalPath -Path ([string](git -C $main rev-parse --show-toplevel))
+            $base = Split-Path -Parent $main
+            $wt = Join-Path $base 'wt'
+        }
         git -C $main config user.email 'selftest@example.invalid' | Out-Null
         git -C $main config user.name 'selftest' | Out-Null
         Write-Chars -File (Join-Path $main 'README.md') -Codes @(0x68, 0x69)
@@ -339,6 +460,72 @@ function Invoke-SelfTest {
         Assert-Row 'row 11 a within-cap architecture split passes' (
             (@(Invoke-Checks -Roots @($fxDoc)) | Where-Object { $_.Check -eq 'doc entries' }).Count -eq 0)
 
+        # Row 12: the waiver form. The check reads a message, so these rows drive the message
+        # extraction from every commit form accepted, then the validator against every form refused.
+        $fxW = Join-Path $base 'fxwaiver'
+        Write-Chars -File (Join-Path $fxW 'backlog.md') -Codes ([int[]][char[]](
+            '- `BL-100` `[Bug]` an open failure' + [char]10))
+        $why = 'pre-existing on main and filed; this change cannot reach that suite'
+        $good = 'Waiver: instant-action-end (owned by BL-100): ' + $why
+        $goodIssue = 'Waiver: goldens/c1-flight-kill (owned by #7): ' + $why
+        function Test-Waiver {
+            param([string]$Text, [string]$In = $fxW)
+            & (Join-Path $scriptRoot 'CheckWaiver.ps1') -Root $In -Message $Text | Out-Null
+            return ($LASTEXITCODE -eq 0)
+        }
+        Assert-Row 'row 12 a message without a waiver passes' (Test-Waiver 'Close #2: a thing')
+        Assert-Row 'row 12 a waiver owned by an open BL passes' (Test-Waiver ('Subject' + [char]10 + [char]10 + $good))
+        Assert-Row 'row 12 a waiver owned by an issue passes' (Test-Waiver $goodIssue)
+        Assert-Row 'row 12 prose merely naming waivers passes' (Test-Waiver 'Waivers are records, not permissions.')
+        Assert-Row 'row 12 a waiver with no owner blocks' (-not (Test-Waiver ('Waiver: instant-action-end: ' + $why)))
+        Assert-Row 'row 12 a waiver with no suite blocks' (-not (Test-Waiver ('Waiver: (owned by BL-100): ' + $why)))
+        Assert-Row 'row 12 a waiver with no reason blocks' (-not (Test-Waiver 'Waiver: instant-action-end (owned by BL-100):'))
+        Assert-Row 'row 12 a waiver with a token reason blocks' (-not (Test-Waiver 'Waiver: instant-action-end (owned by BL-100): known'))
+        Assert-Row 'row 12 a waiver owned by a closed BL blocks' (-not (Test-Waiver ($good -replace 'BL-100', 'BL-101')))
+        Assert-Row 'row 12 a lowercase waiver line blocks' (-not (Test-Waiver ('waiver: ' + $good.Substring(8))))
+        Assert-Row 'row 12 an unowned-form waiver = line blocks' (-not (Test-Waiver 'WAIVER = the battery was red'))
+        Assert-Row 'row 12 a missing message file blocks' (
+            -not $(& (Join-Path $scriptRoot 'CheckWaiver.ps1') -MessageFile (Join-Path $base 'nope.txt') | Out-Null; $LASTEXITCODE -eq 0))
+
+        $msgBad = Join-Path $base 'msg-bad.txt'
+        $msgGood = Join-Path $fxW 'msg.txt'
+        [IO.File]::WriteAllText($msgBad, ('Subject' + [char]10 + [char]10 + 'Waiver: red battery' + [char]10), $utf8)
+        [IO.File]::WriteAllText($msgGood, ('Subject' + [char]10 + [char]10 + $good + [char]10), $utf8)
+        function Assert-Message {
+            param([string]$Name, [string]$CommandLine, [string]$Expected, [string]$From = $base)
+            $got = Get-CommitMessage -CommandLine $CommandLine -From $From
+            if ($got -ne $Expected) { Write-Host ('        got: [' + $got + ']') }
+            Assert-Row $Name ($got -eq $Expected)
+        }
+        $nl2 = [string][char]10 + [char]10
+        Assert-Message 'row 12 read  -m with a double-quoted message' 'git commit -m "a b; c"' 'a b; c'
+        Assert-Message 'row 12 read  -m with a single-quoted message and a doubled quote' (
+            'git commit -m ' + $q + 'it' + $q + $q + 's' + $q) ('it' + $q + 's')
+        Assert-Message 'row 12 read  two -m values are two paragraphs' (
+            'git commit -m "Subject" -m "' + $good + '"') ('Subject' + $nl2 + $good)
+        Assert-Message 'row 12 read  --message= and an -am cluster' (
+            'git commit --message="one" -am two') ('one' + $nl2 + 'two')
+        Assert-Message 'row 12 read  an attached -mvalue' 'git commit -mone' 'one'
+        Assert-Message 'row 12 read  the statement ends at ;' 'git commit -m one; git log -m two' 'one'
+        Assert-Message 'row 12 read  -F relative to the -C tree' (
+            'git -C ' + $fxW + ' commit -F msg.txt') ('Subject' + $nl2 + $good + [char]10)
+        Assert-Message 'row 12 read  --file= relative to a same-call Set-Location' (
+            'Set-Location ' + $fxW + '; git commit --file=msg.txt') ('Subject' + $nl2 + $good + [char]10)
+        Assert-Message 'row 12 read  an absolute -F path' ('git commit -F "' + $msgBad + '"') (
+            'Subject' + $nl2 + 'Waiver: red battery' + [char]10)
+        Assert-Message 'row 12 read  -F - (stdin) is unreadable, so empty' 'git commit -F -' ''
+        Assert-Message 'row 12 read  commit -C HEAD reuses a message, so empty' 'git commit -C HEAD' ''
+        Assert-Message 'row 12 read  --author value is not a message' (
+            'git commit --author "a -m b" --no-edit') ''
+        Assert-Message 'row 12 read  a bare commit opens an editor, so empty' 'git commit' ''
+
+        & (Join-Path $scriptRoot 'CheckCommitContent.ps1') -Command ('git -C ' + $main + ' commit -F "' + $msgBad + '"') | Out-Null
+        Assert-Row 'row 12 guard a malformed waiver in -F blocks end to end' ($LASTEXITCODE -eq 2)
+        & (Join-Path $scriptRoot 'CheckCommitContent.ps1') -Command ('git -C ' + $main + ' commit -m "S" -m "Waiver: x"') | Out-Null
+        Assert-Row 'row 12 guard a malformed waiver in -m blocks end to end' ($LASTEXITCODE -eq 2)
+        & (Join-Path $scriptRoot 'CheckCommitContent.ps1') -Command ('git -C ' + $main + ' commit -m "S" -m "' + $goodIssue + '"') | Out-Null
+        Assert-Row 'row 12 guard a well-formed waiver passes end to end' ($LASTEXITCODE -eq 0)
+
         # Row 9: the escape hatch.
         $env:CSVM_SKIP_CONTENT_CHECKS = '1'
         $hatch = & (Join-Path $scriptRoot 'CheckCommitContent.ps1') -Command 'git commit -m x'
@@ -435,7 +622,9 @@ if (-not $Root) {
     $Root = Get-TargetRoots -CommandLine $Command
 }
 
-$failures = @(Invoke-Checks -Roots $Root)
+$message = ''
+if ($Command) { $message = Get-CommitMessage -CommandLine $Command }
+$failures = @(Invoke-Checks -Roots $Root -Message $message)
 if ($failures.Count -eq 0) { exit 0 }
 Write-Failures -Failures $failures
 exit 2

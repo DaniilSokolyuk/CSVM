@@ -60,7 +60,7 @@ internal static class HudLayers
     public const int SessionStartFade = MissionEndFade;
 
     /// <summary>The debug overlays: node labels (T), class overlay, AI nets, markers (K),
-    /// colliders (C), the selection gizmo and the tile grid.</summary>
+    /// colliders (F20), the selection gizmo and the tile grid.</summary>
     public const int Debug = 4;
 
     /// <summary>The interactive labs that own a full panel: the node lab (N) and the world damage

@@ -69,31 +69,21 @@ public static class MissionCutscenes
         }
     }
 
-    // The cutscenes\*.zrd entries of the ANIMATION_DEFINITION_FILE list, as the names the
-    // extraction stores them under: the authored path is the game's own install-relative one and
-    // the extraction flattens a mission's readers into one directory, so only the leaf survives.
-    private static List<string> Files(string missionZrdrPath)
+    /// <summary>The <c>cutscenes\*.zrd</c> entries of an <c>ANIMATION_DEFINITION_FILE</c> list,
+    /// as the names the extraction stores them under. The extraction flattens a mission's readers
+    /// into one directory, so only the leaf survives. ⚠ Split through <see cref="GamePath"/>: the
+    /// authored paths are Windows paths on every host.</summary>
+    internal static List<string> StoredNames(IEnumerable<string> listedPaths)
     {
         var files = new List<string>();
-        List<object?> root;
-        try
+        foreach (var path in listedPaths)
         {
-            root = Zrdr.LoadFileOrEmpty(missionZrdrPath, FileName);
-        }
-        catch (Exception e) when (e is IOException or System.Text.Json.JsonException)
-        {
-            return files;
-        }
-
-        foreach (var path in ListedPaths(root))
-        {
-            var normalized = path.Replace('/', '\\');
-            if (normalized.IndexOf($"\\{Directory}\\", StringComparison.OrdinalIgnoreCase) < 0)
+            if (!GamePath.HasFolder(path, Directory))
             {
                 continue;
             }
 
-            var leaf = Path.GetFileName(normalized);
+            var leaf = GamePath.FileName(path);
             if (leaf.Length > 0)
             {
                 files.Add(Path.ChangeExtension(leaf, ".json"));
@@ -101,5 +91,20 @@ public static class MissionCutscenes
         }
 
         return files;
+    }
+
+    private static List<string> Files(string missionZrdrPath)
+    {
+        List<object?> root;
+        try
+        {
+            root = Zrdr.LoadFileOrEmpty(missionZrdrPath, FileName);
+        }
+        catch (Exception e) when (e is IOException or System.Text.Json.JsonException)
+        {
+            return new List<string>();
+        }
+
+        return StoredNames(ListedPaths(root));
     }
 }

@@ -8,9 +8,9 @@ using Godot;
 namespace CSVM.UI.Overlays;
 
 /// <summary>
-/// The colour-by-class overlay (key H): every drawn mesh in the live world tinted a flat colour
-/// by what it is (destructible / facade / clutter / plain scenery), so a target named in a
-/// report can actually be found at the controls. Classification reuses the exact mechanisms a
+/// The colour-by-class overlay (key F21): every drawn mesh in the live world tinted a flat colour
+/// by what it is (destructible, facade, clutter, plain scenery). A target named in a report can
+/// then be found at the controls. Classification reuses the exact mechanisms a
 /// hit already uses, never a guess: this module's entry in docs/architecture.md.
 /// ⚠ Never key classification on <see cref="SceneBuilder.SurfaceMeta"/>. That tag answers what a
 /// bullet does here, not what the object is, and a dock and a skyscraper can share a surface tag.
@@ -74,10 +74,9 @@ public sealed partial class ClassOverlay : Node
 
     public override void _UnhandledKeyInput(InputEvent @event)
     {
-        // H rather than X: the original spends X on Fire Rockets (docs/controls.md), and a tint
-        // toggling under every rocket shot is worse than an overlay on a duller key. It stays a
-        // letter because the F13 upward block's numbers are the user's own keypad rows.
-        if (@event is not InputEventKey { Pressed: true, Echo: false, Keycode: Key.H })
+        // In the F13 upward block, which no gameplay action may take. The overlay is live in
+        // flight, so a letter key would toggle under any action rebound onto it.
+        if (@event is not InputEventKey { Pressed: true, Echo: false, Keycode: Key.F21 })
         {
             return;
         }
@@ -85,9 +84,9 @@ public sealed partial class ClassOverlay : Node
         GetViewport().SetInputAsHandled();
     }
 
-    /// <summary>H: show or hide the class tints. Rebuilt every time it is shown rather than cached
-    /// once, a destructible's death can swap its subtree (wreck pieces replace the healthy mesh),
-    /// so a stale cache would tint a node that no longer exists and miss the one that does.</summary>
+    /// <summary>F21: show or hide the class tints. Rebuilt on every show rather than cached once. A
+    /// destructible's death can swap its subtree for wreck pieces, so a stale cache would tint a
+    /// node that no longer exists.</summary>
     public void Toggle()
     {
         if (_gamez == null)
@@ -225,7 +224,7 @@ public sealed partial class ClassOverlay : Node
             root.SetAnchorsPreset(Control.LayoutPreset.FullRect);
             _hud = new Label
             {
-                // Below the collider overlay's readout (C), which sits at y=120..160.
+                // Below the collider overlay's readout (F20), which sits at y=120..160.
                 Position = new Vector2(12, 200),
                 Modulate = new Color(0.85f, 0.75f, 1f),
             };

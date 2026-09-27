@@ -71,9 +71,8 @@ public sealed class AnimArchive
     public int ScriptCount => _scriptNames.Count;
 
     /// <summary>
-    /// Loads an anim extraction. Returns null when the path does not exist, a missing
-    /// archive is normal (not every mission folder has a mis_anim, and a user who has not
-    /// re-run ExtractAssets.ps1 simply gets no compiled animations), so callers degrade to
+    /// Loads an anim extraction, or returns null when the path does not exist. A missing
+    /// archive is normal, since not every mission folder has a mis_anim. Callers degrade to
     /// the zrdr-only path rather than failing the world build.
     /// </summary>
     public static AnimArchive? Load(string path, string label)
@@ -147,8 +146,8 @@ public sealed class AnimArchive
             var p = Path.Combine(_path, name);
             return File.Exists(p) ? File.ReadAllBytes(p) : null;
         }
-        // Zip: reopened per read. Only the (rare) zipped-tree case pays this, ExtractAssets
-        // -Unzip produces the loose directories the viewer prefers, and defs are read once.
+        // Zip: reopened per read. Only the (rare) zipped-tree case pays this, --extract-unzip
+        // produces the loose directories the viewer prefers, and defs are read once.
         using var zip = ZipFile.OpenRead(_path);
         if (zip.GetEntry(name) is not { } entry)
             return null;

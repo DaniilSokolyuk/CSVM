@@ -16,9 +16,9 @@ public readonly record struct ControlValue(bool Pressed, float Value)
     /// <summary>A key, a button or a hat direction: on is fully on.</summary>
     public static ControlValue Digital(bool pressed) => new(pressed, pressed ? 1f : 0f);
 
-    /// <summary>An axis past its deadzone, at the raw travel the hardware reported. Deliberately not
-    /// rescaled onto the remaining span: no polling site this seam replaced rescaled, so a stick just
-    /// past a deadzone must read what it moved and not a ramp from zero.</summary>
+    /// <summary>An axis past its deadzone. A half axis passes the raw travel, deliberately not
+    /// rescaled. No polling site this seam replaced rescaled, so a pad stick just past a deadzone
+    /// reads what it moved. A full axis passes its rescaled side.</summary>
     public static ControlValue Analogue(float value) => new(value > 0f, value);
 }
 
@@ -79,10 +79,16 @@ public readonly record struct Binding(DeviceId Device, BindingControl Control)
     public ControlValue Resolve(IDeviceState state) => Resolve(state, default);
 
     /// <summary>What this binding reads from that tick's hardware state. An axis fires strictly
-    /// past its deadzone, only on the half of the travel its sign names, and then reports that
-    /// travel raw; a hat direction reads only its own flag, so the other three directions of the
-    /// same hat are independent.</summary>
-    public ControlValue Resolve(IDeviceState state, ModifierGate gate)
+    /// past its deadzone, only on the half its sign names, and reports that travel raw. A hat
+    /// direction reads only its own flag, independent of the hat's other three. A full axis reads
+    /// nothing here, having no side to feed.</summary>
+    public ControlValue Resolve(IDeviceState state, ModifierGate gate) => Resolve(state, gate, 0);
+
+    /// <summary>The same read for the action on <paramref name="side"/> of an axis pair
+    /// (<see cref="AxisPairs.SideOf"/>). Only a full axis uses the side. It fires strictly past its
+    /// deadzone on that side's half, rescaled to read 0 at the deadzone edge and 1 at full travel.
+    /// </summary>
+    public ControlValue Resolve(IDeviceState state, ModifierGate gate, int side)
     {
         switch (Control.Kind)
         {
@@ -94,6 +100,8 @@ public readonly record struct Binding(DeviceId Device, BindingControl Control)
                 return ControlValue.Digital(state.IsMouseButtonDown(Device, Control.Index));
             case ControlKind.Hat:
                 return ControlValue.Digital((state.HatState(Device, Control.Index) & Control.Direction) != 0);
+            case ControlKind.FullAxis:
+                return FullAxisSide(state.AxisValue(Device, Control.Index) * Control.Sign * side);
             default:
                 float travel = state.AxisValue(Device, Control.Index) * Control.Sign;
                 if (travel <= Control.Deadzone)
@@ -102,7 +110,30 @@ public readonly record struct Binding(DeviceId Device, BindingControl Control)
         }
     }
 
+    /// <summary>The same read for an absolute row (<see cref="AxisPairs.IsAbsolute"/>). A full axis
+    /// reads its whole travel as one position, 0 at the end invert names idle and 1 at the other. The
+    /// deadzone trims both ends, so a lever stopping short of full scale still reaches 0 and 1. Every
+    /// other kind reads as it does anywhere.</summary>
+    public ControlValue ResolveAbsolute(IDeviceState state, ModifierGate gate)
+    {
+        if (Control.Kind != ControlKind.FullAxis)
+            return Resolve(state, gate, 0);
+        float reach = 1f - Control.Deadzone;
+        float travel = Math.Clamp(state.AxisValue(Device, Control.Index) * Control.Sign, -reach, reach);
+        return ControlValue.Analogue((travel + reach) / (2f * reach));
+    }
+
     public override string ToString() => $"{Device}/{Control}";
+
+    // Rescaled rather than raw, unlike a half axis. A flight stick past a small deadzone flies
+    // linearly from zero, so the deadzone edge is the stick's centre.
+    private ControlValue FullAxisSide(float travel)
+    {
+        if (travel <= Control.Deadzone)
+            return ControlValue.None;
+        float value = (travel - Control.Deadzone) / (1f - Control.Deadzone);
+        return ControlValue.Analogue(value > 1f ? 1f : value);
+    }
 
     // The modifier rule. A binding that NAMES modifiers wants exactly those held, so Shift+E stands
     // down under Ctrl+Shift; a bare one stands down only under a modifier another action holds the

@@ -124,8 +124,11 @@ internal static class ClutterCardDepthSuites
         pane.AddChild(eye);
         ctx.Host.AddChild(pane);
 
-        var blended = BlendPlate(ctx, gamez, textures, scene);
-        ctx.Check(blended != null, $"{Chapter} skins a world surface with a blended material");
+        // Configured as WorldBuilder configures the world's, since whether a surface joins the ground
+        // layer depends on that build's own sidedness and fullbright path.
+        var world = new SceneBuilder(gamez, textures, fullbright: true, cullBackfaces: true);
+        var blended = BlendPlate(ctx, gamez, textures, world);
+        ctx.Check(blended != null, $"{Chapter} skins a flat world surface with a ground-layer material");
 
         var cards = Cards(card);
         try
@@ -285,10 +288,9 @@ internal static class ClutterCardDepthSuites
 
     // A BLENDED world surface standing behind the card. A scissored surface is opaque and settles in
     // the depth pass, so a card in front of one composites over it whatever the draw order. A blended
-    // one is drawn in the transparency pass alongside the card. There the sort decides which paints
-    // last, and a kind's whole-chapter MultiMesh carries one sort key for every card in it. The far
-    // instance is parked aside, outside the pane but inside the MultiMesh's bounds. That gives the
-    // near card the distant sort key it has in the world.
+    // one is drawn in the transparency pass alongside the card, where a kind's whole-chapter MultiMesh
+    // sorts on one key for every card. The far instance is parked outside the pane but inside the
+    // MultiMesh's bounds. That gives the near card the distant sort key it has in the world.
     private static void Behind(TestContext ctx, SubViewport pane, Camera3D eye, Node3D opaque,
         Node3D blended, MultiMeshInstance3D cards, ClutterBuilder.KindExport card, float range, bool full)
     {
@@ -311,6 +313,7 @@ internal static class ClutterCardDepthSuites
         blended.Visible = true;
         PosePlate(blended, eye, -range * 1.5f);
         byte[] cardOverBlended = Shot(pane);
+        byte[] cardOverForced = ForcedFirst(pane, blended);
         byte[] blendedAlone = Without(pane, cards, card, NearIndex, near, full);
         blended.Visible = false;
         // ⚠ Hand the opaque plate back visible. Ground() poses it without showing it, so a case
@@ -327,6 +330,9 @@ internal static class ClutterCardDepthSuites
         // it is rejected whatever the sort says. Over its feathered edge it writes none, so a surface
         // drawn after it lands there and the card contributes nothing.
         int lost = Erased(bare, cardAlone, blendedAlone, cardOverBlended);
+        // The whole order, feather included: the frame against the same pose with the surface drawn
+        // ahead of every other transparent draw. A partial overpaint moves these pixels and not lost.
+        int reordered = Differing(cardOverForced, cardOverBlended);
 
         ctx.Check(covered > 100, $"the card's body covers the pane at {at} pixels={covered}");
         ctx.Check(drawnPlate > 100, $"the blended surface draws behind the card at {at} pixels={drawnPlate}");
@@ -334,7 +340,25 @@ internal static class ClutterCardDepthSuites
             $"a blended world surface behind the card changes no pixel of its body at {at} pixels={through}");
         ctx.Same(0L, lost,
             $"the card is not painted over by the blended surface behind it at {at} pixels={lost}");
-        ctx.Note($"{at} behind: body={covered} surface={drawnPlate} through={through} lost={lost}");
+        ctx.Same(0L, reordered,
+            $"the card composites over the ground layer as over a surface drawn first at {at} pixels={reordered}");
+        ctx.Note($"{at} behind: body={covered} surface={drawnPlate} through={through} lost={lost} reordered={reordered}");
+    }
+
+    // The pose again with the surface's material swapped for a copy at the lowest render priority.
+    // It then draws ahead of the card whatever the sort says, the order the frame should already show.
+    private static byte[] ForcedFirst(SubViewport pane, Node3D plate)
+    {
+        if (FirstMesh(plate) is not { MaterialOverride: { } real } mesh)
+        {
+            return Array.Empty<byte>();
+        }
+        var first = (Material)real.Duplicate();
+        first.RenderPriority = (int)RenderingServer.MaterialRenderPriorityMin;
+        mesh.MaterialOverride = first;
+        byte[] shot = Shot(pane);
+        mesh.MaterialOverride = real;
+        return shot;
     }
 
     // The same pose with one instance left out, so a frame and its own reference differ by that
@@ -367,7 +391,7 @@ internal static class ClutterCardDepthSuites
             new Vector3(0f, 0f, z));
     }
 
-    // The first world mesh this chapter skins with a BLENDED surface material, as a plate. The
+    // The broadest world mesh this chapter skins with a ground-layer material, as a plate. The
     // material is the real one off the real mesh. The question is what that material's place in the
     // transparency sort does, and a stand-in built here would answer it about itself instead.
     private static Node3D? BlendPlate(TestContext ctx, GameZ gamez, TextureArchive textures, SceneBuilder scene)
@@ -392,7 +416,9 @@ internal static class ClutterCardDepthSuites
             }
             for (int s = 0; s < built.GetSurfaceCount(); s++)
             {
-                if (scene.AlphaOf(built.SurfaceGetMaterial(s)) != SceneBuilder.TransparencyClass.BlendSurface)
+                var material = built.SurfaceGetMaterial(s);
+                if (scene.AlphaOf(material) != SceneBuilder.TransparencyClass.BlendSurface
+                    || material.RenderPriority != SceneBuilder.GroundLayerRenderPriority)
                 {
                     continue;
                 }

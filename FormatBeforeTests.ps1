@@ -101,7 +101,8 @@ function Resolve-Toplevel {
     if (-not (Test-Path -LiteralPath $Path)) { return '' }
     $top = git -C $Path rev-parse --show-toplevel 2>$null
     if (-not $top) { return '' }
-    return (([string]$top) -replace '/', '\').TrimEnd('\')
+    $sep = [IO.Path]::DirectorySeparatorChar
+    return (([string]$top) -replace '[\\/]', $sep).TrimEnd($sep)
 }
 
 # The tree to format and build, or empty when the command invokes nothing. The invocation's own
@@ -161,6 +162,12 @@ function Invoke-SelfTest {
             New-Item -ItemType Directory -Path $d -Force | Out-Null
             git -C $d init -q 2>&1 | Out-Null
             [IO.File]::WriteAllText((Join-Path $d 'RunTests.ps1'), 'exit 0', (New-Object System.Text.UTF8Encoding($false)))
+        }
+        # macOS's temp folder sits behind the /var -> /private/var link and git reports the
+        # physical path, so the expected trees are taken from git's own spelling.
+        if ($IsMacOS -or $IsLinux) {
+            $main = Resolve-Toplevel -Path $main
+            $other = Resolve-Toplevel -Path $other
         }
 
         # Mentions never fire.

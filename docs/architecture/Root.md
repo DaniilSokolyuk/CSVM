@@ -72,7 +72,8 @@ menu-driven launch binds by device id instead (`Launcher.BindMenuPads`) and so s
 ## src/SessionPaths.cs
 Static resolver for the extracted-data paths (`ChapterTextures`/`ChapterGamez`/`ChapterZrdr`/
 `MissionZrdr`) under a data root, plus `PreferUnzipped` (an unpacked sibling dir beats its `.zip`)
-and the `--zip-assets` switch that inverts it. The `rtextureN` tier decode is on `docs/tooling.md`;
+and the `--zip-assets` switch that inverts it. A chapter or mission in either case maps through
+`Extraction/ZbdTree.cs` to the case the extraction wrote. The `rtextureN` tier decode is on `docs/tooling.md`;
 the `--gamez=`/`--textures=` override policy stays in `GameSession`, not here.
 
 ## src/SessionSpec.cs

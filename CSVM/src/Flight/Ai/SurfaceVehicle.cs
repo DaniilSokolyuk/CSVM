@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using CSVM.Flight.Airframe;
 using CSVM.Mech3;
 using CSVM.Utils;
 using Godot;
@@ -24,6 +25,8 @@ public sealed class SurfaceVehicle
     private readonly float _waterY;
     private PathFollower? _follower;
     private SurfaceRoute? _route;
+    private AiNet? _net;
+    private ZeppelinReplica? _replica;
     private bool _wakePlayed;
     private int? _team;
 
@@ -106,7 +109,11 @@ public sealed class SurfaceVehicle
     public bool IsDestroyed { get; private set; }
 
     /// <summary>The net being patrolled, or null while the hull sits with no route.</summary>
-    public AiNet? Net => _route?.Net;
+    public AiNet? Net => _net;
+
+    /// <summary>Whether the hull follows another machine's samples instead of walking its net.
+    /// </summary>
+    public bool Replicated => _replica != null;
 
     /// <summary>The hull's live HP, or null when no definition registered a pool on it.</summary>
     public float? Health => _pool?.Health;
@@ -118,12 +125,14 @@ public sealed class SurfaceVehicle
 
     /// <summary>How fast the hull is really moving, m/s, and so the aim assist's lead term. Flat,
     /// because <see cref="WritePose"/> pins the hull to the water and drops the route's height:
-    /// the follower's pitched vector is motion this hull does not have. A hull with no route, one
-    /// still inert, or a destroyed one reads zero.</summary>
+    /// the follower's pitched vector is motion this hull does not have. A replicated hull reads the
+    /// sent speed along its heading. A hull with no route, one still inert, or a destroyed one reads
+    /// zero.</summary>
     public Vector3 Velocity =>
-        _follower == null || Inert || IsDestroyed
-            ? Vector3.Zero
-            : new Vector3(_follower.Velocity.X, 0f, _follower.Velocity.Z);
+        Inert || IsDestroyed ? Vector3.Zero
+        : _replica != null ? ZeppelinReplica.ForwardOf(_replica.YawRad, 0f) * _replica.Speed
+        : _follower == null ? Vector3.Zero
+        : new Vector3(_follower.Velocity.X, 0f, _follower.Velocity.Z);
 
     /// <summary>This hull's gun, or null when the build wired no weapon catalogue, the def arms
     /// nothing, or the model carries no mount (<see cref="SurfaceGunner.Build"/>). Set once by
@@ -184,6 +193,13 @@ public sealed class SurfaceVehicle
         // still shoots. ⚠ It poses the turret and gun nodes, which is safe only past the death
         // check above: from there the sequence owns every child transform (see WritePose).
         Gunner?.Step(dt);
+        if (_replica != null)
+        {
+            _replica.Step(dt);
+            Heading = _replica.YawRad;
+            WritePose(_replica.Position);
+            return;
+        }
         if (_follower == null)
         {
             return;
@@ -193,8 +209,41 @@ public sealed class SurfaceVehicle
         WritePose(_follower.Position);
     }
 
+    /// <summary>Hands the hull's patrol to another machine. From here it chases that machine's
+    /// samples (<see cref="ZeppelinReplica"/>'s law, no pitch) and walks no net. It holds where it
+    /// stands until the first arrives. A later route assignment keeps only the net.</summary>
+    internal void Replicate() => _replica ??= new ZeppelinReplica(Body.GlobalPosition, Heading, 0f);
+
+    /// <summary>Takes one sample of the host's hull. False for a hull that is not replicated, or a
+    /// sequence at or behind the newest taken.</summary>
+    internal bool TakeSample(ushort sequence, Vector3 position, float speed, float yawRad) =>
+        _replica?.Receive(sequence, position, speed, yawRad, 0f) == true;
+
+    /// <summary>What the host sends of a hull on its patrol: where it is, its flat speed and its
+    /// heading. False for a hull with nothing to send: inert, destroyed, routeless or replicated.
+    /// </summary>
+    internal bool TryReadPatrol(out Vector3 position, out float speed, out float yawRad)
+    {
+        position = Body.GlobalPosition;
+        yawRad = Heading;
+        speed = 0f;
+        if (Inert || IsDestroyed || _replica != null || _follower == null)
+        {
+            return false;
+        }
+        speed = new Vector2(_follower.Velocity.X, _follower.Velocity.Z).Length();
+        return true;
+    }
+
+    // A replicated hull draws no route: the draw would come off this machine's AI stream, and the
+    // host's samples say where the hull goes.
     private void SetRoute(IReadOnlyList<Vector3> run, AiNet net)
     {
+        _net = net;
+        if (_replica != null)
+        {
+            return;
+        }
         var start = Body.GlobalPosition;
         _route = new SurfaceRoute(start, run, net, Utils.Rng.NewSystemRandom(Utils.Rng.Ai));
         _follower = new PathFollower(_route, start, Heading)

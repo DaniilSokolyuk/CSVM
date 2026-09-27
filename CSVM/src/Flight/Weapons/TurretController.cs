@@ -603,6 +603,10 @@ public sealed class TurretController
         _pool.Spawn(Weapon, fp.GlobalTransform, PlatformVelocity,
             _host?.PlayerIndex ?? ProjectilePool.NoShooter, fp, dir, team: _team,
             ownerBodies: _host == null ? PlatformColliderRids() : null);
+        // A carried gunner's round belongs to the aeroplane carrying it, so it crosses the wire
+        // with that aeroplane's own fire. A world emplacement has no host and reports nothing:
+        // every machine runs the same emplacements.
+        _host?.ReportWeaponFired(Weapon, fp.GlobalPosition, dir);
         if (_host == null && !_firstShotLogged)
         {
             _firstShotLogged = true; // verification breadcrumb: WHICH emplacements actually engage

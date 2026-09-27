@@ -130,7 +130,7 @@ JSON file of nested arrays. Conventions that recur across every reader family:
 
 ## Extraction map
 
-`ExtractAssets.ps1` (repo root) runs the right `unzbd cs` mode per archive type:
+The extraction (`CSVM/src/Extraction/`) runs the right `unzbd cs` mode per archive type:
 `interp` → `interp.json` (boot scripts); `planes.zbd`/`gamez.zbd` → `gamez` (JSON + mesh
 data); `soundsh/soundsl` → `sounds` (WAVs); `zrdr` → `reader` (JSON);
 `rimage`/`texture`/`rtexture*` → `textures` (PNGs). The per-chapter `rtextureN` archives
@@ -140,7 +140,7 @@ menu/briefing UI only. `cam_anim.zbd`/`mis_anim.zbd` → `anim` (JSON defs + SI 
 the schema lives in [anim-definitions.md](anim-definitions.md). Per-type support and
 round-trip status: [extraction.md](extraction.md).
 
-`ExtractRof.ps1` (repo root) covers the non-ZBD half of the install: the `.rof` UI resource
+Its second half covers the non-ZBD half of the install: the `.rof` UI resource
 archives and the `langui.dll` string table, into `extracted\rof\`. These are decoded by this
 project rather than by mech3ax, see [rof.md](rof.md) and [strings.md](strings.md).
 

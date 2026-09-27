@@ -47,7 +47,7 @@ internal static class MenuInstantActionSuites
         ctx.RequireData(ctx.ZrdrPath, $"zrdr archive");
         var exits = new List<MenuExit>();
         var host = MenuSuiteHost.Bare(exits, ctx.DataRoot, out var seat);
-        var menu = LaunchMenu.Build(ctx.ZrdrPath, ctx.DataRoot, host, seat.Input);
+        var menu = MenuSuiteHost.Build(ctx, host, seat, "menu-instant-action-journey");
         ctx.Host.AddChild(menu);
         var launches = new Launches(exits);
         try
@@ -82,7 +82,7 @@ internal static class MenuInstantActionSuites
         + "count over a contents row's preset, four "
         + "representative presets (an ace duel, a squadron, a stunt run and a zeppelin run) each "
         + "leave through Fly Mission as one LaunchExit whose def derives the matching session spec, "
-        + "the setup surviving each return to the top level, a build saved to the user's store "
+        + "the setup surviving each return to the top level, a build saved to the suite's scratch plane store "
         + "is offered in the Pilot Plane list after the stock rows under its own name, flies its "
         + "airframe's stock node with the def riding the seat, survives a return, and leaves the "
         + "list with its file (the wingman list stays stock), Weapon Loadout with the radio on "
@@ -105,17 +105,23 @@ internal static class MenuInstantActionSuites
         var exits = new List<MenuExit>();
         var seat = new ScriptedSeat();
         var registry = new PresentationRegistry();
+        var store = MenuSuiteHost.ScratchPlanes(ctx, "menu-original-instant-action");
         registry.Register(PresentationId.BuiltIn, () => new BuiltInPresentation(
-            ctx.Host, ctx.ZrdrPath, ctx.DataRoot, string.Empty, new MenuInput { Keyboard = true }));
+            ctx.Host, ctx.ZrdrPath, ctx.DataRoot, string.Empty, new MenuInput { Keyboard = true })
+        {
+            Planes = store,
+        });
         registry.Register(PresentationId.Original, () => new OriginalPresentation(
-            ctx.Host, ctx.DataRoot, layout, string.Empty, new MenuInput { Keyboard = true }));
+            ctx.Host, ctx.DataRoot, layout, string.Empty, new MenuInput { Keyboard = true })
+        {
+            Planes = store,
+        });
         var host = new MenuHost(registry, new MenuSuiteHost.SilentMenuAudio(), exits.Add);
         MenuSuiteHost.AddFeatures(host, ctx.DataRoot);
         host.AddSeat(seat);
-        var store = CustomPlaneStore.UserPlanes();
         string scratch = ScratchName();
         string built = ScratchName();
-        ctx.Check(store.Load(scratch) == null && store.Load(built) == null, $"the scratch names {scratch} and {built} are free in the user's store before the run");
+        ctx.Check(store.List().Count == 0, $"the suite's scratch store starts empty ({store.List().Count})");
         try
         {
             host.Select(forceBuiltIn: false, cliOverride: "original");
@@ -141,13 +147,10 @@ internal static class MenuInstantActionSuites
         }
         finally
         {
-            store.Delete(scratch);
-            store.Delete(built);
             host.Deactivate();
             Godot.Input.MouseMode = Godot.Input.MouseModeEnum.Visible;
+            MenuSuiteHost.DropScratchPlanes(ctx, "menu-original-instant-action");
         }
-
-        ctx.Check(store.Load(scratch) == null && store.Load(built) == null, $"the scratch planes are gone from the user's store after the run");
     }
 
     // A name no player would type, distinct per run, inside the name screen's own character set.
@@ -600,8 +603,8 @@ internal static class MenuInstantActionSuites
         Press(host, seat, Right);
         ctx.Check(ia.PlayerPlane.Name == "Hellhound", $"Right on a dropdown steps its value ({ia.PlayerPlane.Name})");
         Press(host, seat, Accept);
-        // The list is the eleven stock rows and then whatever the user's store holds, so the
-        // count is a floor and the stock prefix is what the first rows are checked for.
+        // The list is the eleven stock rows and then whatever the scratch store holds. The count
+        // is therefore a floor, and the first rows are checked for the stock prefix.
         ctx.Check(shell.InstantAction.OpenDropdown == OriginalInstantActionScreen.PlayerPlaneKey && shell.Rows.Count >= 11 && StockRows(shell) == 11,
             $"Accept opens its list with the eleven stock rows first ({shell.InstantAction.OpenDropdown}, {shell.Rows.Count}, {StockRows(shell)} stock)");
         ctx.Check(shell.Rows[0].Label == "Stock Autogyro" && shell.Rows[1].Label == "Stock Hellhound" && shell.FocusedKey == OriginalInstantActionScreen.PlayerPlaneKey + ":1",
@@ -743,11 +746,11 @@ internal static class MenuInstantActionSuites
         }
     }
 
-    // A build saved to the user's store, entered from the top level: the Pilot Plane list offers
-    // it after the stock rows under "<build name> <airframe>", a click on it flies the airframe's
-    // stock node with the def on the seat, the pick survives a return, the wingman list never
-    // lists it, the roster re-read offers a build saved while the screen shows, and deleting the
-    // file drops the row and the pick back onto the airframe's stock row.
+    // A build saved to the scratch store, entered from the top level. The Pilot Plane list offers
+    // it after the stock rows under "<build name> <airframe>". A click on it flies the airframe's
+    // stock node with the def on the seat, and the pick survives a return. The wingman list never
+    // lists it. The roster re-read offers a build saved while the screen shows. Deleting the file
+    // drops the row and the pick back onto the airframe's stock row.
     private static void OriginalCustomPilot(TestContext ctx, MenuHost host, ScriptedSeat seat, OriginalShell shell, BoardFit fit, InstantActionFeature ia, List<MenuExit> exits, CustomPlaneStore store, string scratch)
     {
         const int Fury = 7;

@@ -142,7 +142,7 @@ So the engine cannot be doing an index-range palette swap. Whatever table it use
 > a greyscale shading map plus **three 8-bit per-pixel weight masks, one per paint colour slot,
 > summing to 255**. That is a direct answer to "how the engine identifies a region", and it is
 > per *pattern*, which also answers "what a pattern actually varies" below. Full decode in
-> [rof.md](rof.md); `ExtractRof.ps1` writes each mask out as `<SKIN>_mask.png` (R/G/B = slots
+> [rof.md](rof.md); the extraction writes each mask out as `<SKIN>_MASK.PNG` (R/G/B = slots
 > 1/2/3). **The remake was reworked onto these masks on**, the hue-window sections
 > below describe the source-skin analysis; the runtime uses the mask-based mapping described in this page.
 

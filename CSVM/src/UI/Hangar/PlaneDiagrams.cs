@@ -33,7 +33,7 @@ public static class PlaneDiagrams
     /// shape is not this layout, so it draws nothing rather than a mis-sliced picture.</summary>
     public static TgaImage? Frame(string root, string file, int airframe)
     {
-        var sheet = Sheet(Path.Combine(root, "extracted", "rof", "ASSETS", "GRAPHICS", file));
+        var sheet = Sheet(Extraction.RofTree.Under(root, "ASSETS/GRAPHICS/" + file));
         int count = HangarEconomy.Airframes.Length;
         if (sheet == null || count <= 0 || sheet.Height % count != 0)
         {

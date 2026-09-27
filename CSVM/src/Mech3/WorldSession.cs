@@ -177,6 +177,8 @@ public sealed class WorldSession
             {
                 root.AddChild(clutter);
                 clutterRoot = clutter;
+                // Before the bootstrap: a mission script switching an island off takes its trees.
+                clutterBuilder.FollowActivation(root);
                 // Shared shapes: N distinct shapes / T distinct triangles,
                 // attached M times, the distinct totals, not the expanded
                 // per-attachment triangle count.
@@ -194,7 +196,7 @@ public sealed class WorldSession
         // chapter carries, and which of them an isolation run left out.
         string hidden = o.HiddenAlpha == SceneBuilder.TransparencyClass.None
             ? string.Empty : $"; hidden {o.HiddenAlpha}";
-        Log.Info("world", $"alpha classes: surfaces blend={builder.BlendSurfaceCount} scissor={builder.ScissorSurfaceCount}; cards blend={clutterBuilder?.BlendCardKinds ?? 0} scissor={clutterBuilder?.ScissorCardKinds ?? 0}{hidden}");
+        Log.Info("world", $"alpha classes: surfaces blend={builder.BlendSurfaceCount} (ground layer {builder.GroundLayerSurfaceCount}) scissor={builder.ScissorSurfaceCount}; cards blend={clutterBuilder?.BlendCardKinds ?? 0} scissor={clutterBuilder?.ScissorCardKinds ?? 0}{hidden}");
 
         // --debug-clutterflag: force clutter blue and print the census. Blue is the one colour
         // the world shader cannot express itself, a decoration's own polygons are unflagged,
@@ -747,10 +749,10 @@ public sealed class WorldSession
 
         /// <summary>The caller's <see cref="TextureArchive"/> outlives this build, so a
         /// runtime-reached <c>PUFFER_STATE</c> (death trails, ON_CALL dust/smoke) can still bake
-        /// its atlas. True in a game session (archive freed on return-to-menu); false only where the
-        /// archive is genuinely a <c>using</c> local of the build (the test harness).
-        /// ⚠ Default false is the SAFE choice, not the common one, left false by a caller that
-        /// owns its archive, a runtime-reached puffer silently builds nothing.</summary>
+        /// its atlas. True in a game session, whose archive is freed on return-to-menu. False in the
+        /// test harness, which keeps its archive open but runs the world without runtime puffers.
+        /// ⚠ Default false is the SAFE choice, not the common one. A caller that owns its archive
+        /// and leaves it false gets a runtime-reached puffer that silently builds nothing.</summary>
         public bool TexturesOutliveBuild { get; init; }
 
         /// <summary>The factory <see cref="AnimRuntime"/> builds <c>PUFFER_STATE</c> emitters

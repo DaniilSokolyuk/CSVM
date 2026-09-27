@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using CSVM.Flight.Hangar;
 using CSVM.Flight.Weapons;
 using CSVM.Mech3;
+using CSVM.Net;
 
 namespace CSVM.UI.Menu;
 
@@ -58,28 +59,40 @@ public sealed record OptionsApplyExit(
     bool? AutoHeadTurn,
     string? ViewDistance) : MenuExit;
 
-/// <summary>Dogfight's two match rules as a screen set them: the kill target that ends a match
-/// early and the match clock in MINUTES, 0 on either disabling that limit. The consumer applies
-/// them under the command line, so an explicit <c>--vs-kills=</c>/<c>--vs-time=</c> still wins.</summary>
-public sealed record VersusRules(int KillTarget, int TimeLimitMinutes);
+/// <summary>Dogfight's match rules as a screen set them. The kill target ends a match early and the
+/// match clock runs in MINUTES. A 0 on either disables that limit. The lives are the deaths a pilot
+/// has before it stays down, 0 for no limit. Without auto-respawn a downed pilot waits for its own
+/// press. The consumer applies them under the command line, so an
+/// explicit flag still wins.</summary>
+public sealed record VersusRules(int KillTarget, int TimeLimitMinutes, int Lives = 0, bool AutoRespawn = true);
+
+/// <summary>The open wire a network launch carries: the transport the door opened and whether
+/// this machine owns the match. The consumer takes it over whole, stepping and closing it from
+/// then on, and builds the seat roster around it; the door keeps neither.</summary>
+public sealed record MenuNetLaunch(INetTransport Transport, bool IsHost);
 
 /// <summary>A non-campaign launch: the chapter, one <see cref="MenuSeatChoice"/> per joined seat
 /// in seat order, and the picked <see cref="MenuMode"/>. Instant Action alone adds the wizard's
 /// built <see cref="InstantActionDef"/> and the wingmen's edited fit (null for the stock fit).
 /// Dogfight alone adds the match rules; a null <paramref name="Match"/> leaves the command
-/// line's own kill target and time limit.</summary>
+/// line's own kill target and time limit. A network match carries the open wire, null on every
+/// local launch.</summary>
 public sealed record LaunchExit(
     string Chapter,
     IReadOnlyList<MenuSeatChoice> Seats,
     MenuMode Mode,
     InstantActionDef? InstantAction = null,
     VersusRules? Match = null,
-    LoadoutChoice? WingmanLoadout = null) : MenuExit;
+    LoadoutChoice? WingmanLoadout = null,
+    MenuNetLaunch? Net = null) : MenuExit;
 
 /// <summary>A campaign mission launch: the seated profile's name, the <c>cm_sequence</c> story
 /// position, and one <see cref="MenuSeatChoice"/> per joined human in seat order. Seat 0 is the
-/// seated profile's pilot; later seats are guests whose records never touch the profile store.</summary>
+/// seated profile's pilot; later seats are guests whose records never touch the profile store.
+/// A co-op mission carries its wire on <paramref name="Net"/>, and a co-op guest's exit names no
+/// profile, since the campaign it flies is the host's.</summary>
 public sealed record CampaignMissionExit(
     string Profile,
     int MissionSeq,
-    IReadOnlyList<MenuSeatChoice> Seats) : MenuExit;
+    IReadOnlyList<MenuSeatChoice> Seats,
+    MenuNetLaunch? Net = null) : MenuExit;

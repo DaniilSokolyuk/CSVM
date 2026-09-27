@@ -170,6 +170,11 @@ public sealed class OptionsDef
 
     /// <summary>The Voice level, on the same range as <see cref="AudioMusic"/>.</summary>
     public int? AudioVoice { get; set; }
+
+    /// <summary>The Crimson Skies install folder the last extraction read, fully qualified, which
+    /// pre-fills the next picker (<c>Extraction.RememberedInstall</c>). Not a display setting and
+    /// never read by a golden shot.</summary>
+    public string? InstallPath { get; set; }
 }
 
 /// <summary>
@@ -289,6 +294,7 @@ public sealed class OptionsStore
             WriteLevel(w, "audioMusic", def.AudioMusic);
             WriteLevel(w, "audioEffects", def.AudioEffects);
             WriteLevel(w, "audioVoice", def.AudioVoice);
+            Write(w, "installPath", def.InstallPath);
             w.WriteEndObject();
         }
 
@@ -335,6 +341,7 @@ public sealed class OptionsStore
                 AudioMusic = ReadLevel(root, "audioMusic"),
                 AudioEffects = ReadLevel(root, "audioEffects"),
                 AudioVoice = ReadLevel(root, "audioVoice"),
+                InstallPath = ReadShaped(root, "installPath", Path.IsPathFullyQualified),
             };
         }
         catch (JsonException)

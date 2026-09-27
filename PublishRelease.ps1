@@ -1,13 +1,14 @@
 <#
 .SYNOPSIS
-    Publishes a CSVM release: the annotated tag, the versioned zip, its SHA-256 and the
-    GitHub release that carries them, all from one run.
+    Publishes a CSVM release: the annotated tag, the versioned Windows zip and Linux tarball,
+    their SHA-256s and the GitHub release that carries them, all from one run.
 
 .DESCRIPTION
     The publish entry point (see docs/tooling.md "Publishing a release"). It reads the
     version from its one home, CSVM/project.godot's application/config/version, runs
-    ExportRelease.ps1, checks the zip it produced, computes its SHA-256, tags the commit
-    that was built, pushes the tag, and creates the GitHub release with the zip attached.
+    ExportRelease.ps1 -Linux, checks both archives it produced, runs sandbox\LinuxRelease.ps1
+    on the tarball, computes both SHA-256s, tags the commit that was built, pushes the tag,
+    and creates the GitHub release with both archives attached.
     No pre-release flag: the first public build has to be the one a visitor lands on.
 
     Everything the release states comes from that single run, so the tag, the exe's stamped
@@ -33,6 +34,10 @@
     tag: the run is a real tag, upload and release under a name of its own, deleted
     afterwards, and the release version's tag is still minted exactly once.
 
+    Every release carries both platforms: one tag, two assets. The tarball gets the zip's
+    checks, and sandbox\LinuxRelease.ps1 must pass on it before anything is tagged, so a
+    machine without the WSL Debian toolchain (docs/tooling.md, "-Linux") cannot publish.
+
 .PARAMETER NotesFile
     Markdown prepended to the release notes. The verification and provenance sections are
     generated below it from the run, so the file itself never states a checksum or a commit.
@@ -50,7 +55,7 @@
     at which the tag and the upload can still be called off.
 
 .EXAMPLE
-    .\PublishRelease.ps1 -NotesFile docs\release-notes-v0.1.0.md
+    .\PublishRelease.ps1 -NotesFile docs\release-notes-v0.2.0.md
 
 .EXAMPLE
     .\PublishRelease.ps1 -TagSuffix rehearsal -Yes
@@ -71,9 +76,20 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot      = $PSScriptRoot
 $ExportScript  = Join-Path $RepoRoot 'ExportRelease.ps1'
 $ProjectGodot  = Join-Path $RepoRoot 'CSVM\project.godot'
-$Mech3axRepo   = Join-Path $RepoRoot 'tools\mech3ax'
+# The mech3ax checkout is found the way ExportRelease.ps1 finds its tools: this tree's own, or
+# CSVM_DATA_ROOT's when this tree has no tools\godot (a worktree). The fork commit checked here has
+# to be the one the export records.
+$ToolsRoot     = $RepoRoot
+if ((-not (Test-Path (Join-Path $RepoRoot 'tools\godot'))) -and $env:CSVM_DATA_ROOT) {
+    $ToolsRoot = $env:CSVM_DATA_ROOT
+}
+$Mech3axRepo   = Join-Path $ToolsRoot 'tools\mech3ax'
 $ExportDir     = Join-Path $RepoRoot '.scratch\export'
 $BuildInfoPath = Join-Path $ExportDir 'BUILD-INFO.txt'
+$LinuxCheck    = Join-Path $RepoRoot 'sandbox\LinuxRelease.ps1'
+# Windows' own bsdtar reads .tar.gz. Named by path so a Git or MSYS tar earlier on PATH, which
+# takes a Windows path for a remote host, is never the one that runs.
+$WindowsTar    = Join-Path $env:SystemRoot 'System32\tar.exe'
 
 function Invoke-Probe {
     # For the calls whose failure is a normal answer: a tag that does not exist yet, a release
@@ -158,6 +174,11 @@ $Tag     = if ($TagSuffix) { "v$Version-$TagSuffix" } else { "v$Version" }
 $Title   = "CSVM $Tag"
 $ZipName = "CSVM-v$Version-win64.zip"
 $ZipPath = Join-Path $RepoRoot ".scratch\$ZipName"
+$TarName = "CSVM-v$Version-linux-x64.tar.gz"
+$TarPath = Join-Path $RepoRoot ".scratch\$TarName"
+foreach ($needed in @($LinuxCheck, $WindowsTar)) {
+    if (-not (Test-Path $needed)) { throw "The Linux tarball's checks need $needed, which is missing." }
+}
 
 # A tag is a promise about a commit that other people's downloads depend on, so an existing
 # one ends the run instead of being moved. Both sides are checked: a local tag that was never
@@ -239,8 +260,8 @@ if ($NotesFile) {
     # typed into the prose is the copy that goes wrong, and a wrong checksum on a release page
     # reads as a tampered download.
     if ([regex]::IsMatch($notesBody, '(?i)\b[0-9a-f]{64}\b')) {
-        throw "$NotesFile states a SHA-256 of its own. This script appends the checksum of the " +
-            "zip it uploads; remove the hand-written one."
+        throw "$NotesFile states a SHA-256 of its own. This script appends the checksums of the " +
+            "archives it uploads; remove the hand-written one."
     }
     $notesBody = $notesBody.TrimEnd() + "`n`n"
 }
@@ -248,17 +269,34 @@ if ($NotesFile) {
 Write-Host "  version $Version" -ForegroundColor Cyan
 Write-Host "  tag     $Tag on $($CsvmCommit.Substring(0,10))" -ForegroundColor Cyan
 Write-Host "  asset   $ZipName" -ForegroundColor Cyan
+Write-Host "  asset   $TarName" -ForegroundColor Cyan
 Write-Host ''
 
 $exportStarted = Get-Date
-& $ExportScript   # throws on every failure of its own; the zip checks below are the backstop
+# It throws on every failure of its own; the archive checks below are the backstop.
+& $ExportScript -Linux
 
-if (-not (Test-Path $ZipPath)) {
-    throw "ExportRelease.ps1 produced no $ZipPath -- the zip's name comes from the same " +
-        "config/version this script read, so a mismatch means one of them changed mid-run."
+$archives = @($ZipPath, $TarPath)
+foreach ($archive in $archives) {
+    if (-not (Test-Path $archive)) {
+        throw "ExportRelease.ps1 produced no $archive -- the archive's name comes from the same " +
+            "config/version this script read, so a mismatch means one of them changed mid-run."
+    }
+    if ((Get-Item $archive).LastWriteTime -lt $exportStarted) {
+        throw "$archive predates this run -- the export did not rewrite it."
+    }
 }
-if ((Get-Item $ZipPath).LastWriteTime -lt $exportStarted) {
-    throw "$ZipPath predates this run -- the export did not rewrite it."
+
+# The pre-release Linux check (docs/tooling.md, "The Linux release check in WSL"), whole: the
+# payload against the manifest, the tarball's own --extract, and the engine suites headless.
+# Run before the tree re-check below, so that re-check covers its minutes too.
+Write-Host ''
+Write-Host "Checking $TarName in WSL (sandbox\LinuxRelease.ps1)..." -ForegroundColor Cyan
+$global:LASTEXITCODE = 0
+& $LinuxCheck -Tarball $TarPath
+if ($LASTEXITCODE -ne 0) {
+    throw "The Linux release check failed on $TarPath (exit $LASTEXITCODE). Nothing was " +
+        "tagged or uploaded; its logs are under .scratch\linux-check\."
 }
 
 # Re-read the tree after a build that takes minutes: an edit or a commit landing while it ran
@@ -280,15 +318,25 @@ if ((& git -C $RepoRoot rev-parse HEAD) -ne $CsvmCommit) {
 # release notes restate its two commits. Read it back rather than restating the same variables
 # twice: if the export recorded a qualifier, the notes are about to claim something the zip
 # already denies.
-$buildInfo = [System.IO.File]::ReadAllText($BuildInfoPath)
-foreach ($commit in @($CsvmCommit, $ForkCommit)) {
-    if ($buildInfo -notmatch $commit) {
-        throw "BUILD-INFO.txt in the zip does not name $commit -- the release notes and the zip " +
-            "would disagree about what was built."
-    }
+$buildInfos = [ordered]@{ 'zip' = [System.IO.File]::ReadAllText($BuildInfoPath) }
+# Read out of the tarball itself rather than the staging folder, so the check is of the file a
+# Linux downloader unpacks.
+$tarInfo = Invoke-Probe $WindowsTar '-xOf' $TarPath 'BUILD-INFO.txt'
+if ($tarInfo.ExitCode -ne 0 -or $tarInfo.Lines.Count -eq 0) {
+    throw "Could not read BUILD-INFO.txt out of $TarPath -- $($tarInfo.Lines -join ' ')"
 }
-if ($buildInfo -match 'MODIFIED' -or $buildInfo -match 'pushed:\s+NO') {
-    throw "BUILD-INFO.txt in the zip records a dirty or unpushed source. Nothing was tagged."
+$buildInfos['tarball'] = $tarInfo.Lines -join "`n"
+foreach ($archive in $buildInfos.Keys) {
+    $buildInfo = $buildInfos[$archive]
+    foreach ($commit in @($CsvmCommit, $ForkCommit)) {
+        if ($buildInfo -notmatch $commit) {
+            throw "BUILD-INFO.txt in the $archive does not name $commit -- the release notes and " +
+                "the $archive would disagree about what was built."
+        }
+    }
+    if ($buildInfo -match 'MODIFIED' -or $buildInfo -match 'pushed:\s+NO') {
+        throw "BUILD-INFO.txt in the $archive records a dirty or unpushed source. Nothing was tagged."
+    }
 }
 
 $Sha256 = (Get-FileHash $ZipPath -Algorithm SHA256).Hash.ToLower()
@@ -296,36 +344,46 @@ $Sha256 = (Get-FileHash $ZipPath -Algorithm SHA256).Hash.ToLower()
 # whatever decimal separator the publishing workstation happens to be set to.
 $ZipSize = [string]::Format([cultureinfo]::InvariantCulture, '{0:N1} MB',
     ((Get-Item $ZipPath).Length / 1MB))
-
-# Single-quoted here-string with -f placeholders: the notes are full of backticks, which a
-# double-quoted here-string would read as escapes.
-$notesTemplate = @'
-### Verifying this download
-
-The download is `{0}` ({1}). Nothing in it is code-signed, so this hash is what says the zip is
-the one this project published rather than something rebuilt or altered on the way:
-
-```
-Get-FileHash {0} -Algorithm SHA256
-```
-
-SHA-256: `{2}`
-
-### Built from
-
-Every binary in the zip is built from public source, and the archive repeats these two commits
-in its own `BUILD-INFO.txt`.
-
-- `CSVM.exe` (version {3}): [`{4}`]({5}/commit/{6})
-- `tools\unzbd.exe`: mech3ax fork, branch `cs-anim`, {7}
-'@
+$TarSha256 = (Get-FileHash $TarPath -Algorithm SHA256).Hash.ToLower()
+$TarSize = [string]::Format([cultureinfo]::InvariantCulture, '{0:N1} MB',
+    ((Get-Item $TarPath).Length / 1MB))
 $forkLine = if ($ForkRepoUrl) {
     "[``$($ForkCommit.Substring(0,10))``]($ForkRepoUrl/commit/$ForkCommit)"
 } else {
     "``$ForkCommit``"
 }
-$notes = $notesBody + ($notesTemplate -f $ZipName, $ZipSize, $Sha256, $Version,
-    $CsvmCommit.Substring(0, 10), $RepoUrl, $CsvmCommit, $forkLine)
+
+# Single-quoted here-string with -f placeholders: the notes are full of backticks, which a
+# double-quoted here-string would read as escapes. The Linux README is linked at the tagged
+# commit rather than restated: its Steam Deck section is the one home of those steps.
+$notesTemplate = @'
+### Verifying these downloads
+
+There are two downloads: `{0}` ({1}) for Windows, and `{2}` ({3})
+for Linux, a community-tested build with the Steam Deck as its reference machine (its `README.md`
+has an [On Steam Deck]({4}/blob/{5}/packaging/README-linux.md#on-steam-deck) section). Nothing in
+either is code-signed, so these hashes are what say an archive is the one this project published
+rather than something rebuilt or altered on the way:
+
+```
+Get-FileHash {0} -Algorithm SHA256
+sha256sum {2}
+```
+
+- `{0}` SHA-256: `{6}`
+- `{2}` SHA-256: `{7}`
+
+### Built from
+
+Every binary in both archives is built from public source, and each archive repeats these two
+commits in its own `BUILD-INFO.txt`.
+
+- `CSVM.exe` and `CSVM.x86_64` (version {8}): [`{9}`]({4}/commit/{5})
+- `tools\unzbd.exe` and `tools/unzbd`: mech3ax fork, branch `cs-anim`, {10}
+'@
+$notes = $notesBody + ($notesTemplate -f $ZipName, $ZipSize, $TarName, $TarSize,
+    $RepoUrl, $CsvmCommit, $Sha256, $TarSha256, $Version, $CsvmCommit.Substring(0, 10),
+    $forkLine)
 
 $notesPath = Join-Path $RepoRoot ".scratch\release-notes-$Tag.md"
 [System.IO.File]::WriteAllText($notesPath, $notes, (New-Object System.Text.UTF8Encoding($false)))
@@ -337,6 +395,9 @@ Write-Host "  tag         $Tag -> $CsvmCommit  (annotated, pushed, never moved a
 Write-Host "  release     $Title, pre-release flag OFF"
 Write-Host "  asset       $ZipPath ($ZipSize)"
 Write-Host "  sha-256     $Sha256"
+Write-Host "  asset       $TarPath ($TarSize)"
+Write-Host "  sha-256     $TarSha256"
+Write-Host "  linux check sandbox\LinuxRelease.ps1 passed on this tarball"
 Write-Host "  notes       $notesPath$(if (-not $NotesFile) { ' (generated sections only)' })"
 
 if ($DryRun) {
@@ -359,7 +420,7 @@ if (-not $Yes) {
 # (CLAUDE.md), and it carries the checksum so the tag object records the artifact it belongs
 # to independently of the release page.
 $tagMessagePath = Join-Path $RepoRoot ".scratch\tag-message-$Tag.txt"
-$tagMessage = "CSVM $Tag`n`n$ZipName`nSHA-256: $Sha256`n"
+$tagMessage = "CSVM $Tag`n`n$ZipName`nSHA-256: $Sha256`n`n$TarName`nSHA-256: $TarSha256`n"
 [System.IO.File]::WriteAllText($tagMessagePath, $tagMessage, (New-Object System.Text.UTF8Encoding($false)))
 
 Write-Host ''
@@ -375,8 +436,9 @@ if ($LASTEXITCODE -ne 0) {
     throw "Pushing tag $Tag failed (exit $LASTEXITCODE). The local tag was removed; re-run."
 }
 
-Write-Host "Creating release $Tag with $ZipName..." -ForegroundColor Cyan
-& $gh release create $Tag $ZipPath --repo $RepoSlug --title $Title --notes-file $notesPath `
+$assets = @($ZipPath, $TarPath)
+Write-Host "Creating release $Tag with $((($assets | ForEach-Object { Split-Path $_ -Leaf }) -join ' and '))..." -ForegroundColor Cyan
+& $gh release create $Tag @assets --repo $RepoSlug --title $Title --notes-file $notesPath `
     --verify-tag --latest
 if ($LASTEXITCODE -ne 0) {
     throw "gh release create failed (exit $LASTEXITCODE). The tag $Tag is pushed and stays where " +
@@ -387,7 +449,8 @@ if ($LASTEXITCODE -ne 0) {
 $releaseUrl = "$RepoUrl/releases/tag/$Tag"
 Write-Host ''
 Write-Host "Published $releaseUrl" -ForegroundColor Green
-Write-Host "SHA-256   $Sha256" -ForegroundColor Green
+Write-Host "SHA-256   $Sha256 ($ZipName)" -ForegroundColor Green
+Write-Host "SHA-256   $TarSha256 ($TarName)" -ForegroundColor Green
 if ($Visibility -ne 'PUBLIC') {
     Write-Host "The repository is $($Visibility.ToLower()), so this release is not visible to anyone else yet." -ForegroundColor Yellow
 }

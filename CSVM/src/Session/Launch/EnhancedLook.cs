@@ -189,10 +189,9 @@ public static class EnhancedLook
             env.TonemapAgxContrast = fresh.TonemapAgxContrast;
             return;
         }
-        // The sky a reflection reads is the mission's own colour, not Godot's procedural gradient.
-        // The dome is gamez geometry drawn over the background, so this is normally unseen; what it
-        // feeds is the glossy water's specular. WeatherRig.WriteSkyColor writes the flown zone's
-        // own FOG_COLOR over the default here on every zone apply.
+        // Reflections read the mission's own colour, not Godot's gradient. The gamez dome hides the
+        // background, so this feeds only the water's specular. WeatherRig.WriteSkyColor writes the
+        // flown zone's FOG_COLOR over the default on every zone apply.
         env.Sky = new Sky { SkyMaterial = new PanoramaSkyMaterial() };
         WeatherRig.WriteSkyColor(env, DefaultSkyColor);
         env.SsaoEnabled = (skipped & EnhancedPasses.Ssao) == 0;

@@ -82,12 +82,12 @@ public sealed class PaintBitmap
 
 /// <summary>
 /// The original's paint patterns, read from the extracted UI resource archive
-/// (<c>extracted/rof/ASSETS/GRAPHICS/&lt;PATTERN&gt;/</c>, produced by <c>ExtractRof.ps1</c>).
+/// (<c>extracted/rof/ASSETS/GRAPHICS/&lt;PATTERN&gt;/</c>, produced by the extraction's <c>.rof</c> half).
 ///
 /// A pattern is a folder of `.BM` skins, and **it is per aircraft**: `FORTUNE` covers all
-/// eleven, every other pattern covers one to three. That is why the paint UI offers a
-/// different pattern list per plane, the Fury has four (Fortune Hunters, Black Swan, Hughes,
-/// Studio Security), the Balmoral two. <see cref="PatternsFor"/> is that list.
+/// eleven, every other pattern covers one to three. So the paint UI offers a different pattern
+/// list per plane. The Fury has four (Fortune Hunters, Black Swan, Hughes, Studio Security), the
+/// Balmoral two. <see cref="PatternsFor"/> is that list.
 ///
 /// Absent extraction is not an error: the library comes back empty, aircraft build unpainted,
 /// and a single line says how to produce it.
@@ -127,7 +127,7 @@ public sealed class PatternLibrary
         var graphics = Path.Combine(rofRoot, "ASSETS", "GRAPHICS");
         if (!Directory.Exists(graphics))
         {
-            Log.Info("world", $"[paint] no pattern library at {graphics}, run ExtractRof.ps1 to enable the original's paint patterns; aircraft build unpainted");
+            Log.Info("world", $"[paint] no pattern library at {graphics}, extract the game data again on the Extract screen to enable the original's paint patterns; aircraft build unpainted");
             return lib;
         }
         foreach (var dir in Directory.EnumerateDirectories(graphics))

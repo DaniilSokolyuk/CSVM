@@ -426,12 +426,11 @@ public sealed class HangarPaintPage : HangarPage
         PaintIcons? set = null;
         if (Flow.DataRoot is { } root)
         {
-            var graphics = Path.Combine(root, "extracted", "rof", "ASSETS", "GRAPHICS");
             var layers = new TgaImage?[4];
             for (int layer = 0; layer < layers.Length; layer++)
             {
-                layers[layer] = TgaImage.TryLoad(
-                    Path.Combine(graphics, $"PX_ICON_{airframe}_{pattern}_{layer}.TGA"));
+                layers[layer] = TgaImage.TryLoad(Extraction.RofTree.Under(
+                    root, $"ASSETS/GRAPHICS/PX_ICON_{airframe}_{pattern}_{layer}.TGA"));
             }
 
             set = PaintIcons.From(layers);
@@ -477,8 +476,7 @@ public sealed class HangarPaintPage : HangarPage
         {
             _decalSheetTried = true;
             _decalSheet = Flow.DataRoot is { } root
-                ? TgaImage.TryLoad(Path.Combine(root, "extracted", "rof", "ASSETS", "GRAPHICS",
-                    "PX_P_DECALS.TGA"))
+                ? TgaImage.TryLoad(Extraction.RofTree.Under(root, "ASSETS/GRAPHICS/PX_P_DECALS.TGA"))
                 : null;
         }
 

@@ -31,8 +31,8 @@ public sealed class LiveryResolver
     }
 
     /// <summary>The original's per-pattern paint region masks, scanned once per session from
-    /// the extracted UI archive. Empty (and a one-line note) when ExtractRof.ps1 has not been
-    /// run, aircraft then build unpainted rather than failing.</summary>
+    /// the extracted UI archive. Empty (and a one-line note) when the extraction holds no UI archive,
+    /// and aircraft then build unpainted rather than failing.</summary>
     public PatternLibrary Patterns => _patternLibrary ??= PatternLibrary.Load(_rofPath);
 
     /// <summary>True when the launch asked for a livery by hand (<c>--paint=</c>,

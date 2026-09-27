@@ -359,32 +359,10 @@ public class PerfSampleTests
         PerfSample.Reset();
     }
 
-    // The scope path under measurement: one open and close per iteration and nothing else, so a
-    // window's reading is the scope's own.
-    private static void OpenScopes()
-    {
-        for (int i = 0; i < WindowOpens; i++)
-        {
-            using (PerfSample.Scope(PerfSite.DebrisSpawn))
-            {
-            }
-        }
-    }
-
-    // The negative controls' body. The object is handed to a call the runtime cannot inline away,
-    // since an allocation that escapes nowhere is one a runtime is free to elide.
-    private static void Allocate()
-    {
-        for (int i = 0; i < WindowOpens; i++)
-        {
-            GC.KeepAlive(new object());
-        }
-    }
-
     // Runs body once per window, reading the thread's allocated bytes and the gen-0 count across
     // each, and stops at the first window that charged anything. Returns that window's index, or
-    // -1 when every window read exactly zero.
-    private static int MeasureWindows(Action body, out long[] charged, out int[] collections)
+    // -1 when every window read exactly zero. AiStepCostTests measures its bracket through it too.
+    internal static int MeasureWindows(Action body, out long[] charged, out int[] collections)
     {
         charged = new long[Windows];
         collections = new int[Windows];
@@ -406,6 +384,28 @@ public class PerfSampleTests
         }
 
         return -1;
+    }
+
+    // The scope path under measurement: one open and close per iteration and nothing else, so a
+    // window's reading is the scope's own.
+    private static void OpenScopes()
+    {
+        for (int i = 0; i < WindowOpens; i++)
+        {
+            using (PerfSample.Scope(PerfSite.DebrisSpawn))
+            {
+            }
+        }
+    }
+
+    // The negative controls' body. The object goes to a call the runtime cannot inline away, since
+    // a runtime may elide an allocation that escapes nowhere.
+    private static void Allocate()
+    {
+        for (int i = 0; i < WindowOpens; i++)
+        {
+            GC.KeepAlive(new object());
+        }
     }
 
     // What a reader of a red allocation run needs and cannot get afterwards: which windows were

@@ -460,6 +460,34 @@ public class SessionSpecTests
         Assert.False(s.IsScripted);
     }
 
+    /// <summary>The stick report hides its window and logs as a dump, but leaves the bundle off.
+    /// The bundle's <c>--no-pads</c> would empty the Godot roster the gap-filler subtracts.</summary>
+    [Fact]
+    public void DumpSticksIsScriptedButKeepsThePads()
+    {
+        var s = S("--dump-sticks");
+        Assert.True(s.DumpSticks);
+        Assert.True(s.IsScripted);
+        Assert.Equal("dump", s.ModeName);
+        Assert.Equal("", s.ScriptedBy);
+        Assert.False(s.Det);
+        Assert.False(s.PadsDisabled);
+        Assert.Equal(0, s.DumpSticksWatch);
+    }
+
+    [Theory]
+    [InlineData("--dump-sticks=15", 15)]
+    [InlineData("--dump-sticks=500", 120)]
+    [InlineData("--dump-sticks=0", 0)]
+    [InlineData("--dump-sticks=twist", 0)]
+    public void DumpSticksTakesAWatchOfOneToAHundredAndTwentySeconds(string arg, int seconds)
+    {
+        var s = S(arg);
+        Assert.True(s.DumpSticks);
+        Assert.False(s.Det);
+        Assert.Equal(seconds, s.DumpSticksWatch);
+    }
+
     // ---- The --det bundle ----------------------------------------------------------------------
 
     [Theory]
@@ -1045,6 +1073,20 @@ public class SessionSpecTests
         Assert.Empty(s.Warnings);
     }
 
+    /// <summary>`--profiles=` is the raw directory of the campaign profile store, absent unless
+    /// given. It selects no content, and a cabin launch derived from the command line keeps it.</summary>
+    [Fact]
+    public void ProfilesIsARawDirectoryThatACabinLaunchKeeps()
+    {
+        Assert.Null(S("--campaign=Zachary:3").ProfilesDir);
+        var s = S("--campaign=Zachary:3", @"--profiles=.scratch\probe\Profiles");
+        Assert.Equal(@".scratch\probe\Profiles", s.ProfilesDir);
+        Assert.Empty(s.Warnings);
+        Assert.False(S("--profiles=x").HasContentArg);
+        var cabin = SessionSpec.FromCampaign(S("--menu", "--profiles=x"), "Zachary", 3, new[] { "player_bhawk" }, 1);
+        Assert.Equal("x", cabin.ProfilesDir);
+    }
+
     /// <summary>Globals are recorded, never applied, that is what keeps the type reachable from
     /// here, with no engine under it.</summary>
     [Fact]
@@ -1063,6 +1105,18 @@ public class SessionSpecTests
     {
         var s = S("--debug-anim");
         Assert.True(s.DebugAnim);
+        Assert.Empty(s.LogSpecs);
+    }
+
+    /// <summary>`--debug-net` records itself and leaves the log spec and every other debug flag
+    /// alone; off unless given.</summary>
+    [Fact]
+    public void DebugNetIsItsOwnFlag()
+    {
+        Assert.False(S().DebugNet);
+        var s = S("--debug-net");
+        Assert.True(s.DebugNet);
+        Assert.False(s.DebugAnim);
         Assert.Empty(s.LogSpecs);
     }
 

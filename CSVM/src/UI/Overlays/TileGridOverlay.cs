@@ -228,7 +228,7 @@ public sealed partial class TileGridOverlay : Node
             root.SetAnchorsPreset(Control.LayoutPreset.FullRect);
             _hud = new Label
             {
-                // Below the class overlay's readout (H), which sits at y=200..240.
+                // Below the class overlay's readout (F21), which sits at y=200..240.
                 Position = new Vector2(12, 260),
                 Modulate = new Color(0.85f, 0.95f, 1f),
             };

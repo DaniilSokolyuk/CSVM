@@ -5,21 +5,50 @@ using CSVM.Utils;
 
 namespace CSVM.Session.Launch;
 
+/// <summary>How an extraction tree's stamp stands against <see cref="ExtractionStamp.Schema"/>.</summary>
+public enum StampStanding
+{
+    /// <summary>No stamp, no schema in it, or it does not read. Warned about, never asked about.</summary>
+    Unstamped,
+
+    /// <summary>Stamped with the schema this build reads.</summary>
+    Current,
+
+    /// <summary>Stamped by an older extraction than this build reads.</summary>
+    Older,
+
+    /// <summary>Stamped by a newer build than this one.</summary>
+    Newer,
+}
+
 /// <summary>
-/// Boot-time check of the extraction tree's provenance stamp, <c>extracted/VERSION.json</c>,
-/// written by <c>ExtractAssets.ps1</c> / <c>ExtractRof.ps1</c>: which unzbd built the tree
-/// (version line, exe hash, fork commit when known), when, and under which stamp schema.
+/// Boot-time check of the extraction tree's provenance stamp, <c>extracted/VERSION.json</c>.
+/// <c>ExtractionStampWriter</c> records which unzbd built the tree, when, and under which schema.
 /// The loaders prefer an unpacked sibling dir over its <c>.zip</c>, so a partially
-/// re-extracted tree can silently mix vintages, the stamp is how a "it looks wrong" report
-/// starts from a known extractor version instead of a guess.
+/// re-extracted tree can silently mix vintages. The stamp lets a report start from a known
+/// extractor version instead of a guess.
 /// </summary>
 public static class ExtractionStamp
 {
-    /// <summary>The stamp schema this build's loaders expect. Bump it, together with
-    /// <c>$StampSchema</c> in ExtractAssets.ps1 AND ExtractRof.ps1, whenever a reader change
-    /// invalidates old extractions; <c>ExtractionStampTests</c> reads the three and refuses a
-    /// commit that moves fewer than all of them.</summary>
+    /// <summary>The stamp schema this build's loaders expect and the one number every
+    /// extraction writes. Bump it whenever a reader change invalidates old extractions.</summary>
     public const int Schema = 3;
+
+    /// <summary>How the tree under <paramref name="dataRoot"/> is stamped against <see cref="Schema"/>,
+    /// with the schema it carries as <paramref name="found"/>. A tree with no stamp, or one that does
+    /// not read, is <see cref="StampStanding.Unstamped"/>. The dev tree holds extractions older than
+    /// the stamp, so only a stamp naming another schema asks for a re-extraction.</summary>
+    public static StampStanding Standing(string dataRoot, out int? found)
+    {
+        found = Stamped(dataRoot);
+        return found switch
+        {
+            null => StampStanding.Unstamped,
+            int f when f < Schema => StampStanding.Older,
+            int f when f > Schema => StampStanding.Newer,
+            _ => StampStanding.Current,
+        };
+    }
 
     /// <summary>Whether the tree under <paramref name="dataRoot"/> is stamped below
     /// <paramref name="need"/>, with the re-extract instruction as <paramref name="reason"/>.
@@ -34,7 +63,7 @@ public static class ExtractionStamp
             return false;
         }
 
-        reason = $"the extraction tree is stamped schema={found} and this build reads schema={need} or later; re-run ExtractAssets.ps1 and ExtractRof.ps1 (with -Force if everything looks up to date)";
+        reason = $"the extraction tree is stamped schema={found} and this build reads schema={need} or later; re-extract from the Extract screen (a repo checkout: Extract.ps1 -Force)";
         return true;
     }
 
@@ -47,34 +76,34 @@ public static class ExtractionStamp
         var path = Path.Combine(dataRoot, "extracted", "VERSION.json");
         if (!File.Exists(path))
         {
-            Log.Warn("core", $"extraction tree has no version stamp path={path}, cannot tell which extractor produced it; re-run ExtractAssets.ps1 (and ExtractRof.ps1) to stamp it");
+            Log.Warn("core", $"extraction tree has no version stamp path={path}, cannot tell which extractor produced it; re-extract from the Extract screen (a repo checkout: Extract.ps1) to stamp it");
             return;
         }
         try
         {
-            // Read as text, not bytes: the scripts write UTF-8 with a BOM (PowerShell 5.1's
-            // -Encoding UTF8), which the byte-based parser rejects; the text reader strips it.
+            // Read as text, not bytes: trees stamped by the old PowerShell extractors carry a BOM.
+            // The byte-based parser rejects it; the text reader strips it.
             using var doc = JsonDocument.Parse(File.ReadAllText(path));
             if (!doc.RootElement.TryGetProperty("schema", out var schema) ||
                 schema.ValueKind != JsonValueKind.Number)
             {
-                Log.Warn("core", $"extraction stamp carries no schema integer path={path}, re-run ExtractAssets.ps1 to rewrite it");
+                Log.Warn("core", $"extraction stamp carries no schema integer path={path}, re-extract from the Extract screen (a repo checkout: Extract.ps1 -Force) to rewrite it");
                 return;
             }
             int found = schema.GetInt32();
             if (found != Schema)
             {
-                Log.Warn("core", $"extraction stamp schema={found} but this build expects schema={Schema} path={path}, the tree's vintage no longer matches the loaders; re-run ExtractAssets.ps1 and ExtractRof.ps1 (with -Force if everything looks up to date)");
+                Log.Warn("core", $"extraction stamp schema={found} but this build expects schema={Schema} path={path}, the tree's vintage no longer matches the loaders; re-extract from the Extract screen (a repo checkout: Extract.ps1 -Force)");
             }
         }
         catch (Exception e) when (e is IOException or JsonException or FormatException)
         {
-            Log.Warn("core", $"extraction stamp unreadable path={path} error={e.GetType().Name}, re-run ExtractAssets.ps1 to rewrite it");
+            Log.Warn("core", $"extraction stamp unreadable path={path} error={e.GetType().Name}, re-extract from the Extract screen (a repo checkout: Extract.ps1 -Force) to rewrite it");
         }
     }
 
     // The stamp's schema integer, or null when there is no stamp, no schema in it, or it does not
-    // read. Silent: Check above is the one place a stamp problem is reported to the player.
+    // read. Silent: Check above logs a stamp problem, and the extraction screen asks about it.
     private static int? Stamped(string dataRoot)
     {
         var path = Path.Combine(dataRoot, "extracted", "VERSION.json");

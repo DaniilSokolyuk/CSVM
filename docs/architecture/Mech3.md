@@ -38,7 +38,7 @@ trimesh per surface class and soil and by sidedness, both halves on one body reg
 `WorldCollision`; `MissionStructureTeamMeta` is the channel `DestructibleRegistry` reads a pool's
 team through. A textured surface takes `csky_world_light` on its `lighting` flag alone, and every
 mip-mapped arm fetches through `SampleAlbedo`, the one `csky_sample_albedo` carrying the chapter's
-LOD bias, reused by `Clutter` and `MeshLab`. `AlphaOf` reads back the transparency verdict a built material's shader was generated for, the registry `HiddenAlpha` (`--hide-alpha`) drops a class by, dropping the surface rather than the instance so the classes isolate from each other. A `sunVertexLit` builder (the in-flight aircraft) draws original mode's shaded arm unshaded, with the original's per-vertex sun term, whose ambient half is the Danger Zone photograph's fill at an armed `PhotoEyeParam` eye. Arms and selection: [Root.md](Root.md), [../formats/gotchas.md](../formats/gotchas.md), [../org/vertexLighting.md](../org/vertexLighting.md), [../org/textures.md](../org/textures.md).
+LOD bias, reused by `Clutter` and `MeshLab`. `AlphaOf` reads back the transparency verdict a built material's shader was generated for, the registry `HiddenAlpha` (`--hide-alpha`) drops a class by, dropping the surface rather than the instance so the classes isolate from each other. A blended world surface lying within `GroundLayerMinUp` of level (a terrain strip, a road, a shadow decal; never the caller's blend list, the cloud deck and sky) takes `GroundLayerRenderPriority` and draws ahead of every other transparent draw, so a clutter card standing on it composites over it: the card kinds are chapter-wide MultiMeshes whose one sort key is the forest's centre, so the depth sort put a nearer strip over the card's soft edge. A `sunVertexLit` builder (the in-flight aircraft) draws original mode's shaded arm unshaded, with the original's per-vertex sun term, whose ambient half is the Danger Zone photograph's fill at an armed `PhotoEyeParam` eye. Arms and selection: [Root.md](Root.md), [../formats/gotchas.md](../formats/gotchas.md), [../org/vertexLighting.md](../org/vertexLighting.md), [../org/textures.md](../org/textures.md).
 
 ## src/Mech3/ZoneGate.cs
 The original's per-node visibility gate (`FUN_0056c430`). `FUN_004d62d0` arms the camera each frame
@@ -119,7 +119,7 @@ next. Authored side: [../formats/paint.md](../formats/paint.md); decode: [../org
 
 ## src/Mech3/PatternLibrary.cs
 Decodes the original's `.BM` paint patterns from `extracted/rof/ASSETS/GRAPHICS/<PATTERN>/`, which
-`ExtractRof.ps1` produces. `PatternsFor(prefix)` lists the patterns shipping skins for one
+the extraction produces. `PatternsFor(prefix)` lists the patterns shipping skins for one
 aircraft, a pattern being per plane; `Skin()` caches per (pattern, skin) so several aircraft in one
 session share a decode. `.BM` layout: [../formats/rof.md](../formats/rof.md).
 
@@ -159,8 +159,9 @@ term, so left and right settle at different angles. Decode: [../org/flightModel.
 Single source of truth for wingtip nav lights: the flare-node predicate (wing_flare1/2), the glow
 texture (oil_liteflare), the warm-amber flash colour (0.88, 0.78, 0.36 = wing_light.json's
 LIGHT_STATE COLOR), the blink period (1.5 s = its LOOP SEQUENCE_OFFSET) and the point-light range
-(0.5-1.25 m, also LIGHT_STATE). PlaneBuilder hides and re-skins the flares (additive tint, one-sided
-as authored, no billboard); WingLightBlinker flashes them and emits a matching OmniLight3D per side.
+(0.5-1.25 m, also LIGHT_STATE). PlaneBuilder hides and re-skins the flares (additive tint, posed
+through `csky_facade_spherical` as the SphericalY facade model 1261 is, never Godot's billboard
+mode); WingLightBlinker flashes them and emits a matching OmniLight3D per side.
 
 ## src/Mech3/WorldBuilder.cs
 Builds a chapter world (fullbright): the World node's children plus every partition-referenced
@@ -179,7 +180,8 @@ helpers (`HorizonZonesOf`, `CloudDeckAltitudeOf`, `DomeZonesToBuild`, `DetachedW
 ## src/Mech3/MapEdgeExtender.cs
 A rolling window of repeated border tiles and clutter continuing the world past the map edge, one
 window per session shared by every player camera and diffed only on a cell crossing. Clutter copies
-grow from `ClutterBuilder.ExportedKinds`, each keeping its source stamp's fade thresholds.
+grow from `ClutterBuilder.ExportedKinds`, each keeping its source stamp's fade thresholds and
+drawing only while `ClutterActivation` shows that stamp.
 `ClassifyGroundMesh`, `IsCompletionStrip` and `FoldAxis` are pure statics pinned by
 `MapEdgeTileTests`/`MapEdgeFoldTests`; `--dump-tilegrid` writes the per-cell acceptance census
 `WriteCensus` builds. The original's own continuation behaviour and the per-chapter fold
@@ -195,6 +197,14 @@ which patch a district dresses; `OverrideTemplateNames` is `--clutter-templates=
 A decoration is a node chain, and `FirstWithMesh` hands back the translation down to the node carrying the mesh, so a stamp lands where the chain puts the drawn card: C5's lamp glow rides 4.75 m up its post. A solid decoration's chain carries SEVERAL meshes, which `ExtraMeshes` collects (nearest LOD only, each in the drawn mesh's frame) so `Kind.ExtraParts` draws and collides the whole building: 12 of C5's city blocks hold two street walls and a roof cap on further nodes, and drawing the first mesh alone leaves them open on two sides.
 Placement runtime: [../org/clutter.md](../org/clutter.md); authored side: [../formats/clutter.md](../formats/clutter.md), [../formats/templates.md](../formats/templates.md).
 
+## src/Mech3/ClutterActivation.cs
+Keeps every clutter stamp drawn exactly while the world node it was stamped from is visible in the
+tree. Each `KindExport` carries its stamps' owner indices; `Bind` finds the built node per index and
+syncs on its `VisibilityChanged` and `TreeEntered`, so a mission script's area verb, a
+`NodeSetActive` or a record born inactive hides the trees with the ground. A hidden stamp collapses
+its basis and switches off its shared shape as a crater's victim does, and a show restores only
+what this hid. `Version` lets `MapEdgeExtender`'s copies follow their source stamps. Read `ClutterCull.cs`.
+
 ## src/Mech3/ClutterTemplates.cs
 The chapter's `templates.zrd` (`ClutterTemplateSpec.Load`/`.Parse`): one `ClutterKindProps` per
 clutter DECORATION MODEL, carrying `substitute`'s weighted roll, `scale_range`, `far_fade_range`
@@ -208,6 +218,12 @@ read. Schema, offsets, the per-chapter census and the keying rules: [../formats/
 Zrdr extraction reader (zip or unpacked dir): `LoadFile`, `LoadFileOrEmpty`, content-sniffing
 `LoadMatchingFiles`, name-predicate `LoadFilesNamed` (for families with nothing to sniff, e.g. the
 `ne0*` nets), and `ZrdrDict`, the key/[values…] view over a reader's alternating list.
+
+## src/Mech3/GamePath.cs
+Splits a path the game's data names (`..\data\c1\m02\zrdr\cutscenes\cabpickup.zrd`) on `\` and `/`
+alike on every host: `FileName` for the leaf, `HasFolder` for a folder segment. `System.IO.Path`
+splits `\` on Windows only, so it keeps our own disk paths and never a game one. Callers:
+`MissionCutscenes` (the `cutscenes\` entries), `AnimProgram` (the scope gates' stems).
 
 ## src/Mech3/LandingApproaches.cs
 A chapter's `landings.zrd` approach table resolved against the gamez: each row names an animation
@@ -424,7 +440,7 @@ unchanged. Two entries exist install-wide (`fire1.flt` 12@10, `fire2.flt` 6@5).
 following its host's pose each frame. `PlayOneShot(name, worldPos, rng)` is the one-shot
 `SOUND` half, fire-and-forget destruction and impact audio on Effects, resolving a `SOUND_GROUPS`
 name to a member first. Radio lines, combat voice included, never come here: they are flat and
-belong to `MissionRadio.cs`. `HasStream` answers availability after the prewarm, `OneShotsStarted` that a cue fired. Who hears
+belong to `MissionRadio.cs`. `HasStream` answers availability after the prewarm, `OneShotsStarted` that a cue fired. `LateBy`, set only during a guest's catch-up, starts a one-shot that far in and skips one already over. Who hears
 an emitter is `UI/Boards/SplitScreen.cs`'s per-pane model, fed by `SetListeners`: `Tick` measures to the
 nearest and levels every player from `SoundFalloff.cs`, never Godot's. Next: `SoundFalloff.cs`.
 
@@ -474,13 +490,12 @@ in cell space and the two axes run opposite ways; both are in [../formats/interp
 The animation engine: bootstrap passes (mission setup, anchored RESET_STATEs, ON_STARTUP, startanims, a safety net), then dispatch-table
 event playback; an unhandled event kind is counted, never fatal. It owns the live definition instances and their condition evaluation, the
 destructible-damage entries (`DamageAt`, which also raises `DestructibleKilled` on a healthy-role
-kill, `ApplyDamageStages`, `RunDeathSequence`, `CarryState`), the world-effects runtime
-(`PlayEffectAt` over a hidden template stage), the emitter prewarm (`PrewarmEmitters` in one call, `PrewarmSlice` resumable for a caller
+kill, `ApplyDamageStages`, `RunDeathSequence`, `CarryState`; a host publishes each stage change and kill off `DestructibleDamaged` and the health between stages off `DestructibleChipped`, and a guest's runtime is `DamageReplicated`, spending only through `ApplyReplicatedHealth`), the world-effects runtime (`PlayEffectAt` over a hidden template stage), the emitter prewarm (`PrewarmEmitters` in one call, `PrewarmSlice` resumable for a caller
 with a frame budget, which never splits one def), the range-deferred start sweep
 and the vehicle/library-root index, and hands every construction site a sealed `TemplateStage`. Its
 range gates read the players through `RangePositions`: the last pose they flew, while
 `PlayerRangeHeld` says a cutscene is posing their aeroplanes. `FastForward` is the per-definition
-rate a held key raises a cutscene to (`Anim/CutsceneFastForward.cs`), which `Advance` spends as repeated passes of the instance walk. `SuppressedMotionAnims` names the definitions whose `OBJECT_MOTION` events this runtime drops, for a pose another writer owns, which also ends a definition that motion was sustaining (docs/verification.md, INSTR-74). What binds a member is on that member:
+rate a held key raises a cutscene to (`Anim/CutsceneFastForward.cs`), which `Advance` spends as repeated passes of the instance walk. `CollectLateStarts` and `CatchUp` step only the instances started in between, with their motions, for a guest's late director event. `SuppressedMotionAnims` names the definitions whose `OBJECT_MOTION` events this runtime drops, for a pose another writer owns, which also ends a definition that motion was sustaining (docs/verification.md, INSTR-74). What binds a member is on that member:
 the pool-slot checkout reset, the prewarm's scope, the mission-trigger closure, the undercover
 probe's decode, the death call's site follow. Each dispatch axis is a sibling module; the router keeps the case labels and the public fields callers configure: `SequenceRunner.cs`, `Anim/MotionSet.cs`, `Anim/NameResolver.cs`, `Anim/EmitterDirector.cs`, `Anim/SoundChannel.cs`, `Anim/LightChannel.cs`, `Anim/PoseChannel.cs`, `Anim/TemplateStage.cs`. Decode: docs/org/sequences.md.
 
@@ -544,6 +559,15 @@ container, while the tick spine stays in `AnimRuntime.Advance`. The two `AT_NODE
 and the SI-script duration rules are on their own members. Spellings and census:
 docs/formats/anim-definitions/cutscenes.md.
 
+## src/Mech3/Anim/OpacityWriter.cs
+Writes a subtree's opacity per instance: the `csky_opacity` instance shader parameter on every
+geometry node, and a translucent twin of a material with no alpha path, installed as that
+instance's surface override while the opacity is partial and removed at 1. It owns the twin caches.
+`PoseChannel.SetSubtreeOpacity` writes through one (adding the dedup and the faded-collider rule),
+and so do the projectile pool's flyout fades (`ProjectileFlyoutAnim.cs`), so a round's fade never
+edits the prototype material the rack copies share. The fade shader itself is
+`SceneBuilder.FadeShaderFor`.
+
 ## src/Mech3/Anim/NameResolver.cs
 Name to node resolution as one public module, generic over the node type (`NameResolver<TNode>`):
 the index, the wildcard `Matcher`, the memoized `FindAll`, the scoped tier chain
@@ -588,9 +612,9 @@ anchor)` pair seeded from the authored `HEALTH`, plus a coarse healthy/damaged/d
 `DamageStage`. Built in `AnimRuntime`'s bootstrap, read by `ANIM_HEALTH` evaluation, escalated by `ApplyDamageStages`,
 damaged via `DamageAt`. `Resolve(struck)` climbs to the nearest claiming pool, which answers for its damage node and
 everything under it (what the original stamps its handler over) and, through its anchor alone, for nothing. `Instance`
-carries what a mission record authors (`Team`, `Owner`, `Gasbag`, `Dormant`, `Reseed`) and caches the anchor's gamez
-ancestor names for `TargetPool.CollectOwners` under the parent's id, so an authored re-parent re-walks them and a
-per-tick ranking ask does not. Schema: docs/formats/destructibles.md; teams docs/org/targeting.md.
+carries what a mission record authors (`Team`, `Owner`, `Gasbag`, `Dormant`, `Reseed`) and caches the anchor's own name and its gamez
+ancestor names for `TargetPool` under the parent's id, so an authored re-parent re-reads them and a per-tick ranking
+ask does not. Schema: docs/formats/destructibles.md; teams docs/org/targeting.md.
 
 ## src/Mech3/WavFile.cs
 Pure-C# WAV parser with an MS ADPCM to PCM16 decoder (`DecodeMsAdpcm`), no Godot dependencies:
@@ -632,8 +656,13 @@ line count, 0 for a name this channel does not own. `Speak(name, rng, speakerId)
 voice line on the same queue without the cue delay; `IsSpeaking(speakerId)` answers the voice gate
 whether that pilot's own line still holds the channel. One call speaks at a time: a chain runs back
 to back, a later call queues behind rather than cutting in, `Cancel` is `STOP_QUEUED_SOUNDS`, and a
-call waiting past its `QUEUE` tolerance is dropped. Streams come from `WorldSounds.StreamFor`. Cue
+call waiting past its `QUEUE` tolerance is dropped. `LateBy` (a guest's catch-up) joins a call where the host's is, through `LateStart.cs`. Streams come from `WorldSounds.StreamFor`. Cue
 delay: docs/formats/objectives.md; the queue, classes and tolerance: docs/formats/sounds.md.
+
+## src/Mech3/LateStart.cs
+Engine-free: where a run of back-to-back clips stands once started a given time late, as the clip
+index and the offset into it, or past the end. `MissionRadio` joins a late radio call there, and
+`CSVM.Tests/NetDirectorLinkTests.cs` pins it.
 
 ## src/Mech3/SoundDefs.cs
 sounds.json SETS parser: `snd_*` name to `SoundDef` (wav name, flags, range, volume); the entry
@@ -704,12 +733,12 @@ builder, so `Paint` gives it its stand-in's livery. Decode: docs/formats/anim-de
 ## src/Mech3/SessionArchives.cs
 `OpenFor(ArchiveIntent, gamezPath, texturesPath, soundsPath, zrdrPath, mute)` opens the five
 archives one chapter build needs (gamez, textures, sounds, sound defs, sound groups) and returns
-them alongside the `WorldSession.Options.TexturesOutliveBuild`/`SoundsOutliveBuild` pair the intent
-implies: `Session` and `Lab` let textures outlive the build, only `Lab` lets sounds, `Suite`
-neither. One seam for `GameSession`, the anim lab and the test harness, so none of them hand-sets
-those flags. `StartupProfile.Mark`/`Record` calls are unconditional, a no-op with no session under
-measurement, which is what lets the test harness drive the same code blind. The optional `decode`
-argument makes only the returned `Gamez` a shared read-only instance.
+the `WorldSession.Options.TexturesOutliveBuild`/`SoundsOutliveBuild` pair the intent implies:
+`Session` and `Lab` set the texture flag, only `Lab` the sound flag, `Suite` neither, though the
+harness's `TestWorld` owns its texture archive until the world is destroyed. One seam for
+`GameSession`, the anim lab and the harness, so none hand-sets those flags. `StartupProfile` calls
+are unconditional, a no-op with no session under measurement, so the harness drives the same code
+blind. The optional `decode` argument makes only the returned `Gamez` a shared read-only instance.
 
 ## src/Mech3/DecodeCache.cs
 The decoded inputs a world build can reuse, keyed by the absolute paths they were decoded from:

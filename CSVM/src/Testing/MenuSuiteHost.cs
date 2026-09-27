@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using CSVM.Bindings;
+using CSVM.Flight.Hangar;
 using CSVM.Flight.Weapons;
 using CSVM.Mech3;
 using CSVM.Session.Campaign;
@@ -18,22 +20,22 @@ namespace CSVM.Testing;
 /// the presentation itself.</summary>
 internal static class MenuSuiteHost
 {
-    /// <summary>A bare host with no presentation registered, exits landing in <paramref name="exits"/>,
-    /// the Instant Action feature reading environment defs under <paramref name="dataRoot"/>.
-    /// <paramref name="saveBindings"/> is where an accepted rebind goes, and must stay null unless
-    /// the suite has pointed <see cref="CSVM.Bindings.BindingStore.DirectoryOverride"/> at scratch.
-    /// <paramref name="chapterCinema"/> and <paramref name="closingCinema"/> are the campaign's two
-    /// films; null, every other suite's, means a cabin door plays none.</summary>
+    /// <summary>A bare host with no presentation, exits in <paramref name="exits"/>, defs under
+    /// <paramref name="dataRoot"/>. <paramref name="saveBindings"/> stays null unless the suite
+    /// pointed <see cref="CSVM.Bindings.BindingStore.DirectoryOverride"/> at scratch. Null
+    /// <paramref name="chapterCinema"/> and <paramref name="closingCinema"/> play no film.
+    /// <paramref name="netDoor"/> replaces the default socket door with a suite's own.</summary>
     internal static MenuHost Bare(
         List<MenuExit> exits,
         string dataRoot,
         out BuiltInSeat seat,
         Action<int, BindingProfile>? saveBindings = null,
         ChapterCinema? chapterCinema = null,
-        ClosingCinema? closingCinema = null)
+        ClosingCinema? closingCinema = null,
+        NetPlayFeature? netDoor = null)
     {
         var host = new MenuHost(new PresentationRegistry(), new SilentMenuAudio(), exits.Add);
-        AddFeatures(host, dataRoot, saveBindings, chapterCinema, closingCinema);
+        AddFeatures(host, dataRoot, saveBindings, chapterCinema, closingCinema, netDoor);
         seat = new BuiltInSeat(new MenuInput { Keyboard = true });
         host.AddSeat(seat);
         return host;
@@ -44,7 +46,8 @@ internal static class MenuSuiteHost
     /// has to be joined through it.</summary>
     internal static void AddFeatures(
         MenuHost host, string dataRoot, Action<int, BindingProfile>? saveBindings = null,
-        ChapterCinema? chapterCinema = null, ClosingCinema? closingCinema = null)
+        ChapterCinema? chapterCinema = null, ClosingCinema? closingCinema = null,
+        NetPlayFeature? netDoor = null)
     {
         host.Features.Add(new FreeFlightFeature());
         host.Features.Add(InstantActionFeature.ForDataRoot(dataRoot));
@@ -59,14 +62,71 @@ internal static class MenuSuiteHost
         // No save by default: a suite must never write over the keymap saved at this machine's
         // controls, and only a suite holding the store's directory override may pass one.
         host.Features.Add(new ControlsFeature(saveBindings));
+        host.Features.Add(netDoor ?? NetDoor());
     }
 
+    /// <summary>The multiplayer door as a suite gets it: the real ENet carrier, bound to the
+    /// loopback address, and no port mapping at all. ⚠ Neither the wildcard bind nor the UPnP
+    /// search belongs in a run: one raises a firewall dialog, the other reaches the router.
+    /// </summary>
+    internal static NetPlayFeature NetDoor() =>
+        new((port, guests, bind) => CSVM.Net.EnetTransport.Host(port, guests, bind),
+            (address, port) => CSVM.Net.EnetTransport.Join(address, port))
+        {
+            BindAddress = "127.0.0.1",
+        };
+
     /// <summary>A launchscreen over a bare host, for a suite that drives the screens and reads
-    /// nothing back from the host.</summary>
-    internal static LaunchMenu Menu(TestContext ctx)
+    /// nothing back from the host. Its saved planes are <paramref name="suite"/>'s scratch store,
+    /// as <see cref="Build"/> sets them.</summary>
+    internal static LaunchMenu Menu(TestContext ctx, string suite)
     {
         var host = Bare(new List<MenuExit>(), ctx.DataRoot, out var seat);
-        return LaunchMenu.Build(ctx.ZrdrPath, ctx.DataRoot, host, seat.Input);
+        return Build(ctx, host, seat, suite);
+    }
+
+    /// <summary>A launchscreen over <paramref name="host"/> for <paramref name="seat"/>, reading and
+    /// writing its saved planes in a fresh <see cref="ScratchPlanes"/> store for
+    /// <paramref name="suite"/> and never in the player's <c>user://Planes</c>. The store makes its
+    /// folder only on a save, so only a suite that saves a plane needs
+    /// <see cref="DropScratchPlanes"/> after.</summary>
+    internal static LaunchMenu Build(TestContext ctx, MenuHost host, BuiltInSeat seat, string suite)
+    {
+        var menu = LaunchMenu.Build(ctx.ZrdrPath, ctx.DataRoot, host, seat.Input);
+        // Before the first ShowMenu: the roster refresh there is the store's first read.
+        menu.PlaneStore = ScratchPlanes(ctx, suite);
+        return menu;
+    }
+
+    /// <summary>A saved-plane store over a fresh <c>Planes</c> folder in <paramref name="suite"/>'s
+    /// scratch directory, holding <paramref name="customs"/> builds written through the store's own
+    /// writer. A launchscreen or presentation handed it reads this roster, not the player's
+    /// <c>user://Planes</c>, whose contents would otherwise decide what the suite sees.
+    /// <see cref="DropScratchPlanes"/> removes it.</summary>
+    internal static CustomPlaneStore ScratchPlanes(TestContext ctx, string suite, int customs = 0)
+    {
+        DropScratchPlanes(ctx, suite);
+        var store = new CustomPlaneStore(Path.Combine(ctx.ScratchDir, suite, "Planes"));
+        for (int i = 0; i < customs; i++)
+        {
+            store.Save(new CustomPlaneDef
+            {
+                Name = $"Scratch Build {i + 1:D2}",
+                Airframe = i % (CustomPlaneDef.MaxAirframe + 1),
+            });
+        }
+
+        return store;
+    }
+
+    /// <summary>Deletes the folder <see cref="ScratchPlanes"/> made for <paramref name="suite"/>.</summary>
+    internal static void DropScratchPlanes(TestContext ctx, string suite)
+    {
+        string dir = Path.Combine(ctx.ScratchDir, suite, "Planes");
+        if (Directory.Exists(dir))
+        {
+            Directory.Delete(dir, recursive: true);
+        }
     }
 
     /// <summary>An audio service that plays nothing and records nothing: a scripted run has no

@@ -287,7 +287,8 @@ above.
   in [`../../CSVM/shaders/csky_facade.gdshaderinc`](../../CSVM/shaders/csky_facade.gdshaderinc)
   points the card's `+Z` at the eye and takes its `+Y` as the world's up projected off that line,
   and every `SphericalY` population takes it: the `fvol` deck cards, the `cloudparent` facades,
-  the stamped clutter glows, and the glow sprites that share their dispatch. The eye's basis is
+  the stamped clutter glows, the glow sprites that share their dispatch, and the aircraft's
+  wing-light flares (planes model 1261, `PlaneBuilder`'s flare material). The eye's basis is
   not read, so the camera's roll cannot reach a card, which is the property the decode above turns
   on, and the up hint is constant, so translating past a card cannot roll it either. A shader
   holds no state, so the tracker itself is not reproduced; each of its steps is twist-free and

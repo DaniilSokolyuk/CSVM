@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using CSVM.Extraction;
 using CSVM.UI.Menu;
 using CSVM.UI.Menu.Original;
 using Xunit;
@@ -94,6 +95,12 @@ public class OriginalManifestTests : IDisposable
             {
                 "FX_Logo.png", "FX_B_Campaign.png", "FX_PF_BackGround.png", "FX_MB_Background.png",
                 "activepointerz.png", "passivepointerz.png", "arial8.tga", "PX_B_ReadyToExport.png", "PX_B_CancelExport.png",
+                "MP_OPTIONSBACKGROUND.JPG", "MP_GAMESBACKGROUND.JPG", "MP_ERRORMESSAGEBACKGROUND.JPG", "MP_GAMESALPHA.PNG",
+                "MP_B_RADIO.PNG", "MP_B_SMALL.PNG", "MP_B_MEDIUM.PNG", "MP_B_LARGE.PNG", "MP_B_EXITMULTIPLAYER.PNG",
+                "MP_B_CHECKBOXLARGE.PNG", "MP_LOBBY_BACKGROUND.JPG", "MP_LOBBY_MISSION.PNG", "MP_LOBBY_PLANE.PNG",
+                "MP_LOBBY_AMMO.PNG", "MP_LOBBY_STATSCREEN.PNG", "MP_LOBBY_TABLARGE.PNG", "MP_LOBBY_TABSMALL.PNG",
+                "MP_B_RADIO8STATESSM.PNG", "MP_B_CHECKBOX8STATES.PNG", "MP_B_CHECKBOX.PNG", "MP_B_LISTBOXARROW.PNG",
+                "MP_PLANEICONSTOPFRONT.PNG",
             },
             Names(manifest, OriginalAssetNeed.Required));
         Assert.Equal(
@@ -109,7 +116,7 @@ public class OriginalManifestTests : IDisposable
         // deeper than every bitmap the same rows name.
         var movie = manifest.Find("FX_Movie.MPG")!;
         Assert.Equal(OriginalAssetNeed.Optional, movie.Need);
-        Assert.Equal("ASSETS/GRAPHICS/MPG/FX_Movie.MPG", movie.RelativePath);
+        Assert.Equal("ASSETS/GRAPHICS/MPG/FX_MOVIE.MPG", movie.RelativePath);
         Assert.Contains("drawing whole without it", movie.Note);
     }
 
@@ -121,7 +128,7 @@ public class OriginalManifestTests : IDisposable
         var report = OriginalAssetManifest.Derive(MenuLayout.Parse(LayoutJson)).Check(_root);
 
         Assert.True(report.Complete, report.Reason);
-        Assert.Equal(9, report.RequiredCount);
+        Assert.Equal(31, report.RequiredCount);
         Assert.Equal(5, report.OptionalCount);
         Assert.Null(report.Reason);
         Assert.Null(report.Degraded);
@@ -170,7 +177,7 @@ public class OriginalManifestTests : IDisposable
     {
         Populate();
         File.Delete(Graphics("FX_MP_Small.png"));
-        File.Delete(Path.Combine(_root, "extracted", "rof", "assets", "sounds", "mouseclick.wav"));
+        File.Delete(Path.Combine(_root, "extracted", "rof", "ASSETS", "SOUNDS", "MOUSECLICK.WAV"));
 
         Assert.NotNull(OriginalAvailability.Load(_root, out var reason, out var degraded));
         Assert.Null(reason);
@@ -187,7 +194,7 @@ public class OriginalManifestTests : IDisposable
 
         Assert.Null(OriginalAvailability.Load(_root, out var reason, out _));
         Assert.Contains("stamped schema=0", reason);
-        Assert.Contains("re-run ExtractAssets.ps1 and ExtractRof.ps1", reason);
+        Assert.Contains("re-extract from the Extract screen", reason);
 
         Stamp(OriginalAssetManifest.StampSchema);
         Assert.NotNull(OriginalAvailability.Load(_root, out reason, out _));
@@ -213,6 +220,40 @@ public class OriginalManifestTests : IDisposable
         Assert.True(manifest.Check(_root).Complete);
         Assert.NotNull(OriginalAvailability.Load(_root, out var reason, out _));
         Assert.Null(reason);
+    }
+
+    /// <summary>A tree the extraction wrote, read by names the layout and the scripts spell in
+    /// their own case. Each resolved path is matched against the names on disk exactly, as a
+    /// case-sensitive filesystem would, since a Windows <c>File.Exists</c> cannot tell.</summary>
+    [Fact]
+    public void TheDatasOwnSpellingResolvesToTheNameTheExtractionWrote()
+    {
+        var member = new byte[] { 1 };
+        string install = TestData.TempDir();
+        string archive = Path.Combine(install, "crimson.rof");
+        File.WriteAllBytes(archive, ExtractionFixtures.Rof(new RofDir().Dir("ASSETS", new RofDir()
+            .Dir("GRAPHICS", new RofDir()
+                .File("AP_BACKGROUND.PNG", member)
+                .File("MP_B_RADIO.PNG", member)
+                .Dir("MPG", new RofDir())))));
+        string movies = Directory.CreateDirectory(Path.Combine(install, "MPG")).FullName;
+        File.WriteAllBytes(Path.Combine(movies, "crimflag.mpg"), new byte[] { 1 });
+        RofExtraction.Run(new RofExtractionRequest(archive, null, movies, null, null, RofTree.Root(_root)));
+        var onDisk = new HashSet<string>(
+            Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories), StringComparer.Ordinal);
+
+        Assert.Contains(OriginalAvailability.ArtPath(_root, "AP_BackGround.png"), onDisk);
+        Assert.Contains(OriginalAvailability.ArtPath(_root, "CrimFlag.MPG"), onDisk);
+        Assert.Contains(SessionPaths.Cinema(_root, "CrimFlag"), onDisk);
+        var manifest = OriginalAssetManifest.Derive(MenuLayout.Parse("""
+            {
+              "schema": 1,
+              "screens": [ { "section": "MainMenu", "widgets": [ { "key": "AP_BACKGROUND", "type": "P", "art": ["AP_BackGround.png"] } ] } ],
+              "externalAssets": [ { "path": "assets/graphics/mp_b_radio.png", "kind": "file", "script": "GLOBALS" } ]
+            }
+            """));
+        Assert.Contains(manifest.Find("AP_BackGround.png")!.PathUnder(_root), onDisk);
+        Assert.Contains(manifest.Find("mp_b_radio.png")!.PathUnder(_root), onDisk);
     }
 
     /// <summary>The install's own layout: the classification the inventory records, and a tree
@@ -266,8 +307,9 @@ public class OriginalManifestTests : IDisposable
         return host;
     }
 
-    private string Graphics(string name) =>
-        Path.Combine(_root, "extracted", "rof", "ASSETS", "GRAPHICS", name);
+    // The file the check reads, in the extraction's case. A case-sensitive disk would otherwise
+    // miss it and touch a differently spelled neighbour.
+    private string Graphics(string name) => OriginalAvailability.ArtPath(_root, name);
 
     // The scratch tree: the layout artifact, a stamp Original reads, and every file the fixture
     // names, the .png ones as headers and the rest as a byte.

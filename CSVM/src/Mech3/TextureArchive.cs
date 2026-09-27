@@ -735,6 +735,7 @@ public sealed class TextureArchive : IDisposable
     private readonly HashSet<string> _reportedMissing = new(StringComparer.OrdinalIgnoreCase);
     // Authored _N siblings whose dimensions disagreed with the level they claim, logged once each.
     private readonly HashSet<string> _reportedOddMips = new(StringComparer.OrdinalIgnoreCase);
+    private bool _disposed;
 
     public TextureArchive(string path)
     {
@@ -1014,7 +1015,21 @@ public sealed class TextureArchive : IDisposable
         return null;
     }
 
-    public void Dispose() => _zip?.Dispose();
+    /// <summary>The raw PNG bytes of one texture, or null when the archive lacks it. The read
+    /// primitive under <see cref="Find"/>, public because <see cref="Find"/> returns a Godot resource
+    /// a unit test cannot construct; the after-<see cref="Dispose"/> contract is asserted here.</summary>
+    public byte[]? ReadPngBytes(string materialTextureName) =>
+        Resolve(Path.GetFileNameWithoutExtension(materialTextureName)) is { } name ? ReadBytes(name) : null;
+
+    /// <summary>Ends the archive's usable life in both shapes: a later uncached read throws
+    /// <see cref="ObjectDisposedException"/> from a folder exactly as the zip's own handle does.
+    /// ⚠ Do not let a folder read succeed after this. The battery reads unpacked folders and every
+    /// player reads zips, so a lenient folder hides a closed-archive read from the battery.</summary>
+    public void Dispose()
+    {
+        _disposed = true;
+        _zip?.Dispose();
+    }
 
     // The level an archive name claims by its `_N` suffix, or 0 for a base texture. Only 1 and 2
     // ship; anything else is a texture whose real name happens to end in a digit.
@@ -1359,6 +1374,7 @@ public sealed class TextureArchive : IDisposable
 
     private byte[]? ReadBytes(string retrievalName)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (_dir != null)
         {
             var p = Path.Combine(_dir, retrievalName);

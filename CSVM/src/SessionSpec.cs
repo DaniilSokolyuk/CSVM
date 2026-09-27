@@ -176,6 +176,29 @@ public sealed record SessionSpec
     /// <summary>Resolved. <c>--vs-time=</c> was spelled out, so the flag beats a time limit
     /// a menu screen chose (<see cref="FromMenu"/>).</summary>
     public bool VsTimeExplicit { get; private set; }
+    /// <summary><c>--vs-lives=N</c>: how many deaths a pilot has before it stays down for the rest
+    /// of the match. Default 0, no limit.</summary>
+    public int VsLives { get; private set; }
+    /// <summary>Resolved. <c>--vs-lives=</c> was spelled out, so the flag beats a lobby's lives.</summary>
+    public bool VsLivesExplicit { get; private set; }
+    /// <summary>False under <c>--vs-no-respawn</c>: a downed pilot comes back only on its own press,
+    /// the lobby's Auto Respawn unchecked. Default true.</summary>
+    public bool VsAutoRespawn { get; private set; } = true;
+    /// <summary>Resolved. <c>--vs-no-respawn</c> was spelled out, so the flag beats a lobby's box.</summary>
+    public bool VsAutoRespawnExplicit { get; private set; }
+    /// <summary><c>--net-host</c>, <c>--net-host=port</c> or <c>--net-host=address:port</c>: open
+    /// a listen server on that port and fly this session as its host. Null when the flag is
+    /// absent. A scripted smoke is what it is for; a player opens the same socket from the menu's
+    /// multiplayer door. Split with <see cref="ParseHost"/>.</summary>
+    public int? NetHostPort { get; private set; }
+    /// <summary>Which interface <c>--net-host=</c> binds, every one of them unless its value
+    /// named an address. ⚠ A scripted run names 127.0.0.1: a wildcard bind is what makes Windows
+    /// put a firewall dialog on somebody's screen.</summary>
+    public string NetHostBind { get; private set; } = "*";
+    /// <summary><c>--net-join=address</c>, or <c>address:port</c>: join the match at that address
+    /// and fly this session as a guest. Null when the flag is absent. Split with
+    /// <see cref="ParseJoin"/>.</summary>
+    public string? NetJoin { get; private set; }
     /// <summary><b>Resolved.</b> Open the aircraft's per-part HP sliders at launch, a modifier on
     /// <see cref="SessionMode.Viewer"/> (the parked plane) or <see cref="SessionMode.Fly"/> (the
     /// flown one), dropped by the modes that build no aircraft at all. The lab itself is always
@@ -235,9 +258,10 @@ public sealed record SessionSpec
     /// "dump" arm omits <c>--dump-flight</c>, so a <c>--dump-flight</c> run logs as
     /// <c>menu-*.log</c>. That is today's behaviour, reproduced on purpose.</summary>
     public string ModeName =>
-        Mode == SessionMode.AnimLab ? "anim-lab"
+        ExtractInstall != null ? "extract"
+        : Mode == SessionMode.AnimLab ? "anim-lab"
         : DamageTest || EffectsTest || WeaponTest || RunTests ? "test"
-        : DumpMarkers || DumpWeapons || DumpLoadout || DumpConfig || DumpMips || DumpAi || DumpTileGrid ? "dump"
+        : DumpMarkers || DumpWeapons || DumpLoadout || DumpConfig || DumpMips || DumpAi || DumpTileGrid || DumpSticks ? "dump"
         : MovieName != null ? "movie"
         : Mode == SessionMode.Freecam ? "freecam"
         : Mode == SessionMode.Viewer ? "viewer"
@@ -251,9 +275,9 @@ public sealed record SessionSpec
     /// a drift, not a decision, the same omission as <see cref="ModeName"/>'s, and it means a
     /// <c>--dump-flight</c> run turns the bundle on yet still asks for focus.</summary>
     public bool IsScripted =>
-        NoFocus || ScreenshotPath != null || ExportGltfPath != null || RunTests
+        NoFocus || ScreenshotPath != null || ExportGltfPath != null || RunTests || ExtractInstall != null
         || DumpMarkers || DumpWeapons || DumpLoadout || DumpConfig || DumpMips || DumpAi || DumpTileGrid
-        || DamageTest || EffectsTest || WeaponTest;
+        || DumpSticks || DamageTest || EffectsTest || WeaponTest;
 
     /// <summary><b>Resolved.</b> The chapter world is built instead of a single parked plane.</summary>
     public bool WorldMode { get; private set; }
@@ -295,6 +319,11 @@ public sealed record SessionSpec
     /// <summary>The <c>:&lt;seq&gt;</c> half of <c>--campaign=</c>; null when it was omitted or
     /// unparseable, in which case a warning is recorded and only the profile name is kept.</summary>
     public int? CampaignMissionSeq { get; private set; }
+    /// <summary><c>--profiles=&lt;dir&gt;</c>: the campaign profile store this process reads and
+    /// writes in place of <c>user://Profiles/</c>, so a probe never touches a player's own
+    /// profiles. Null when the flag was absent. Kept as the raw value; resolving it is
+    /// <see cref="Session.Campaign.CampaignProfileStore.ForSession"/>'s job.</summary>
+    public string? ProfilesDir { get; private set; }
     /// <summary><c>--no-crash-loss</c>: losing the aircraft leaves the campaign mission running,
     /// so a session being debugged can fly on past a crash. The game default is the original's
     /// rule, which ends the mission lost (<c>docs/formats/objectives.md</c>, "Win and loss").
@@ -692,6 +721,16 @@ public sealed record SessionSpec
     /// per-chapter name.</summary>
     public string DumpTileGridPath { get; private set; } = "";
 
+    /// <summary><c>--dump-sticks</c>: log the SDL2 stick roster with each stick's control counts
+    /// and resting reads, then quit. ⚠ Not in <see cref="ScriptedBy"/>: the bundle's
+    /// <c>--no-pads</c> would empty the Godot roster the gap-filler subtracts, and a hardware
+    /// report has nothing to pin.</summary>
+    public bool DumpSticks { get; private set; }
+
+    /// <summary><c>--dump-sticks=&lt;seconds&gt;</c>: after the report, log every stick control that
+    /// moves for that many seconds (1 to 120); 0 for the plain report.</summary>
+    public int DumpSticksWatch { get; private set; }
+
     public bool DamageTest { get; private set; }
     public string DamageTestFilter { get; private set; } = "";
     public float DamageHd { get; private set; }
@@ -706,6 +745,10 @@ public sealed record SessionSpec
 
     public bool DebugAnim { get; private set; }
     public bool DebugAnimUi { get; private set; }
+
+    /// <summary><c>--debug-net</c>: log a network match's desync counters once a second and draw
+    /// them in a corner of the screen. Nothing is shown outside a network match.</summary>
+    public bool DebugNet { get; private set; }
     public string? PlayAnim { get; private set; }
     public bool DebugDzPaths { get; private set; }
     /// <summary><c>--debug-ainets[=name,…]</c>: open the AI patrol-net overlay (F13) at
@@ -795,6 +838,10 @@ public sealed record SessionSpec
     /// Authored rather than window pixels, so a shot lands on the same widget whatever the window.
     /// Null = not asked for.</summary>
     public (float X, float Y, bool Down, bool Right)? DebugPointer { get; private set; }
+    /// <summary><c>--debug-marquee=seconds</c>: hold every scrolling menu caption at that phase of
+    /// its scroll (<see cref="CSVM.UI.Boards.BoardMarquee"/>), so a shot shows a long caption part
+    /// way through. Null = not asked for, and <c>--det</c> then holds the start.</summary>
+    public double? DebugMarquee { get; private set; }
     public bool MarkersOverlay { get; private set; }
     public bool WeaponLab { get; private set; }
     public string? WeaponSelect { get; private set; }
@@ -858,6 +905,21 @@ public sealed record SessionSpec
     /// <summary><c>--data-root=</c> verbatim. The precedence against <c>CSVM_DATA_ROOT</c> and the
     /// repo root, and the paths derived from the winner, are resolution.</summary>
     public string? DataRoot { get; private set; }
+
+    /// <summary><c>--extract=&lt;install&gt;</c> verbatim: extract that install into the data root's
+    /// <c>extracted</c> folder and quit with the verdict. Empty for a bare <c>--extract</c>, which
+    /// the install check refuses; null when the flag was absent.</summary>
+    public string? ExtractInstall { get; private set; }
+
+    /// <summary><c>--extract-force</c>: redo every output however new.</summary>
+    public bool ExtractForce { get; private set; }
+
+    /// <summary><c>--extract-unzip</c>: also expand every produced zip into its sibling folder.</summary>
+    public bool ExtractUnzip { get; private set; }
+
+    /// <summary><c>--unzbd=</c> verbatim: the unzbd an extraction runs instead of the default.</summary>
+    public string? UnzbdPath { get; private set; }
+
     public string? Gamez { get; private set; }
     public string? Textures { get; private set; }
     public string? Zrdr { get; private set; }
@@ -985,12 +1047,18 @@ public sealed record SessionSpec
             else if (arg == "--coop") { s.Coop = true; }
             else if (arg.StartsWith("--vs-kills=")) { s.VsKills = int.Parse(arg["--vs-kills=".Length..]); s.VsKillsExplicit = true; }
             else if (arg.StartsWith("--vs-time=")) { s.VsTimeMinutes = int.Parse(arg["--vs-time=".Length..]); s.VsTimeExplicit = true; }
+            else if (arg.StartsWith("--vs-lives=")) { s.VsLives = Math.Max(0, int.Parse(arg["--vs-lives=".Length..])); s.VsLivesExplicit = true; }
+            else if (arg == "--vs-no-respawn") { s.VsAutoRespawn = false; s.VsAutoRespawnExplicit = true; }
+            else if (arg == "--net-host") { s.NetHostPort = UI.Menu.NetPlayFeature.DefaultPort; }
+            else if (arg.StartsWith("--net-host=")) { var h = ParseHost(arg["--net-host=".Length..]); s.NetHostBind = h.Bind; s.NetHostPort = h.Port; }
+            else if (arg.StartsWith("--net-join=")) { s.NetJoin = arg["--net-join=".Length..]; }
             else if (arg == "--freecam") { s._freecamArg = true; s.HasContentArg = true; }
             else if (arg == "--anim-lab") { s._animLabArg = true; s.HasContentArg = true; }
             else if (arg.StartsWith("--play-anim=")) { s.PlayAnim = arg["--play-anim=".Length..]; s.HasContentArg = true; }
             else if (arg.StartsWith("--seed=")) { s.Seed = ulong.Parse(arg["--seed=".Length..]); }
             else if (arg == "--debug-anim-ui") { s.DebugAnimUi = true; s.HasContentArg = true; }
             else if (arg == "--debug-anim") { s.DebugAnim = true; }
+            else if (arg == "--debug-net") { s.DebugNet = true; }
             else if (arg == "--no-pads") { s.NoPads = true; }
             else if (arg == "--no-crash-loss") { s.NoCrashLoss = true; }
             else if (arg == "--det") { s._detArg = true; }
@@ -1015,6 +1083,7 @@ public sealed record SessionSpec
             else if (arg.StartsWith("--debug-wingmen=")) { s.DebugWingmen = int.Parse(arg["--debug-wingmen=".Length..]); }
             else if (arg.StartsWith("--debug-preset=")) { s.DebugPreset = int.Parse(arg["--debug-preset=".Length..]); }
             else if (arg.StartsWith("--debug-pointer=")) { s.DebugPointer = ParseDebugPointer(arg["--debug-pointer=".Length..]); }
+            else if (arg.StartsWith("--debug-marquee=")) { s.DebugMarquee = double.TryParse(arg["--debug-marquee=".Length..], NumberStyles.Float, CultureInfo.InvariantCulture, out double phase) ? Math.Max(0d, phase) : null; }
             else if (arg.StartsWith("--paint=")) { s.PaintNames = arg["--paint=".Length..].Split(',', StringSplitOptions.TrimEntries); }
             else if (arg.StartsWith("--paint-color=")) { s.PaintColorOverride = ParsePaintColors(arg["--paint-color=".Length..]); }
             else if (arg.StartsWith("--paint-decal=")) { s.PaintDecalOverride = ParsePaintDecals(arg["--paint-decal=".Length..]); }
@@ -1343,11 +1412,17 @@ public sealed record SessionSpec
                 }
                 s.HasContentArg = true;
             }
+            else if (arg.StartsWith("--profiles=")) { s.ProfilesDir = arg["--profiles=".Length..]; }
             else if (arg.StartsWith("--spawn=")) { s.SpawnIndex = int.Parse(arg["--spawn=".Length..]); }
             else if (arg.StartsWith("--spawn-at=")) { s.SpawnAt = ParseVec3(arg["--spawn-at=".Length..]); Deprecate("--spawn-at", "--pos"); }
             else if (arg.StartsWith("--spawn-dir=")) { s.SpawnDir = ParseVec3(arg["--spawn-dir=".Length..]); Deprecate("--spawn-dir", "--direction"); }
             else if (arg.StartsWith("--sky-zone=")) { s.SkyZone = arg["--sky-zone=".Length..]; s.SkyZoneExplicit = true; }
             else if (arg.StartsWith("--data-root=")) { s.DataRoot = arg["--data-root=".Length..]; }
+            else if (arg == "--extract") { s.ExtractInstall = ""; }
+            else if (arg.StartsWith("--extract=")) { s.ExtractInstall = arg["--extract=".Length..]; }
+            else if (arg == "--extract-force") { s.ExtractForce = true; }
+            else if (arg == "--extract-unzip") { s.ExtractUnzip = true; }
+            else if (arg.StartsWith("--unzbd=")) { s.UnzbdPath = arg["--unzbd=".Length..]; }
             else if (arg.StartsWith("--gamez=")) { s.Gamez = arg["--gamez=".Length..]; }
             else if (arg.StartsWith("--textures=")) { s.Textures = arg["--textures=".Length..]; }
             else if (arg.StartsWith("--zrdr=")) { s.Zrdr = arg["--zrdr=".Length..]; }
@@ -1379,6 +1454,20 @@ public sealed record SessionSpec
             else if (arg.StartsWith("--dump-mips=")) { s.DumpMips = true; s.DumpMipsFilter = arg["--dump-mips=".Length..]; }
             else if (arg == "--dump-ai") { s.DumpAi = true; }
             else if (arg.StartsWith("--dump-ai=")) { s.DumpAi = true; s.DumpAiChapter = arg["--dump-ai=".Length..]; }
+            else if (arg == "--dump-sticks") { s.DumpSticks = true; }
+            else if (arg.StartsWith("--dump-sticks="))
+            {
+                string want = arg["--dump-sticks=".Length..];
+                s.DumpSticks = true;
+                if (int.TryParse(want, NumberStyles.Integer, CultureInfo.InvariantCulture, out int seconds) && seconds >= 1)
+                {
+                    s.DumpSticksWatch = Math.Min(seconds, 120);
+                }
+                else
+                {
+                    notes.Add(new Note("core", $"--dump-sticks={want} is not a number of seconds, dumping without the watch"));
+                }
+            }
             else if (arg == "--dump-tilegrid") { s.DumpTileGrid = true; s.HasContentArg = true; }
             else if (arg.StartsWith("--dump-tilegrid=")) { s.DumpTileGrid = true; s.DumpTileGridPath = arg["--dump-tilegrid=".Length..]; s.HasContentArg = true; }
             else if (arg.StartsWith("--tex-override=")) { texOverrides.Add(arg["--tex-override=".Length..]); }
@@ -1486,6 +1575,19 @@ public sealed record SessionSpec
             }
         }
 
+        // The development options mean nothing to a session, so a stray one is named rather than
+        // silently dropped. The unzbd path is not one, since the extraction screen runs that tool.
+        if (s.ExtractInstall == null)
+        {
+            foreach (var (given, name) in new[] { (s.ExtractForce, "--extract-force"), (s.ExtractUnzip, "--extract-unzip") })
+            {
+                if (given)
+                {
+                    notes.Add(new Note("core", $"{name} does nothing without --extract=<install>, ignoring it"));
+                }
+            }
+        }
+
         s._notes = notes;
         s.Deprecated = deprecated;
         s.LogSpecs = logSpecs;
@@ -1494,16 +1596,37 @@ public sealed record SessionSpec
         return s;
     }
 
+    /// <summary>Splits a <see cref="NetJoin"/> value into the address and the port to join. A
+    /// value naming no port takes the door's own default. An IPv6 address is written in brackets,
+    /// which is what tells its colons from the port's.</summary>
+    public static (string Address, int Port) ParseJoin(string value) =>
+        UI.Menu.NetPlayFeature.SplitAddress(value, UI.Menu.NetPlayFeature.DefaultPort);
+
+    /// <summary>Splits a <see cref="NetHostPort"/> value: a bare port binds every interface, and
+    /// an <c>address:port</c> binds that one address, by the same rules as
+    /// <see cref="ParseJoin"/>.</summary>
+    public static (string Bind, int Port) ParseHost(string value)
+    {
+        string text = value ?? "";
+        if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int bare))
+        {
+            return ("*", bare is > 0 and < 65536 ? bare : UI.Menu.NetPlayFeature.DefaultPort);
+        }
+
+        var (address, port) = ParseJoin(text);
+        return (address.Length == 0 ? "*" : address, port);
+    }
+
     /// <summary>The spec for a launchscreen launch, one plane per player, derived from the pristine
     /// command line <paramref name="cli"/>, never the last session's spec. ⚠ Does not re-resolve:
     /// every menu-settable field must be written here, or the pristine base drops it. The 2-player
     /// Dogfight lock is <see cref="UI.Screens.LaunchMenu"/>'s job. An <paramref name="iaDef"/> decides
-    /// <see cref="Scenario"/> and <see cref="Stunt"/> instead. The two vs arguments are a screen's
-    /// match rules, null where none offers them (<see cref="VsKillsExplicit"/>).</summary>
+    /// <see cref="Scenario"/> and <see cref="Stunt"/> instead. The vs arguments are a screen's match
+    /// rules, null where none offers them (<see cref="VsKillsExplicit"/>); only the lobby sets lives.</summary>
     public static SessionSpec FromMenu(SessionSpec cli, string chapter, IReadOnlyList<string> planeNodes,
         MenuMode mode, InstantActionDef? iaDef = null, IReadOnlyList<LoadoutChoice?>? loadouts = null,
         IReadOnlyList<CustomPlaneDef?>? customPlanes = null, int? vsKills = null, int? vsTimeMinutes = null,
-        LoadoutChoice? iaWingmanLoadout = null)
+        int? vsLives = null, bool? vsAutoRespawn = null, LoadoutChoice? iaWingmanLoadout = null)
     {
         var names = planeNodes.ToArray();
         return cli with
@@ -1521,6 +1644,8 @@ public sealed record SessionSpec
             Versus = mode == MenuMode.Versus,
             VsKills = cli.VsKillsExplicit ? cli.VsKills : vsKills ?? cli.VsKills,
             VsTimeMinutes = cli.VsTimeExplicit ? cli.VsTimeMinutes : vsTimeMinutes ?? cli.VsTimeMinutes,
+            VsLives = cli.VsLivesExplicit ? cli.VsLives : vsLives ?? cli.VsLives,
+            VsAutoRespawn = cli.VsAutoRespawnExplicit ? cli.VsAutoRespawn : vsAutoRespawn ?? cli.VsAutoRespawn,
             Mode = SessionMode.Fly,
             WorldMode = true,
             Scenario = cli.ScenarioExplicit ? cli.Scenario : iaDef?.MissionType ?? mode switch

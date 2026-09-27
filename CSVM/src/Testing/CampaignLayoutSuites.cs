@@ -47,7 +47,7 @@ internal static class CampaignLayoutSuites
         }
 
         PinnedRowsDiffer(ctx, decoded);
-        var menu = MenuSuiteHost.Menu(ctx);
+        var menu = MenuSuiteHost.Menu(ctx, "campaign-layout-parity");
         ctx.Host.AddChild(menu);
         menu.SetProcess(false);
         var report = new StringBuilder();

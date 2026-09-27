@@ -112,7 +112,7 @@ draws its authored 800x600 space one-to-one.
 
 | ID | Capture | What must be in frame | Unblocks |
 |---|---|---|---|
-| `CAP-34` | Wing-light flare shape | Any player plane except the Bloodhawk (the one airframe with no wing-light anim or flare nodes) with wing lights on, one continuous orbit from front through side to tail. Close enough to read whether the flare shows sharp radiating star points (vs a soft round glow). The view-dependence half this capture once carried is answered by data: the flare mesh is a `Facade`/`SphericalY` model, `BL-1039` | `BL-284` |
+| `CAP-34` | Wing-light flare shape | Any player plane except the Bloodhawk (the one airframe with no wing-light anim or flare nodes) with wing lights on, one continuous orbit from front through side to tail. Close enough to read whether the flare shows sharp radiating star points (vs a soft round glow). The view-dependence half this capture once carried is answered by data: the flare mesh is a `Facade`/`SphericalY` model and poses toward the eye as one | `BL-284` |
 | `CAP-59` | **Does a C1B night cloud have a moon side?** | In the original, fly C1B by night and film **one** cloud from **two headings at the same range**, first with the moon behind the camera, then with the moon behind the cloud, holding the same puff large enough in frame to read its near and far sides, with the moon itself in frame on the second pass so the bearing is readable. *Look for:* whether the side turned toward the moon reads brighter than the side turned away **at a fixed range**, which is the one thing that separates a moon side from distance through the night fog. ⚠ `playtest/CAP-11/`'s stills cannot answer it: both put their cloud on the moon's bearing at very different ranges, so their 218-against-70 split reads as fog depth. C1B's clouds are the 70 placed `cloudparent` facades, authored `lighting: false` with an empty normal array, so a moon side there would be a remake departure rather than a decoded term | `BL-325` |
 
 ### Damage & collision
@@ -714,8 +714,9 @@ is a judgement on our own remake.
   exported build reads the development tree and neither case is what a recipient sees. *Look for:*
   - (a) with game data present, the menu comes up with its music and the menu cues audible at a
     sensible level, without a `--volume=` argument anywhere;
-  - (b) with no `extracted\`, the no-game-data screen names `Extract.cmd` and stays up until Esc,
-    rather than a menu over a world that cannot build.
+  - (b) with no `extracted\`, the in-game extraction screen comes up with the install folder field
+    and Extract focused, and stays up until Extract finishes or Esc quits, rather than a menu over
+    a world that cannot build.
   *Blocks:* nothing tracks the outcome; a fail mints a new `BL`. The export's own default is what
   is under test here; a player retunes the mix on Preferences' AUDIO page afterwards.
 

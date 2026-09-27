@@ -73,6 +73,15 @@ Every step in order, for one agent at a time:
 1. Copy `<agent worktree>\.scratch\<run>\<id>\*` (message, crops, diffs, and for an issue the
    `close.txt`, `comment.txt` or `new-issue-*.md` files the brief has the agent write) to
    `Z:\CSVM\.scratch\<run>\<id>\` before anything else; the worktree removal deletes them.
+   Then read the report's verification line. A red result (any failing suite, unit or golden the
+   agent ran) is refused unless the message carries one `Waiver:` line per failing suite in the
+   form `PROJECT_CONTEXT.md`'s verification loop gives, naming an open item that owns the failure:
+   send the agent back with `SendMessage` to fix it or to prove it pre-existing (red on the run
+   branch's HEAD without the change) and write the waiver. A waiver reported with `#NEW` as its
+   owner comes with a `new-issue-*.md`: file that issue now (step 8's command) and add the line to
+   the message with its number. Run
+   `.\CheckWaiver.ps1 -MessageFile <message> -Root <agent>` for the form. A waiver is a record,
+   not a way past the owner: never waive a failure the item itself caused.
 2. Normalise the trailer in the message to `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`
    (agents write a longer model name). Count em dashes (U+2014) in the message, in
    `git -C <agent> diff -U0` and in every untracked file; fix any in place before committing.
@@ -108,6 +117,9 @@ Every step in order, for one agent at a time:
      Godot, usually another test pass on the machine; re-run when quiet.
    - A real failure: do not commit. Send the agent the failure with `SendMessage` (it resumes with
      its context) or fix a one-line cause yourself and say so in the message.
+   - A failure that is red on the run branch's HEAD without this squash is not the item's; the
+     squash lands only with a `Waiver:` line for it added to the message (file an owning issue
+     first when nothing owns it). The content gate checks that line's form at the commit.
 7. `git -C <run> commit -q -F <message>`. Then `git worktree unlock`, `git worktree remove --force`
    and `git branch -D` for the agent's tree and branch.
 8. Tracker writes the agent left for you, now: a `comment.txt` (an amended question for the user,
@@ -137,7 +149,9 @@ commit's hash added, and move each to the item's log line.
 
 After each wave (every slot's item landed, or at a pause) run the full `.\RunTests.ps1
 -GoldenWorkers 2` on the run branch in the background and log it as "Battery N on <sha> (items):
-<the four PASS/FAIL lines>". Never run a battery or goldens while an agent is running its own
+<the four PASS/FAIL lines>". A FAIL line names the failing suite and the item that owns it; a
+red battery is reported to the user before any merge to main, since a fast-forward carries no
+message of its own to hold a waiver. Never run a battery or goldens while an agent is running its own
 engine passes if you can avoid it; the hidden desktop is shared and a rebuild under a shot breaks it.
 
 ## 7. The log

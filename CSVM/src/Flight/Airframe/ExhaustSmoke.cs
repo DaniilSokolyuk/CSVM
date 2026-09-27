@@ -134,7 +134,9 @@ public sealed class ExhaustSmoke
         Textures = new[] { "smoke101", "smoke102", "smoke103" },
         Colors = new[]
         {
-            (0.2f, new Color(7f / 255f, 7f / 255f, 9f / 255f, 1f)),
+            // The drawn byte. The ramp holds bytes and the draw never scales it, so the installed
+            // (7, 7, 9)/255 rounds to 1 in each channel (docs/formats/effects.md).
+            (0.2f, new Color(1f / 255f, 1f / 255f, 1f / 255f, 1f)),
             (1f, new Color(0f, 0f, 0f, 0f)),
         },
     };

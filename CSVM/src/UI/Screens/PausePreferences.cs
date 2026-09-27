@@ -218,6 +218,7 @@ public sealed partial class PausePreferences : Control
         _seat.CapturingText = _shell.CapturingText;
         bool picture = _view.AdvanceMovies(delta);
         picture |= _view.AdvanceCaret(delta);
+        picture |= _view.AdvanceMarquee(delta);
         if (changed)
         {
             Compose();
@@ -311,13 +312,13 @@ public sealed partial class PausePreferences : Control
     }
 
     // An accepted rebinding page reaching the flight behind the leaf. The page stages from the saved
-    // file, not from the seats, so without this push a seat keeps the keymap and scheme it was built
-    // on until a restart rebuilds it. The seat a keymap file names is the human one numbered by it.
+    // file, not from the seats. Without this push a seat keeps the keymap and scheme it was built on
+    // until a restart rebuilds it. A keymap file names this machine's player, never a roster seat.
     private void FeedSeats(int player, BindingProfile profile)
     {
         foreach (var seat in _flying)
         {
-            if (IsInstanceValid(seat) && seat.IsHumanPiloted && seat.PlayerIndex + 1 == player)
+            if (IsInstanceValid(seat) && seat.IsHumanPiloted && seat.LocalPlayer + 1 == player)
             {
                 seat.ApplyProfile(profile);
             }

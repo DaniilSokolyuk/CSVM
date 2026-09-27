@@ -54,6 +54,7 @@ public sealed class MultiMeshEmitterRenderer : IEmitterRenderer
         uniform sampler2D atlas : source_color, filter_linear, repeat_disable;
         uniform float frame_count = 1.0;
         uniform sampler2D depth_texture : hint_depth_texture, filter_nearest;
+        SCREEN_UNIFORM
 
         varying flat float v_frame;
         varying flat float v_alpha;
@@ -98,8 +99,26 @@ public sealed class MultiMeshEmitterRenderer : IEmitterRenderer
             vec3 fog_world = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
             ALBEDO = mix(ALBEDO, FOG_TARGET, csky_fog_amount(fog_world, CAMERA_POSITION_WORLD));
             ALPHA = t.a * v_alpha * v_color.a * rim.x * rim.y * soft;
+            COMPOSITE
         }
         """;
+
+    // The original's DX7 device mixes framebuffer bytes. This alpha makes Godot's linear mix land
+    // on that byte over the opaque background. ⚠ Do not drop it for the raw alpha: a linear-space
+    // mix draws a near-black plume at about half the original's darkening. Keep it a convex mix:
+    // an additive form blows a stack of light sprites out to white. See docs/org/puffer.md.
+    private const string GammaMixComposite = """
+            vec3 src_g = csky_linear_to_srgb(clamp(ALBEDO, 0.0, 1.0));
+            vec3 dst_l = clamp(texture(screen_texture, SCREEN_UV).rgb, 0.0, 1.0);
+            vec3 dst_g = csky_linear_to_srgb(dst_l);
+            vec3 out_g = src_g * ALPHA + dst_g * (1.0 - ALPHA);
+            vec3 src_l = csky_srgb_to_linear(src_g);
+            vec3 luma = vec3(0.2126, 0.7152, 0.0722);
+            float span = dot(src_l - dst_l, luma);
+            float moved = dot(csky_srgb_to_linear(out_g) - dst_l, luma);
+            ALBEDO = src_l;
+            ALPHA = abs(span) > 1e-4 ? clamp(moved / span, 0.0, 1.0) : ALPHA;
+""";
 
     // One compiled Shader per code variant (blend × soft), shared by every renderer. A Shader per
     // emitter cost about 6 ms to compile, paid by every live miss and by each of the couple of
@@ -211,6 +230,9 @@ public sealed class MultiMeshEmitterRenderer : IEmitterRenderer
             // carries that colour, so full fog leaves nothing to add.
             var code = ShaderCode
                 .Replace("BLEND_MODE", mix ? "blend_mix" : "blend_add")
+                .Replace("SCREEN_UNIFORM", mix
+                    ? "uniform sampler2D screen_texture : hint_screen_texture, filter_nearest;" : "")
+                .Replace("COMPOSITE", mix ? GammaMixComposite : "")
                 .Replace("FOG_TARGET", mix ? "csky_fog_color" : "vec3(0.0)")
                 .Replace("SOFT_EXPR", soft ? "clamp((VERTEX.z - scene_z) / 1.5, 0.0, 1.0)" : "1.0");
             ShaderVariants[(mix, soft)] = shader = new Shader { Code = code };

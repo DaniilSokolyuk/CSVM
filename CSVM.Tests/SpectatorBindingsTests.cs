@@ -189,6 +189,26 @@ public class SpectatorBindingsTests
     }
 
     // The camera map as a seat holds it, with the shipped pad placeholder resolved onto one pad.
+    /// <summary>The target press is matched against the lock action's own bindings. The shipped F
+    /// and pad X match, and after a rebind the old key no longer does.</summary>
+    [Fact]
+    public void TheLockPressFollowsTheLockActionsBindings()
+    {
+        var map = Camera();
+        var locks = map.Bindings(InputAction.CameraLockTarget);
+        Assert.True(SpectatorCamera.IsBound(locks, DeviceId.Keyboard, ControlKind.Key, (int)Key.F));
+        Assert.True(SpectatorCamera.IsBound(locks, DeviceId.Keyboard, ControlKind.Key, (int)Key.F, KeyModifiers.Shift));
+        Assert.True(SpectatorCamera.IsBound(locks, Pad, ControlKind.Button, (int)JoyButton.X));
+        Assert.False(SpectatorCamera.IsBound(locks, DeviceId.Joypad("some-stick"), ControlKind.Button, (int)JoyButton.X));
+
+        map.Assign(InputAction.CameraLockTarget, new Binding(DeviceId.Keyboard, BindingControl.Key((int)Key.G, KeyModifiers.Ctrl)));
+        map.Unassign(InputAction.CameraLockTarget, new Binding(DeviceId.Keyboard, BindingControl.Key((int)Key.F)));
+        locks = map.Bindings(InputAction.CameraLockTarget);
+        Assert.False(SpectatorCamera.IsBound(locks, DeviceId.Keyboard, ControlKind.Key, (int)Key.F));
+        Assert.False(SpectatorCamera.IsBound(locks, DeviceId.Keyboard, ControlKind.Key, (int)Key.G));
+        Assert.True(SpectatorCamera.IsBound(locks, DeviceId.Keyboard, ControlKind.Key, (int)Key.G, KeyModifiers.Ctrl));
+    }
+
     private static ActionMap Camera() => DefaultBindings.MapFor(InputContext.Camera, Pad);
 
     private static ActionSnapshot Held(Key key)

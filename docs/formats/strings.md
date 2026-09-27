@@ -22,7 +22,7 @@ covers its bindable-command table because that data is player-facing UI text.
 | `langui.dll` | 1,247 | The localisable UI text. This is the one that matters. |
 | `language.dll` | 36 | GameOS engine runtime strings, joystick/sound/renderer error messages, plus the locale name (`English`), its default font (`Arial.ttf`) and LCID (`1033`). Not UI text. |
 
-Both are resource-only DLLs, so a localised build swaps them. `ExtractRof.ps1` emits both,
+Both are resource-only DLLs, so a localised build swaps them. The extraction emits both,
 tagged with their source in a `dll` field.
 
 ## Resource format
@@ -86,7 +86,7 @@ form.
 
 It covers **327 of the 1,283 extracted rows**, the ones the GUI scripts and `LAYOUT.CSV`
 reference by name. The rest, including most of the aircraft description block, are addressed
-numerically and have no symbol. `ExtractRof.ps1` joins the two, leaving `symbol` null where
+numerically and have no symbol. The extraction joins the two, leaving `symbol` null where
 none exists.
 
 ## ID map
@@ -246,10 +246,10 @@ included.
 
 ## Extraction
 
-`ExtractRof.ps1` (repo root) writes `extracted\rof\ui_strings.json`, one row per string with
+The extraction (`UiStringTable`) writes `extracted\rof\ui_strings.json`, one row per string with
 `id`, `symbol` (from `RESOURCE.H`, or null), `font` (the parsed `[FONTID]`), `text` (tag
 stripped) and `dll`. It needs the `.rof` extracted first for `RESOURCE.H`, which the same run
-does. `-Raw` skips the string table entirely.
+does.
 
 ## Evidence & limits
 

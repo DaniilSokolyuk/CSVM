@@ -73,6 +73,13 @@ public sealed partial class WorldSounds : Node3D
     /// unchanged, which is why a cue-firing assertion must run at --volume=0, never --mute).</summary>
     public int OneShotsStarted { get; private set; }
 
+    /// <summary>How long ago the one-shots fired now were due, set only while a guest catches up
+    /// on a late director event. A clip starts that far in, and one already over is skipped.</summary>
+    public float LateBy { get; set; }
+
+    /// <summary>One-shots skipped because their whole length had passed by the time they fired.</summary>
+    public int SkippedLate { get; private set; }
+
     public IEnumerable<string> Names
     {
         get
@@ -400,13 +407,20 @@ public sealed partial class WorldSounds : Node3D
             return null;
         }
 
+        float rate = Mathf.Max(0.01f, pitch);
+        if (LateBy > 0f && LateBy >= stream.GetLength() / rate)
+        {
+            SkippedLate++;
+            return resolved;
+        }
+
         var player = new AudioStreamPlayer3D
         {
             Stream = stream,
             VolumeDb = SoundFalloff.VolumeDb(def.Volume),
             AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.Disabled,
             Bus = AudioBuses.Effects,
-            PitchScale = Mathf.Max(0.01f, pitch),
+            PitchScale = rate,
         };
         AddChild(player);
         player.GlobalPosition = worldPos;
@@ -421,7 +435,7 @@ public sealed partial class WorldSounds : Node3D
         // Set here as well as in Tick: a short cue can finish before the next frame's pass.
         ApplyFalloff(player, _listeners?.Invoke(), shot.RangeMin, shot.RangeMax, shot.Volume);
         _oneShots.Add(shot);
-        player.Play();
+        player.Play(LateBy > 0f ? LateBy * rate : 0f);
         OneShotsStarted++;
         if (Debug)
         {

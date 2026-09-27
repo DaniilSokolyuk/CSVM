@@ -1,3 +1,5 @@
+using CSVM.Net;
+using CSVM.Session;
 using CSVM.Session.Campaign;
 using Godot;
 using Xunit;
@@ -79,6 +81,50 @@ public class CampaignHumanFieldTests
     {
         var field = new[] { At(0f, 0f), At(0f, 0f, group: 7, crashed: true), At(0f, 0f, group: 7) };
         Assert.Equal(1, CampaignHumanField.LiveInGroup(field, 7));
+    }
+
+    [Fact]
+    public void A_remote_human_arrives_where_its_buffer_shows_it_one_read_behind_its_owner()
+    {
+        // A guest flown elsewhere is in the host's field at the pose the host's buffer answers.
+        // The buffer takes the owner's samples at the send cadence over a lag-free link. The owner
+        // enters the radius first, and the host's read of it follows one buffer delay later.
+        const float dt = 1f / 60f;
+        const float speed = 100f;
+        var reference = new Vector3(1000f, 0f, 0f);
+        var host = At(-4000f, 0f);
+        var buffer = new RemotePoseBuffer();
+        float? ownerIn = null, remoteIn = null;
+        ushort sequence = 0;
+        for (int step = 1; step <= 1200 && remoteIn == null; step++)
+        {
+            float t = step * dt;
+            var owner = new Vector3(speed * t, 0f, 0f);
+            buffer.Advance(dt);
+            if (step % AircraftStateCadence.SendStepInterval == 0)
+            {
+                buffer.Receive(new AircraftStateMessage(1, sequence++, owner, Quaternion.Identity,
+                    new Vector3(speed, 0f, 0f), 1f, 0f, 0f, 0f, false));
+            }
+
+            if (ownerIn == null
+                && CampaignHumanField.Travelers(new[] { host, new HumanState(owner, null, false) }, reference, 100f, true))
+            {
+                ownerIn = t;
+            }
+
+            if (buffer.TrySample(out var shown)
+                && CampaignHumanField.Travelers(new[] { host, new HumanState(shown.Position, null, false) }, reference, 100f, true))
+            {
+                remoteIn = t;
+            }
+        }
+
+        Assert.NotNull(ownerIn);
+        Assert.NotNull(remoteIn);
+        float lag = remoteIn!.Value - ownerIn!.Value;
+        Assert.InRange(lag, RemotePoseBuffer.BufferDelaySeconds - dt,
+            RemotePoseBuffer.BufferDelaySeconds + AircraftStateCadence.SampleSeconds + dt);
     }
 
     private static HumanState At(float x, float z, int? group = null, bool crashed = false) =>

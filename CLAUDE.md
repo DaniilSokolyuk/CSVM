@@ -18,7 +18,8 @@ landing gate for any change under `CSVM/`.
   rejects a PowerShell here-string (`@'…'@`) sent to the **Bash** tool, and a heredoc or
   `/dev/null` sent to the **PowerShell** tool. (2) The **Bash** tool is blocked outright with
   "Use Powershell instead of bash", the one exception is a command whose every `&&`/`||`/`;`/`|`
-  segment starts with `git` or `gh`, since those behave identically in either shell.
+  segment starts with `git` or `gh`, since those behave identically in either shell. The block
+  applies on Windows only: on macOS and Linux (under `pwsh`) Bash is the native shell.
   (3) The format gate, [`FormatBeforeTests.ps1`](FormatBeforeTests.ps1): `dotnet format` and a
   `-t:Rebuild` that blocks on remaining StyleCop warnings, before an *invocation* of
   `RunTests.ps1`, `dotnet test`, or `git commit`. A command segment counts only when it begins
@@ -32,7 +33,7 @@ landing gate for any change under `CSVM/`.
   invisible to it, since a `PreToolUse` hook runs before the command does; do it first as its own
   call. `.\FormatBeforeTests.ps1 -ShowRoot -Command '…'` says which tree a command would build,
   and `-SelfTest` exercises the trigger and the resolution.
-- **The content gate** runs five checks, each its own script you can also run by hand while
+- **The content gate** runs six checks, each its own script you can also run by hand while
   editing: [`CheckEncoding.ps1`](CheckEncoding.ps1) (double-encoded UTF-8, whole tree),
   [`CheckItemIds.ps1`](CheckItemIds.ps1) (`backlog.md`/`playtest.md` defining the same
   `BL-`/`PT-`/`CAP-` ID twice, or a `backlog.md` header tag outside the vocabularies the file's
@@ -43,7 +44,9 @@ landing gate for any change under `CSVM/`.
   [`CheckCommentCaps.ps1`](CheckCommentCaps.ps1) over `CSVM/src` and `CSVM.Tests` (`-Summary` for
   one line per file; the sentence caps apply to the comment blocks the commit changes), and [`CheckDocEntries.ps1`](CheckDocEntries.ps1) (`docs/architecture/*.md`
   entry caps and coverage against `CSVM/src`, one-line `docs/architecture.md` index bullets, and
-  `docs/cli.md`'s 600-character flag bullet cap). A comment block over cap has outgrown its
+  `docs/cli.md`'s 600-character flag bullet cap), and [`CheckWaiver.ps1`](CheckWaiver.ps1) (the
+  form of a `Waiver:` line in the commit's own `-m`/`-F` message, per PROJECT_CONTEXT.md's
+  verification loop; it cannot tell whether the battery was red). A comment block over cap has outgrown its
   subject, so reflowing it is the wrong fix: move the decode into `docs/` and leave the
   prohibition on the member it binds.
   ⚠ **The gate checks the one tree the commit writes to, which is not always the one the hook

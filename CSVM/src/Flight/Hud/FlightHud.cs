@@ -285,9 +285,9 @@ public sealed class FlightHud
     /// fallback to the other side, belong to <see cref="ActiveDevice.PromptBinding"/>; what draws in
     /// the slot, words or a glyph, belongs to <see cref="ControlLine"/>.</summary>
     public static ControlLine ComposeAutoLandPrompt(Messages? strings, IReadOnlyList<Binding> bindings,
-        bool readsKeyboard, DeviceSide side)
+        bool readsKeyboard, DeviceSide side, bool onStick = false)
     {
-        if (ActiveDevice.PromptBinding(bindings, side, readsKeyboard) is not { } binding)
+        if (ActiveDevice.PromptBinding(bindings, side, readsKeyboard, onStick) is not { } binding)
         {
             return ControlLine.Empty;
         }
@@ -303,9 +303,9 @@ public sealed class FlightHud
     /// is bound. Which binding a side names, and the fallback to the other side, belong to
     /// <see cref="ActiveDevice.PromptBinding"/>.</summary>
     public static ControlLine ComposeRespawnPrompt(IReadOnlyList<Binding> bindings, bool readsKeyboard,
-        DeviceSide side)
+        DeviceSide side, bool onStick = false)
     {
-        if (ActiveDevice.PromptBinding(bindings, side, readsKeyboard) is not { } binding)
+        if (ActiveDevice.PromptBinding(bindings, side, readsKeyboard, onStick) is not { } binding)
         {
             return ControlLine.Empty;
         }
@@ -588,7 +588,7 @@ public sealed class FlightHud
         if (state.StuntStatusLine is { } stuntStatus)
             _textLines.Add(stuntStatus);
         if (state.Halted)
-            _textLines.Add("⏸ PAUSED (. steps one frame)");   // the board's own menu says the rest
+            _textLines.Add("⏸ PAUSED");   // the board's own menu says the rest
         return _textLines;
     }
 

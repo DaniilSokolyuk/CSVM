@@ -231,7 +231,7 @@ defaults, load from the registry over the top, then rebuild the reverse arrays.
 | Binding identity | a physical scancode plus three modifier bits, or a bare button index | a device identity plus a tagged control (`Binding`); a key control carries the same three modifier bits, so `E` and Shift+`E` are two controls |
 | Slots per action | four, fixed by type: keyboard, keyboard, joystick button, mouse button | a list of any length, ORed together (`BindingSet`) |
 | Joystick devices | exactly one, `DAT_0075c1e0`, with no index in the record | any number, named by stable hardware string and resolved to a live index per tick |
-| Bindable joystick controls | buttons 1-10 only. Axes and hats are read outside the map and cannot be bound | every button the platform reports and either half of any axis; no hat, since a d-pad arrives as buttons |
+| Bindable joystick controls | buttons 1-10 only. Axes and hats are read outside the map and cannot be bound | every button the platform reports, either half of any axis, a whole axis over an action pair, and a stick's hat directions; no pad hat, since a pad's d-pad arrives as buttons |
 | Rebinding | a keybind screen writing into the same word the defaults wrote | a screen editing an `ActionMap`, the steal rule naming every action that loses the control |
 | Persistence | 2400 raw bytes under `HKEY_CURRENT_USER` | versioned JSON per player under `user://`, in the shape below |
 
@@ -254,13 +254,14 @@ default, so adding one needs no bump.
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "player": 1,
   "mouseFlying": false,
   "contexts": {
     "flight": {
       "FireGuns": ["keyboard/key:Space", "pad:*/button:B"],
-      "PitchUp": ["pad:*/axis:LeftY+@0.25"],
+      "PitchUp": ["pad:*/axis:LeftY+@0.25", "pad:03005fcf1d2300000002000000000000/fullaxis:1+@0.02"],
+      "SelectGunGroup": ["pad:03005fcf1d2300000002000000000000/hat:0:Right"],
       "TargetPreviousEnemy": ["keyboard/key:Shift+E"],
       "TargetNextAlly": []
     },
@@ -275,10 +276,23 @@ row by hand.
 
 - The device is `keyboard`, `mouse`, or `pad:<hardware id>`. A shipped pad row is authored on the
   placeholder id `*`, which the loader replaces with the seat's own pad.
-- The control is `key:<name>`, `button:<name>`, `mouse:<name>`, `axis:<name><sign>@<deadzone>` or
-  `hat:<index>:<direction>`. A name is the engine's own enum name, or `#<number>` for a code the
-  engine does not name; a bare number is accepted on the way back in either way. An axis carries its
+- The control is `key:<name>`, `button:<name>`, `mouse:<name>`, `axis:<name><sign>@<deadzone>`,
+  `fullaxis:<index><sign>@<deadzone>` or `hat:<index>:<direction>`. A name is the engine's own enum
+  name, or `#<number>` for a code the engine does not name or names only as a range sentinel
+  (`SdlMax`, `Max`); a bare number is accepted on the way back in either way. An axis carries its
   sign and its deadzone, which is both the noise gate and the digital threshold.
+- A `fullaxis:` token is one binding over an action pair (pitch, roll, yaw, throttle), written once,
+  under the pair's positive row (`PitchUp`, `RollRight`, `YawRight`, `ThrottleUp`), and loaded onto
+  both rows. Its sign is invert: `+` feeds raw positive travel to the positive row, `-` to the
+  negative one. Each side reads 0 at the deadzone edge and 1 at full travel. The deadzone is
+  honoured anywhere in 0 to 0.95 and written back exactly as read. The same token under
+  `ThrottleLever` is an absolute lever on that row alone: its whole travel maps to 0 (idle) to 1
+  (full), `-` swapping the ends, and the deadzone trims both ends of the travel instead of the
+  centre. A full axis on any other row outside every pair, or on the keyboard or mouse, is
+  unreadable.
+- A `hat:` direction is `Up`, `Right`, `Down` or `Left` in any case, on a joypad other than the
+  placeholder `*`. Version 3 of the file adds the full-axis and hat tokens; an older file names
+  neither and still loads whole.
 - A key name may carry the original's own modifiers in front of it, `key:Shift+E`, `key:Ctrl+E`,
   any of `Shift`, `Ctrl` and `Alt` in any order and any case. That prefix is version 2 of the file;
   a version 1 file names no modifier, and since a bare key token means the same thing in both, such
@@ -295,9 +309,191 @@ why it costs no version bump.
 
 Nothing costs the file. A row the reader cannot read costs that action its saved bindings and
 nothing more, leaving it on the shipped default while the rest of the file loads. That covers an
-unknown context or action name, a token in a shape this build does not know, and a `hat:` row, which
-is deliberately unreadable because Godot reports a d-pad as four buttons and a hat row would be a
-second encoding of a control the defaults already author as a button.
+unknown context or action name, a token in a shape this build does not know, and a `hat:` row on
+the placeholder pad `*`, which is deliberately unreadable because Godot reports a pad's d-pad as four
+buttons and a hat row there would be a second encoding of a control the defaults author as a button.
+
+Stick rows are the exception to "every row lives here". A binding on a flight stick's identity
+(`pad:stick:<model>`) belongs to the stick profile files below, so player 1's keymap is completed
+from them when it is loaded, and a stick token found in `bindings_p1.json` is dropped at that
+merge. The keymap file is saved without stick rows.
+
+## The CSVM stick profile files
+
+One JSON file per stick model and layout. Every stick belongs to seat 1, so these files complete
+player 1's keymap: for each connected stick model one file is active, and its rows replace every
+stick binding the keymap carries. There are two folders. The shipped profiles are
+`CSVM/data/stick_profiles/` (`res://data/stick_profiles/`, exported through the preset's
+`data/*.json` include filter, whose `*` crosses folders) and are read-only. The player's own are
+`user://stick_profiles/`, and every save writes there.
+
+```json
+{
+  "version": 1,
+  "model": "231D/0200",
+  "name": "R",
+  "companions": ["231D/0201"],
+  "ignore": false,
+  "contexts": {
+    "flight": {
+      "PitchUp": ["fullaxis:1+@0.02"],
+      "FireGuns": ["button:#0"],
+      "SelectGunGroup": ["hat:0:Right"]
+    },
+    "menu": { },
+    "camera": { }
+  }
+}
+```
+
+- `model` is the stick's USB vendor and product id in hex, `VVVV/PPPP`, the form `--dump-sticks`
+  and the stick roster log print. Any case reads and upper case is written, since a binding's
+  device identity compares ordinally. A missing or malformed model refuses the whole file, with one
+  log line naming it.
+- `companions` lists the other models that must all be connected for the file to apply. The
+  model itself is dropped from the list and duplicates collapse. One malformed entry refuses the
+  whole file: reading it as fewer companions would make the file active on the wrong hardware.
+- `name` is the short label screens print ("R", "L"); empty when absent, and left out of a saved
+  file when empty (a saved generic default has none). An unnamed stick prints
+  as `Stick 231D/0200` on the remake Controls screen and in status lines, so two unnamed sticks
+  read apart, and as its control alone in the KEYS AND BUTTONS page's narrow Stick column.
+- `ignore: true` makes the model yield no bindings while the file is active, for a device that
+  enumerates as a joystick but flies nothing (a gaming keypad). It still counts as a profiled
+  device, so the generic single-stick default does not claim it. The shipped `1532-022B.json`
+  ignores the Razer Tartarus keypad this way; a user file for `1532/022B` overrides it.
+- `contexts` holds the rows, per context and action, with the keymap file's context and action
+  names. A row is an array of tokens in the keymap grammar above, written bare, without the
+  device, since the file's model is the device: `button:#27`, `axis:#3+@0.1`, `fullaxis:1+@0.02`,
+  `hat:0:Up`. Buttons and half axes are written by number, because the engine's gamepad names mean
+  nothing on a stick. A full keymap token naming this file's model (`pad:stick:231d/0200/button:#27`)
+  also reads. Only button, axis, full-axis and hat controls are readable. A full axis follows the
+  keymap file's rules: written once under the pair's positive row, the lever row taking one too.
+- **The file counts from 0; the screens count from 1.** Button, axis and hat numbers in a file are
+  SDL2's 0-based indices, the numbers `--dump-sticks` prints. The Controls screens label each one
+  higher, matching VKB's configuration tool and Windows: `button:#4` shows as "R Button 5",
+  `fullaxis:2-@0.02` as "R Axis 3 inverted", `hat:1:Left` as "R Hat 2 Left". Hat 0 shows without a
+  number ("R Hat Up"). A hand edit uses the file's number, one lower than the label.
+- Only bound actions are written. A profile has no defaults, so an absent action is unbound.
+- A row is read whole or not at all. An unreadable row (an unknown context or action, a token for
+  another device, a deadzone outside 0 to 0.95) binds nothing, and a re-save writes it back
+  verbatim unless the action has been bound since. A deadzone is written back exactly as typed.
+- `version` is the schema of the header and the row shape, currently 1; the tokens follow the
+  keymap file's version. The reader checks no version, on the keymap file's rule. Comments and
+  trailing commas are accepted on read; a re-save keeps neither, nor any unknown top-level field.
+
+**Which file is active.** For each connected model, a file applies when its model and every one of
+its companions are connected. Among the files that apply, the one naming more companions wins, then
+a user file over a shipped one, then the ordinally first file name. So an R stick alone takes its
+solo file and R with L takes the file naming L, and a user copy of a layout overrides the shipped
+file of that layout. The choice is made again on every plug and unplug, and a seat already flying
+reads the new rows when it re-reads its keymap. Two identical units of one model are one device and
+share one file. A companion that Godot reads as a pad is not in the stick roster and does not count
+as connected.
+
+**File names.** A name carries no meaning on read, only in the last tie-break. A copy made beside a
+user file (Explorer's `231D-0200 - Kopie.json`) ties with it and sorts first, so it becomes the
+active file; the log warns with both names whenever one file wins on its name alone. A save of a user
+file rewrites that file; any other save writes the model as `231D-0200`, then each companion in
+model order after a `+`, then `.json`, into the user folder. That is how two
+layouts of one model sit side by side (`231D-0200.json` and `231D-0200+231D-0201.json`), and how a
+save of a shipped profile becomes the user copy that overrides it.
+
+**Saving from a Controls screen.** Accepting player 1's changes writes each connected model's stick
+rows to its active file (a shipped one becoming the user copy), or to a new solo user file when no
+file applies, and writes only models whose rows changed. A save replaces every context of the
+file, the menu and camera rows included, from what the screen holds. The screen therefore stages
+seat 1's stick rows from the profiles in force: the pause menus read through a seated reader, a
+registration follows the profiles when a save or a plug changes them, and the generic default that
+a save hands to another stick writes no file for that stick. The keymap file is written without
+stick rows. The remake Controls screen's "Open profiles folder" row creates `user://stick_profiles/` when
+missing and opens it in the system file browser. A binding's deadzone has no screen control; it is
+edited in these files.
+
+**Resetting a Controls screen.** A reset (the remake screen's reset, the KEYS AND BUTTONS page's
+RESET TO DEFAULT) puts keyboard, mouse and pad rows back to the shipped keymap, and for player 1
+puts each connected stick's rows, in the contexts it resets, back to that stick's default:
+
+1. the rows of the shipped file the rule above would pick with user files left out, companions
+   included, unless that file ignores the model;
+2. otherwise the generic default, when this stick is the only stick-shaped connected model with no
+   shipped file (a model whose only file is a user file counts as having none);
+3. otherwise its rows stay as they were. Two unshipped sticks both on the generic default would
+   both fly roll and pitch, so the exactly-one rule holds here too.
+
+A model whose active or shipped file ignores it keeps no rows and is no generic candidate. Nothing
+is written until Accept, which then saves the restored rows into the stick's active file as for any
+edit; a user file ends up matching the default, and a stick whose rows were already the default
+writes nothing. With sticks off a reset clears stick rows, since there are no profiles to restore.
+
+### The generic stick default
+
+A stick no profile file covers still flies, under one condition: it is the **only** connected
+model that is both unprofiled and stick-shaped. An ignored profile counts as a profile. With two
+or more candidates nothing is claimed, since axis numbers on an unknown stick are a convention and
+two candidates leave no way to tell which one should fly.
+
+- **Stick-shaped** means at least three axes, with axes 0 and 1 resting within 0.1 of centre. The
+  rest is sampled once per connection, ten roster updates after the device opens, because
+  DirectInput reads zeros until a device has been polled a few times. Other axes may rest anywhere:
+  a throttle lever parks where it was left (the VKB L reads 1.00 on axis 2 at rest, the R -0.57).
+  A stick held deflected while it is sampled is judged not stick-shaped until it is plugged in
+  again. While any candidate is still unsampled nothing is claimed.
+- **The layout.** Axis 0 (X) is roll and axis 1 (Y) pitch, each a full axis with deadzone 0.02 and
+  pitch not inverted (pulled back is positive, as on a pad). Axis 5 (Rz, the twist) is yaw when the
+  device has six axes or more, DirectInput's usual X, Y, Z, Rx, Ry, Rz order, bound uninverted
+  because a twist right reads positive (after the polarity quirks below). Axis 2 (Z) is the absolute Throttle (lever),
+  inverted so raw -1 is full throttle, deadzone 0.02; on the VKB R the lever reads -1 pushed
+  forward. The lever's takeover rule keeps a parked lever from moving the throttle until it is moved. Button
+  0 fires the guns and button 2 the rockets. In menus the hat moves the cursor, button 0 confirms
+  and button 2 backs out. Button 1 is left free because a two-stage trigger (the VKB EVO's)
+  reports its second stage there, and a hard pull must not back out of a menu. Button 0 is also Skip Cutscene (below).
+- **It lives in memory.** The profile log names it `generic (generic default)`. A controls screen
+  save that changes any of its rows writes the whole layout as a user file under the model's name,
+  which from then on is the model's profile; an unchanged save writes nothing.
+- A device that enumerates as a joystick but is no flight stick (a gaming keypad whose axes rest
+  centred) passes the shape test, so the default can claim it once it is the only unprofiled
+  device. A profile file with `"ignore": true` for that model keeps it off. The Razer Tartarus
+  (`1532/022B`, six centred axes under SDL2) ships with one, so it neither takes the default nor
+  counts against a stick beside it.
+
+### Axis polarity quirks
+
+A model whose axis reads opposite to DirectInput's convention is corrected where the roster reads
+it (`Sticks/StickQuirks.cs`, applied in `StickRoster`), so flight, capture, menus, the rest sample
+and `--dump-sticks` all see the corrected value, and a profile token means the corrected value.
+`--dump-sticks` and the `stick at rest` log line name the correction (`quirks=[axis 5 flipped]`).
+
+- **VKB Gladiator EVO R (`231D/0200`) and L (`231D/0201`), axis 5 flipped.** Through SDL2 each
+  grip's twist reads negative twisted right, unlike its other axes: a `--dump-sticks` watch of the
+  L twisted right alone logs axis 5 falling to -0.86. Flipped, a twist right captured on Turn Right
+  reads `R Axis 6`, and only the opposite twist reads `R Axis 6 inverted`.
+- The table is built in and not part of the profile files, because a user profile replaces the
+  shipped one whole and the correction must hold whichever profile is active. Nothing migrates a
+  user file: a VKB yaw row saved as `fullaxis:5-` from an uncorrected capture flies yaw backwards
+  until yaw is captured again.
+
+### Skip Cutscene, the stick's skip
+
+A stick raises no Godot input event, so none of the event-driven skips (the in-world cutscene's
+press, the cinema screen's authored sets, a boot film or still) sees it. `SkipCutscene` is the
+Menu-context action that stands in for them, read by `Sticks/StickSkip.cs` from seat 1's active
+stick profile alone.
+
+- **Where it counts.** Its press is `CinemaSkips.StickPress`, which is `CinemaPress.PadButton`, so it
+  ends exactly the cinemas and boot cards a pad button ends, and an Escape-only set stays exempt. In
+  flight it is the same skip a key press gets; declined (no skip armed), the held trigger
+  fast-forwards the scene until it is released.
+- **Who reads it.** Seat 1 only, as for every stick read, and nothing under `--no-pads` or `--det`
+  (no roster, no profile set). The roster's input gate reads it neutral like any stick control.
+- **Defaults.** The generic default binds it to button 0 (`Button 1`, the trigger). Keyboard, mouse
+  and pad ship it unbound and a row there adds nothing, since any key or pad button already skips.
+  A shipped or user profile carries it as `"SkipCutscene": ["button:#0"]` in its `menu` context; a
+  profile without the row gives the stick no skip until one is bound.
+- **It shares its control.** Binding the skip never steals from another action in its context, and
+  no other action steals from it (`ActionMap.Shares`), so the trigger stays menu accept and the
+  controls screen asks nothing when the skip takes it. The steal rule holds for every other pair.
+- The remake Controls screen lists it on the Menu tab and the original KEYS AND BUTTONS page on its
+  Other tab, both as `Skip Cutscene`; an accepted screen saves it into the stick profile.
 
 ## Force feedback
 
