@@ -42,13 +42,13 @@ channel, which no sequence stream rides. Read `LoopbackTransportTests.cs`.
 
 ## src/Net/EnetTransport.cs
 The shipped carrier over Godot's ENet peer, and the one type under `CSVM/` allowed to name a Godot
-networking type. `Host` opens a listen server, `Join` reports success as the host (peer 1) joining
-the roster. Every roster change and payload comes out of `Step`, so "nothing arrives between steps"
-holds as on the loopback. A service thread polls ENet whenever the main thread has not stepped for
-`ServiceGapSeconds`, up to `Keepalive.CeilingSeconds`, so a blocking mission load (5 to 8 s against
-ENet's 5 s timeout floor) keeps sending acknowledgements. `ChannelCount` is `NetChannels.Count`.
-`INetLink` is where a board reads the socket, and a socket with no listener holds what lands and
-replays it on `Bind`.
+networking type. `Host` opens a listen server on every address `ListenAddresses` names (for `*`:
+IPv4's wildcard, the stable global IPv6 address and `::1`) as one roster, so a reply leaves from the
+address a guest dialled; a guest drops a reply from a temporary one. `Join` reports the host (peer 1)
+joining. Every roster change and payload comes out of `Step`. A service thread polls ENet when the
+main thread has not stepped for `ServiceGapSeconds`, up to `Keepalive.CeilingSeconds`, so a
+blocking mission load keeps acknowledging. `INetLink` is where a board reads the socket, and a
+socket with no listener holds what lands and replays it on `Bind`.
 
 ## src/Net/SteamTransport.cs
 The Steam carrier's place in the seam with nothing behind it: the Steamworks SDK cannot be
@@ -60,12 +60,12 @@ will not open, so a Steam build reaches a board as a line of text rather than a 
 `NetCarrier.cs` for where it is chosen.
 
 ## src/Net/NetCarrier.cs
-Which carrier a match runs over, chosen once: the menu door's registration in
-`Session/Launch/Launcher.cs` and the command line's own open both come through `Host` and `Join` here, so
-a build changes carrier without an edit above the seam. `UsesSteam` is the switch and `Name` is
-the word for a log line. `PortMap` and `PortUnmap` are the router door a direct-IP host asks for,
-`Pinhole` (given the address to open for) and `PinholeClose` its IPv6 pinhole; all four are null
-for a carrier that is reachable without one, which a door shows as no mapping.
+Which carrier a match runs over, chosen once: the menu door's registration in `Launcher.cs` and
+the command line's own open both come through `Host` and `Join`, so a build changes carrier with
+no edit above the seam. `UsesSteam` is the switch, `Name` the log word. `PortMap`/`PortUnmap` are
+the router door a direct-IP host asks for, `Pinhole` (given the address) and `PinholeClose` its
+IPv6 pinhole, and `StableIpv6`/`LanIpv4` the addresses it names (`Utils/HostAddress.cs`). All are
+null for a carrier reachable without them. The launcher opens the pinhole for the stable address.
 ⚠ Nothing above the seam branches on the carrier.
 
 ## src/Net/UpnpPortMap.cs

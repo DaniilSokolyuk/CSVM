@@ -217,6 +217,57 @@ public sealed class NetPlayFeature : IMenuFeature
     /// <see cref="SearchAddress"/> alone.</summary>
     public Func<IReadOnlyList<(string Address, string Mask)>>? LanNetworks { get; init; }
 
+    /// <summary>Reads this machine's stable global IPv6 address when a host opens, or null for a
+    /// carrier that is not reached by address. With none, a board names no address at all.</summary>
+    public Func<string?>? StableIpv6 { get; init; }
+
+    /// <summary>Reads this machine's address on its local IPv4 network when a host opens.</summary>
+    public Func<string?>? LanIpv4 { get; init; }
+
+    /// <summary>Puts text on the system clipboard, the host's copy of its address. A seam, so a
+    /// suite reads the copy without writing the pilot's own clipboard.</summary>
+    public Action<string>? CopyText { get; init; }
+
+    /// <summary>This host's stable global IPv6 address as read when it opened, or null.</summary>
+    public string? HostIpv6 { get; private set; }
+
+    /// <summary>This host's local IPv4 address as read when it opened, or null.</summary>
+    public string? HostLanIpv4 { get; private set; }
+
+    /// <summary>Whether this door can name its host's address, which a board shows only then.
+    /// </summary>
+    public bool NamesHostAddress => StableIpv6 != null;
+
+    /// <summary>How many times this host's address was copied since it opened.</summary>
+    public int Copies { get; private set; }
+
+    /// <summary>What a guest types to reach this host: the stable IPv6 address, else the router's
+    /// mapped IPv4 address, else the LAN address. The port is written when it is not
+    /// <see cref="DefaultPort"/>, and always for a mapping. Empty while not hosting or when none is
+    /// known.</summary>
+    public string GuestAddress
+    {
+        get
+        {
+            if (!IsHost)
+            {
+                return "";
+            }
+
+            if (HostIpv6 is { } v6)
+            {
+                return Dial(v6);
+            }
+
+            if (PortMap is { IsMapped: true } map)
+            {
+                return Endpoint(map.ExternalAddress, map.Port);
+            }
+
+            return HostLanIpv4 is { } lan ? Dial(lan) : "";
+        }
+    }
+
     /// <summary>How many other peers are on the wire: the guests a host has, or 1 once a guest
     /// has reached its host. A guest a campaign host refused as full is not counted.</summary>
     public int Peers
@@ -429,6 +480,25 @@ public sealed class NetPlayFeature : IMenuFeature
         return (host ?? "").Contains(':', StringComparison.Ordinal) ? $"[{host}]:{number}" : $"{host}:{number}";
     }
 
+    /// <summary><paramref name="host"/> as a guest types it for this door's port: bare on
+    /// <see cref="DefaultPort"/>, which a join fills in, and with the port otherwise.</summary>
+    public string Dial(string host) => Port == DefaultPort ? host : Endpoint(host, Port);
+
+    /// <summary>Copies <see cref="GuestAddress"/> to the clipboard. False, and nothing copied,
+    /// while there is no address to give or no clipboard to put it on.</summary>
+    public bool CopyGuestAddress()
+    {
+        string address = GuestAddress;
+        if (address.Length == 0 || CopyText == null)
+        {
+            return false;
+        }
+
+        CopyText(address);
+        Copies++;
+        return true;
+    }
+
     /// <summary>What this co-op host's boards show, named to every guest on the next step. A new
     /// mission starts a new round of picks, as does a move onto a board other than the briefing
     /// and flight check. Every Ready then clears.</summary>
@@ -604,6 +674,11 @@ public sealed class NetPlayFeature : IMenuFeature
         {
             _hostName = PlayerName;
             _dogfight.Show();
+            foreach (string line in CoopDoorText.HostAddressNotes(this))
+            {
+                _dogfight.Note(CoopDoorText.NoteName, line);
+            }
+
             _transport.Advertise(CurrentAdvert());
         }
     }
@@ -825,6 +900,7 @@ public sealed class NetPlayFeature : IMenuFeature
         Stage = NetDoorStage.Shut;
         PortMap = null;
         Pinhole = null;
+        ForgetHostAddress();
         UnmapPort();
     }
 
@@ -1027,6 +1103,9 @@ public sealed class NetPlayFeature : IMenuFeature
         _kind = kind;
         Fault = "";
         Stage = NetDoorStage.Hosting;
+        HostIpv6 = StableIpv6?.Invoke();
+        HostLanIpv4 = LanIpv4?.Invoke();
+        Copies = 0;
         _transport.Advertise(CurrentAdvert());
         OpenResponder();
         MapPort();
@@ -1432,16 +1511,24 @@ public sealed class NetPlayFeature : IMenuFeature
         _hostPeer = -1;
         Fault = why;
         Stage = NetDoorStage.Failed;
+        ForgetHostAddress();
+    }
+
+    private void ForgetHostAddress()
+    {
+        HostIpv6 = null;
+        HostLanIpv4 = null;
+        Copies = 0;
     }
 
     private DoorReading Read() => new(
         _transport, _transport?.Changes ?? 0, _transport?.Held ?? 0, Stage, Fault, PortMap, Pinhole, _search,
-        _search?.Changes ?? 0, SearchFault, Link, _admitted.Count, _dogfight);
+        _search?.Changes ?? 0, SearchFault, Link, _admitted.Count, _dogfight, Copies);
 
     // Everything a board draws from this door that can move without an input event. The lobby's
     // and the search's own counters stand for what arrived through them.
     private readonly record struct DoorReading(
         NetLobby? Wire, int WireChanges, int Held, NetDoorStage Stage, string Fault, UpnpPortMapResult? PortMap,
         UpnpPinholeResult? Pinhole, LanSearch? Search, int SearchChanges, string SearchFault, EnetLinkState? Link,
-        int Admitted, DogfightLobby? Dogfight);
+        int Admitted, DogfightLobby? Dogfight, int Copies);
 }

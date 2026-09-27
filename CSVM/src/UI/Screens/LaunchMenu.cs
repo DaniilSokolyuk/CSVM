@@ -4108,12 +4108,15 @@ public sealed partial class LaunchMenu : CanvasLayer
         }
 
         string link = net.Link is { } state ? $", link {state.ToString().ToLowerInvariant()}" : "";
-        string mapped = net.PortMap is { } map ? $". {CoopDoorText.RouterStatus(map)}" : "";
-        mapped += net.Pinhole is { } pinhole ? $"{(mapped.Length > 0 ? " " : ". ")}{CoopDoorText.PinholeStatus(pinhole)}" : "";
+        string mapped = net.PortMap is { } map ? $" {CoopDoorText.RouterStatus(map)}" : "";
+        string pinhole = CoopDoorText.HostPinholeStatus(net);
+        mapped += pinhole.Length > 0 ? $" {pinhole}" : "";
+        string address = CoopDoorText.HostAddressStatus(net);
+        string where = address.Length > 0 ? $" {address}" : "";
         return net.Stage switch
         {
             NetDoorStage.Hosting =>
-                $"Hosting on port {net.Port.ToString(CultureInfo.InvariantCulture)}{link}, {net.Peers.ToString(CultureInfo.InvariantCulture)} joined{mapped}",
+                $"Hosting on port {net.Port.ToString(CultureInfo.InvariantCulture)}{link}, {net.Peers.ToString(CultureInfo.InvariantCulture)} joined.{where}{mapped}",
             NetDoorStage.Joining => $"Joining {net.JoinTargetText}{link}",
             NetDoorStage.Joined => CoopDoorText.JoinedStatus(net, link, MissionName),
             NetDoorStage.Failed => $"That did not open: {net.Fault}",

@@ -393,6 +393,11 @@ public sealed class DogfightLobby
         return true;
     }
 
+    /// <summary>Shows a line in this pilot's own chat panel under <paramref name="name"/>, sent to
+    /// nobody. The host's address goes here, where the lobby already has room for a sentence.
+    /// </summary>
+    public void Note(string name, string text) => Add(new LobbyChatMessage(name ?? "", text ?? ""));
+
     /// <summary>One menu frame, after the socket was stepped. The host relays each guest's chat to the
     /// others and sends each guest its options and list when they change. A guest takes the host's
     /// chat and sends its own pick.</summary>

@@ -1,4 +1,5 @@
 using System;
+using CSVM.Utils;
 
 namespace CSVM.Net;
 
@@ -37,6 +38,14 @@ public static class NetCarrier
     /// <summary>The LAN search's socket, bound on an address and a port, or null for a carrier
     /// that finds its games another way. A door handed null offers no search.</summary>
     public static Func<string, int, ILanSocket>? Lan => UsesSteam ? null : BindLan;
+
+    /// <summary>Reads the stable global IPv6 address a guest dials this host at, or null for a
+    /// carrier not reached by address. A door handed null names no address.</summary>
+    public static Func<string?>? StableIpv6 => UsesSteam ? null : HostAddress.StableGlobalIPv6;
+
+    /// <summary>Reads this host's local IPv4 address, or null for a carrier not reached by address.
+    /// </summary>
+    public static Func<string?>? LanIpv4 => UsesSteam ? null : HostAddress.LanIPv4;
 
     /// <summary>The router's IPv6 pinhole a direct-IP host asks for, opened for the address
     /// <paramref name="address"/> names on each call, or null for a carrier reachable without one.

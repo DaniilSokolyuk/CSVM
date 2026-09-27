@@ -61,6 +61,22 @@ public sealed class EnetTransportTests
         Assert.Throws<ArgumentOutOfRangeException>(() => EnetTransport.Host(47099, 0));
     }
 
+    // The wildcard host listens on IPv4's wildcard, the stable address and loopback, so an IPv6
+    // reply leaves from the address a guest dials. IPv6's own wildcard is the bug it replaces.
+    [Fact]
+    public void A_wildcard_host_listens_on_ipv4s_wildcard_the_stable_address_and_loopback()
+    {
+        const string Stable = "2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90";
+        Assert.Equal(new[] { "0.0.0.0", Stable, "::1" }, EnetTransport.ListenAddresses(EnetTransport.Wildcard, Stable));
+        Assert.Equal(new[] { "0.0.0.0", "::1" }, EnetTransport.ListenAddresses(EnetTransport.Wildcard, null));
+        Assert.DoesNotContain(EnetTransport.Wildcard, EnetTransport.ListenAddresses(EnetTransport.Wildcard, Stable));
+        Assert.DoesNotContain("::", EnetTransport.ListenAddresses(EnetTransport.Wildcard, Stable));
+
+        // ABLE-TO-FAIL CONTROL: an explicit bind is kept as the only socket, stable address or not.
+        Assert.Equal(new[] { "127.0.0.1" }, EnetTransport.ListenAddresses("127.0.0.1", Stable));
+        Assert.Equal(new[] { Stable }, EnetTransport.ListenAddresses(Stable, null));
+    }
+
     [Fact]
     public void A_join_with_no_address_is_refused()
     {

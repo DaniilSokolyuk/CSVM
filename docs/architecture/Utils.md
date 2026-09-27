@@ -56,6 +56,14 @@ search still asks at the limited broadcast. It lives here because `CSVM.Net` may
 `System.Net`, and Godot's interface list carries no masks. `Launcher.cs` hands it to the door as
 `NetPlayFeature.LanNetworks`; `Net/LanBroadcast.cs` turns it into addresses.
 
+## src/Utils/HostAddress.cs
+The addresses a host names to its guests. `StableGlobalIPv6()` is the first global unicast IPv6
+address that is neither temporary (a privacy address) nor deprecated, so never a ULA, link-local
+or Teredo one; `LanIPv4()` is the private IPv4 address on an adapter with a gateway. Windows reads
+`SuffixOrigin` and the DAD state, Linux reads `/proc/net/if_inet6`, and neither read throws.
+`Choose`, `ChooseLan` and `ParseLinuxTable` take data, so a unit test supplies the candidates.
+`EnetTransport` binds the stable address, and `NetCarrier` hands both reads to the door.
+
 ## src/Utils/BuildVersion.cs
 The build's own version, read once from `application/config/version` in `project.godot`, which is
 the number's one home. Three surfaces state it back so a report names its build without being

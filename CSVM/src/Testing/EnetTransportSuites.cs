@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using CSVM.Net;
+using CSVM.Utils;
 
 namespace CSVM.Testing;
 
@@ -15,6 +16,7 @@ internal static class EnetTransportSuites
     // Loopback only. A wildcard bind is what makes Windows ask the user about the firewall, and a
     // test run must never put a dialog on anybody's screen.
     private const string Loopback = "127.0.0.1";
+    private const string LoopbackV6 = "::1";
 
     // Below the ephemeral range Windows allocates from. Walked rather than fixed, so a second run
     // does not fail on a port its sibling still holds.
@@ -24,6 +26,12 @@ internal static class EnetTransportSuites
     // The stall suite's own walk. Engine suites run in parallel shards, and a busy port costs an
     // engine error line that the battery counts against the shard.
     private const int StallFirstPort = 47130;
+
+    // The two address-family suites' walks, and how far above its host's port a guest that names
+    // its own source port sends from.
+    private const int DualFirstPort = 47800;
+    private const int StableFirstPort = 47840;
+    private const int GuestPortOffset = 100;
 
     // How long a wait for the other end may take before the check that wanted it reports what it
     // saw instead. Loopback delivery is sub-millisecond; this is the give-up, not the budget.
@@ -178,7 +186,172 @@ internal static class EnetTransportSuites
         }
     }
 
+    [Suite("enet-dual-stack",
+        "one ENet host over an IPv4 and an IPv6 socket on the same port, both loopback: a guest on "
+        + "127.0.0.1 and a guest on ::1 both join one roster under distinct ids, a payload reaches "
+        + "each through its own socket and comes back, one guest's hang-up leaves the other linked, "
+        + "and a host with the IPv4 socket alone does not admit the IPv6 guest")]
+    internal static void OneHostOverBothFamilies(TestContext ctx)
+    {
+        EnetTransport? host = null;
+        EnetTransport? v4 = null;
+        EnetTransport? v6 = null;
+        try
+        {
+            host = OpenOn(new[] { Loopback, LoopbackV6 }, DualFirstPort, out int port, out string why);
+            if (host == null)
+            {
+                ctx.Check(false, $"ENet cannot host on {Loopback} and {LoopbackV6} on one port: {why}");
+                return;
+            }
+
+            ctx.Check(host.Sockets == 2, $"the host opened both sockets on port {port} ({host.Sockets})");
+            v4 = EnetTransport.Join(Loopback, port);
+            v6 = EnetTransport.Join(LoopbackV6, port);
+            var atHost = new Recorder();
+            var at4 = new Recorder();
+            var at6 = new Recorder();
+            host.Bind(atHost);
+            v4.Bind(at4);
+            v6.Bind(at6);
+            PumpAll(new[] { host, v4, v6 }, () => atHost.Connected.Count >= 2 && at4.Connected.Count > 0 && at6.Connected.Count > 0);
+            int id4 = v4.LocalPeer;
+            int id6 = v6.LocalPeer;
+            ctx.Check(host.Peers.OrderBy(p => p).SequenceEqual(new[] { id4, id6 }.OrderBy(p => p)) && id4 != id6,
+                $"both guests join the one roster under distinct ids ({Ids(host.Peers)} against {id4} and {id6})");
+            ctx.Check(v4.LinkState == EnetLinkState.Up && v6.LinkState == EnetLinkState.Up,
+                $"and both guests' links read up ({v4.LinkState} and {v6.LinkState})");
+
+            host.Send(id4, Payload(0x44, 12), NetReliability.Reliable);
+            host.Send(id6, Payload(0x66, 12), NetReliability.Reliable);
+            v6.Send(1, Payload(0x16, 12), NetReliability.Reliable);
+            PumpAll(new[] { host, v4, v6 }, () => at4.Payloads.Count > 0 && at6.Payloads.Count > 0 && atHost.Payloads.Count > 0);
+            ctx.Check(at4.Payloads.Count == 1 && at4.Payloads[0].Bytes[0] == 0x44
+                      && at6.Payloads.Count == 1 && at6.Payloads[0].Bytes[0] == 0x66,
+                $"a payload to each guest reaches that guest alone ({at4.Payloads.Count} and {at6.Payloads.Count} landed)");
+            ctx.Check(atHost.Payloads.Count == 1 && atHost.Payloads[0].Peer == id6 && atHost.Payloads[0].Bytes[0] == 0x16,
+                $"and the IPv6 guest's payload reaches the host under its own id (from {atHost.Payloads.FirstOrDefault()?.Peer})");
+
+            v4.Disconnect(1);
+            PumpAll(new[] { host, v4, v6 }, () => atHost.Disconnected.Count > 0);
+            ctx.Check(host.Peers.SequenceEqual(new[] { id6 }) && v6.LinkState == EnetLinkState.Up,
+                $"the IPv4 guest's hang-up leaves the IPv6 guest linked alone ({Ids(host.Peers)}, {v6.LinkState})");
+        }
+        finally
+        {
+            v6?.Dispose();
+            v4?.Dispose();
+            host?.Dispose();
+        }
+
+        // The IPv6 guest joins through the IPv6 socket, not through anything the IPv4 one does.
+        using var alone = OpenOn(new[] { Loopback }, DualFirstPort + PortsToTry, out int alonePort, out _);
+        if (alone == null)
+        {
+            ctx.Check(false, $"control: ENet cannot host on {Loopback} alone");
+            return;
+        }
+
+        using var stray = EnetTransport.Join(LoopbackV6, alonePort);
+        PumpAll(new EnetTransport[] { alone, stray }, () => stray.LinkState != EnetLinkState.Connecting, QuietSeconds * 5.0);
+        ctx.Check(stray.LinkState != EnetLinkState.Up && alone.Peers.Count == 0,
+            $"ABLE-TO-FAIL CONTROL: a host with the IPv4 socket alone does not admit the IPv6 guest ({stray.LinkState}, roster {Ids(alone.Peers)})");
+    }
+
+    [Suite("enet-stable-ipv6-reply",
+        "a host on every interface answers a guest that dialled this machine's stable global IPv6 "
+        + "address from that address: a guest sending from the temporary privacy address joins it, an "
+        + "IPv4 guest joins the same port, and a host on one dual-stack wildcard socket, which "
+        + "answers from the temporary address, does not admit the same guest. Skipped on a machine "
+        + "without both a stable and a temporary global IPv6 address")]
+    internal static void AStableAddressAnswersFromItself(TestContext ctx)
+    {
+        string? stable = HostAddress.StableGlobalIPv6();
+        string? temporary = HostAddress.Ipv6Addresses()
+            .Where(a => a.Temporary && a.Preferred && HostAddress.Choose(new[] { a with { Temporary = false } }) != null)
+            .Select(a => a.Address)
+            .FirstOrDefault();
+        if (stable == null || temporary == null)
+        {
+            throw new SuiteSkippedException(
+                $"needs a stable and a temporary global IPv6 address (stable {stable ?? "none"}, temporary {temporary ?? "none"})");
+        }
+
+        ctx.Note($"stable {stable}, temporary {temporary}");
+        var shipped = EnetTransport.ListenAddresses(EnetTransport.Wildcard, stable);
+        using (var host = OpenOn(shipped, StableFirstPort, out int port, out string why))
+        {
+            if (host == null)
+            {
+                ctx.Check(false, $"ENet cannot host on {string.Join(", ", shipped)}: {why}");
+                return;
+            }
+
+            using var guest = EnetTransport.Join(stable, port, null, temporary, port + GuestPortOffset);
+            using var v4 = EnetTransport.Join(Loopback, port);
+            PumpAll(new[] { host, guest, v4 }, () => host.Peers.Count >= 2);
+            ctx.Check(host.Sockets == shipped.Count, $"the host opened every shipped socket ({host.Sockets} of {shipped.Count})");
+            ctx.Check(guest.LinkState == EnetLinkState.Up && host.Peers.Contains(guest.LocalPeer),
+                $"a guest sending from [{temporary}] joins [{stable}]:{port} ({guest.LinkState}, roster {Ids(host.Peers)})");
+            ctx.Check(v4.LinkState == EnetLinkState.Up && host.Peers.Contains(v4.LocalPeer),
+                $"and an IPv4 guest joins the same port on {Loopback} ({v4.LinkState})");
+        }
+
+        // The shape the fix replaced: IPv6's wildcard answers from the address Windows picks.
+        using var wild = OpenOn(new[] { EnetTransport.Wildcard }, StableFirstPort + PortsToTry, out int wildPort, out string wildWhy);
+        if (wild == null)
+        {
+            ctx.Check(false, $"control: ENet cannot host on the wildcard: {wildWhy}");
+            return;
+        }
+
+        using var dropped = EnetTransport.Join(stable, wildPort, null, temporary, wildPort + GuestPortOffset);
+        PumpAll(new EnetTransport[] { wild, dropped }, () => dropped.LinkState == EnetLinkState.Up, WaitSeconds);
+        ctx.Check(dropped.LinkState != EnetLinkState.Up,
+            $"ABLE-TO-FAIL CONTROL: a host on the dual-stack wildcard does not admit the same guest ({dropped.LinkState}, roster {Ids(wild.Peers)})");
+    }
+
     private static string Ids(IEnumerable<int> peers) => string.Join(", ", peers);
+
+    // The first port of the walk on which the first address binds.
+    private static EnetTransport? OpenOn(IReadOnlyList<string> addresses, int firstPort, out int port, out string why)
+    {
+        why = "no port tried";
+        for (int i = 0; i < PortsToTry; i++)
+        {
+            port = firstPort + i;
+            try
+            {
+                return EnetTransport.Host(port, maxPeers: 4, addresses);
+            }
+            catch (InvalidOperationException e)
+            {
+                why = e.Message;
+            }
+        }
+
+        port = 0;
+        return null;
+    }
+
+    private static void PumpAll(IReadOnlyList<EnetTransport> ends, Func<bool> until, double seconds = WaitSeconds)
+    {
+        var watch = Stopwatch.StartNew();
+        while (true)
+        {
+            foreach (var end in ends)
+            {
+                end.Step(0.001);
+            }
+
+            if (until() || watch.Elapsed.TotalSeconds >= seconds)
+            {
+                return;
+            }
+
+            Thread.Sleep(1);
+        }
+    }
 
     // One end stalls while the other steps and sends reliably into the stall. That is a host that
     // finished its load talking to a guest still in its own.

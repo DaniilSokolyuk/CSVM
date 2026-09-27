@@ -259,6 +259,20 @@ public sealed class MenuInput
             || (key.Keycode == Key.Insert && key.ShiftPressed && !key.CtrlPressed);
     }
 
+    /// <summary>Whether a key event is a copy chord: Ctrl+C (Cmd+C on macOS) or Ctrl+Insert, under
+    /// <see cref="IsPasteChord"/>'s rule for Alt. A hosting door copies its address on it.</summary>
+    public static bool IsCopyChord(InputEventKey key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        if (!key.Pressed || key.Echo || key.AltPressed || key.ShiftPressed)
+        {
+            return false;
+        }
+
+        return (key.Keycode == Key.C && key.IsCommandOrControlPressed())
+            || (key.Keycode == Key.Insert && key.CtrlPressed);
+    }
+
     /// <summary>The board reader a flight session gives the player at zero-based
     /// <paramref name="playerIndex"/>. It reads the keyboard for the first player only, the pads
     /// <paramref name="pads"/> names, and that player's saved menu keymap. Loading the keymap is what

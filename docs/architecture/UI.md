@@ -1346,7 +1346,7 @@ a board edits, the socket it opens, and the readouts a board draws (`Stage`, `Pe
 carrier in a `Net/NetLobby.cs`. `OpenHost`, `OpenCoopHost` (whose `Offer` names the mission) and
 `OpenJoin` open; `Step` carries the link and moves `Revision` on news, which both menus repaint on; `Close` gives both leases back. In co-op `ShowCoop` sends each
 guest the host's boards, `CoopAllReady` holds FLY MISSION until every guest is Ready, `CoopLaunchDue` tells a guest to follow, `TellSeatFits` sends every seat's fit before the opener, and
-`LeaveCoopMission` tells the host at once that a guest walked out. `OpenDogfightHost` opens a Dogfight lobby, and `Dogfight` is the `DogfightLobby` either end stands in, created on a guest when its host's advert names a Dogfight and unshown behind a Built-in host; `DogfightLaunchDue` tells a guest its host has launched, and a guest back from a match waits for the host's next round. `Version` is the build's `Net/NetBuildVersion.cs`: a host refuses a guest of another version, and a guest such a host, with both versions on `Fault`. `TypeAddress` and `PasteAddress` take an address up to `AddressLimit`, brackets included, and `OpenJoin` opens on `JoinTarget`, the address split by `SplitAddress`: a port follows a closing bracket or a lone colon, so a bare IPv6 address is all host. `SessionSpec.ParseJoin` shares the rule. Boards: `LaunchMenu.cs`.
+`LeaveCoopMission` tells the host at once that a guest walked out. `OpenDogfightHost` opens a Dogfight lobby, and `Dogfight` is the `DogfightLobby` either end stands in, created on a guest when its host's advert names a Dogfight and unshown behind a Built-in host; `DogfightLaunchDue` tells a guest its host has launched, and a guest back from a match waits for the host's next round. `Version` is the build's `Net/NetBuildVersion.cs`: a host refuses a guest of another version, and a guest such a host, with both versions on `Fault`. `TypeAddress` and `PasteAddress` take an address up to `AddressLimit`, brackets included, and `OpenJoin` opens on `JoinTarget`, the address split by `SplitAddress`: a port follows a closing bracket or a lone colon, so a bare IPv6 address is all host. `SessionSpec.ParseJoin` shares the rule. A host reads `StableIpv6` and `LanIpv4` as it opens; `GuestAddress` is what a guest types, and `CopyGuestAddress` hands it to `CopyText` (the launcher's clipboard, on Ctrl+C). Boards: `LaunchMenu.cs`.
 
 ## src/UI/Menu/DogfightLobby.cs
 The Multiplayer Lobby's state over a `Net/NetLobby.cs`, engine-free, one class for both ends.
@@ -1356,14 +1356,14 @@ A guest reads the options and the host's player list, and sends its stock plane,
 Wire: [../org/multiplayer-messages.md](../org/multiplayer-messages.md). Coverage: `CSVM.Tests/DogfightLobbyTests.cs`.
 
 ## src/UI/Menu/CoopDoorText.cs
-The words the campaign's network door is drawn in, engine-free and built off the door alone: the
-host's band (`HostBand`, the open port, the router's address and the guest count), what the router
-said about the port (`RouterStatus`, the Network board's clause per outcome, and `PinholeStatus`
-for the IPv6 pinhole), the session an
-advert names (`SessionName`), the join board's status (`JoinedStatus`) and the waiting board's
-(`WaitingStatus`), the games list's cells with a version mark (`Status`), the refusal naming both
-versions (`VersionMismatch`), and the rows and presses those boards show. The mission's long name comes in as
-a delegate, since only the caller holds the langui table.
+The words the network door is drawn in, engine-free and built off the door alone: the host's band
+(`HostBand`: port, router address, guest count, then `HostAddressLine`), the router's answers
+(`RouterStatus`, `PinholeStatus`; `HostPinholeStatus` omits an address already named), what a
+guest types (`HostAddressStatus` on the board, `HostAddressNotes` in a Dogfight host's lobby), an
+advert's session (`SessionName`), the join and waiting boards' status (`JoinedStatus`,
+`WaitingStatus`), the games list's cells with a version mark (`Status`), the refusal naming both
+versions (`VersionMismatch`), and those boards' rows and presses. The mission's long name comes in
+as a delegate, since only the caller holds the langui table.
 
 ## src/UI/Menu/NetDoorAid.cs
 The multiplayer doors the `--menu=` screenshot aids stand on: a host door over a loopback wire with

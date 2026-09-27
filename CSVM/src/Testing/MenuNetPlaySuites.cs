@@ -61,6 +61,83 @@ internal static class MenuNetPlaySuites
         }
     }
 
+    [Suite("menu-host-address",
+        "a hosting door names the address a guest types and copies it: the Built-in board's status "
+        + "line names a stand-in stable IPv6 address bracketed with the walked port and the LAN "
+        + "address beside it, a Ctrl+C key event is a copy chord where Ctrl+V, a bare C and Ctrl+Shift+C "
+        + "are not, the copy puts that bracketed address on a stand-in clipboard and the status line "
+        + "says so, and a door with no clipboard copies nothing")]
+    internal static void TheHostNamesAndCopiesItsAddress(TestContext ctx)
+    {
+        ctx.RequireData(ctx.ZrdrPath, $"zrdr archive");
+        const string Stable = "2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90";
+        const string Lan = "192.168.178.20";
+        var copied = new List<string>();
+        var door = new NetPlayFeature(
+            (port, guests, bind) => EnetTransport.Host(port, guests, bind),
+            (address, port) => EnetTransport.Join(address, port))
+        {
+            BindAddress = "127.0.0.1",
+            StableIpv6 = () => Stable,
+            LanIpv4 = () => Lan,
+            CopyText = copied.Add,
+        };
+        var exits = new List<MenuExit>();
+        var host = MenuSuiteHost.Bare(exits, ctx.DataRoot, out var seat, netDoor: door);
+        var menu = LaunchMenu.Build(ctx.ZrdrPath, ctx.DataRoot, host, seat.Input);
+        ctx.Host.AddChild(menu);
+        try
+        {
+            menu.ShowMenu();
+            OpenBoard(ctx, menu);
+            int port = HostAMatch(ctx, menu, door);
+            if (port == 0)
+            {
+                return;
+            }
+
+            string dialled = NetPlayFeature.Endpoint(Stable, port);
+            string lan = NetPlayFeature.Endpoint(Lan, port);
+            ctx.Check(menu.ShownDetail.Contains($"Guests type {dialled}, or {lan} on this network.", StringComparison.Ordinal)
+                      && menu.ShownDetail.Contains($"{CoopDoorText.CopyPress} copies {dialled}.", StringComparison.Ordinal),
+                $"the status line names the bracketed IPv6 address, the LAN address and the copy key ({menu.ShownDetail})");
+
+            bool Chord(Godot.Key key, bool ctrl, bool shift = false) => MenuInput.IsCopyChord(
+                new Godot.InputEventKey { Keycode = key, PhysicalKeycode = key, CtrlPressed = ctrl, ShiftPressed = shift, Pressed = true });
+            ctx.Check(Chord(Godot.Key.C, ctrl: true) && Chord(Godot.Key.Insert, ctrl: true),
+                $"Ctrl+C and Ctrl+Insert are copy chords");
+            ctx.Check(!Chord(Godot.Key.V, ctrl: true) && !Chord(Godot.Key.C, ctrl: false) && !Chord(Godot.Key.C, ctrl: true, shift: true),
+                $"ABLE-TO-FAIL CONTROL: Ctrl+V, a bare C and Ctrl+Shift+C are not");
+
+            int revision = door.Revision;
+            bool took = door.CopyGuestAddress();
+            door.Step(0.016);
+            ctx.Check(took && copied.Count == 1 && copied[0] == dialled,
+                $"the copy puts the bracketed address on the clipboard ({took}, {string.Join(" | ", copied)})");
+            ctx.Check(door.Revision > revision && menu.ShownDetail.Contains($"{dialled} is copied.", StringComparison.Ordinal),
+                $"and the status line says so on the next step ({menu.ShownDetail})");
+        }
+        finally
+        {
+            door.Discard();
+            ctx.Host.RemoveChild(menu);
+            menu.QueueFree();
+        }
+
+        var mute = MenuSuiteHost.NetDoor();
+        try
+        {
+            mute.StepPort(1);
+            mute.OpenHost(1);
+            ctx.Check(mute.IsHost && !mute.CopyGuestAddress() && CoopDoorText.HostAddressStatus(mute).Length == 0,
+                $"ABLE-TO-FAIL CONTROL: a door with no address seam and no clipboard names nothing and copies nothing ({mute.Stage}, {mute.Fault})");
+        }
+        finally
+        {
+            mute.Discard();
+        }
+    }
+
     // The Mode screen's last row, and what the board looks like before anything is open.
     private static void OpenBoard(TestContext ctx, LaunchMenu menu)
     {

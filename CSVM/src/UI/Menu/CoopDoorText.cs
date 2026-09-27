@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using CSVM.Net;
 
@@ -45,6 +46,15 @@ public static class CoopDoorText
 
     /// <summary>The cabin's door while it is open.</summary>
     public const string CloseNetworkButton = "CLOSE NETWORK";
+
+    /// <summary>The press that copies a host's address, as its boards name it.</summary>
+    public const string CopyPress = "Ctrl+C";
+
+    /// <summary>A host's word when this machine holds no stable global IPv6 address.</summary>
+    public const string NoIpv6 = "No global IPv6 address";
+
+    /// <summary>The name a Dogfight host's own address notes stand under in its lobby chat.</summary>
+    public const string NoteName = "Network";
 
     /// <summary>The games list's Game Name: the host's name and what it holds open.</summary>
     public static string GameName(SessionAdvertMessage advert)
@@ -188,9 +198,10 @@ public static class CoopDoorText
         return $"{SessionName(advert, missionName)}. {Capital(HostedBy(advert))}{Players(advert.Players)} at {net.Address}. {state}";
     }
 
-    /// <summary>A campaign host's band: the port, the address the router reports, and how many
-    /// guests are on the wire. Empty while the door is not a campaign host, so a board with the
-    /// door shut draws nothing extra.</summary>
+    /// <summary>A campaign host's band: the port, the router's address and the guests on the
+    /// wire. <see cref="HostAddressLine"/> follows on a second line when it has
+    /// one. Empty while the door is not a campaign host, so a board with the door shut draws
+    /// nothing extra.</summary>
     public static string HostBand(NetPlayFeature net)
     {
         ArgumentNullException.ThrowIfNull(net);
@@ -209,7 +220,87 @@ public static class CoopDoorText
         };
         int guests = net.Peers;
         string joined = guests == 1 ? "1 guest" : $"{guests.ToString(CultureInfo.InvariantCulture)} guests";
-        return $"NETWORK OPEN  {where}  {joined}";
+        string address = HostAddressLine(net);
+        return address.Length > 0 ? $"NETWORK OPEN  {where}  {joined}\n{address}" : $"NETWORK OPEN  {where}  {joined}";
+    }
+
+    /// <summary>A host band's second line: the IPv6 address a guest outside this network types,
+    /// and the copy key. Without one it says so and names the LAN address. Empty while the door is
+    /// not hosting or names no address.</summary>
+    public static string HostAddressLine(NetPlayFeature net)
+    {
+        ArgumentNullException.ThrowIfNull(net);
+        if (!net.IsHost || !net.NamesHostAddress)
+        {
+            return "";
+        }
+
+        string copy = net.GuestAddress.Length == 0 ? "" : net.Copies > 0 ? "  copied" : $"  {CopyPress}";
+        if (net.HostIpv6 is { } v6)
+        {
+            return $"IPv6  {net.Dial(v6)}{copy}";
+        }
+
+        string lan = net.HostLanIpv4 is { } v4 ? $"  LAN {net.Dial(v4)}" : "";
+        return $"{NoIpv6}{lan}{copy}";
+    }
+
+    /// <summary>The Network board's sentences about a host's address: what a guest types, on this
+    /// network and outside it, and how to copy it. Empty while the door is not hosting or names no
+    /// address.</summary>
+    public static string HostAddressStatus(NetPlayFeature net)
+    {
+        ArgumentNullException.ThrowIfNull(net);
+        if (!net.IsHost || !net.NamesHostAddress)
+        {
+            return "";
+        }
+
+        string lan = net.HostLanIpv4 is { } v4 ? net.Dial(v4) : "";
+        string copy = net.GuestAddress.Length == 0 ? ""
+            : net.Copies > 0 ? $" {net.GuestAddress} is copied."
+            : $" {CopyPress} copies {net.GuestAddress}.";
+        if (net.HostIpv6 is { } v6)
+        {
+            string local = lan.Length > 0 ? $", or {lan} on this network" : "";
+            return $"Guests type {net.Dial(v6)}{local}.{copy}";
+        }
+
+        string onLan = lan.Length > 0 ? $"; guests on this network type {lan}" : "";
+        return $"This machine has no global IPv6 address{onLan}.{copy}";
+    }
+
+    /// <summary>The lines a Dogfight host's own lobby chat shows under <see cref="NoteName"/> when
+    /// it opens: the address to give and the copy key. Each fits a typed chat line.</summary>
+    public static IReadOnlyList<string> HostAddressNotes(NetPlayFeature net)
+    {
+        ArgumentNullException.ThrowIfNull(net);
+        if (!net.IsHost || !net.NamesHostAddress)
+        {
+            return Array.Empty<string>();
+        }
+
+        var lines = new List<string>();
+        string lan = net.HostLanIpv4 is { } v4 ? net.Dial(v4) : "";
+        if (net.HostIpv6 is { } v6)
+        {
+            lines.Add($"Guests type {net.Dial(v6)}");
+            lines.Add(lan.Length > 0 ? $"or {lan} on this network. {CopyPress} copies the first." : $"{CopyPress} copies it.");
+            return lines;
+        }
+
+        lines.Add($"{NoIpv6}.");
+        if (lan.Length > 0)
+        {
+            lines.Add($"Guests on this network type {lan}.");
+        }
+
+        if (net.GuestAddress.Length > 0)
+        {
+            lines.Add($"{CopyPress} copies {net.GuestAddress}.");
+        }
+
+        return lines;
     }
 
     /// <summary>What the router said about a host's port, as a sentence for the door's status
@@ -247,6 +338,26 @@ public static class CoopDoorText
             UpnpPinholeOutcome.NoAddress => "IPv6: no stable address to open a port for.",
             _ => $"IPv6: opening UDP port {port} on the router failed ({pinhole.Detail}).",
         };
+    }
+
+    /// <summary>The door's pinhole clause, or empty when no pinhole was asked for. Where
+    /// <see cref="HostAddressStatus"/> already names the address, the clause leaves it out, so the
+    /// status line names it once.</summary>
+    public static string HostPinholeStatus(NetPlayFeature net)
+    {
+        ArgumentNullException.ThrowIfNull(net);
+        if (net.Pinhole is not { } pinhole)
+        {
+            return "";
+        }
+
+        bool named = net.IsHost && net.NamesHostAddress;
+        if (named && pinhole.Outcome == UpnpPinholeOutcome.Opened && pinhole.Address == net.HostIpv6)
+        {
+            return $"IPv6: router opened UDP port {pinhole.Port.ToString(CultureInfo.InvariantCulture)}.";
+        }
+
+        return named && net.HostIpv6 == null && pinhole.Outcome == UpnpPinholeOutcome.NoAddress ? "" : PinholeStatus(pinhole);
     }
 
     /// <summary>A co-op guest's band over the host's boards. It says whose campaign it follows and

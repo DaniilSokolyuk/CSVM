@@ -825,14 +825,22 @@ public sealed class OriginalCampaignScreen : IOriginalScreenModule
         _ => false,
     };
 
-    // One line of network state over a dark ground, in the painting's empty top-left corner.
+    // The network state's lines over one dark ground, in the painting's empty top-left corner.
     private static void ComposeBand(string band, BoardLayers layers)
     {
-        if (band.Length > 0)
+        if (band.Length == 0)
         {
-            layers.Fills.Add(new BoardFill(CoopDoorX - 4f, CoopBandY - 3f, CoopBandWidth, CoopBandSize + 8f, 0, 0, 0, CoopBandGround));
-            layers.Lines.Add(new BoardLine(band, CoopDoorX, CoopBandY, CoopBandWidth, CoopBandSize, BoardInk.Row, -1,
-                Colour: new BoardTint(226, 224, 206)));
+            return;
+        }
+
+        string[] lines = band.Split('\n');
+        float pitch = CoopBandSize + 4f;
+        layers.Fills.Add(new BoardFill(CoopDoorX - 4f, CoopBandY - 3f, CoopBandWidth,
+            CoopBandSize + 8f + ((lines.Length - 1) * pitch), 0, 0, 0, CoopBandGround));
+        for (int i = 0; i < lines.Length; i++)
+        {
+            layers.Lines.Add(new BoardLine(lines[i], CoopDoorX, CoopBandY + (i * pitch), CoopBandWidth, CoopBandSize,
+                BoardInk.Row, -1, Colour: new BoardTint(226, 224, 206)));
         }
     }
 

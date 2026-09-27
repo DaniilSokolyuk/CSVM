@@ -181,8 +181,8 @@ lines**.
   unchecked is the same rule, and spelling this flag out beats the box)
 - `--net-host[=port]`, `--net-host=address:port` (open a listen server and fly this session as its
   host, the scripted twin of the menu's multiplayer door over the same socket. A bare flag takes
-  the default port 47500 on every interface, a numeric value sets the port, and an `address:port`
-  value binds that one interface, IPv6 in brackets. ⚠ A scripted run names `127.0.0.1`: a wildcard
+  port 47500 on IPv4's wildcard, the stable global IPv6 address and `::1`, a number sets the port,
+  and `address:port` binds that one address, IPv6 in brackets. ⚠ A scripted run names `127.0.0.1`: a wildcard
   bind is what puts a Windows firewall dialog on somebody's screen. A host waits for nobody and
   flies alone until a guest arrives)
 - `--net-join=address[:port]` (join the match at that address and fly this session as a guest,

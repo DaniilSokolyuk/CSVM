@@ -37,10 +37,11 @@ public interface INetLink
 /// <summary>
 /// The shipped carrier: <see cref="INetTransport"/> over Godot's ENet peer, which is UDP with
 /// ENet's own three delivery classes. Every roster change and every payload is reported from
-/// inside <see cref="Step"/>. A session therefore sees the loopback's own rule: nothing arrives
-/// between steps. A host is peer 1 and a guest takes the id ENet assigns it, which is the id
-/// every peer addresses it by. A service thread polls ENet while the main thread does not step,
-/// so a blocking load does not read as a dead link (docs/architecture/Net.md).
+/// inside <see cref="Step"/>, so nothing arrives between steps, as on the loopback. A host is
+/// peer 1 and a guest takes the id ENet assigns it, which is the id every peer addresses it by.
+/// A host opens one socket per address of <see cref="ListenAddresses"/>, merged into one roster.
+/// A service thread polls ENet while the main thread does not step, so a blocking load does not
+/// read as a dead link (docs/architecture/Net.md).
 /// ⚠ This is the only type under <c>CSVM/</c> that may name a Godot networking type;
 /// <c>CSVM.Tests/NetNamespaceDependencyTests.cs</c> asserts that over compiled metadata.
 /// </summary>
@@ -51,6 +52,9 @@ public sealed class EnetTransport : INetTransport, INetLink, IDisposable
     /// channel and a state and a fire channel per seat, as <see cref="NetChannels"/> lays them
     /// out. A send past the count is a programming error rather than a dropped payload.</summary>
     public const int ChannelCount = NetChannels.Count;
+
+    /// <summary>The bind address that means every interface.</summary>
+    public const string Wildcard = "*";
 
     /// <summary>How many payloads are held for a listener that has not bound yet. Deep enough for
     /// a join answer and the openers behind it, shallow enough that a carrier nobody ever binds
@@ -76,29 +80,40 @@ public sealed class EnetTransport : INetTransport, INetLink, IDisposable
     // loads the service thread carried.
     private const double StallLogSeconds = 1.0;
 
-    // ⚠ Every touch of _peer happens under this gate. The service thread polls it, and Godot's
-    // ENet peer is not safe to use from two threads at once.
+    // ⚠ Every touch of an ENet peer happens under this gate. The service thread polls them, and
+    // Godot's ENet peer is not safe to use from two threads at once.
     private readonly object _gate = new();
-    private readonly ENetMultiplayerPeer _peer;
+    private readonly Listener[] _sockets;
+    private readonly Dictionary<int, Listener> _owner = new();
     private readonly List<int> _peers = new();
-    private readonly List<(int Peer, bool Joined)> _roster = new();
+    private readonly List<(int Peer, bool Joined, Listener From)> _roster = new();
     private readonly List<(int Peer, int Channel, byte[] Bytes)> _held = new();
     private readonly Stopwatch _wall = Stopwatch.StartNew();
     private readonly Keepalive _keepalive;
     private readonly int _local;
+    private readonly int _maxPeers;
     private INetTransportListener? _listener;
     private bool _closed;
     private bool _frozen;
     private double _steppedAt;
     private int _servicePolls;
 
-    private EnetTransport(ENetMultiplayerPeer peer, Keepalive keepalive)
+    private EnetTransport(IReadOnlyList<ENetMultiplayerPeer> sockets, Keepalive keepalive, int maxPeers)
     {
-        _peer = peer;
         _keepalive = keepalive;
-        _local = peer.GetUniqueId();
-        peer.PeerConnected += OnEnetPeerConnected;
-        peer.PeerDisconnected += OnEnetPeerDisconnected;
+        _maxPeers = maxPeers;
+        _sockets = new Listener[sockets.Count];
+        for (int i = 0; i < sockets.Count; i++)
+        {
+            var socket = new Listener(sockets[i]);
+            socket.Joined = id => OnEnetPeerConnected(socket, id);
+            socket.Left = id => _roster.Add(((int)id, false, socket));
+            socket.Peer.PeerConnected += socket.Joined;
+            socket.Peer.PeerDisconnected += socket.Left;
+            _sockets[i] = socket;
+        }
+
+        _local = _sockets[0].Peer.GetUniqueId();
         var service = new Thread(Serve) { IsBackground = true, Name = "enet-service" };
         service.Start();
     }
@@ -121,7 +136,7 @@ public sealed class EnetTransport : INetTransport, INetLink, IDisposable
             {
                 return _closed
                     ? EnetLinkState.Down
-                    : _peer.GetConnectionStatus() switch
+                    : _sockets[0].Peer.GetConnectionStatus() switch
                     {
                         MultiplayerPeer.ConnectionStatus.Connected => EnetLinkState.Up,
                         MultiplayerPeer.ConnectionStatus.Connecting => EnetLinkState.Connecting,
@@ -134,54 +149,94 @@ public sealed class EnetTransport : INetTransport, INetLink, IDisposable
     /// <inheritdoc/>
     public int PendingPayloads => _held.Count;
 
+    /// <summary>How many sockets this end listens on. A guest and an explicit bind have one; a
+    /// wildcard host has one per opened address.</summary>
+    public int Sockets => _sockets.Length;
+
     /// <summary>Opens a listen server on <paramref name="port"/> for up to
-    /// <paramref name="maxPeers"/> guests. <paramref name="bindAddress"/> is every interface by
-    /// default. A suite passes the loopback address instead, so a run never asks the firewall for
-    /// anything. Throws when the socket cannot be opened, which is a taken port or a bad
-    /// address. <paramref name="keepalive"/> is <see cref="Keepalive.Shipped"/> unless a suite
-    /// shortens it.</summary>
-    public static EnetTransport Host(int port, int maxPeers, string bindAddress = "*", Keepalive? keepalive = null)
+    /// <paramref name="maxPeers"/> guests, on the sockets <see cref="ListenAddresses"/> names for
+    /// <paramref name="bindAddress"/>. A suite binds loopback, so a run never asks the firewall
+    /// for anything. Throws when the first socket will not open (a taken port or a bad address).
+    /// <paramref name="keepalive"/> is <see cref="Keepalive.Shipped"/> unless a suite shortens it.
+    /// </summary>
+    public static EnetTransport Host(int port, int maxPeers, string bindAddress = Wildcard, Keepalive? keepalive = null) =>
+        Host(port, maxPeers,
+            ListenAddresses(bindAddress, bindAddress == Wildcard ? HostAddress.StableGlobalIPv6() : null), keepalive);
+
+    /// <summary>Opens one listen server over several sockets on one port, which the session sees
+    /// as one carrier with one peer roster. The first address must open; a later one that will
+    /// not is logged and left out. <paramref name="maxPeers"/> caps the roster across them all.
+    /// </summary>
+    public static EnetTransport Host(int port, int maxPeers, IReadOnlyList<string> bindAddresses, Keepalive? keepalive = null)
     {
         RequirePort(port);
+        ArgumentNullException.ThrowIfNull(bindAddresses);
         if (maxPeers < 1)
         {
             throw new ArgumentOutOfRangeException(nameof(maxPeers), maxPeers, "a host admits at least one guest");
         }
 
-        var peer = new ENetMultiplayerPeer();
-        peer.SetBindIP(bindAddress);
-        var error = peer.CreateServer(port, maxPeers, ChannelCount);
-        if (error != Error.Ok)
+        if (bindAddresses.Count == 0)
         {
-            peer.Dispose();
-            throw new InvalidOperationException($"cannot host on {bindAddress}:{port}: {error}");
+            throw new ArgumentException("a host binds at least one address", nameof(bindAddresses));
         }
 
-        return new EnetTransport(peer, keepalive ?? Keepalive.Shipped);
+        var opened = new List<ENetMultiplayerPeer>();
+        var bound = new List<string>();
+        foreach (string address in bindAddresses)
+        {
+            var peer = new ENetMultiplayerPeer();
+            peer.SetBindIP(address);
+            var error = peer.CreateServer(port, maxPeers, ChannelCount);
+            if (error == Error.Ok)
+            {
+                opened.Add(peer);
+                bound.Add(address);
+                continue;
+            }
+
+            peer.Dispose();
+            if (opened.Count == 0)
+            {
+                throw new InvalidOperationException($"cannot host on {address}:{port}: {error}");
+            }
+
+            Log.Warn("core", $"net: host socket on {address} port {port} did not open ({error}); hosting without it");
+        }
+
+        Log.Info("core", $"net: hosting on port {port} at {string.Join(", ", bound)}");
+        return new EnetTransport(opened, keepalive ?? Keepalive.Shipped, maxPeers);
+    }
+
+    /// <summary>The sockets a host bound to <paramref name="bindAddress"/> opens. An explicit
+    /// address is one socket. The wildcard is IPv4's any address, then
+    /// <paramref name="stableIpv6"/> when there is one, then the IPv6 loopback.</summary>
+    /// <remarks>⚠ Do not bind IPv6's wildcard. A reply from it leaves from whichever address
+    /// Windows picks, by default a privacy address. The guest drops a reply from an address it did
+    /// not dial, and ENet cannot set a reply's source.</remarks>
+    public static IReadOnlyList<string> ListenAddresses(string bindAddress, string? stableIpv6)
+    {
+        if (bindAddress != Wildcard)
+        {
+            return new[] { bindAddress };
+        }
+
+        var addresses = new List<string> { "0.0.0.0" };
+        if (!string.IsNullOrEmpty(stableIpv6))
+        {
+            addresses.Add(stableIpv6);
+        }
+
+        addresses.Add("::1");
+        return addresses;
     }
 
     /// <summary>Starts a join to <paramref name="address"/> on <paramref name="port"/>. The
     /// returned transport is usable at once but not yet connected. The host arrives as an
     /// <see cref="INetTransportListener.OnPeerConnected"/> for peer 1 on a later
     /// <see cref="Step"/>, and a join that fails ends at <see cref="EnetLinkState.Down"/>.</summary>
-    public static EnetTransport Join(string address, int port, Keepalive? keepalive = null)
-    {
-        RequirePort(port);
-        if (string.IsNullOrWhiteSpace(address))
-        {
-            throw new ArgumentException("a join needs an address", nameof(address));
-        }
-
-        var peer = new ENetMultiplayerPeer();
-        var error = peer.CreateClient(address, port, ChannelCount);
-        if (error != Error.Ok)
-        {
-            peer.Dispose();
-            throw new InvalidOperationException($"cannot join {address}:{port}: {error}");
-        }
-
-        return new EnetTransport(peer, keepalive ?? Keepalive.Shipped);
-    }
+    public static EnetTransport Join(string address, int port, Keepalive? keepalive = null) =>
+        Join(address, port, keepalive, null, 0);
 
     /// <inheritdoc/>
     /// <remarks>The peers this end already has are announced from inside the call, and so is
@@ -220,15 +275,16 @@ public sealed class EnetTransport : INetTransport, INetLink, IDisposable
         Error error;
         lock (_gate)
         {
-            if (LinkState != EnetLinkState.Up || !_peers.Contains(peer))
+            if (LinkState != EnetLinkState.Up || !_peers.Contains(peer) || !_owner.TryGetValue(peer, out var socket))
             {
                 return;
             }
 
-            _peer.SetTargetPeer(peer);
-            _peer.TransferMode = ModeFor(reliability);
-            _peer.TransferChannel = channel;
-            error = _peer.PutPacket(payload);
+            var enet = socket.Peer;
+            enet.SetTargetPeer(peer);
+            enet.TransferMode = ModeFor(reliability);
+            enet.TransferChannel = channel;
+            error = enet.PutPacket(payload);
         }
 
         if (error != Error.Ok)
@@ -244,12 +300,12 @@ public sealed class EnetTransport : INetTransport, INetLink, IDisposable
     {
         lock (_gate)
         {
-            if (LinkState == EnetLinkState.Down || !_peers.Contains(peer))
+            if (LinkState == EnetLinkState.Down || !_peers.Contains(peer) || !_owner.TryGetValue(peer, out var socket))
             {
                 return;
             }
 
-            _peer.DisconnectPeer(peer);
+            socket.Peer.DisconnectPeer(peer);
         }
     }
 
@@ -272,30 +328,14 @@ public sealed class EnetTransport : INetTransport, INetLink, IDisposable
                 return;
             }
 
-            if (_peer.GetConnectionStatus() != MultiplayerPeer.ConnectionStatus.Disconnected)
-            {
-                _peer.Poll();
-            }
+            PollAll();
 
             // Before the payloads, which is the order a single poll reports them in. A departure
             // the service thread heard mid-load is reported here, on the first step after it.
             AnnounceRoster();
-            while (!_closed && _peer.GetConnectionStatus() != MultiplayerPeer.ConnectionStatus.Disconnected
-                   && _peer.GetAvailablePacketCount() > 0)
+            foreach (var socket in _sockets)
             {
-                // ⚠ Read the source and the channel before taking the packet. Both answer about
-                // the one still at the head of the queue, which taking it pops.
-                int from = _peer.GetPacketPeer();
-                int channel = _peer.GetPacketChannel();
-                byte[] payload = _peer.GetPacket();
-                if (_listener is { } listener)
-                {
-                    listener.OnPayload(from, channel, payload);
-                }
-                else
-                {
-                    Hold(from, channel, payload);
-                }
+                Drain(socket);
             }
         }
     }
@@ -313,10 +353,15 @@ public sealed class EnetTransport : INetTransport, INetLink, IDisposable
             }
 
             _closed = true;
-            _peer.PeerConnected -= OnEnetPeerConnected;
-            _peer.PeerDisconnected -= OnEnetPeerDisconnected;
-            _peer.Close();
-            _peer.Dispose();
+            foreach (var socket in _sockets)
+            {
+                socket.Peer.PeerConnected -= socket.Joined;
+                socket.Peer.PeerDisconnected -= socket.Left;
+                socket.Peer.Close();
+                socket.Peer.Dispose();
+            }
+
+            _owner.Clear();
             _peers.Clear();
             _roster.Clear();
             _held.Clear();
@@ -338,6 +383,33 @@ public sealed class EnetTransport : INetTransport, INetLink, IDisposable
         NetReliability.Reliable => MultiplayerPeer.TransferModeEnum.Reliable,
         _ => throw new ArgumentOutOfRangeException(nameof(reliability), reliability, "not a reliability class"),
     };
+
+    /// <summary>A join sent from <paramref name="fromAddress"/> and <paramref name="fromPort"/>
+    /// rather than from whatever the system picks. For a suite that must choose the address a
+    /// host's reply is checked against.</summary>
+    internal static EnetTransport Join(string address, int port, Keepalive? keepalive, string? fromAddress, int fromPort)
+    {
+        RequirePort(port);
+        if (string.IsNullOrWhiteSpace(address))
+        {
+            throw new ArgumentException("a join needs an address", nameof(address));
+        }
+
+        var peer = new ENetMultiplayerPeer();
+        if (fromAddress != null)
+        {
+            peer.SetBindIP(fromAddress);
+        }
+
+        var error = peer.CreateClient(address, port, ChannelCount, 0, 0, fromPort);
+        if (error != Error.Ok)
+        {
+            peer.Dispose();
+            throw new InvalidOperationException($"cannot join {address}:{port}: {error}");
+        }
+
+        return new EnetTransport(new[] { peer }, keepalive ?? Keepalive.Shipped, int.MaxValue);
+    }
 
     /// <summary>Stops the service thread without closing the socket or telling anyone. With the
     /// stepping stopped too, that is a crashed process as the other end sees it. For a suite;
@@ -374,34 +446,87 @@ public sealed class EnetTransport : INetTransport, INetLink, IDisposable
 
     // Raised inside a poll, on whichever thread polled, so it only queues. The main thread's step
     // is the one place the roster changes and the listener hears of it.
-    private void OnEnetPeerConnected(long id)
+    private void OnEnetPeerConnected(Listener socket, long id)
     {
         int peer = (int)id;
-        var link = _peer.GetPeer(peer);
+        var link = socket.Peer.GetPeer(peer);
         link?.SetTimeout(_keepalive.TimeoutLimit, _keepalive.TimeoutMinimumMs, _keepalive.TimeoutMaximumMs);
         link?.ThrottleConfigure(ThrottleIntervalMs, ThrottleAcceleration, 0);
-        _roster.Add((peer, true));
+        _roster.Add((peer, true, socket));
     }
 
-    private void OnEnetPeerDisconnected(long id) => _roster.Add(((int)id, false));
-
+    // Each socket numbers its own peers. A guest past the cap, or numbered as another socket's
+    // guest already is, is hung up on unannounced. Its departure is then ignored.
     private void AnnounceRoster()
     {
         for (int i = 0; i < _roster.Count && !_closed; i++)
         {
-            var (peer, joined) = _roster[i];
+            var (peer, joined, socket) = _roster[i];
             if (joined && !_peers.Contains(peer))
             {
+                if (_peers.Count >= _maxPeers)
+                {
+                    socket.Peer.DisconnectPeer(peer);
+                    continue;
+                }
+
+                _owner[peer] = socket;
                 _peers.Add(peer);
                 _listener?.OnPeerConnected(peer);
             }
-            else if (!joined && _peers.Remove(peer))
+            else if (joined && _owner.TryGetValue(peer, out var holder) && holder != socket)
             {
+                Log.Warn("core", $"net: two host sockets numbered a guest {peer}; hanging up on the later one");
+                socket.Peer.DisconnectPeer(peer);
+            }
+            else if (!joined && _owner.TryGetValue(peer, out var owner) && owner == socket && _peers.Remove(peer))
+            {
+                _owner.Remove(peer);
                 _listener?.OnPeerDisconnected(peer);
             }
         }
 
         _roster.Clear();
+    }
+
+    private void PollAll()
+    {
+        foreach (var socket in _sockets)
+        {
+            if (socket.Peer.GetConnectionStatus() != MultiplayerPeer.ConnectionStatus.Disconnected)
+            {
+                socket.Peer.Poll();
+            }
+        }
+    }
+
+    // A payload from a peer not admitted through that socket is dropped. Such a peer is a guest
+    // hung up on for its number or the cap.
+    private void Drain(Listener socket)
+    {
+        var enet = socket.Peer;
+        while (!_closed && enet.GetConnectionStatus() != MultiplayerPeer.ConnectionStatus.Disconnected
+               && enet.GetAvailablePacketCount() > 0)
+        {
+            // ⚠ Read the source and the channel before taking the packet. Both answer about
+            // the one still at the head of the queue, which taking it pops.
+            int from = enet.GetPacketPeer();
+            int channel = enet.GetPacketChannel();
+            byte[] payload = enet.GetPacket();
+            if (!_owner.TryGetValue(from, out var owner) || owner != socket)
+            {
+                continue;
+            }
+
+            if (_listener is { } listener)
+            {
+                listener.OnPayload(from, channel, payload);
+            }
+            else
+            {
+                Hold(from, channel, payload);
+            }
+        }
     }
 
     private void NoteStep()
@@ -433,12 +558,12 @@ public sealed class EnetTransport : INetTransport, INetLink, IDisposable
 
                 double idle = _wall.Elapsed.TotalSeconds - _steppedAt;
                 if (!_keepalive.Service || _frozen || idle < ServiceGapSeconds || idle > _keepalive.CeilingSeconds
-                    || _peer.GetConnectionStatus() == MultiplayerPeer.ConnectionStatus.Disconnected)
+                    || _sockets[0].Peer.GetConnectionStatus() == MultiplayerPeer.ConnectionStatus.Disconnected)
                 {
                     continue;
                 }
 
-                _peer.Poll();
+                PollAll();
                 _servicePolls++;
             }
         }
@@ -457,5 +582,18 @@ public sealed class EnetTransport : INetTransport, INetLink, IDisposable
         /// <summary>What a match runs on: Godot's own ENet timeouts, set explicitly on every peer,
         /// and a five-minute ceiling, far past the longest measured mission load.</summary>
         public static Keepalive Shipped => new(32, 5000, 30000, 300.0);
+    }
+
+    // One ENet socket and the two handlers it raises into this carrier, kept so Close can unhook
+    // exactly those.
+    private sealed class Listener
+    {
+        public Listener(ENetMultiplayerPeer peer) => Peer = peer;
+
+        public ENetMultiplayerPeer Peer { get; }
+
+        public MultiplayerPeer.PeerConnectedEventHandler Joined { get; set; } = null!;
+
+        public MultiplayerPeer.PeerDisconnectedEventHandler Left { get; set; } = null!;
     }
 }

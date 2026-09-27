@@ -979,6 +979,14 @@ public partial class Launcher : Node3D
             {
                 UI.Screens.TypedText.Live.FeedPaste();
             }
+            else if (UI.Screens.MenuInput.IsCopyChord(key))
+            {
+                // A hosting door is the one thing on a menu with something to copy.
+                if (_menuHost is { Shown: true })
+                {
+                    _netDoor?.CopyGuestAddress();
+                }
+            }
             else
             {
                 UI.Screens.TypedText.Live.Feed(key.Pressed, key.Echo, key.Unicode);
@@ -2089,8 +2097,13 @@ public partial class Launcher : Node3D
         {
             Version = Net.NetBuildVersion.Parse(BuildVersion.Current),
             LanNetworks = LocalNetworks.Ipv4,
-            OpenPinhole = Net.NetCarrier.Pinhole(PinholeAddressPlaceholder),
+            // The pinhole opens for the stable address, the one the IPv6 socket binds and the board
+            // shows. A temporary address would rotate away from under the router's rule.
+            OpenPinhole = Net.NetCarrier.Pinhole(HostAddress.StableGlobalIPv6),
             ClosePinhole = Net.NetCarrier.PinholeClose,
+            StableIpv6 = Net.NetCarrier.StableIpv6,
+            LanIpv4 = Net.NetCarrier.LanIpv4,
+            CopyText = DisplayServer.ClipboardSet,
         };
         host.Features.Add(_netDoor);
         host.AddSeat(seat);
@@ -2098,11 +2111,6 @@ public partial class Launcher : Node3D
         string why = reason == null ? "" : $" reason={reason}";
         Log.Info("ui", $"menu presentation active={host.Selected} requested={host.Requested}{why}");
         return host;
-
-        // The address the router's IPv6 pinhole opens for. Null skips the pinhole with a log line.
-        // ⚠ Replace with the stable global IPv6 finder, never a temporary address: a pinhole is
-        // keyed to the address the host listens on and shows.
-        static string? PinholeAddressPlaceholder() => null;
     }
 
     // The host's availability answer: Original needs the decoded layout and every file its asset
