@@ -105,10 +105,11 @@ public sealed class CampaignDirector
     private readonly int[] _kills = new int[CampaignProgression.AirframeCount];
     private readonly int[] _aceKills = new int[CampaignProgression.AirframeCount];
 
-    // The death wiring and the loss latch, both per SEAT of the human field rather than per
-    // aircraft: a 967 swap rebuilds one seat's aeroplane and a death in the new one counts too,
-    // and the seat is what stays down once it has.
-    private readonly List<FlightController?> _deathWiredTo = new();
+    // The death wiring and the loss latch, both keyed by SEAT (the rig's PlayerIndex) rather than
+    // by aircraft or by place in the field. A 967 swap rebuilds one seat's aeroplane, and a death
+    // in the new one counts too. A guest that leaves drops out of the field and shifts every place
+    // after it. The seat is what stays down once it has.
+    private readonly Dictionary<int, FlightController> _deathWiredTo = new();
     private readonly HashSet<int> _seatsDown = new();
     private World? _world;
     private ScriptedPathVehicles? _paths;
@@ -666,6 +667,7 @@ public sealed class CampaignDirector
         }
 
         WirePlayerDeath();
+        DecideFieldLost();
         WireScoredShooter();
         if (_cutsceneHold)
         {
@@ -809,22 +811,16 @@ public sealed class CampaignDirector
             return;
         }
 
-        for (int seat = 0; seat < humans.Count; seat++)
+        foreach (var human in humans)
         {
-            while (_deathWiredTo.Count <= seat)
-            {
-                _deathWiredTo.Add(null);
-            }
-
-            var human = humans[seat];
-            if (ReferenceEquals(human, _deathWiredTo[seat]))
+            int seat = human.PlayerIndex;
+            if (_deathWiredTo.TryGetValue(seat, out var wired) && ReferenceEquals(human, wired))
             {
                 continue;
             }
 
             _deathWiredTo[seat] = human;
-            int down = seat;
-            human.Downed += (_, _) => OnPlayerDown(down, human);
+            human.Downed += (_, _) => OnPlayerDown(seat, human);
             // Pinned beside the death wiring, and for its reason: a story mission is lost with the
             // aeroplane, so a respawn taken while flying would repair, restock and refuel for free.
             // A 967 swap's new aeroplane arrives here as a new identity and is pinned with it.
@@ -862,21 +858,56 @@ public sealed class CampaignDirector
             return;
         }
 
-        int seats = _world?.HumanRigs().Count ?? 1;
-        if (_seatsDown.Count < seats)
+        var (seats, down) = FieldDown();
+        if (down < seats)
         {
             _beginSpectate?.Invoke(human);
-            Log.Info("core", $"campaign: seat {seat + 1} of {seats} is lost, spectating; {seats - _seatsDown.Count} human(s) still flying");
+            Log.Info("core", $"campaign: seat {seat + 1} is lost, spectating; {seats - down} of {seats} human(s) still flying");
             return;
         }
 
-        if (Graph is not { } graph || !graph.NotifyPlayerLost())
+        DecideFieldLost();
+    }
+
+    // The mission is lost once every human still in the field is down. The last death reaches that.
+    // So does the last flying guest leaving a field whose other seats are down, which raises no
+    // death at all.
+    private void DecideFieldLost()
+    {
+        if (_seatsDown.Count == 0 || Graph is not { } graph)
+        {
+            return;
+        }
+
+        var (seats, down) = FieldDown();
+        if (down < seats || !graph.NotifyPlayerLost())
         {
             return;
         }
 
         _playerLost = true;
         Log.Info("core", $"campaign: the last of {seats} human aircraft is lost, the objectives stop, and the mission ends where the wreck does");
+    }
+
+    // The human field's size now, and how many of its seats are down. A seat that left is out of
+    // both counts.
+    private (int Seats, int Down) FieldDown()
+    {
+        if (_world?.HumanRigs() is not { } humans)
+        {
+            return (1, _seatsDown.Count);
+        }
+
+        int down = 0;
+        foreach (var human in humans)
+        {
+            if (_seatsDown.Contains(human.PlayerIndex))
+            {
+                down++;
+            }
+        }
+
+        return (humans.Count, down);
     }
 
     // The second stage: a hull that is still falling has not landed yet, which is the whole of the

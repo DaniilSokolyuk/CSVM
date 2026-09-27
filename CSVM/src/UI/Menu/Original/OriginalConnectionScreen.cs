@@ -104,7 +104,6 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
     private const float PanelX = 59f;
     private const float PanelY = 380f;
     private const float PanelWidth = 329f;
-    private const float TextFallback = 12f;
 
     // The games list: the header bars, the rows under them and the plaque line along the foot.
     private const float HeaderY = 141f;
@@ -131,12 +130,7 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
     private static readonly float[] HighlightOffsets = { 0f, 147f, 249f, 414f, 557f };
     private static readonly string[] Headers = { "Game Name", "# of Players", "Mission Type", "Mission Environment", "Status" };
 
-    // The scripts' label colours: greyed, normal, rollover and pressed on the plaques and radios,
-    // and the panel's cream.
-    private static readonly BoardTint LabelDisabled = new(142, 142, 142);
-    private static readonly BoardTint LabelNormal = new(226, 224, 206);
-    private static readonly BoardTint LabelRollover = new(198, 188, 140);
-    private static readonly BoardTint LabelPressed = new(255, 204, 102);
+    // The scripts' colours beyond the plaque labels' four, starting with the panel's cream.
     private static readonly BoardTint Cream = new(204, 200, 179);
     private static readonly BoardTint Black = new(0, 0, 0);
     private static readonly BoardTint Ink = new(8, 8, 8);
@@ -148,9 +142,8 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
 
     private readonly Func<NetPlayFeature?> _net;
     private readonly IOriginalScreenHost _host;
-    private readonly string? _dataRoot;
+    private readonly MultiplayerBoardText _text;
     private readonly Action _openLobby;
-    private UiStrings? _strings;
     private (string Address, int Port)? _picked;
     private double _sinceAsk;
     private int _heard;
@@ -168,7 +161,7 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
         _openLobby = openLobby ?? (() => { });
         _net = net ?? throw new ArgumentNullException(nameof(net));
         _host = host ?? throw new ArgumentNullException(nameof(host));
-        _dataRoot = dataRoot;
+        _text = new MultiplayerBoardText(_host, dataRoot);
     }
 
     /// <summary>The picked way, one of the radio keys.</summary>
@@ -187,8 +180,6 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
     /// no box stands over it and the box has the focus.</summary>
     internal bool CapturingText =>
         _host.Screen == OriginalScreen.Connection && !_host.DialogOpen && _host.FocusedKey == AddressKey;
-
-    private UiStrings Strings => _strings ??= (_dataRoot is { } root ? UiStrings.TryLoad(root) : null) ?? UiStrings.Empty;
 
     /// <summary>A game row's key by its place in <see cref="Listed"/>.</summary>
     public static string GameKey(int index) => GameKeyPrefix + index.ToString(CultureInfo.InvariantCulture);
@@ -242,7 +233,7 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
         else if (Listed.Count == 0)
         {
             var (x, y) = CancelCorner();
-            rows.Add(Strip(CancelKey, MediumArt, x, y, true, 0, 96f, 37f));
+            rows.Add(_text.Strip(CancelKey, MediumArt, x, y, true, 0, 96f, 37f));
         }
         else
         {
@@ -297,10 +288,10 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
                 BackToConnection();
                 break;
             case var sort when sort.StartsWith(SortKeyPrefix, StringComparison.Ordinal):
-                Sort = IndexOf(sort, SortKeyPrefix);
+                Sort = (OriginalWidgets.Indexed(sort, SortKeyPrefix) ?? -1);
                 break;
             case var game when game.StartsWith(GameKeyPrefix, StringComparison.Ordinal):
-                PickOrJoin(IndexOf(game, GameKeyPrefix));
+                PickOrJoin((OriginalWidgets.Indexed(game, GameKeyPrefix) ?? -1));
                 break;
         }
 
@@ -439,9 +430,6 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
         _shown = null;
     }
 
-    private static int IndexOf(string key, string prefix) =>
-        int.TryParse(key.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out int index) ? index : -1;
-
     private static int Hash(IReadOnlyList<LanGame> games)
     {
         var hash = default(HashCode);
@@ -453,9 +441,6 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
 
         return games.Count == 0 ? 0 : hash.ToHashCode() | 1;
     }
-
-    private static BoardTint LabelTint(bool enabled, bool focused, bool pressed) =>
-        !enabled ? LabelDisabled : pressed ? LabelPressed : focused ? LabelRollover : LabelNormal;
 
     private static (float X, float Y) CancelCorner() => (SearchingX + 150f, SearchingY + 150f);
 
@@ -480,36 +465,7 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
             : string.Compare(a[column], b[column], StringComparison.OrdinalIgnoreCase);
 
     private string MissionName(int seq) =>
-        Strings.Text(3450 + seq, $"Mission {(seq + 1).ToString(CultureInfo.InvariantCulture)}");
-
-    private string Word(int id, string fallback)
-    {
-        string text = Strings.Text(id, fallback).Trim();
-        return text.Length > 0 ? text : fallback;
-    }
-
-    // A string's face in regular weight: the original's capture draws every multiplayer face that
-    // way, its B tags included.
-    private LanguiFace? Regular(int id) => LanguiFace.Parse(Strings.Face(id)) is { } face ? face with { Bold = false } : null;
-
-    // One string of the table in the face its row names, in an authored colour.
-    private BoardLine Line(
-        int id, string fallback, float x, float y, float width, BoardTint colour, BoardJustify justify = BoardJustify.Left,
-        string? text = null)
-    {
-        var face = Regular(id);
-        return new BoardLine(
-            text ?? Word(id, fallback), x, y, width, face?.Pixels ?? TextFallback, BoardInk.Row, -1,
-            Justify: justify, Face: face, Colour: colour);
-    }
-
-    private OriginalRow Strip(
-        string key, string art, float x, float y, bool enabled, int column, float fallbackWidth, float fallbackHeight, int frames = 4)
-    {
-        var strip = new BoardArt(BoardArtLibrary.Ui, art, frames);
-        var size = OriginalWidgets.StripSize(strip, _host.Measure, fallbackWidth, fallbackHeight);
-        return new OriginalRow(key, string.Empty, OriginalRowKind.Button, x, y, size.Width, size.Height, enabled, column, strip);
-    }
+        _text.Strings.Text(3450 + seq, $"Mission {(seq + 1).ToString(CultureInfo.InvariantCulture)}");
 
     private OriginalRow Radio(string key, float x, float y, bool enabled, float hitWidth) =>
         new(key, string.Empty, OriginalRowKind.Radio, x, y, hitWidth, RadioSize, enabled, 0, new BoardArt(BoardArtLibrary.Ui, RadioArt, 4));
@@ -526,10 +482,10 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
             }
         }
 
-        rows.Add(Strip(BuildKey, BuildArt, 117f, 468f, false, 0, 200f, 32f));
-        rows.Add(Strip(HostKey, SmallArt, 514f, 424f, _net() != null, 1, 74f, 37f));
-        rows.Add(Strip(ConnectKey, MediumArt, 610f, 424f, true, 1, 96f, 37f));
-        rows.Add(Strip(ExitKey, ExitArt, 514f, 559f, true, 1, 200f, 32f));
+        rows.Add(_text.Strip(BuildKey, BuildArt, 117f, 468f, false, 0, 200f, 32f));
+        rows.Add(_text.Strip(HostKey, SmallArt, 514f, 424f, _net() != null, 1, 74f, 37f));
+        rows.Add(_text.Strip(ConnectKey, MediumArt, 610f, 424f, true, 1, 96f, 37f));
+        rows.Add(_text.Strip(ExitKey, ExitArt, 514f, 559f, true, 1, 200f, 32f));
     }
 
     private void GamesRows(List<OriginalRow> rows)
@@ -548,9 +504,9 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
 
         rows.Add(new OriginalRow(RefreshKey, string.Empty, OriginalRowKind.Radio, 47f, ButtonLineY, 200f, 37f, true, 0,
             new BoardArt(BoardArtLibrary.Ui, CheckboxArt, 8)));
-        rows.Add(Strip(CreateKey, LargeArt, 394f, ButtonLineY, _net() != null, 1, 131f, 37f));
-        rows.Add(Strip(JoinKey, LargeArt, 529f, ButtonLineY, PickedGame() is { } game && CoopDoorText.Joinable(game.Advert), 1, 131f, 37f));
-        rows.Add(Strip(GamesExitKey, SmallArt, 665f, ButtonLineY, true, 1, 74f, 37f));
+        rows.Add(_text.Strip(CreateKey, LargeArt, 394f, ButtonLineY, _net() != null, 1, 131f, 37f));
+        rows.Add(_text.Strip(JoinKey, LargeArt, 529f, ButtonLineY, PickedGame() is { } game && CoopDoorText.Joinable(game.Advert), 1, 131f, 37f));
+        rows.Add(_text.Strip(GamesExitKey, SmallArt, 665f, ButtonLineY, true, 1, 74f, 37f));
     }
 
     private List<LanGame> Sorted()
@@ -597,7 +553,7 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
             net.Search();
             if (!net.CanSearch || !net.Searching)
             {
-                _host.RaiseDialog(Word(10022, "No local area network connection is detected."), DialogIcon.Warning, Ok(null));
+                _host.RaiseDialog(_text.Word(10022, "No local area network connection is detected."), DialogIcon.Warning, Ok(null));
                 return;
             }
 
@@ -611,7 +567,7 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
 
         if (string.IsNullOrWhiteSpace(net.Address))
         {
-            _host.RaiseDialog(Word(10025, "The Internet IP address is not recognized."), DialogIcon.Warning, Ok(null));
+            _host.RaiseDialog(_text.Word(10025, "The Internet IP address is not recognized."), DialogIcon.Warning, Ok(null));
             return;
         }
 
@@ -695,7 +651,7 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
         {
             case NetDoorStage.Joining:
                 text = $"Connecting to {net.JoinTargetText} ...";
-                answer = new(OriginalShell.DialogCancelKey, CampaignBoards.DialogCenterKey, Word(101, "Cancel"), () => EndJoin(net));
+                answer = new(OriginalShell.DialogCancelKey, CampaignBoards.DialogCenterKey, _text.Word(101, "Cancel"), () => EndJoin(net));
                 break;
             case NetDoorStage.Joined:
                 text = CoopDoorText.WaitingStatus(net, MissionName);
@@ -738,13 +694,13 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
     }
 
     private OriginalDialogAnswer Ok(Action? run) =>
-        new(OriginalShell.DialogOkKey, CampaignBoards.DialogCenterKey, Word(100, "OK"), run);
+        new(OriginalShell.DialogOkKey, CampaignBoards.DialogCenterKey, _text.Word(100, "OK"), run);
 
     private void ComposeConnection(IReadOnlyList<OriginalRow> rows, string focused, string pressed, BoardLayers layers)
     {
         layers.Backdrop.Add(new BoardPicture(new BoardArt(BoardArtLibrary.Ui, OptionsBackground), 0f, 0f));
-        layers.Lines.Add(Line(10014, "CONNECTION", 36f, 32f, 0f, Black));
-        layers.Lines.Add(Line(10013, "MULTIPLAYER OPTIONS", 410f, 32f, 0f, Black));
+        layers.Lines.Add(_text.Line(10014, "CONNECTION", 36f, 32f, 0f, Black));
+        layers.Lines.Add(_text.Line(10013, "MULTIPLAYER OPTIONS", 410f, 32f, 0f, Black));
         foreach (var row in rows)
         {
             bool isFocused = row.Key == focused;
@@ -753,8 +709,8 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
             if (way >= 0)
             {
                 ComposeRadio(row, row.Key == Way, isFocused, layers);
-                layers.Lines.Add(Line(WayLabelIds[way], WayNames[way], row.X + RadioLabelOffset, row.Y, 0f, Ink));
-                layers.Lines.Add(Line(WayDescriptionIds[way], string.Empty, DescriptionX, DescriptionY[way], 0f, Ink));
+                layers.Lines.Add(_text.Line(WayLabelIds[way], WayNames[way], row.X + RadioLabelOffset, row.Y, 0f, Ink));
+                layers.Lines.Add(_text.Line(WayDescriptionIds[way], string.Empty, DescriptionX, DescriptionY[way], 0f, Ink));
             }
             else if (row.Kind == OriginalRowKind.TextField)
             {
@@ -766,16 +722,16 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
             }
         }
 
-        layers.Lines.Add(Line(10524, "To build custom planes for your multiplayer inventory, click Build Custom Plane.",
+        layers.Lines.Add(_text.Line(10524, "To build custom planes for your multiplayer inventory, click Build Custom Plane.",
             PanelX, PanelY, PanelWidth, Cream, BoardJustify.Center));
     }
 
     private void ComposeGames(string focused, string pressed, BoardLayers layers)
     {
         layers.Backdrop.Add(new BoardPicture(new BoardArt(BoardArtLibrary.Ui, GamesBackground), 0f, 0f));
-        string way = Word(10003, "LAN TCP/IP");
-        string title = Strings.Format(10067, way);
-        layers.Lines.Add(Line(10067, string.Empty, 69f, 80f, 0f, White, text: title.Length > 0 ? title : $"{way} Games"));
+        string way = _text.Word(10003, "LAN TCP/IP");
+        string title = _text.Strings.Format(10067, way);
+        layers.Lines.Add(_text.Line(10067, string.Empty, 69f, 80f, 0f, White, text: title.Length > 0 ? title : $"{way} Games"));
         int sort = Math.Clamp(Sort, 0, Headers.Length - 1);
         layers.Pictures.Add(new BoardPicture(
             new BoardArt(BoardArtLibrary.Ui, SortHighlightArt), 54f + HighlightOffsets[sort], HeaderY,
@@ -789,8 +745,8 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
         {
             var row = rows[column];
             ComposeRadio(row, column == sort, row.Key == focused, layers);
-            layers.Lines.Add(Line(10068, "Sort by:", row.X - 60f, row.Y, 0f, White));
-            layers.Lines.Add(Line(10069 + column, Headers[column], ColumnX(column), HeaderY + 8f, ColumnWidths[column], Black, BoardJustify.Center));
+            layers.Lines.Add(_text.Line(10068, "Sort by:", row.X - 60f, row.Y, 0f, White));
+            layers.Lines.Add(_text.Line(10069 + column, Headers[column], ColumnX(column), HeaderY + 8f, ColumnWidths[column], Black, BoardJustify.Center));
         }
 
         var listed = Listed;
@@ -814,7 +770,7 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
             var ink = CoopDoorText.Joinable(game.Advert) && _net()?.PlaysWith(game) != false ? White : Unjoinable;
             for (int column = 0; column < cells.Count; column++)
             {
-                layers.Lines.Add(new BoardLine(cells[column], ColumnX(column), y + 5f, ColumnWidths[column], TextFallback,
+                layers.Lines.Add(new BoardLine(cells[column], ColumnX(column), y + 5f, ColumnWidths[column], MultiplayerBoardText.TextFallback,
                     BoardInk.Row, -1, Justify: BoardJustify.Center, Colour: ink));
             }
         }
@@ -822,7 +778,7 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
         var refresh = rows.First(row => row.Key == RefreshKey);
         int box = !refresh.Enabled ? 0 : refresh.Key == pressed ? 3 : refresh.Key == focused ? 2 : 1;
         layers.Pictures.Add(new BoardPicture(refresh.Art!, refresh.X, refresh.Y, (AutoRefresh ? 4 : 0) + box));
-        layers.Lines.Add(Line(10076, "Auto refresh", refresh.X + 62f, refresh.Y + 8f, 0f, new BoardTint(250, 250, 250)));
+        layers.Lines.Add(_text.Line(10076, "Auto refresh", refresh.X + 62f, refresh.Y + 8f, 0f, new BoardTint(250, 250, 250)));
         string[] labels = { "Create Game", "Join Game", "Exit" };
         int[] ids = { 10074, 10075, 10077 };
         string[] keys = { CreateKey, JoinKey, GamesExitKey };
@@ -830,7 +786,7 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
         {
             var row = rows.First(r => r.Key == keys[i]);
             ComposePlaque(row, row.Key == focused, row.Key == pressed, layers, ids[i], labels[i],
-                row.Key == CreateKey ? CreateDisabled : LabelDisabled);
+                row.Key == CreateKey ? CreateDisabled : MultiplayerBoardText.LabelDisabled);
         }
 
         if (listed.Count == 0)
@@ -843,9 +799,9 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
     private void ComposeSearching(bool focused, bool pressed, BoardLayers layers)
     {
         var (x, y) = CancelCorner();
-        var cancel = Strip(CancelKey, MediumArt, x, y, true, 0, 96f, 37f);
-        var face = Regular(10578);
-        float size = face?.Pixels ?? TextFallback;
+        var cancel = _text.Strip(CancelKey, MediumArt, x, y, true, 0, 96f, 37f);
+        var face = _text.Regular(10578);
+        float size = face?.Pixels ?? MultiplayerBoardText.TextFallback;
         layers.Overlays.Add(new BoardPanel(
             Array.Empty<BoardFill>(),
             new[]
@@ -855,9 +811,9 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
             },
             new[]
             {
-                Line(10577, "Searching ...", SearchingX + 80f, SearchingY + 80f, 0f, SearchingRed),
-                new BoardLine(Word(10578, "Cancel"), cancel.X, cancel.Y + ((cancel.Height - size) / 2f) - 1f, cancel.Width, size,
-                    BoardInk.Row, -1, Justify: BoardJustify.Center, Face: face, Colour: LabelTint(true, focused, pressed)),
+                _text.Line(10577, "Searching ...", SearchingX + 80f, SearchingY + 80f, 0f, SearchingRed),
+                new BoardLine(_text.Word(10578, "Cancel"), cancel.X, cancel.Y + ((cancel.Height - size) / 2f) - 1f, cancel.Width, size,
+                    BoardInk.Row, -1, Justify: BoardJustify.Center, Face: face, Colour: MultiplayerBoardText.LabelTint(true, focused, pressed)),
             }));
     }
 
@@ -871,9 +827,9 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
     {
         // The live box is only its black outline over the page.
         layers.Fills.Add(new BoardFill(row.X, row.Y, row.Width, row.Height, 0, 0, 0, Border: true));
-        layers.Lines.Add(Line(10006, "IP Address:", row.X - FieldLabelOffsetX, row.Y + FieldLabelOffsetY - 8f, 0f, Ink));
-        var face = Regular(10006);
-        float size = face?.Pixels ?? TextFallback;
+        layers.Lines.Add(_text.Line(10006, "IP Address:", row.X - FieldLabelOffsetX, row.Y + FieldLabelOffsetY - 8f, 0f, Ink));
+        var face = _text.Regular(10006);
+        float size = face?.Pixels ?? MultiplayerBoardText.TextFallback;
         var caret = focused && !_host.DialogOpen ? new BoardCaret(0, 0, 0, 1f, row.Height - 4f) : (BoardCaret?)null;
         // The box keeps the script's own 150 pixels, which an IPv6 address overflows. It scrolls to
         // the end being typed, as a Windows edit box does, rather than shrink the face.
@@ -907,10 +863,10 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
             return;
         }
 
-        var face = Regular(labelId);
-        float size = face?.Pixels ?? TextFallback;
-        var tint = !row.Enabled && disabled is { } grey ? grey : LabelTint(row.Enabled, focused, pressed);
-        layers.Lines.Add(new BoardLine(Word(labelId, label), row.X, row.Y + ((row.Height - size) / 2f) - 1f, row.Width, size,
+        var face = _text.Regular(labelId);
+        float size = face?.Pixels ?? MultiplayerBoardText.TextFallback;
+        var tint = !row.Enabled && disabled is { } grey ? grey : MultiplayerBoardText.LabelTint(row.Enabled, focused, pressed);
+        layers.Lines.Add(new BoardLine(_text.Word(labelId, label), row.X, row.Y + ((row.Height - size) / 2f) - 1f, row.Width, size,
             BoardInk.Row, -1, Justify: BoardJustify.Center, Face: face, Colour: tint));
     }
 

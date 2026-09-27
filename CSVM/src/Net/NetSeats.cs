@@ -54,10 +54,10 @@ public static class NetSeats
 
     /// <summary>Throws unless <paramref name="roster"/> is a match a session can be built from. One
     /// to <see cref="MaxPlayers"/> seats, numbered 0 upward with no gap, and at least one of them
-    /// flown on this machine. The numbering is required because every seat-indexed table is
-    /// addressed by it directly. A leaver's seat therefore stays in the roster until the match
-    /// ends, rather than being closed up.</summary>
-    public static void Validate(IReadOnlyList<NetSeat> roster)
+    /// flown on this machine. Every seat-indexed table is addressed by the number, so a leaver's
+    /// seat stays in the roster until the match ends. Given <paramref name="hostPeer"/>, seat 0
+    /// must be that peer's, since every P1 read takes seat 0 as the host.</summary>
+    public static void Validate(IReadOnlyList<NetSeat> roster, int? hostPeer = null)
     {
         ArgumentNullException.ThrowIfNull(roster);
         if (roster.Count == 0 || roster.Count > MaxPlayers)
@@ -82,6 +82,11 @@ public static class NetSeats
             if (seat.IsLocal)
             {
                 locals++;
+            }
+
+            if (seat.SeatIndex == 0 && hostPeer is { } host && seat.PeerId != host)
+            {
+                throw new ArgumentException($"seat 0 belongs to peer {seat.PeerId}, not the host's peer {host}", nameof(roster));
             }
         }
 
@@ -129,7 +134,7 @@ public static class NetSeats
             });
         }
 
-        Validate(seats);
+        Validate(seats, localPeer);
         return seats.ToArray();
     }
 
@@ -159,7 +164,7 @@ public static class NetSeats
             });
         }
 
-        Validate(seats);
+        Validate(seats, localPeer);
         return seats.ToArray();
     }
 

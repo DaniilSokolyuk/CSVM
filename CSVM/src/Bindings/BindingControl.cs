@@ -181,12 +181,12 @@ public readonly record struct BindingControl
 
     public override string ToString() => Kind switch
     {
-        ControlKind.Key => $"key:{Prefix(Modifiers)}{Index}",
-        ControlKind.Button => $"button:{Index}",
-        ControlKind.Axis => $"axis:{Index}{(Sign < 0 ? "-" : "+")}@{Deadzone:0.###}",
-        ControlKind.Mouse => $"mouse:{Index}",
-        ControlKind.FullAxis => $"fullaxis:{Index}{(Sign < 0 ? "-" : "+")}@{Deadzone:0.####}",
-        _ => $"hat:{Index}:{Direction}",
+        ControlKind.Key => FormattableString.Invariant($"key:{Prefix(Modifiers)}{Index}"),
+        ControlKind.Button => FormattableString.Invariant($"button:{Index}"),
+        ControlKind.Axis => FormattableString.Invariant($"axis:{Index}{(Sign < 0 ? "-" : "+")}@{Deadzone:0.###}"),
+        ControlKind.Mouse => FormattableString.Invariant($"mouse:{Index}"),
+        ControlKind.FullAxis => FormattableString.Invariant($"fullaxis:{Index}{(Sign < 0 ? "-" : "+")}@{Deadzone:0.####}"),
+        _ => FormattableString.Invariant($"hat:{Index}:{Direction}"),
     };
 
     private static int NonNegative(int value, string name) =>

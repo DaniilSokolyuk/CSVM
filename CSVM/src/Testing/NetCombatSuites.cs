@@ -691,7 +691,7 @@ internal static class NetCombatSuites
     }
 
     // The host's rematch, and the guest's own key before it. Only the host may call one: a guest
-    // that restarted here would fly a round nobody else is in (BL-1026).
+    // that restarted here would fly a round nobody else is in.
     private static void Rematch(TestContext ctx, GameSession[] peers)
     {
         peers[1].SeatRigs[1].Controller!.RestartMatch!();

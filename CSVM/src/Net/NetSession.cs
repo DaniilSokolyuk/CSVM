@@ -324,8 +324,9 @@ public sealed class NetSession : INetTransportListener
         handler(peer, payload);
     }
 
-    // NetSeats.Validate's numbering rule, asked of the wire's entries rather than thrown.
-    private static bool NumberedFromZero(IReadOnlyList<NetSeatEntry> seats)
+    // NetSeats.Validate's numbering and host-at-seat-0 rules, asked of the wire's entries rather
+    // than thrown.
+    private static bool WellFormed(IReadOnlyList<NetSeatEntry> seats)
     {
         if (seats.Count == 0 || seats.Count > NetSeats.MaxPlayers)
         {
@@ -335,7 +336,7 @@ public sealed class NetSession : INetTransportListener
         Span<bool> seen = stackalloc bool[NetSeats.MaxPlayers];
         foreach (var entry in seats)
         {
-            if (entry.Seat >= seats.Count || seen[entry.Seat])
+            if (entry.Seat >= seats.Count || seen[entry.Seat] || (entry.Seat == 0 && !entry.IsHost))
             {
                 return false;
             }
@@ -429,7 +430,7 @@ public sealed class NetSession : INetTransportListener
 
     private void TakeRoster(int peer, SeatRosterMessage message)
     {
-        if (!NumberedFromZero(message.Seats))
+        if (!WellFormed(message.Seats))
         {
             Malformed++;
             return;

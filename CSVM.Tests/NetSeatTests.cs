@@ -137,6 +137,23 @@ public sealed class NetSeatTests
     }
 
     [Fact]
+    public void AHostsRosterSeatsTheHostAtZero()
+    {
+        NetSeats.Validate(Roster(3, locals: 1), hostPeer: 1);
+
+        var guestFirst = Roster(3, locals: 1).ToList();
+        guestFirst[0] = guestFirst[0] with { PeerId = 2 };
+        guestFirst[1] = guestFirst[1] with { PeerId = 1 };
+        Assert.Throws<ArgumentException>(() => NetSeats.Validate(guestFirst, hostPeer: 1));
+
+        // ABLE-TO-FAIL CONTROL: a guest's rebuilt roster names no host peer and is not held to it.
+        NetSeats.Validate(guestFirst);
+
+        Assert.Equal(1, NetSeats.CoopField(1, new[] { "player_bhawk" }, new[] { (4, "player_fury", "Lucy") })[0].PeerId);
+        Assert.Equal(1, NetSeats.Field(1, new[] { "player_bhawk" }, new[] { 4 }, "player_bhawk")[0].PeerId);
+    }
+
+    [Fact]
     public void ACoopFieldSeatsEachGuestInThePlaneItPickedUnderItsName()
     {
         var field = NetSeats.CoopField(1, new[] { "player_bhawk" }, new[] { (4, "player_fury", "Lucy"), (9, "player_warhawk", " ") });

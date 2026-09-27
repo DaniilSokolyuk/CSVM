@@ -102,6 +102,31 @@ public sealed class NetSessionTests
         Assert.Equal(0, guest.Malformed);
     }
 
+    // Every P1 read takes seat 0 as the host. A roster that seats a guest there is malformed, and
+    // the guest keeps the field it had.
+    [Fact]
+    public void A_roster_whose_seat_0_is_not_the_host_is_malformed()
+    {
+        var (_, guest) = Joined(17);
+        var before = guest.Seats.Select(s => s.Callsign).ToArray();
+        var seats = new List<NetSeatEntry> { new(0, 0, 0, false, "guest"), new(1, 0, 1, true, "host") };
+        var payload = new byte[SeatRosterMessage.SizeFor(seats.Count)];
+        new SeatRosterMessage(1u, seats).Write(payload);
+
+        guest.OnPayload(0, 0, payload);
+
+        Assert.Equal(1, guest.Malformed);
+        Assert.Equal(before, guest.Seats.Select(s => s.Callsign));
+
+        // ABLE-TO-FAIL CONTROL: the same roster with the host at seat 0 is taken.
+        seats = new List<NetSeatEntry> { new(0, 0, 1, true, "host"), new(1, 0, 0, false, "guest") };
+        new SeatRosterMessage(1u, seats).Write(payload);
+        guest.OnPayload(0, 0, payload);
+
+        Assert.Equal(1, guest.Malformed);
+        Assert.Equal(new[] { "host", "guest" }, guest.Seats.Select(s => s.Callsign));
+    }
+
     // The two counters answer different questions. An unclaimed type is a handler nobody bound,
     // a malformed body is bad bytes on a bound type, and conflating them hides a bug.
     [Fact]

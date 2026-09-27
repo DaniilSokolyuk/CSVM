@@ -384,6 +384,18 @@ public class NetMessagesTests
         Assert.Throws<ArgumentOutOfRangeException>(() => NetMessage.ReliabilityOf((NetMessageType)0x7fff));
     }
 
+    // The host's relay knows a message only by its type word. A type the switch lacks would
+    // compile and first throw on a live relay.
+    [Fact]
+    public void EveryDeclaredTypeHasAReliabilityRow()
+    {
+        foreach (var type in Enum.GetValues<NetMessageType>())
+        {
+            var ex = Record.Exception(() => NetMessage.ReliabilityOf(type));
+            Assert.True(ex == null, $"NetMessage.ReliabilityOf has no row for {type}");
+        }
+    }
+
     // Every AI shares one channel, so the state must reach the pose buffer with its own per-AI
     // sequence intact. The buffer is where a stale sample is dropped.
     [Fact]

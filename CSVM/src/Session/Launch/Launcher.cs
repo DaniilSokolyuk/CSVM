@@ -1282,7 +1282,7 @@ public partial class Launcher : Node3D
             seatFits.Add(picked ? chosen.Fit : default);
         }
 
-        Net.NetSeats.Validate(seats);
+        Net.NetSeats.Validate(seats, wire.LocalPeer);
         return (seats.ToArray(), seatFits.ToArray());
     }
 
@@ -2561,7 +2561,7 @@ public partial class Launcher : Node3D
             });
         }
 
-        Net.NetSeats.Validate(seats);
+        Net.NetSeats.Validate(seats, _netWire.LocalPeer);
         _netRoster = seats.ToArray();
     }
 

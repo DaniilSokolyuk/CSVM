@@ -5,7 +5,7 @@ namespace CSVM.Extraction;
 /// <summary>
 /// The one case every path the ZBD half writes under <c>extracted/</c> takes, and the mapping a
 /// reader puts a chapter, mission or archive name through. Folders are upper case (<c>C1B</c>,
-/// <c>M01</c>) and file names lower case (<c>zrdr.zip</c>). That is how the retail install spells
+/// <c>M01</c>) and file names lower case (<c>zrdr.zip</c>). That is how the original's install spells
 /// its <c>ZBD</c> tree. The campaign sequence names the same folders <c>c3/m01</c>. A
 /// case-sensitive disk finds only the spelling written.
 /// <see cref="ZbdPlan.OutputRelativePath"/> writes through <see cref="Canonical"/>, so a reader

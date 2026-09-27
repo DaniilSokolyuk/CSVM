@@ -156,7 +156,6 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
     private const float ChatWidth = 735f;
     private const float ChatHeight = 165f;
     private const float ChatNameColumn = 100f;
-    private const float TextFallback = 12f;
     private const float DisabledArrow = 0.45f;
     private const int IconFrames = 11;
 
@@ -183,12 +182,8 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
     private static readonly string[] ScoreHeaders = { "Team Name", "Points", "Kills", "Deaths", "Hits %" };
     private static readonly (float X, float Y)[] ScoreHeaderAt = { (21f, 43f), (179f, 44f), (242f, 44f), (303f, 44f), (362f, 44f) };
 
-    // The scripts' colours. They are the plaque labels in four states, the tab ink, the picked
-    // sub-tab's red, the Ready? label, the LAUNCH! blink and the own name.
-    private static readonly BoardTint LabelDisabled = new(142, 142, 142);
-    private static readonly BoardTint LabelNormal = new(226, 224, 206);
-    private static readonly BoardTint LabelRollover = new(198, 188, 140);
-    private static readonly BoardTint LabelPressed = new(255, 204, 102);
+    // The scripts' colours beyond the plaque labels' four: the tab ink, the picked sub-tab's red,
+    // the Ready? label, the LAUNCH! blink and the own name.
     private static readonly BoardTint TabDisabled = new(128, 128, 128);
     private static readonly BoardTint Black = new(0, 0, 0);
     private static readonly BoardTint Picked = new(142, 0, 0);
@@ -198,11 +193,10 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
 
     private readonly Func<NetPlayFeature?> _net;
     private readonly IOriginalScreenHost _host;
-    private readonly string? _dataRoot;
+    private readonly MultiplayerBoardText _text;
     private readonly Func<StockLoadouts?> _stock;
     private readonly Func<IReadOnlyList<int>> _pads;
     private readonly Func<string?> _pilotName;
-    private UiStrings? _strings;
     private string? _open;
     private int _listTop;
     private string _chat = string.Empty;
@@ -221,7 +215,7 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
     {
         _net = net ?? throw new ArgumentNullException(nameof(net));
         _host = host ?? throw new ArgumentNullException(nameof(host));
-        _dataRoot = dataRoot;
+        _text = new MultiplayerBoardText(_host, dataRoot);
         _stock = stock ?? (() => null);
         _pads = pads ?? (() => Array.Empty<int>());
         _pilotName = pilotName ?? (() => null);
@@ -244,7 +238,6 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
     internal bool CapturingText =>
         _host.Screen == OriginalScreen.Lobby && !_host.DialogOpen && _open == null && IsBox(_host.FocusedKey);
 
-    private UiStrings Strings => _strings ??= (_dataRoot is { } root ? UiStrings.TryLoad(root) : null) ?? UiStrings.Empty;
 
     private DogfightLobby? Lobby => _net()?.Dogfight;
 
@@ -278,7 +271,7 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
         if (net.Dogfight == null)
         {
             _host.RaiseDialog(net.Fault.Length > 0 ? net.Fault : "The game could not be hosted.", DialogIcon.Warning,
-                new OriginalDialogAnswer(OriginalShell.DialogOkKey, CampaignBoards.DialogCenterKey, Word(100, "OK"), null));
+                new OriginalDialogAnswer(OriginalShell.DialogOkKey, CampaignBoards.DialogCenterKey, _text.Word(100, "OK"), null));
             return;
         }
 
@@ -329,7 +322,8 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
         if (OpenList() is { } drop)
         {
             _listTop = OriginalDropLists.Top(drop, _listTop, _host.FocusedRow);
-            OriginalDropLists.AddRows(drop, _listTop, rows, StripSize);
+            OriginalDropLists.AddRows(drop, _listTop, rows,
+                (art, width, height) => OriginalWidgets.StripSize(art, _host.Measure, width, height));
             return;
         }
 
@@ -620,14 +614,8 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
         return hash.ToHashCode() | 1;
     }
 
-    private static BoardTint LabelTint(bool enabled, bool focused, bool pressed) =>
-        !enabled ? LabelDisabled : pressed ? LabelPressed : focused ? LabelRollover : LabelNormal;
-
     private static int StateFrame(OriginalRow row, bool focused, bool pressed) =>
         !row.Enabled ? 0 : pressed ? 3 : focused ? 2 : 1;
-
-    private static int Index(string key, string prefix) =>
-        int.TryParse(key.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out int i) ? i : -1;
 
     private static GunSpec? GunFor(LoadoutDef? def, int slot)
     {
@@ -700,36 +688,6 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
             Match: DogfightLobby.RulesOf(options), Net: net.BuildLaunch());
     }
 
-    private string Word(int id, string fallback)
-    {
-        string text = Strings.Text(id, fallback).Trim().TrimStart(']');
-        return text.Length > 0 ? text : fallback;
-    }
-
-    // A string's face in regular weight, as the Connection page draws the multiplayer faces.
-    private LanguiFace? Regular(int id) => LanguiFace.Parse(Strings.Face(id)) is { } face ? face with { Bold = false } : null;
-
-    private BoardLine Line(
-        int id, string fallback, float x, float y, float width, BoardTint colour, BoardJustify justify = BoardJustify.Left,
-        string? text = null, int faceId = 0)
-    {
-        var face = Regular(faceId != 0 ? faceId : id);
-        return new BoardLine(
-            text ?? Word(id, fallback), x, y, width, face?.Pixels ?? TextFallback, BoardInk.Row, -1,
-            Justify: justify, Face: face, Colour: colour);
-    }
-
-    private (float Width, float Height) StripSize(BoardArt? art, float fallbackWidth, float fallbackHeight) =>
-        OriginalWidgets.StripSize(art, _host.Measure, fallbackWidth, fallbackHeight);
-
-    private OriginalRow Strip(
-        string key, string art, float x, float y, bool enabled, int column, float fallbackWidth, float fallbackHeight, int frames = 4)
-    {
-        var strip = new BoardArt(BoardArtLibrary.Ui, art, frames);
-        var size = StripSize(strip, fallbackWidth, fallbackHeight);
-        return new OriginalRow(key, string.Empty, OriginalRowKind.Button, x, y, size.Width, size.Height, enabled, column, strip);
-    }
-
     private OriginalRow Check(string key, string art, float x, float y, float hitWidth, float size, bool enabled) =>
         new(key, string.Empty, OriginalRowKind.Radio, x, y, hitWidth, size, enabled, 1, new BoardArt(BoardArtLibrary.Ui, art, 8));
 
@@ -766,13 +724,13 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
             }
         }
 
-        rows.Add(Strip(BootKey, SmallArt, 19f, 325f, false, 0, 74f, 37f));
-        rows.Add(Strip(TeamKey, LargeArt, 105f, 325f, false, 0, 131f, 37f));
+        rows.Add(_text.Strip(BootKey, SmallArt, 19f, 325f, false, 0, 74f, 37f));
+        rows.Add(_text.Strip(TeamKey, LargeArt, 105f, 325f, false, 0, 131f, 37f));
         rows.Add(new OriginalRow(ReadyKey, string.Empty, OriginalRowKind.Radio, 250f, 325f, 58f, 37f,
             lobby is { HasOptions: true }, 0, new BoardArt(BoardArtLibrary.Ui, ReadyArt, 8)));
         rows.Add(Box(ChatKey, _chat, 88f, 552f, 481f, 18f, lobby != null, 0));
-        rows.Add(Strip(SendKey, SmallArt, 577f, 548f, lobby != null, 1, 74f, 37f));
-        rows.Add(Strip(LeaveKey, LargeArt, 655f, 548f, true, 1, 131f, 37f));
+        rows.Add(_text.Strip(SendKey, SmallArt, 577f, 548f, lobby != null, 1, 74f, 37f));
+        rows.Add(_text.Strip(LeaveKey, LargeArt, 655f, 548f, true, 1, 131f, 37f));
     }
 
     private void MissionRows(DogfightLobby lobby, List<OriginalRow> rows)
@@ -781,7 +739,7 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
         bool live = lobby.IsHost && !lobby.Ready;
         rows.Add(Drop(EnvironmentKey, EnvironmentWord(options.Environment), PageX + 25f, PageY + 63f, 175f, 22f, live));
         rows.Add(Drop(TypeKey, TypeWord(options.MissionType), PageX + 25f, PageY + 108f, 175f, 22f, live));
-        rows.Add(Strip(LaunchKey, LargeArt, PageX + 47f, PageY + 284f, lobby.CanLaunch, 1, 131f, 37f));
+        rows.Add(_text.Strip(LaunchKey, LargeArt, PageX + 47f, PageY + 284f, lobby.CanLaunch, 1, 131f, 37f));
         rows.Add(Check(TimeRadioKey, RadioArt, PageX + 241f, PageY + 70f, 120f, 12f, live));
         rows.Add(Box(TimeKey, BoxText(TimeKey, lobby), PageX + 370f, PageY + 68f, 73f, 18f, live && options.Victory == DogfightVictory.Time));
         rows.Add(Check(ScoreRadioKey, RadioArt, PageX + 241f, PageY + 92f, 120f, 12f, live));
@@ -792,27 +750,27 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
         rows.Add(Check(AutoRespawnKey, CheckArt, PageX + 241f, PageY + 207f, 110f, 11f, live));
         rows.Add(Check(CustomPlanesKey, CheckArt, PageX + 241f, PageY + 247f, 150f, 11f, false));
         rows.Add(Check(OutlawKey, CheckArt, PageX + 265f, PageY + 262f, 150f, 11f, false));
-        rows.Add(Strip(SelectKey, MediumArt, PageX + 295f, PageY + 277f, false, 1, 96f, 37f));
+        rows.Add(_text.Strip(SelectKey, MediumArt, PageX + 295f, PageY + 277f, false, 1, 96f, 37f));
     }
 
     private void PlaneRows(DogfightLobby lobby, List<OriginalRow> rows)
     {
-        rows.Add(Strip(DefaultPlanesKey, TabLargeArt, PageX + 194f, PageY + 44f, true, 1, 119f, 23f));
-        rows.Add(Strip(CustomTabKey, TabLargeArt, PageX + 316f, PageY + 44f, false, 1, 119f, 23f));
+        rows.Add(_text.Strip(DefaultPlanesKey, TabLargeArt, PageX + 194f, PageY + 44f, true, 1, 119f, 23f));
+        rows.Add(_text.Strip(CustomTabKey, TabLargeArt, PageX + 316f, PageY + 44f, false, 1, 119f, 23f));
         rows.Add(Drop(PlaneKey, PlaneWord(lobby.Airframe), PageX + 11f, PageY + 80f, 195f, 36f, true));
     }
 
     private void AmmoRows(DogfightLobby lobby, List<OriginalRow> rows)
     {
-        rows.Add(Strip(GunsTabKey, TabSmallArt, PageX + 287f, PageY + 46f, true, 1, 69f, 23f));
-        rows.Add(Strip(RocketsTabKey, TabSmallArt, PageX + 363f, PageY + 46f, true, 1, 69f, 23f));
+        rows.Add(_text.Strip(GunsTabKey, TabSmallArt, PageX + 287f, PageY + 46f, true, 1, 69f, 23f));
+        rows.Add(_text.Strip(RocketsTabKey, TabSmallArt, PageX + 363f, PageY + 46f, true, 1, 69f, 23f));
         var def = StockDef(lobby.Airframe);
         if (!Rockets)
         {
             for (int slot = 0; slot < CoopFit.GunSlots; slot++)
             {
                 bool gun = GunFor(def, slot + 1) != null;
-                string label = gun && DropdownFor(GunKey(slot)) is { } list ? Item(list) : Word(10144, "<none>");
+                string label = gun && DropdownFor(GunKey(slot)) is { } list ? Item(list) : _text.Word(10144, "<none>");
                 rows.Add(Drop(GunKey(slot), label, PageX + 11f, PageY + 100f + (50f * slot), 195f, 22f, gun));
             }
 
@@ -822,20 +780,20 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
         for (int cell = 0; cell < CoopFit.Cells; cell++)
         {
             bool hung = Loadout.PylonForCell(cell, def?.Hardpoints) != 0;
-            string label = hung && DropdownFor(CellKey(cell)) is { } list ? Item(list) : Word(10144, "<none>");
+            string label = hung && DropdownFor(CellKey(cell)) is { } list ? Item(list) : _text.Word(10144, "<none>");
             rows.Add(Drop(CellKey(cell), label, PageX + 25f, PageY + 80f + (30f * cell), 195f, 22f, hung));
         }
     }
 
     private string BoxText(string key, DogfightLobby lobby) => _typing == key ? _draft : BoxValue(key, lobby);
 
-    private string EnvironmentWord(int environment) => Word(10558 + environment, DogfightLobby.EnvironmentName(environment));
+    private string EnvironmentWord(int environment) => _text.Word(10558 + environment, DogfightLobby.EnvironmentName(environment));
 
     private string TypeWord(int type) =>
-        type is >= 0 and < 3 ? Word(10555 + type, TypeNames[type]) : string.Empty;
+        type is >= 0 and < 3 ? _text.Word(10555 + type, TypeNames[type]) : string.Empty;
 
     private string PlaneWord(int airframe) =>
-        Word(10565, "Stock") + " " + ShortNames[Math.Clamp(airframe, 0, ShortNames.Length - 1)];
+        _text.Word(10565, "Stock") + " " + ShortNames[Math.Clamp(airframe, 0, ShortNames.Length - 1)];
 
     private LoadoutDef? StockDef(int airframe) => _stock()?.ForModel(PlanePickerRoster.AirframeNode(airframe));
 
@@ -883,9 +841,9 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
         }
 
         var def = StockDef(lobby.Airframe);
-        if (key.StartsWith(GunKeyPrefix, StringComparison.Ordinal) && GunFor(def, Index(key, GunKeyPrefix) + 1) is { } gun)
+        if (key.StartsWith(GunKeyPrefix, StringComparison.Ordinal) && GunFor(def, (OriginalWidgets.Indexed(key, GunKeyPrefix) ?? -1) + 1) is { } gun)
         {
-            int slot = Index(key, GunKeyPrefix);
+            int slot = (OriginalWidgets.Indexed(key, GunKeyPrefix) ?? -1);
             var options = _stock()?.Options.GunAmmo;
             var items = new string[CampaignLoadout.AmmoNames.Length];
             for (int i = 0; i < items.Length; i++)
@@ -900,7 +858,7 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
 
         if (key.StartsWith(CellKeyPrefix, StringComparison.Ordinal) && _stock()?.Options.PylonOrdnance is { Count: > 0 } table)
         {
-            int cell = Index(key, CellKeyPrefix);
+            int cell = (OriginalWidgets.Indexed(key, CellKeyPrefix) ?? -1);
             int pylon = Loadout.PylonForCell(cell, def?.Hardpoints);
             if (pylon == 0)
             {
@@ -965,13 +923,13 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
     {
         var lobby = Lobby;
         var players = lobby?.Players ?? Array.Empty<DogfightLobbySeat>();
-        layers.Lines.Add(Line(10046, "MULTIPLAYER LOBBY", 60f, 22f, 0f, Black));
-        string count = Strings.Format(10048, players.Count, NetSeats.MaxPlayers);
-        layers.Lines.Add(Line(10048, string.Empty, 34f, 54f, 0f, Black,
+        layers.Lines.Add(_text.Line(10046, "MULTIPLAYER LOBBY", 60f, 22f, 0f, Black));
+        string count = _text.Strings.Format(10048, players.Count, NetSeats.MaxPlayers);
+        layers.Lines.Add(_text.Line(10048, string.Empty, 34f, 54f, 0f, Black,
             text: count.Length > 0 ? count : $"Players ({players.Count} of {NetSeats.MaxPlayers})"));
-        layers.Lines.Add(Line(10052, "Ready", 256f, 54f, 0f, Black));
-        var face = Regular(10575);
-        float size = face?.Pixels ?? TextFallback;
+        layers.Lines.Add(_text.Line(10052, "Ready", 256f, 54f, 0f, Black));
+        var face = _text.Regular(10575);
+        float size = face?.Pixels ?? MultiplayerBoardText.TextFallback;
         var mark = new BoardArt(BoardArtLibrary.Ui, MarkArt, 4);
         for (int i = 0; i < players.Count && i < VisiblePlayers; i++)
         {
@@ -988,8 +946,8 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
         var lobby = Lobby;
         var chat = lobby?.Chat ?? Array.Empty<DogfightChatLine>();
         string own = lobby != null && lobby.You < lobby.Players.Count ? lobby.Players[lobby.You].Name : string.Empty;
-        var face = Regular(10575);
-        float size = face?.Pixels ?? TextFallback;
+        var face = _text.Regular(10575);
+        float size = face?.Pixels ?? MultiplayerBoardText.TextFallback;
         float pitch = size + 2f;
         int fits = Math.Max(1, (int)(ChatHeight / pitch));
         int first = Math.Max(0, chat.Count - fits);
@@ -1010,7 +968,7 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
         {
             case OriginalRowKind.TextButton:
                 int tab = Array.IndexOf(TabKeys, row.Key);
-                layers.Lines.Add(Line(TabIds[tab], TabNames[tab], row.X, row.Y + 6f, row.Width, row.Enabled ? Black : TabDisabled,
+                layers.Lines.Add(_text.Line(TabIds[tab], TabNames[tab], row.X, row.Y + 6f, row.Width, row.Enabled ? Black : TabDisabled,
                     BoardJustify.Center));
                 break;
             case OriginalRowKind.Dropdown:
@@ -1039,8 +997,8 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
         }
 
         int faceId = row.Key is EnvironmentKey or TypeKey ? 10558 : 10144;
-        var face = Regular(faceId);
-        float size = face?.Pixels ?? TextFallback;
+        var face = _text.Regular(faceId);
+        float size = face?.Pixels ?? MultiplayerBoardText.TextFallback;
         float textY = row.Key == PlaneKey ? row.Y + 5f : row.Y + ((row.Height - size) / 2f) - 1f;
         layers.Lines.Add(new BoardLine(row.Label, row.X + 8f, textY, row.Width - 34f, size, BoardInk.Row, -1, Face: face, Colour: Black));
         layers.Pictures.Add(new BoardPicture(new BoardArt(BoardArtLibrary.Ui, ArrowArt), row.X + row.Width - 24f, row.Y + 1f,
@@ -1050,17 +1008,17 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
         switch (row.Key)
         {
             case EnvironmentKey:
-                layers.Lines.Add(Line(10096, "Mission Environment", row.X, row.Y - 20f, 0f, Black));
+                layers.Lines.Add(_text.Line(10096, "Mission Environment", row.X, row.Y - 20f, 0f, Black));
                 break;
             case TypeKey:
-                layers.Lines.Add(Line(10097, "Mission Type", row.X, row.Y - 20f, 0f, Black));
+                layers.Lines.Add(_text.Line(10097, "Mission Type", row.X, row.Y - 20f, 0f, Black));
                 break;
             case var gun when gun.StartsWith(GunKeyPrefix, StringComparison.Ordinal):
-                layers.Lines.Add(Line(1008, string.Empty, row.X, row.Y - 23f, 0f, Black, text: GunTitle(Index(gun, GunKeyPrefix))));
+                layers.Lines.Add(_text.Line(1008, string.Empty, row.X, row.Y - 23f, 0f, Black, text: GunTitle((OriginalWidgets.Indexed(gun, GunKeyPrefix) ?? -1))));
                 break;
             case var cell when cell.StartsWith(CellKeyPrefix, StringComparison.Ordinal):
-                string place = (Index(cell, CellKeyPrefix) + 1).ToString(CultureInfo.InvariantCulture) + ")";
-                layers.Lines.Add(Line(1008, string.Empty, row.X - 15f, row.Y + 3f, 0f, Black, text: place));
+                string place = ((OriginalWidgets.Indexed(cell, CellKeyPrefix) ?? -1) + 1).ToString(CultureInfo.InvariantCulture) + ")";
+                layers.Lines.Add(_text.Line(1008, string.Empty, row.X - 15f, row.Y + 3f, 0f, Black, text: place));
                 break;
         }
     }
@@ -1070,20 +1028,20 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
         var gun = Lobby is { } lobby ? GunFor(StockDef(lobby.Airframe), slot + 1) : null;
         if (gun == null)
         {
-            return Word(10548, "No Gun");
+            return _text.Word(10548, "No Gun");
         }
 
         int idx = Math.Clamp((gun.Caliber - 30) / 10, 0, 4);
-        return Word(3320 + idx, $".{30 + (idx * 10)}-cal.");
+        return _text.Word(3320 + idx, $".{30 + (idx * 10)}-cal.");
     }
 
     private void ComposeBox(OriginalRow row, bool focused, BoardLayers layers)
     {
-        var face = Regular(row.Key == ChatKey ? 10575 : 10105);
-        float size = face?.Pixels ?? TextFallback;
+        var face = _text.Regular(row.Key == ChatKey ? 10575 : 10105);
+        float size = face?.Pixels ?? MultiplayerBoardText.TextFallback;
         if (row.Key == ChatKey)
         {
-            layers.Lines.Add(Line(10060, "Chat:", row.X - 42f, row.Y, 0f, Black));
+            layers.Lines.Add(_text.Line(10060, "Chat:", row.X - 42f, row.Y, 0f, Black));
         }
         else
         {
@@ -1127,12 +1085,12 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
         if (row.Key == ReadyKey)
         {
             bool host = lobby?.IsHost == true;
-            layers.Lines.Add(Line(host ? 10063 : 10059, "Ready?", row.X - 100f, row.Y - 20f, 160f, ReadyLabel, BoardJustify.Right));
+            layers.Lines.Add(_text.Line(host ? 10063 : 10059, "Ready?", row.X - 100f, row.Y - 20f, 160f, ReadyLabel, BoardJustify.Right));
         }
         else if (id != 0)
         {
             float lift = row.Key == AutoRespawnKey ? 3f : 2f;
-            layers.Lines.Add(Line(id, word, row.X + (row.Key is TimeRadioKey or ScoreRadioKey ? 25f : 20f), row.Y - lift, 0f,
+            layers.Lines.Add(_text.Line(id, word, row.X + (row.Key is TimeRadioKey or ScoreRadioKey ? 25f : 20f), row.Y - lift, 0f,
                 row.Enabled || row.Key is TimeRadioKey or ScoreRadioKey or LimitedLivesKey or AutoRespawnKey ? Black : TabDisabled));
         }
     }
@@ -1166,20 +1124,20 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
         BoardTint tint;
         if (subTab)
         {
-            tint = !row.Enabled ? LabelDisabled : picked ? Picked : Black;
+            tint = !row.Enabled ? MultiplayerBoardText.LabelDisabled : picked ? Picked : Black;
         }
         else if (row.Key == LaunchKey && row.Enabled && !focused && !pressed)
         {
-            tint = _blink == 0 ? LaunchBlink : LabelNormal;
+            tint = _blink == 0 ? LaunchBlink : MultiplayerBoardText.LabelNormal;
         }
         else
         {
-            tint = LabelTint(row.Enabled, focused, pressed);
+            tint = MultiplayerBoardText.LabelTint(row.Enabled, focused, pressed);
         }
 
-        var face = Regular(id);
-        float size = face?.Pixels ?? TextFallback;
-        layers.Lines.Add(new BoardLine(Word(id, word), row.X, row.Y + ((row.Height - size) / 2f) - 1f, row.Width, size,
+        var face = _text.Regular(id);
+        float size = face?.Pixels ?? MultiplayerBoardText.TextFallback;
+        layers.Lines.Add(new BoardLine(_text.Word(id, word), row.X, row.Y + ((row.Height - size) / 2f) - 1f, row.Width, size,
             BoardInk.Row, -1, Justify: BoardJustify.Center, Face: face, Colour: tint));
     }
 
@@ -1200,10 +1158,10 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
                 ComposePlane(lobby, layers);
                 break;
             case LobbyTab.Ammo:
-                layers.Lines.Add(Line(10549, "Select Ammo", PageX + 11f, PageY + 43f, 0f, Black));
+                layers.Lines.Add(_text.Line(10549, "Select Ammo", PageX + 11f, PageY + 43f, 0f, Black));
                 layers.Pictures.Add(new BoardPicture(new BoardArt(BoardArtLibrary.Ui, IconArt, IconFrames), PageX + 251f, PageY + 102f,
                     lobby.Airframe));
-                layers.Lines.Add(Line(10550, "No Information Available", PageX + 251f, PageY + 176f, 192f, Black,
+                layers.Lines.Add(_text.Line(10550, "No Information Available", PageX + 251f, PageY + 176f, 192f, Black,
                     BoardJustify.Center, faceId: 10144));
                 break;
             case LobbyTab.Scores:
@@ -1216,38 +1174,38 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
     {
         var options = lobby.Options;
         int type = Math.Clamp((int)options.MissionType, 0, TypeDescriptions.Length - 1);
-        layers.Lines.Add(Line(TypeDescriptions[type], string.Empty, PageX + 25f, PageY + 134f, 200f, Black));
-        layers.Lines.Add(Line(10098, "Victory Conditions", PageX + 241f, PageY + 46f, 0f, Black));
-        layers.Lines.Add(Line(10099, "Teams", PageX + 241f, PageY + 110f, 0f, Black));
-        layers.Lines.Add(Line(10100, "Lives", PageX + 241f, PageY + 170f, 0f, Black));
-        layers.Lines.Add(Line(10101, "Planes", PageX + 241f, PageY + 227f, 0f, Black));
+        layers.Lines.Add(_text.Line(TypeDescriptions[type], string.Empty, PageX + 25f, PageY + 134f, 200f, Black));
+        layers.Lines.Add(_text.Line(10098, "Victory Conditions", PageX + 241f, PageY + 46f, 0f, Black));
+        layers.Lines.Add(_text.Line(10099, "Teams", PageX + 241f, PageY + 110f, 0f, Black));
+        layers.Lines.Add(_text.Line(10100, "Lives", PageX + 241f, PageY + 170f, 0f, Black));
+        layers.Lines.Add(_text.Line(10101, "Planes", PageX + 241f, PageY + 227f, 0f, Black));
 
         // The team count spinners, greyed with the checkbox they belong to.
         foreach (float x in new[] { PageX + 300f, PageX + 387f })
         {
             layers.Fills.Add(new BoardFill(x, PageY + 150f, 42f, 22f, 181, 174, 156));
             layers.Fills.Add(new BoardFill(x, PageY + 150f, 42f, 22f, 0, 0, 0, Border: true));
-            layers.Lines.Add(Line(10105, string.Empty, x, PageY + 154f, 30f, TabDisabled, BoardJustify.Center, "2"));
+            layers.Lines.Add(_text.Line(10105, string.Empty, x, PageY + 154f, 30f, TabDisabled, BoardJustify.Center, "2"));
         }
 
-        layers.Lines.Add(Line(10109, "to", PageX + 360f, PageY + 154f, 0f, Black));
+        layers.Lines.Add(_text.Line(10109, "to", PageX + 360f, PageY + 154f, 0f, Black));
     }
 
     private void ComposePlane(DogfightLobby lobby, BoardLayers layers)
     {
-        layers.Lines.Add(Line(10114, "Select Plane", PageX + 11f, PageY + 43f, 0f, Black));
+        layers.Lines.Add(_text.Line(10114, "Select Plane", PageX + 11f, PageY + 43f, 0f, Black));
         int airframe = lobby.Airframe;
-        string plane = Word(10566, "Plane:") + " " + Word(10565, "Stock");
-        layers.Lines.Add(Line(10566, "Plane:", PageX + 225f, PageY + 75f, 0f, Black, text: plane));
-        layers.Lines.Add(Line(3000 + airframe, ShortNames[airframe], PageX + 225f, PageY + 90f, 220f, Black, faceId: 10566));
+        string plane = _text.Word(10566, "Plane:") + " " + _text.Word(10565, "Stock");
+        layers.Lines.Add(_text.Line(10566, "Plane:", PageX + 225f, PageY + 75f, 0f, Black, text: plane));
+        layers.Lines.Add(_text.Line(3000 + airframe, ShortNames[airframe], PageX + 225f, PageY + 90f, 220f, Black, faceId: 10566));
         layers.Pictures.Add(new BoardPicture(new BoardArt(BoardArtLibrary.Ui, IconArt, IconFrames), PageX + 251f, PageY + 102f, airframe));
         var fit = PlaneFit.For(airframe, null, StockDef(airframe));
         var ratings = PlaneRatings.For(fit);
         for (int i = 0; i < RatingLabels.Length; i++)
         {
             int at = Math.Clamp(ratings[i], 0, RatingWords.Length - 1);
-            string text = $"{RatingLabels[i]}  {Word(501 + at, RatingWords[at])}";
-            layers.Lines.Add(Line(1008, string.Empty, PageX + 225f, PageY + 170f + (15f * i), 0f, Black, text: text));
+            string text = $"{RatingLabels[i]}  {_text.Word(501 + at, RatingWords[at])}";
+            layers.Lines.Add(_text.Line(1008, string.Empty, PageX + 225f, PageY + 170f + (15f * i), 0f, Black, text: text));
         }
 
         float y = PageY + 230f;
@@ -1256,16 +1214,16 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
             if (fit.Barrels.TryGetValue(calibre, out int barrels))
             {
                 int idx = Math.Clamp((calibre - 30) / 10, 0, 4);
-                string text = $"({barrels}) {Word(3320 + idx, $".{calibre}-cal.")}";
-                layers.Lines.Add(Line(1008, string.Empty, PageX + 225f, y, 0f, Black, text: text));
+                string text = $"({barrels}) {_text.Word(3320 + idx, $".{calibre}-cal.")}";
+                layers.Lines.Add(_text.Line(1008, string.Empty, PageX + 225f, y, 0f, Black, text: text));
                 y += 15f;
             }
         }
 
         if (fit.Hardpoints > 0)
         {
-            layers.Lines.Add(Line(1008, "Hardpoints", PageX + 225f, y, 0f, Black,
-                text: $"({fit.Hardpoints}) {Word(1008, "Hardpoints")}"));
+            layers.Lines.Add(_text.Line(1008, "Hardpoints", PageX + 225f, y, 0f, Black,
+                text: $"({fit.Hardpoints}) {_text.Word(1008, "Hardpoints")}"));
         }
     }
 
@@ -1275,7 +1233,7 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
     {
         for (int i = 0; i < ScoreHeaderIds.Length; i++)
         {
-            layers.Lines.Add(Line(ScoreHeaderIds[i], ScoreHeaders[i], PageX + ScoreHeaderAt[i].X, PageY + ScoreHeaderAt[i].Y, 0f, Black));
+            layers.Lines.Add(_text.Line(ScoreHeaderIds[i], ScoreHeaders[i], PageX + ScoreHeaderAt[i].X, PageY + ScoreHeaderAt[i].Y, 0f, Black));
         }
 
         var scores = lobby.Scores;
@@ -1283,11 +1241,11 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
         {
             float y = PageY + 69f + (ListPitch * i);
             var line = scores[i];
-            layers.Lines.Add(Line(10575, string.Empty, PageX + 24f, y, 150f, Black, text: line.Name));
+            layers.Lines.Add(_text.Line(10575, string.Empty, PageX + 24f, y, 150f, Black, text: line.Name));
             int[] numbers = { line.Points, line.Kills, line.Deaths };
             for (int column = 0; column < numbers.Length; column++)
             {
-                layers.Lines.Add(Line(10575, string.Empty, PageX + ScoreHeaderAt[column + 1].X, y, 0f, Black,
+                layers.Lines.Add(_text.Line(10575, string.Empty, PageX + ScoreHeaderAt[column + 1].X, y, 0f, Black,
                     text: numbers[column].ToString(CultureInfo.InvariantCulture)));
             }
         }
@@ -1299,8 +1257,8 @@ public sealed class OriginalLobbyScreen : IOriginalScreenModule
         var fills = new List<BoardFill>();
         var lines = new List<BoardLine>();
         int picked = _open != null && DropdownFor(_open) is { } open ? open.Current : -1;
-        var face = Regular(_open is EnvironmentKey or TypeKey ? 10558 : 10144);
-        float size = face?.Pixels ?? TextFallback;
+        var face = _text.Regular(_open is EnvironmentKey or TypeKey ? 10558 : 10144);
+        float size = face?.Pixels ?? MultiplayerBoardText.TextFallback;
         float top = float.MaxValue, bottom = float.MinValue, left = 0f, width = 0f;
         foreach (var row in rows)
         {

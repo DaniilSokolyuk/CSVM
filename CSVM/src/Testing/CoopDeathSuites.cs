@@ -12,12 +12,12 @@ using Godot;
 
 namespace CSVM.Testing;
 
-/// <summary>A co-op mission's loss rule: losing one aeroplane costs that human their
-/// aircraft and nothing else, and the mission ends only when the last of them is down. Driven over
-/// the first story mission of C3, the same world <c>campaign-player-death</c> uses and for the same
-/// reason: C3/M01 authors no <c>INSTANTLOSS</c> and no <c>LOST</c> objective, so a Lost outcome
-/// here can only be a human's own death. Four legs measure the guest down first, the SCRIPTED
-/// PLAYER down first, <c>--no-crash-loss</c>, and the solo sortie's single-aircraft loss rule.</summary>
+/// <summary>A co-op mission's loss rule. Losing one aeroplane costs that human their aircraft and
+/// nothing else, and the mission ends only when the last of them is down. It is driven over C3/M01,
+/// the world <c>campaign-player-death</c> uses. That mission authors no <c>INSTANTLOSS</c> and no
+/// <c>LOST</c> objective, so a Lost outcome here can only be a human's own death. The legs cover
+/// the guest down first, the SCRIPTED PLAYER down first and <c>--no-crash-loss</c>. Three more
+/// take a network guest out of the field, and the last is the solo sortie's loss rule.</summary>
 internal static class CoopDeathSuites
 {
     private const string Chapter = "C3";
@@ -38,7 +38,9 @@ internal static class CoopDeathSuites
         + "human down leaves the mission running and hands that pane a spectator camera with "
         + "the wreck pinned, while the other keeps flying; the LAST human's death is what ends "
         + "it lost once no wreck is still falling, whichever of them went first; "
-        + "--no-crash-loss pins neither, and a solo death ends the mission on its only human")]
+        + "--no-crash-loss pins neither; a guest leaving takes its seat out of the field without "
+        + "shifting the others' deaths onto it, and the last flier leaving a downed field ends it "
+        + "lost; and a solo death ends the mission on its only human")]
     internal static void CampaignCoopDeath(TestContext ctx)
     {
         ctx.RequireData(ctx.PlanesGamezPath, $"planes gamez");
@@ -114,6 +116,32 @@ internal static class CoopDeathSuites
             ctx.Check(!flewOn.Spectating[0] && !flewOn.Spectating[1] && flewOn.Handed.Count == 0,
                 $"…and pins neither wreck, so the debugged session can still fly them again: {flewOn.Line}");
 
+            // A guest leaving shifts every later seat's place in the field. The loss rule has to
+            // follow seats, so the middle guest leaving and the last one dying leaves the host
+            // flying.
+            var middleLeaves = run.Fly("middle-leaves", humans: 3, endsOnPlayerDeath: true,
+                new[] { Leave(1), Down(2), Down(0) });
+            ctx.Check(!middleLeaves.EndedAfter(1),
+                $"the middle guest leaving and the last one dying leaves the host flying the mission: {middleLeaves.Line}");
+            ctx.Check(middleLeaves.EndedAfter(2) && middleLeaves.Outcome == MissionOutcome.Lost,
+                $"…and the host's death, the last in the field, ends it: {middleLeaves.Line}");
+
+            // A seat already down that then leaves is out of the field, so it no longer counts
+            // against the humans still in it.
+            var downThenLeaves = run.Fly("down-then-leaves", humans: 3, endsOnPlayerDeath: true,
+                new[] { Down(2), Leave(2), Down(1) });
+            ctx.Check(!downThenLeaves.EndedAfter(2),
+                $"a downed guest leaving does not count against the two still in the field: {downThenLeaves.Line}");
+
+            // The last human flying leaves a field whose other seat is already down. No death is
+            // raised, and the mission still ends lost.
+            var lastLeaves = run.Fly("last-flier-leaves", humans: 2, endsOnPlayerDeath: true,
+                new[] { Down(0), Leave(1) });
+            ctx.Check(!lastLeaves.EndedAfter(0),
+                $"the host down with the guest flying leaves the mission running: {lastLeaves.Line}");
+            ctx.Check(lastLeaves.EndedAfter(1) && lastLeaves.Outcome == MissionOutcome.Lost,
+                $"…and the guest leaving then ends it lost, with nobody left flying: {lastLeaves.Line}");
+
             var solo = run.Fly("solo", humans: 1, endsOnPlayerDeath: true, new[] { 0 });
             ctx.Check(solo.EndedAfter(0) && solo.Outcome == MissionOutcome.Lost && solo.ReturnToCabin,
                 $"a 1P campaign death ends the mission lost at once: {solo.Line}");
@@ -126,6 +154,14 @@ internal static class CoopDeathSuites
             textures.Dispose();
         }
     }
+
+    private static Beat Down(int seat) => new(seat, Leaves: false);
+
+    private static Beat Leave(int seat) => new(seat, Leaves: true);
+
+    /// <summary>One event of a leg: seat <paramref name="Seat"/> is downed, or its guest leaves.
+    /// </summary>
+    internal readonly record struct Beat(int Seat, bool Leaves);
 
     /// <summary>What one leg answered: whether the mission had ended by the end of each death's
     /// window, what it ended as, and the state the humans were left in.</summary>
@@ -184,6 +220,20 @@ internal static class CoopDeathSuites
         /// going through the production <c>Downed</c> path.</summary>
         internal Leg Fly(string label, int humans, bool endsOnPlayerDeath, IReadOnlyList<int> downOrder)
         {
+            var beats = new List<Beat>();
+            foreach (int seat in downOrder)
+            {
+                beats.Add(new Beat(seat, Leaves: false));
+            }
+
+            return Fly(label, humans, endsOnPlayerDeath, beats);
+        }
+
+        /// <summary>A leg of deaths and departures in order. A departure takes the seat out of the
+        /// field the director reads, as <c>GameSession.HumanAircraft</c> drops a guest that left.
+        /// The other seats keep their places in the rig list but not in the field.</summary>
+        internal Leg Fly(string label, int humans, bool endsOnPlayerDeath, IReadOnlyList<Beat> beats)
+        {
             var profile = CampaignProfileDef.NewProfile("Zachary");
             var director = CampaignDirector.Create(_script, _mission, profile, null);
             director.EndsOnPlayerDeath = endsOnPlayerDeath;
@@ -215,9 +265,18 @@ internal static class CoopDeathSuites
                 // that finds its aircraft, because the rigs are built after Attach has run.
                 director.Step(StepDt);
                 var endedAfter = new List<bool>();
-                foreach (int seat in downOrder)
+                foreach (var beat in beats)
                 {
-                    field[seat].DebugForceCrash();
+                    var pilot = rigs[beat.Seat].Controller!;
+                    if (beat.Leaves)
+                    {
+                        field.Remove(pilot);
+                    }
+                    else
+                    {
+                        pilot.DebugForceCrash();
+                    }
+
                     bool ended = director.Result != null;
                     for (float t = 0f; t < PhaseWindow; t += StepDt)
                     {
@@ -228,7 +287,7 @@ internal static class CoopDeathSuites
                     endedAfter.Add(ended);
                 }
 
-                return Record(label, director, field, endedAfter, handed);
+                return Record(label, director, rigs.ConvertAll(r => r.Controller!), endedAfter, handed);
             }
             finally
             {
