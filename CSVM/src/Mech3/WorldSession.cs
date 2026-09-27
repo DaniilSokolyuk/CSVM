@@ -747,10 +747,10 @@ public sealed class WorldSession
 
         /// <summary>The caller's <see cref="TextureArchive"/> outlives this build, so a
         /// runtime-reached <c>PUFFER_STATE</c> (death trails, ON_CALL dust/smoke) can still bake
-        /// its atlas. True in a game session (archive freed on return-to-menu); false only where the
-        /// archive is genuinely a <c>using</c> local of the build (the test harness).
-        /// ⚠ Default false is the SAFE choice, not the common one, left false by a caller that
-        /// owns its archive, a runtime-reached puffer silently builds nothing.</summary>
+        /// its atlas. True in a game session, whose archive is freed on return-to-menu. False in the
+        /// test harness, which keeps its archive open but runs the world without runtime puffers.
+        /// ⚠ Default false is the SAFE choice, not the common one. A caller that owns its archive
+        /// and leaves it false gets a runtime-reached puffer that silently builds nothing.</summary>
         public bool TexturesOutliveBuild { get; init; }
 
         /// <summary>The factory <see cref="AnimRuntime"/> builds <c>PUFFER_STATE</c> emitters

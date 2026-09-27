@@ -785,12 +785,13 @@ export does not see Godot's own flags in `Environment.GetCommandLineArgs`, so wi
 harness reports the engine log unscreened; the check passes no `--log-file` and the harness screens
 the per-process `user://logs/godot.log`. (2) A headless export process can crash in teardown after
 writing its report (139 on Linux, an access violation from the Windows export); the report is the
-verdict and the crash a note. (3) On a zips-only tree 55 suites throw `ObjectDisposedException` on
-`ZipArchive`, on Windows as on Linux: `ArchiveIntent.Suite` closes the texture archive after the
-build (`SessionArchives.cs:86`, `TestHarness.cs:1035`) and those suites read a texture later. The
-battery's tree hides it with unzipped folders, so the check extracts with player defaults for the
-extract stage and adds an `--extract-unzip` pass (about 10 s) before the suites. The harness issue
-itself is open, and not a Linux one. (4) Minimal WSL Debian lacks `libfontconfig1`, which Godot's
+verdict and the crash a note. (3) On a zips-only tree 55 suites threw `ObjectDisposedException` on
+`ZipArchive`, on Windows as on Linux, a harness bug and not a player one: the harness closed each
+world's texture archive with the build while the built scene still read it (library-root copies,
+effect stages, flyout bodies, decals), and the battery's unpacked folders served those reads. The
+archive now belongs to `TestWorld`, and a folder-backed `TextureArchive` refuses a read after
+`Dispose` as a zip does, so the Windows battery fails the same way. The check runs the suites on
+the player's zips-only tree with no unzip pass. (4) Minimal WSL Debian lacks `libfontconfig1`, which Godot's
 Linux build loads for system fonts; one-time `apt install`, and the script refuses to start
 without it. (5) The manifest check cannot see a missing file inside `data_CSVM_linuxbsd_x86_64/`;
 the extract stage catches it (the launch fails).

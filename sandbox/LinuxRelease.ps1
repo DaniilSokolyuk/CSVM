@@ -15,8 +15,8 @@
                    tools/unzbd marked -rwxr-xr-x
       extract      ./CSVM.x86_64 --headless -- --extract=<install> into a fresh data root, the
                    player's defaults (zips only): exit 0 and a stamped VERSION.json
-      engine       (unless -NoSuites) the same data root re-extracted with --extract-unzip, the
-                   shape RunTests.ps1's battery reads, then --run-tests in -Shards processes,
+      engine       (unless -NoSuites) --run-tests over that same zips-only data root, the shape
+                   every player's install reads, in -Shards processes,
                    split by the harness's own shard:<i>/<n> term over
                    analysis/engine-suite-weights.json, so the suite list is the registry's and
                    never a copy of it
@@ -223,11 +223,6 @@ du -sm "$data/extracted" 2>/dev/null | cut -f1 > "$out/extract.mb"
 [ "$suites" = "1" ] || exit 0
 [ "$(cat "$out/extract.exit")" = "0" ] || exit 0
 
-xdg unzip
-timeout -k 10 "$timeout_s" ./CSVM.x86_64 --headless -- --extract="$install" --extract-unzip --data-root="$data" > "$out/unzip.log" 2>&1
-echo $? > "$out/unzip.exit"
-[ "$(cat "$out/unzip.exit")" = "0" ] || exit 0
-
 mkdir -p analysis
 cp "$weights" analysis/engine-suite-weights.json
 start=$(date +%s)
@@ -371,8 +366,6 @@ if ($NoSuites) {
     $null = $Unchecked.Add("the in-engine suites did not run (-NoSuites)")
 } elseif ($extractExit -ne 0 -or -not $stamped) {
     Add-Stage "engine" "FAIL" 0 "did not run: the extraction failed"
-} elseif ((Read-Exit "unzip") -ne 0) {
-    Add-Stage "engine" "FAIL" 0 "did not run: the --extract-unzip pass exited $(Read-Exit 'unzip'); see unzip.log"
 } else {
     Write-Banner "engine ($Shards shard(s), headless)"
     $problems = @()

@@ -486,9 +486,9 @@ observed without data says nothing about the floor.
 rather than inside a sandbox: it drives WSL Debian over the tarball `ExportRelease.ps1 -Linux`
 built (`-Tarball` names another) and the author's install (`CrimsonSkiesGame\` under this tree or
 the one `CSVM_DATA_ROOT` names; `-Install` names another). It fails on any failure and prints
-RunTests.ps1-style stage lines and one verdict; a full run takes about 80 s (extraction 21 s, the
-unzip pass 10 s, the suites 50 s at six shards). Three stages, each run even when an earlier one
-failed, where it still can:
+RunTests.ps1-style stage lines and one verdict; a full run takes about 95 s (extraction 21 s, the
+suites 70 s at six shards). Three stages, each run even when an earlier one failed, where it still
+can:
 
 - **payload**: the archive's listing against `packaging/MANIFEST.md`'s Linux table, read from that
   file rather than restated: every named entry present (a folder name must hold a file), nothing
@@ -497,8 +497,8 @@ failed, where it still can:
   with the player's defaults (zips only), which must exit 0 and stamp `VERSION.json`. A `tools/unzbd`
   without its bit fails here too ("Permission denied" starting the process), and a missing runtime
   file in `data_CSVM_linuxbsd_x86_64/` fails the launch.
-- **engine** (skipped by `-NoSuites`): the same root re-extracted with `--extract-unzip`, the shape
-  the Windows battery reads, then `--run-tests=shard:<i>/<n>` in `-Shards` processes (default 6).
+- **engine** (skipped by `-NoSuites`): `--run-tests=shard:<i>/<n>` over that same zips-only root,
+  the shape every player's install reads, in `-Shards` processes (default 6).
   The suite list is the harness registry's and the division is `analysis/engine-suite-weights.json`,
   copied in beside the exe where the harness looks for it; the merge refuses a missing report, a
   suite run twice, a coverage short of the registry, and an unexpected engine error line.
@@ -523,11 +523,9 @@ What the check had to learn:
   suites and the same error counts come out of the Windows export run headless, which is how an
   entry is admitted: a suite that fails on Linux alone is a Linux bug and never goes on the list.
   Listed suites still run, and one that passes is reported so a stale entry is seen.
-- **The suites need an unzipped tree.** Under `ArchiveIntent.Suite` the harness closes a world's
-  texture archive after the build, and on a zips-only tree the suites that reach a texture later
-  throw `ObjectDisposedException` on both platforms; the battery's tree hides that with its
-  unzipped folders. The extraction stage keeps the player's shape, so the player path is still what
-  is checked.
+- **The suites read the player's zips-only tree, where the Windows battery reads unpacked
+  folders.** A texture archive refuses a read after `Dispose` in both shapes alike, so a read of a
+  closed archive fails the battery as it would fail here, rather than passing on the folders alone.
 - A headless process can crash in its teardown after writing its report (a signal exit on Linux,
   an access violation from the Windows export). The report is the verdict and the crash is
   printed as a note.

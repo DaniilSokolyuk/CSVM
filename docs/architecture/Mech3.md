@@ -710,12 +710,12 @@ builder, so `Paint` gives it its stand-in's livery. Decode: docs/formats/anim-de
 ## src/Mech3/SessionArchives.cs
 `OpenFor(ArchiveIntent, gamezPath, texturesPath, soundsPath, zrdrPath, mute)` opens the five
 archives one chapter build needs (gamez, textures, sounds, sound defs, sound groups) and returns
-them alongside the `WorldSession.Options.TexturesOutliveBuild`/`SoundsOutliveBuild` pair the intent
-implies: `Session` and `Lab` let textures outlive the build, only `Lab` lets sounds, `Suite`
-neither. One seam for `GameSession`, the anim lab and the test harness, so none of them hand-sets
-those flags. `StartupProfile.Mark`/`Record` calls are unconditional, a no-op with no session under
-measurement, which is what lets the test harness drive the same code blind. The optional `decode`
-argument makes only the returned `Gamez` a shared read-only instance.
+the `WorldSession.Options.TexturesOutliveBuild`/`SoundsOutliveBuild` pair the intent implies:
+`Session` and `Lab` set the texture flag, only `Lab` the sound flag, `Suite` neither, though the
+harness's `TestWorld` owns its texture archive until the world is destroyed. One seam for
+`GameSession`, the anim lab and the harness, so none hand-sets those flags. `StartupProfile` calls
+are unconditional, a no-op with no session under measurement, so the harness drives the same code
+blind. The optional `decode` argument makes only the returned `Gamez` a shared read-only instance.
 
 ## src/Mech3/DecodeCache.cs
 The decoded inputs a world build can reuse, keyed by the absolute paths they were decoded from:

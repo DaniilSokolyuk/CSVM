@@ -250,9 +250,9 @@ internal static class LandingApproachSuites
         + "swings the rungs he climbs")]
     internal static void TrainPickupRide(TestContext ctx)
     {
-        // The harness retires the world's puffer factory with the build's texture archive, where a
-        // game session keeps it (WorldSession.Options.TexturesOutliveBuild), so the flare trail
-        // asserted on the passenger's hand at run time is counted by a fake instead of dropped.
+        // The harness retires the world's puffer factory after the build, where a game session
+        // keeps it (WorldSession.Options.TexturesOutliveBuild). So the flare trail asserted on the
+        // passenger's hand at run time is counted by a fake instead of dropped.
         ctx.EmitterFactory = new CountingEmitterFactory();
         DriveMission(ctx, TrainPickupSeq, "test-train-pickup-ride", DriveTrainPickupRide);
     }
