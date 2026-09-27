@@ -2871,7 +2871,7 @@ public partial class GameSession : Node3D
                         if (victim >= 0 && victim < lastKiller.Length)
                             lastKiller[victim] = killer;
                         // On the wire a death is a report, not a score. The seat's owner sends
-                        // it and the host alone counts it (Decision 8).
+                        // it and the host alone counts it.
                         if (_netSeats.Count > 0)
                             ReportDeath(victim, killer);
                         else if (killer is int k && k >= 0 && k < match.PlayerCount)
@@ -4134,9 +4134,9 @@ public partial class GameSession : Node3D
     }
 
     // Combat over the wire, wired once the seats, the pool and the catalogue all stand. The three
-    // rules come from docs/PLAN-M6-multiplayer.md's Decisions 8 and 9. An owner reports what its
-    // own aeroplane fires, and the shooter decides its own rounds' hits for the victim's owner to
-    // apply. The host forwards each of those to the guests that are not linked to the sender.
+    // rules are docs/architecture/Net.md's hit authority and star topology. An owner reports what
+    // its own aeroplane fires, and the shooter decides its own rounds' hits for the victim's owner
+    // to apply. The host forwards each of those to the guests that are not linked to the sender.
     private void WireNetCombat(WeaponDefs weaponDefs)
     {
         if (_net is not { } net || _netSeats.Count == 0)
@@ -4237,7 +4237,7 @@ public partial class GameSession : Node3D
             rig.WorldVelocity, rig.PlayerIndex, null, fire.Direction, rig.Team);
     }
 
-    // Decision 8's fork, asked of every strike on a seat before a point of damage is spent. True
+    // The hit-authority fork, asked of every strike on a seat before a point of damage is spent. True
     // means this machine does not decide this round. Either it was fired elsewhere, or it was
     // fired here at an aeroplane somebody else owns and the claim has just gone to them.
     private bool RouteHit(int victimSeat, in AircraftHit hit)

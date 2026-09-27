@@ -913,7 +913,7 @@ internal static class NetCombatSuites
             $"ABLE-TO-FAIL CONTROL: the seat flown elsewhere fires nothing of its own on this machine ({here.CannonRoundsFired - quiet} round(s))");
     }
 
-    // Decision 8's fork. The shooter's machine decides the hit and spends nothing on its own copy
+    // The hit-authority fork. The shooter's machine decides the hit and spends nothing on its own copy
     // of the victim; the victim's machine is where the ledger moves.
     private static void HitRouting(TestContext ctx, GameSession host, GameSession guest, WeaponDef gun)
     {
@@ -1009,7 +1009,7 @@ internal static class NetCombatSuites
     private static string Line(VersusMatch match, int seat) =>
         $"P{seat + 1} {match.ScoreOf(seat)}pts {match.KillsOf(seat)}K/{match.DeathsOf(seat)}D";
 
-    // Decision 9. Two guests that cannot reach each other at all, flying and firing, with the
+    // The star topology. Two guests that cannot reach each other at all, flying and firing, with the
     // host's forwarding the only thing between them.
     private static void Relay(TestContext ctx, GameSession host, GameSession first, GameSession second)
     {

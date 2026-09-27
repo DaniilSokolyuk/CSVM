@@ -1014,8 +1014,8 @@ usual.
   a capture of the original's own lobby or marker colours, and judge the derived eight at the
   controls once a match runs more than eight seats. *⚠ Traps:* the original's pilot index is
   1-based and its eighth pilot reads one dword past the table, so do not reproduce that read as
-  fidelity; the remake gives every seat a colour on purpose. *Cross-refs:* `PLAN-M6-multiplayer`
-  A4, `docs/org/multiplayer-spawn.md`, `UI/SplitScreen.cs`'s own `Colors4` (a separate invention,
+  fidelity; the remake gives every seat a colour on purpose. *Cross-refs:* `docs/architecture/Net.md`
+  (the player ceiling rule, `NetSeats.cs`), `docs/org/multiplayer-spawn.md`, `UI/SplitScreen.cs`'s own `Colors4` (a separate invention,
   for panes rather than seats).
 
 ## Missions, modes & campaign
@@ -1131,8 +1131,8 @@ usual.
   what shows a clock walking), the threshold against the observed `Snaps` count, which is exposed
   for that reason. A rising `Snaps` says the window or the threshold is wrong, not that the link
   is. *⚠ Traps:* do not raise the rate bound to make convergence quicker; host time running well
-  off real time is the thing the walk exists to avoid. *Cross-refs:* `PLAN-M6-multiplayer` A4 and
-  B11 (send rate and interpolation buffer, judged in the same sitting). The feed now has a live
+  off real time is the thing the walk exists to avoid. *Cross-refs:* `Net/AircraftStateCadence.cs` and
+  `Net/RemotePoseBuffer.cs` (send rate and interpolation buffer, judged in the same sitting). The feed now has a live
   reading: `net-match-state` measures a target of 6.000 s and one snap on both guests off the
   ordinary match-state tick, so the threshold can be judged against a real link rather than
   against nothing. `Net/NetClockPing.cs`'s `RetrySteps = 60`, how long an unanswered clock

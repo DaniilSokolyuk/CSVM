@@ -123,9 +123,11 @@ they support. Two further limits:
 
 - **Whether the pilot's own index is 0- or 1-based is not settled statically.** The walk numbers
   entries from 1 and falls back to the first entry, so a 0-based index would put pilots 0 and 1 on
-  the same entry and leave the upper half of each block unused. Eight is the ceiling either way:
-  the per-pilot colour table at `00628eb4` holds exactly 8 entries and the respawn bearing steps by
-  45 degrees per index. It does not change the block structure, and the remake walks the block from
+  the same entry and leave the upper half of each block unused. The authored data serves eight
+  either way (the per-pilot colour table at `00628eb4` holds exactly 8 entries and the respawn
+  bearing steps by 45 degrees per index), though no coded player cap exists
+  ([`../org/multiplayer-spawn.md`](../org/multiplayer-spawn.md)). It does not change the block
+  structure, and the remake walks the block from
   its own base index rather than reproducing the original's ordinal arithmetic.
 - The census above is of this install's 45 files. A different release could author a map with a
   different number of team blocks; read the count, do not assume 80 or 48.

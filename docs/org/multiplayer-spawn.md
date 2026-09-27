@@ -33,9 +33,14 @@ comes from a terrain query (`FUN_004c76e0`): the sampled height plus a margin wh
 ⚠ The radius and the margin (`00628f08`, `00628f0c`) are written at runtime by two other sites
 each, so their initialised values are not the values in play and are not recorded here.
 
-The bearing stepping by exactly 45 degrees per pilot index is the second independent sign that the
-match holds at most **eight** pilots; the first is the per-pilot colour table at `00628eb4`, which
-has exactly eight entries and is indexed by the same field.
+The bearing steps by exactly 45 degrees per pilot index, and the per-pilot colour table at
+`00628eb4`, indexed by the same field, has exactly eight entries, so the authored data serves
+eight pilots. ⚠ **That is not a player cap.** No coded bound exists: the pilot list is an STL list
+(head `0071c150`, count `0071c154`, walked by `FUN_0046f110`) whose count is never compared against
+a maximum. The only gate is DirectPlay's `dwMaxPlayers`, filled from the lobby's `nMaxPlayers`
+(string `006192e0`, global `00642f08`), which the code only ever resets to 0. The shipped lobby
+reads `Players (1 of 16)`, and the lobby's player and team arrays (`00645390`, `00645590`) hold 16
+entries each.
 
 ## The opening spawn does not use PLAYER_INIT
 

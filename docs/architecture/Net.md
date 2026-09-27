@@ -14,6 +14,63 @@ One `## src/...` entry per module, body at most 8 lines.
 Traps do not live here; the rule is in `docs/architecture.md`. What the original sends, with its
 type ids, payloads and guarantees, is in [../org/multiplayer-messages.md](../org/multiplayer-messages.md).
 
+## The rules a network session keeps
+
+These are the design rules every module below is shaped by, and every multiplayer change keeps.
+
+- **Owner-authoritative aircraft, host-authoritative match and world.** Each machine simulates and
+  sends its own aeroplanes. The host owns everything shared: the match clock, the scores, spawns and
+  the rotation, the AI, zeppelins, turrets, surface vehicles, destructibles and the campaign's
+  mission director. It is the original's shape (a dying pilot's own client reports the death,
+  [../org/multiplayer-scoring.md](../org/multiplayer-scoring.md)) and needs no cross-machine
+  determinism, which Godot's physics and collision queries do not give; there is no lockstep and
+  no server-side prediction.
+- **Nothing about the world crosses the wire.** Every peer builds the same world from its own
+  extraction and the handshake's master seed. Only pilot states, fire, hits and deaths, the
+  host-owned world's spawns, states and damage, director transitions, the match clock and the
+  roster are sent; a mesh, a node or an animation never is.
+- **Modes.** Dogfight and campaign co-op. Co-op is the host's campaign with guests flying as its
+  human field, the local splitscreen campaign's shape: a guest has no profile or progression of its
+  own, its save is never touched, and it flies stock planes, since its own machine simulates the
+  airframe it flies. Capture the flag, Zeppelin vs and custom planes over the network are not built.
+- **Listen server.** One player hosts; there is no dedicated headless host.
+- **The player ceiling is 16.** `NetSeats.MaxPlayers`, with every seat-indexed table built
+  `SeatCapacity` wide. The original has no coded cap (its pilot list is never counted against a
+  maximum, [../org/multiplayer-spawn.md](../org/multiplayer-spawn.md)) and its lobby reads
+  `Players (1 of 16)`. The authored colour table and the 45-degree respawn fan serve eight, so seats
+  8 to 15 take derived colours (`BL-1017`) and the fan wraps. Co-op caps at four humans (`n/4`),
+  the campaign's P1 to P4 field.
+- **The carrier is a flag.** ENet ships, by LAN search or direct IP with an IPv4 UPnP mapping or an
+  IPv6 pinhole. A Steam carrier (Networking Sockets, relay, lobbies) is added behind `CsvmSteam`
+  without touching a session; listing the game on Steam is a distribution and legal decision, not
+  the code's.
+- **Two seams above the transport.** On the session side `INetTransport`; on the aircraft side a
+  `FlightController` fed a `RemotePoseBuffer` in place of an `IFlightInputSource`. A remote human is
+  a pose that arrives late, never a stick that arrives late. Godot's `MultiplayerApi`,
+  `MultiplayerSynchronizer` and `[Rpc]` are not used: they replicate node properties with no
+  interpolation and would put a Godot type in every session.
+- **Hit authority.** The shooter's machine decides a hit, the victim's owner applies the damage and
+  reports its own death, and the host scores. There is no lag compensation; the original has none.
+  A hit is its own reliable message, where the original batches hits onto its unreliable aircraft
+  state, because a lost hit is a lost kill.
+- **Star topology.** A guest connects to the host alone, and the host relays every guest's states
+  and events to the other guests (`NetSession`), so one port and one router mapping serve a match
+  and a guest-to-guest packet costs one extra hop. Guests never connect to each other.
+- **The doors are the Original presentation's.** The campaign cabin's Host Co-op button opens the
+  network and reads Close Network while open; the NETWORK OPEN band shows the address and guest
+  count, and a chip per guest its Ready mark. Close Network, or leaving the cabin for the main menu,
+  returns every guest to the Connection screen with "Host closed the game". The game is advertised
+  as `<profile>'s campaign`, with no password. A guest joins from the Multiplayer Connection screen,
+  by LAN search into the games list or by Internet IP address. The Connection screen's Host opens
+  the Multiplayer Lobby, where Dogfight is the one live mode; co-op has no lobby. The Built-in
+  menu, off by default, keeps its own network boards.
+- **A pause halts nothing.** In a network session the pause sheet is an overlay (`PauseState`):
+  the world, the AI, the director, the net ticks and the pauser's own aeroplane run on, the
+  aeroplane flying trimmed on a centred stick with its commands swallowed until the sheet closes.
+  Offline play, splitscreen included, still freezes the clock. Only the host's sheet offers
+  Restart: a co-op restart relaunches the mission on every machine through the door's next round,
+  and a Dogfight restart reruns the match in place for everyone.
+
 ## src/Net/INetTransport.cs
 The seam itself, and the two types it is spoken in. `NetReliability` is the three classes a
 payload can be sent under, `INetTransportListener` is what a transport tells its owner (a peer

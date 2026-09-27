@@ -94,8 +94,9 @@ transport's own connect and disconnect callbacks are the counterpart.
 `FUN_004987d0` as a 12-byte record onto the list at remote record `+0x1088` (count at `+0x108c`),
 appended here, and dropped by `FUN_00498760` the moment the packet is handed to the send. Nothing
 resends it. The 4-bit count field also means the sixteenth queued hit of a tick is lost before it
-is ever sent. The remake does not copy this: Decision 8 makes the hit its own reliable message,
-which is a remake decision and not a reading of this code.
+is ever sent. The remake does not copy this: its hit is its own reliable message (the hit-authority
+rule in [`../architecture/Net.md`](../architecture/Net.md)), which is a remake decision and not a
+reading of this code.
 
 The send rate is per peer and adaptive. `FUN_00497850(peerCount, distance)` returns the interval,
 stored at remote `+0x106c`, and a peer is skipped entirely until its interval has passed unless

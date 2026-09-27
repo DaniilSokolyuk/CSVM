@@ -179,7 +179,7 @@ public sealed class NetSessionTests
         Assert.Equal(1, guest.LocalSeat);
     }
 
-    // Decision 9's star. Two guests that cannot hear each other at all. Anything one of them
+    // The star topology. Two guests that cannot hear each other at all. Anything one of them
     // learns about the other came through the host's relay and nowhere else.
     [Fact]
     public void A_guests_event_reaches_the_other_guest_carrying_its_own_seat()
