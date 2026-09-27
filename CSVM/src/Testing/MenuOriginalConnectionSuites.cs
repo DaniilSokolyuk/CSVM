@@ -414,6 +414,77 @@ internal static class MenuOriginalConnectionSuites
         }
     }
 
+    [Suite("menu-original-ipv6-address",
+        "An IPv6 address typed into the Original Connection page's IP Address box as a German "
+        + "keyboard sends it: every character is a real key event pushed through the viewport and "
+        + "read back through a menu seat, so ':' (Shift and the period key) arrives as ':', the "
+        + "full bracketed address with its port fits the box, the box draws its end with the "
+        + "caret after it, and the door splits it into the bare host and the typed port. Ctrl+V "
+        + "and Shift+Insert paste it from a stand-in clipboard, trimmed, a refused character left "
+        + "out under the reject cue. Then "
+        + "[::1] with a port is typed and joined over the shipped ENet carrier, and a bare "
+        + "0:0:0:0:0:0:0:1 joins on the board's port with its last group left in the host")]
+    internal static void AnIpv6AddressIsTypedAndJoined(TestContext ctx)
+    {
+        ctx.RequireData(ctx.ZrdrPath, $"zrdr archive");
+        ctx.RequireData(MenuLayout.PathUnder(ctx.DataRoot), $"decoded menu layout");
+        var layout = OriginalAvailability.Load(ctx.DataRoot, out var why);
+        ctx.Check(layout != null, $"the install's layout passes the availability check ({why ?? "ok"})");
+        if (layout == null)
+        {
+            return;
+        }
+
+        var door = new NetPlayFeature(
+            (_, _, _) => throw new InvalidOperationException("the guest does not host"),
+            (address, port) => EnetTransport.Join(address, port));
+        var bare = new NetPlayFeature(
+            (_, _, _) => throw new InvalidOperationException("the guest does not host"),
+            (address, port) => EnetTransport.Join(address, port));
+        var reader = new BuiltInSeat(new MenuInput { Keyboard = true });
+        var ends = new List<End>();
+        EnetTransport? host = null;
+        try
+        {
+            var guest = Open(ctx, layout, door, ends);
+            if (guest == null)
+            {
+                return;
+            }
+
+            ClickRow(ctx, guest, OriginalShell.MultiplayerKey);
+            ClickRow(ctx, guest, OriginalConnectionScreen.InternetKey);
+            ClickRow(ctx, guest, OriginalConnectionScreen.AddressKey);
+            ctx.Check(guest.Shell.Connection.CapturingText,
+                $"the IP Address box has the keyboard ({guest.Shell.Screen}, {guest.Shell.FocusedKey})");
+            reader.Prime();
+            TypeTheReportedAddress(ctx, guest, reader);
+            PasteTheAddress(ctx, guest, reader);
+
+            host = OpenIpv6Host(out int port, out string refused);
+            if (host == null)
+            {
+                ctx.Check(false, $"ENet cannot host on [::1] in this process, so no IPv6 join can be shown: {refused}");
+                return;
+            }
+
+            JoinTheLoopback(ctx, guest, reader, host, port);
+            JoinTheBareLoopback(ctx, bare, host, port);
+        }
+        finally
+        {
+            foreach (var end in ends)
+            {
+                end.Host.Deactivate();
+            }
+
+            door.Discard();
+            bare.Discard();
+            host?.Dispose();
+            Godot.Input.MouseMode = Godot.Input.MouseModeEnum.Visible;
+        }
+    }
+
     [Suite("lan-discovery",
         "The shipped LAN discovery socket on the loopback: a responder bound on the discovery port "
         + "answers a search sent to 127.0.0.1 by unicast with the advert and game port it was "
@@ -931,6 +1002,211 @@ internal static class MenuOriginalConnectionSuites
         ctx.Check(shell.Dialog == null && guest.Door.Stage == NetDoorStage.Shut,
             $"OK takes the box down and hangs up ({shell.Dialog?.Message}, {guest.Door.Stage})");
     }
+
+    // The address the pilot could not type, typed key by key. A seat reading US key positions turns
+    // the German ':' into '>', and a box capped at 48 characters or refusing brackets stops short.
+    private static void TypeTheReportedAddress(TestContext ctx, End guest, BuiltInSeat reader)
+    {
+        const string Reported = "[2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90]:47500";
+        const string Host = "2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90";
+        var door = guest.Door;
+        EraseAddress(guest);
+        string colon = TypeKeys(ctx, guest, reader, ":");
+        ctx.Check(colon == ":",
+            $"ABLE-TO-FAIL CONTROL: Shift and the period key on a German layout reach the seat as ':' ('{colon}')");
+        EraseAddress(guest);
+        string typed = TypeKeys(ctx, guest, reader, Reported);
+        ctx.Check(typed == Reported && door.Address == Reported,
+            $"ABLE-TO-FAIL CONTROL: the whole {Reported.Length}-character address arrives and the box keeps it ('{typed}' typed, '{door.Address}' kept)");
+        ctx.Check(door.JoinTarget == (Host, 47500),
+            $"the door joins the bare host on the typed port ({door.JoinTarget.Host}, {door.JoinTarget.Port})");
+
+        var line = guest.Shell.Compose().Lines.FirstOrDefault(l => l.Text == door.Address);
+        ctx.Check(line is { KeepEnd: true, Caret: not null },
+            $"the box draws the address as an edit line with its caret ({line?.KeepEnd}, {line?.Caret != null})");
+        if (line == null)
+        {
+            return;
+        }
+
+        // Measured as the view draws it: window pixels on this viewport's fit.
+        var size = ctx.Host.GetViewport().GetVisibleRect().Size;
+        var fit = BoardFit.For(size.X, size.Y);
+        var view = new ComposedBoardView();
+        try
+        {
+            var font = (line.Face is { } face ? view.Installed(face) : null) ?? view.GetThemeDefaultFont();
+            int points = Math.Max(1, (int)Math.Round(fit.Length(line.Size)));
+            float wide = font.GetStringSize(line.Text, Godot.HorizontalAlignment.Left, -1f, points).X;
+            float box = fit.Length(line.Width);
+            float caret = line.Caret is { } lit ? fit.Length(lit.Width) : 0f;
+            float end = wide - ComposedBoardView.EndShift(font, line, points, box, caret);
+            ctx.Check(wide > box,
+                $"the address is wider than the box ({wide:0} px against {box:0}), so the box has to scroll to show it");
+            ctx.Check(end + caret <= box + 0.5f && end + caret >= box - 1.5f,
+                $"ABLE-TO-FAIL CONTROL: the box draws the address's last character inside it with the caret after it (text ends at {end:0.0} px, caret {caret:0} px, box {box:0} px)");
+        }
+        finally
+        {
+            view.Free();
+        }
+    }
+
+    // The address pasted rather than typed, on both chords a Windows edit box pastes on. The
+    // clipboard is the seam's, so the pilot's own is neither read nor written.
+    private static void PasteTheAddress(TestContext ctx, End guest, BuiltInSeat reader)
+    {
+        const string Reported = "[2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90]:47500";
+        var door = guest.Door;
+        var viewport = ctx.Host.GetViewport();
+        var pilots = MenuInput.Clipboard;
+        try
+        {
+            EraseAddress(guest);
+            MenuInput.Clipboard = () => $" \t{Reported}\r\n";
+            // Ctrl+V with the letter still on the event, as a layout may report it. A chord read as
+            // typing would put a 'v' in the box.
+            viewport.PushInput(new Godot.InputEventKey { Keycode = Godot.Key.V, PhysicalKeycode = Godot.Key.V, CtrlPressed = true, Unicode = 'v', Pressed = true });
+            viewport.PushInput(new Godot.InputEventKey { Keycode = Godot.Key.V, PhysicalKeycode = Godot.Key.V, CtrlPressed = true, Pressed = false });
+            var frame = reader.Poll(Dt);
+            var cues = new List<string>();
+            guest.Shell.Connection.TypeAddress(frame, cues);
+            ctx.Check(frame.Paste && frame.Typed.Length == 0 && door.Address == Reported && cues.SequenceEqual(new[] { OriginalCues.Text }),
+                $"ABLE-TO-FAIL CONTROL: Ctrl+V pastes the clipboard's address into the box, trimmed, with one keystroke cue ({frame.Paste}, '{frame.Typed}', '{door.Address}', {string.Join(" ", cues)})");
+
+            EraseAddress(guest);
+            MenuInput.Clipboard = () => "::1/128";
+            viewport.PushInput(new Godot.InputEventKey { Keycode = Godot.Key.Insert, PhysicalKeycode = Godot.Key.Insert, ShiftPressed = true, Pressed = true });
+            viewport.PushInput(new Godot.InputEventKey { Keycode = Godot.Key.Insert, PhysicalKeycode = Godot.Key.Insert, Pressed = false });
+            frame = reader.Poll(Dt);
+            cues.Clear();
+            guest.Shell.Connection.TypeAddress(frame, cues);
+            ctx.Check(frame.Paste && door.Address == "::1128" && cues.SequenceEqual(new[] { OriginalCues.TextError }),
+                $"Shift+Insert pastes too, the '/' an address is never written with left out under the reject cue ('{door.Address}', {string.Join(" ", cues)})");
+        }
+        finally
+        {
+            MenuInput.Clipboard = pilots;
+        }
+    }
+
+    // [::1] and a port typed into the box and joined over the shipped ENet carrier.
+    private static void JoinTheLoopback(TestContext ctx, End guest, BuiltInSeat reader, EnetTransport host, int port)
+    {
+        var door = guest.Door;
+        string typed = $"[::1]:{port.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+        EraseAddress(guest);
+        TypeKeys(ctx, guest, reader, typed);
+        ClickRow(ctx, guest, OriginalConnectionScreen.ConnectKey);
+        Pump(guest);
+        ctx.Check(guest.Shell.Dialog?.Message == $"Connecting to {typed} ...",
+            $"Connect follows the join on a box naming the typed host and port ({guest.Shell.Screen}, {door.Stage}, {guest.Shell.Dialog?.Message})");
+        AwaitJoin(host, door, () => Pump(guest));
+        ctx.Check(door.Stage == NetDoorStage.Joined && host.Peers.Count == 1,
+            $"the bracketed IPv6 join reaches the ENet host on [::1]:{port} ({door.Stage}, {door.Fault}, {host.Peers.Count} joined)");
+    }
+
+    // A bare IPv6 address joins on the board's port, its last group read as part of the host.
+    private static void JoinTheBareLoopback(TestContext ctx, NetPlayFeature door, EnetTransport host, int port)
+    {
+        const string Bare = "0:0:0:0:0:0:0:1";
+        while (door.Address.Length > 0)
+        {
+            door.EraseAddress();
+        }
+
+        door.TypeAddress(Bare);
+        door.StepPort(port - door.Port);
+        ctx.Check(door.JoinTarget == (Bare, port),
+            $"a bare IPv6 address keeps its last group in the host and joins on the board's port ({door.JoinTarget.Host}, {door.JoinTarget.Port})");
+        int before = host.Peers.Count;
+        door.OpenJoin();
+        AwaitJoin(host, door, () => door.Step(Dt));
+        ctx.Check(door.Stage == NetDoorStage.Joined && host.Peers.Count == before + 1,
+            $"and that join reaches the ENet host too ({door.Stage}, {door.Fault}, {host.Peers.Count} joined)");
+    }
+
+    // A real socket connects on the wall clock, so the wait is on it rather than a frame count.
+    private static void AwaitJoin(EnetTransport host, NetPlayFeature door, Action frame)
+    {
+        var waited = System.Diagnostics.Stopwatch.StartNew();
+        while (door.Stage == NetDoorStage.Joining && waited.Elapsed.TotalSeconds < 5.0)
+        {
+            host.Step(0.001);
+            frame();
+            System.Threading.Thread.Sleep(1);
+        }
+
+        host.Step(0.001);
+    }
+
+    // An ENet host on the IPv6 loopback, on the first port of a short walk that binds.
+    private static EnetTransport? OpenIpv6Host(out int port, out string why)
+    {
+        why = "no port tried";
+        for (port = 47760; port < 47780; port++)
+        {
+            try
+            {
+                return EnetTransport.Host(port, maxPeers: 4, bindAddress: "::1");
+            }
+            catch (InvalidOperationException e)
+            {
+                why = e.Message;
+            }
+        }
+
+        port = 0;
+        return null;
+    }
+
+    // Backspace on the focused box until it is empty.
+    private static void EraseAddress(End end)
+    {
+        for (int i = 0; i <= NetPlayFeature.AddressLimit && end.Door.Address.Length > 0; i++)
+        {
+            TypeInto(end, new MenuCommands { Erase = true });
+        }
+    }
+
+    // Each character as the key event a German keyboard sends for it, one frame each. It goes
+    // through the real viewport and back through a keyboard seat. Answers what the seat typed.
+    private static string TypeKeys(TestContext ctx, End end, BuiltInSeat reader, string text)
+    {
+        var viewport = ctx.Host.GetViewport();
+        var typed = new System.Text.StringBuilder();
+        foreach (char c in text)
+        {
+            var (key, shift, altGr) = GermanKey(c);
+            viewport.PushInput(new Godot.InputEventKey
+            {
+                Keycode = key,
+                PhysicalKeycode = key,
+                ShiftPressed = shift,
+                CtrlPressed = altGr,
+                AltPressed = altGr,
+                Unicode = c,
+                Pressed = true,
+            });
+            viewport.PushInput(new Godot.InputEventKey { Keycode = key, PhysicalKeycode = key, Pressed = false });
+            var frame = reader.Poll(Dt);
+            typed.Append(frame.Typed);
+            TypeInto(end, new MenuCommands { Typed = frame.Typed });
+        }
+
+        return typed.ToString();
+    }
+
+    // Where a German layout puts the characters an address is written with.
+    private static (Godot.Key Key, bool Shift, bool AltGr) GermanKey(char c) => c switch
+    {
+        ':' => (Godot.Key.Period, true, false),
+        '.' => (Godot.Key.Period, false, false),
+        '[' => (Godot.Key.Key8, false, true),
+        ']' => (Godot.Key.Key9, false, true),
+        >= '0' and <= '9' => (Godot.Key.Key0 + (c - '0'), false, false),
+        _ => ((Godot.Key)char.ToUpperInvariant(c), false, false),
+    };
 
     // Frames of a Built-in host's door stepped by hand, each followed by one guest frame.
     private static void Frames(NetPlayFeature hostDoor, End guest, int count)

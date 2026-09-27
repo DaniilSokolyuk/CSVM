@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using CSVM.Net;
@@ -49,9 +50,9 @@ public sealed class NetPlayFeature : IMenuFeature
     /// still names something that can answer.</summary>
     public const string DefaultAddress = "127.0.0.1";
 
-    /// <summary>The longest an address may be. An IPv6 address with a zone is the widest thing a
-    /// player can type here.</summary>
-    public const int AddressLimit = 48;
+    /// <summary>The longest an address may be. The widest IPv6 address, the IPv4-mapped form, is 45
+    /// characters and 53 in brackets with a port. The rest is room for a zone.</summary>
+    public const int AddressLimit = 64;
 
     /// <summary>How long a join may stand at <see cref="NetDoorStage.Joining"/> before the door
     /// gives up on it. ENet's own connect attempt gives up first on a routable address; this
@@ -175,8 +176,16 @@ public sealed class NetPlayFeature : IMenuFeature
     /// <summary>The port a host opens on, and the port a join is aimed at.</summary>
     public int Port { get; private set; } = DefaultPort;
 
-    /// <summary>The address a join is aimed at, as typed.</summary>
+    /// <summary>The address a join is aimed at, as typed. It may name its own port, which beats
+    /// <see cref="Port"/> for the join (<see cref="SplitAddress"/>).</summary>
     public string Address { get; private set; } = DefaultAddress;
+
+    /// <summary>The host and port a join opens on: <see cref="Address"/> split, with
+    /// <see cref="Port"/> where the address names none.</summary>
+    public (string Host, int Port) JoinTarget => SplitAddress(Address, Port);
+
+    /// <summary><see cref="JoinTarget"/> as a player writes it back, an IPv6 host bracketed.</summary>
+    public string JoinTargetText => Endpoint(JoinTarget.Host, JoinTarget.Port);
 
     /// <summary>Why the last open failed, or "" when none has. Shown on the board rather than
     /// thrown: a taken port and a refused join are both things a player fixes and retries.</summary>
@@ -371,6 +380,42 @@ public sealed class NetPlayFeature : IMenuFeature
     public bool CoopFlightOver =>
         !IsCoopGuest || CoopFlow is not { Screen: NetCoopScreen.InMission } flow || (_flightEpoch is { } flown && flow.Epoch != flown);
 
+    /// <summary>Splits an address into the host and the port it names. An IPv6 address names its
+    /// port after a closing bracket. A bare address with more than one colon is all host, so its
+    /// last group is never read as a port. One colon splits a host from its port.
+    /// A port that is missing or out of range takes <paramref name="fallbackPort"/>.</summary>
+    public static (string Host, int Port) SplitAddress(string value, int fallbackPort)
+    {
+        string text = value ?? "";
+        int PortOf(string field) =>
+            int.TryParse(field, NumberStyles.Integer, CultureInfo.InvariantCulture, out int port)
+            && port is > 0 and < 65536
+                ? port
+                : fallbackPort;
+
+        int bracket = text.IndexOf("]:", StringComparison.Ordinal);
+        if (text.StartsWith('[') && bracket > 0)
+        {
+            return (text[1..bracket], PortOf(text[(bracket + 2)..]));
+        }
+
+        int colon = text.LastIndexOf(':');
+        if (colon > 0 && text.IndexOf(':') == colon)
+        {
+            return (text[..colon], PortOf(text[(colon + 1)..]));
+        }
+
+        return (text.Trim('[', ']'), fallbackPort);
+    }
+
+    /// <summary>A host and port written back as one address, bracketing a host with a colon in it.
+    /// </summary>
+    public static string Endpoint(string host, int port)
+    {
+        string number = port.ToString(CultureInfo.InvariantCulture);
+        return (host ?? "").Contains(':', StringComparison.Ordinal) ? $"[{host}]:{number}" : $"{host}:{number}";
+    }
+
     /// <summary>What this co-op host's boards show, named to every guest on the next step. A new
     /// mission starts a new round of picks, as does a move onto a board other than the briefing
     /// and flight check. Every Ready then clears.</summary>
@@ -478,23 +523,39 @@ public sealed class NetPlayFeature : IMenuFeature
         Port = port < 1024 ? 65535 : port > 65535 ? 1024 : port;
     }
 
-    /// <summary>Appends one typed character to the address. Refused while a socket is open, and
-    /// for anything outside the characters an address is written with.</summary>
-    public void TypeAddress(string typed)
+    /// <summary>Appends typed characters to the address, answering how many it took. Refused while
+    /// a socket is open, past <see cref="AddressLimit"/>, and for anything outside the characters
+    /// an address is written with.</summary>
+    public int TypeAddress(string typed)
     {
         if (_transport != null || string.IsNullOrEmpty(typed))
         {
-            return;
+            return 0;
         }
 
+        int taken = 0;
         foreach (char c in typed)
         {
-            bool allowed = char.IsAsciiLetterOrDigit(c) || c is '.' or ':' or '%' or '-';
+            bool allowed = char.IsAsciiLetterOrDigit(c) || c is '.' or ':' or '%' or '-' or '[' or ']';
             if (allowed && Address.Length < AddressLimit)
             {
                 Address += c;
+                taken++;
             }
         }
+
+        return taken;
+    }
+
+    /// <summary>Appends pasted text to the address, trimmed of the whitespace a copied address
+    /// carries, under <see cref="TypeAddress"/>'s rule and cap. Answers how many characters it
+    /// took and whether any were left out, refused or past the cap, which a box cues as a reject.
+    /// </summary>
+    public (int Taken, bool Dropped) PasteAddress(string? clipboard)
+    {
+        string text = clipboard?.Trim() ?? string.Empty;
+        int taken = TypeAddress(text);
+        return (taken, taken < text.Length);
     }
 
     /// <summary>Takes the last character off the address.</summary>
@@ -567,7 +628,8 @@ public sealed class NetPlayFeature : IMenuFeature
         EndLinger();
         try
         {
-            _transport = new NetLobby(_openJoin(Address, Port), Version);
+            var (host, port) = JoinTarget;
+            _transport = new NetLobby(_openJoin(host, port), Version);
         }
         catch (Exception e) when (e is InvalidOperationException or ArgumentException)
         {
@@ -916,11 +978,11 @@ public sealed class NetPlayFeature : IMenuFeature
         }
         else if (_link?.LinkState == EnetLinkState.Down)
         {
-            Fail($"{Address}:{Port} refused the join");
+            Fail($"{JoinTargetText} refused the join");
         }
         else if (_joining >= JoinTimeoutSeconds)
         {
-            Fail($"{Address}:{Port} did not answer in {JoinTimeoutSeconds:0} seconds");
+            Fail($"{JoinTargetText} did not answer in {JoinTimeoutSeconds:0} seconds");
         }
     }
 

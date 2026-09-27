@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Text;
 using CSVM.Bindings;
 using CSVM.Flight.Airframe;
 using CSVM.Sticks;
@@ -61,14 +60,17 @@ public sealed class MenuInput
     /// <summary>The horizontal twin of <see cref="PadMove"/>, same reason.</summary>
     public int PadMoveX;
 
-    /// <summary>The characters typed this frame, "" for none, keyboard only, edge-detected per
-    /// key. Shift gives a letter's upper case and any other key's US-layout shifted symbol. Polled
-    /// like everything else here rather than read off an input event, so one screen's text and its
-    /// navigation share a clock.</summary>
+    /// <summary>The characters typed since the last poll, "" for none, keyboard only, one per press.
+    /// Read off <see cref="TypedText.Live"/>, so each is the character the pilot's own keyboard
+    /// layout produced, where a polled key would name only a US key position.</summary>
     public string Typed = string.Empty;
 
     /// <summary>Backspace pressed this frame (edge), the deletion half of <see cref="Typed"/>.</summary>
     public bool Erase;
+
+    /// <summary>A paste chord pressed since the last poll (edge), keyboard only. The box that takes
+    /// it reads <see cref="Clipboard"/>.</summary>
+    public bool Paste;
 
     /// <summary>Whether this poll moved the seat from one device to the other, a board hint's cue to
     /// recompose. The rule and the counting are <see cref="ActiveDevice"/>'s, the same handover the
@@ -113,9 +115,8 @@ public sealed class MenuInput
     // the same number from their own bindings (DefaultBindings), which is where it is tunable.
     private const float StickDeadzone = 0.5f;
 
-    // The keys a text field takes a character from. Deliberately wider than any box's accept rule:
-    // a character the box refuses has to reach the box for the box to cue its reject sound, and a
-    // key that types nothing at all is silent instead.
+    // The keys that type a character on a US layout, which text entry takes off the cursor
+    // bindings. The characters themselves come from TypedText, not from these keys.
     private static readonly Key[] TextKeys = BuildTextKeys();
 
     // One timing rule for both cursor axes, shared with TapHoldButton's hold instead of a pair of
@@ -124,10 +125,6 @@ public sealed class MenuInput
     private readonly HoldToRepeat _repeatX = new(RepeatInitial, RepeatInterval);
     private readonly HoldToRepeat _repeatPad = new(RepeatInitial, RepeatInterval);
     private readonly HoldToRepeat _repeatPadX = new(RepeatInitial, RepeatInterval);
-
-    // Previous state of every text key, in TextKeys order, for the same edge detection the
-    // buttons get.
-    private readonly bool[] _textPrev = new bool[TextKeys.Length];
 
     // This seat's hardware, as the binding model addresses it. Deliberately not exposed: it answers
     // for SeatPads and nothing else, so a rebinding screen capturing a Flight or Camera control
@@ -164,6 +161,11 @@ public sealed class MenuInput
     // A rebind landed on Map, so the text-entry reading (a clone with the typeable keys dropped) is
     // stale and is rebuilt on the next read rather than on every one.
     private bool _typingStale;
+
+    // How far into TypedText.Live this seat has read, its pastes too, and the frame it last read on.
+    private long _typedMark = TypedText.Live.Count;
+    private long _pasteMark = TypedText.Live.Pastes;
+    private ulong _typedFrame = TypedText.Live.Frame;
 
     private bool _acceptPrev, _backPrev, _padBackPrev, _startPrev, _loadoutPrev, _presetsPrev;
     private bool _erasePrev, _unbindPrev;
@@ -207,10 +209,13 @@ public sealed class MenuInput
         _live = _keys;
     }
 
-    /// <summary>The keys a text field takes a character from, in the order <see cref="Typed"/>
-    /// reports them. Wider than either name box's accept rule on purpose, so a refused character
-    /// still arrives and the box can cue its reject sound.</summary>
+    /// <summary>The keys that type a character on a US layout: letters, digits, space and the
+    /// punctuation row. <see cref="TypingMap"/> drops every binding on one of them.</summary>
     public static IReadOnlyList<Key> TypeableKeys => TextKeys;
+
+    /// <summary>The text a paste inserts, read when a box takes a <see cref="Paste"/>. A seam so a
+    /// suite can hand a box its clipboard without writing the pilot's own.</summary>
+    public static Func<string> Clipboard { get; set; } = DisplayServer.ClipboardGet;
 
     /// <summary>This seat's live menu keymap, the object a rebinding screen edits. Editing it moves
     /// the bindings this poller reads on its next frame, since the readers hold the map itself; call
@@ -237,6 +242,21 @@ public sealed class MenuInput
                 return pads.Length == 0 ? "keyboard" : $"keyboard + {pads}";
             return pads.Length == 0 ? "no device" : pads;
         }
+    }
+
+    /// <summary>Whether a key event is a paste chord: Ctrl+V (Cmd+V on macOS) or Shift+Insert, the
+    /// two a Windows edit box pastes on. AltGr arrives as Ctrl and Alt together, so a chord carrying
+    /// Alt is a layout's third level rather than a paste.</summary>
+    public static bool IsPasteChord(InputEventKey key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        if (!key.Pressed || key.Echo || key.AltPressed)
+        {
+            return false;
+        }
+
+        return (key.Keycode == Key.V && key.IsCommandOrControlPressed() && !key.ShiftPressed)
+            || (key.Keycode == Key.Insert && key.ShiftPressed && !key.CtrlPressed);
     }
 
     /// <summary>The board reader a flight session gives the player at zero-based
@@ -309,31 +329,6 @@ public sealed class MenuInput
     {
         ArgumentNullException.ThrowIfNull(actions);
         return actions.Held(negative) ? -1 : actions.Held(positive) ? 1 : 0;
-    }
-
-    /// <summary>The characters the typeable keys produce this frame: each key whose state rose
-    /// since <paramref name="prev"/>, in table order, Shift deciding a letter's case and the
-    /// symbol any other key prints.
-    /// <paramref name="prev"/> is the caller's edge state, updated in place and sized from
-    /// <see cref="TypeableKeys"/> so it cannot fall out of step with the table. Public so text
-    /// entry unit-tests; it reads no device itself.</summary>
-    public static string TypedFrom(Func<Key, bool> down, bool shift, bool[] prev)
-    {
-        ArgumentNullException.ThrowIfNull(down);
-        ArgumentNullException.ThrowIfNull(prev);
-        if (prev.Length != TextKeys.Length)
-            throw new ArgumentException($"edge state must be {TextKeys.Length} long", nameof(prev));
-
-        var typed = new StringBuilder();
-        for (int i = 0; i < TextKeys.Length; i++)
-        {
-            bool held = down(TextKeys[i]);
-            if (held && !prev[i])
-                typed.Append(CharFor(TextKeys[i], shift));
-            prev[i] = held;
-        }
-
-        return typed.Length > 0 ? typed.ToString() : string.Empty;
     }
 
     /// <summary>The menu keymap with every binding on a typeable key dropped, which is what
@@ -457,50 +452,8 @@ public sealed class MenuInput
         Accept = Back = PadBack = Start = Loadout = Presets = Unbind = DeviceMoved = false;
     }
 
-    // The Key enum's letter, digit and punctuation values ARE their ASCII codes, so the unshifted
-    // character is the key. Shift cases a letter and takes every other key to the US-layout symbol
-    // printed above it, the one layout the Key names describe; a box's accept rule, not this table,
-    // decides which of those it takes (the unlocking pilot name ends in Shift+1).
-    private static char CharFor(Key key, bool shift)
-    {
-        if (key == Key.Space)
-            return ' ';
-        char c = (char)(int)key;
-        if (key is >= Key.A and <= Key.Z)
-            return shift ? c : char.ToLowerInvariant(c);
-        return shift ? ShiftedUs(c) : c;
-    }
-
-    // The US-layout shifted row: the digits and the punctuation keys BuildTextKeys polls.
-    private static char ShiftedUs(char c) => c switch
-    {
-        '1' => '!',
-        '2' => '@',
-        '3' => '#',
-        '4' => '$',
-        '5' => '%',
-        '6' => '^',
-        '7' => '&',
-        '8' => '*',
-        '9' => '(',
-        '0' => ')',
-        '\'' => '"',
-        ',' => '<',
-        '-' => '_',
-        '.' => '>',
-        '/' => '?',
-        ';' => ':',
-        '=' => '+',
-        '[' => '{',
-        '\\' => '|',
-        ']' => '}',
-        '`' => '~',
-        _ => c,
-    };
-
     // The letters, the digit row, the space bar and then the punctuation, in that order. The
-    // punctuation is every printable non-alphanumeric key a US layout reports unshifted; it is
-    // polled so a name box has a character to refuse rather than the press vanishing in here.
+    // punctuation is every printable non-alphanumeric key a US layout reports unshifted.
     private static Key[] BuildTextKeys()
     {
         var keys = new List<Key>();
@@ -533,21 +486,28 @@ public sealed class MenuInput
         PadMove = PadMoveX = 0;
     }
 
-    // A key still held from whatever opened the screen must not type itself into the field.
+    // A character typed before the screen opened must not land in its field.
     private void PrimeText()
     {
-        for (int i = 0; i < TextKeys.Length; i++)
-            _textPrev[i] = KeyDown(TextKeys[i]);
+        _typedMark = TypedText.Live.Count;
+        _pasteMark = TypedText.Live.Pastes;
+        _typedFrame = TypedText.Live.Frame;
         _erasePrev = KeyDown(Key.Backspace);
         Typed = string.Empty;
-        Erase = false;
+        Erase = Paste = false;
     }
 
-    // Every typeable key pressed this frame, plus Backspace. Shift decides case, which is what lets
-    // a profile name read as the original's own mixed-case roster does, and the shifted symbols.
+    // What the keyboard typed since the last poll, plus Backspace. A seat that missed a frame
+    // (a pause board opened over a flight) drops what arrived meanwhile, as a prime would.
     private void PollText()
     {
-        Typed = TypedFrom(KeyDown, KeyDown(Key.Shift), _textPrev);
+        ulong frame = TypedText.Live.Frame;
+        bool reading = frame - _typedFrame <= 1;
+        _typedFrame = frame;
+        string typed = TypedText.Live.Since(ref _typedMark);
+        Typed = Keyboard && reading ? typed : string.Empty;
+        bool pasted = TypedText.Live.PastedSince(ref _pasteMark);
+        Paste = Keyboard && reading && pasted;
         bool erase = KeyDown(Key.Backspace);
         Erase = erase && !_erasePrev;
         _erasePrev = erase;

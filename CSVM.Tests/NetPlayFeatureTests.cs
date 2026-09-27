@@ -71,6 +71,106 @@ public class NetPlayFeatureTests
         Assert.Equal(NetPlayFeature.AddressLimit, door.Address.Length);
     }
 
+    /// <summary>A full IPv6 address, bracketed with a port, is typed character by character and
+    /// kept whole. A 48-character cap or a refused bracket would cut it short.</summary>
+    [Theory]
+    [InlineData("2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90")]
+    [InlineData("[2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90]:47500")]
+    [InlineData("[ffff:ffff:ffff:ffff:ffff:ffff:255.255.255.255]:65535")]
+    public void AFullIpv6AddressIsTypedWhole(string address)
+    {
+        var door = Door();
+        while (door.Address.Length > 0)
+        {
+            door.EraseAddress();
+        }
+
+        int taken = 0;
+        foreach (char c in address)
+        {
+            taken += door.TypeAddress(c.ToString());
+        }
+
+        Assert.Equal(address, door.Address);
+        Assert.Equal(address.Length, taken);
+        Assert.Equal(0, door.TypeAddress("/"));
+    }
+
+    /// <summary>A pasted address lands trimmed and whole. A refused character or one past the cap
+    /// is left out and reported, for the box's reject cue.</summary>
+    [Fact]
+    public void APastedAddressIsTrimmedFilteredAndCapped()
+    {
+        var door = Door();
+        while (door.Address.Length > 0)
+        {
+            door.EraseAddress();
+        }
+
+        Assert.Equal((46, false), door.PasteAddress(" \t[2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90]:47500\r\n"));
+        Assert.Equal("[2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90]:47500", door.Address);
+
+        while (door.Address.Length > 0)
+        {
+            door.EraseAddress();
+        }
+
+        Assert.Equal((6, true), door.PasteAddress("::1/128"));
+        Assert.Equal("::1128", door.Address);
+
+        Assert.Equal((NetPlayFeature.AddressLimit - 6, true), door.PasteAddress(new string('a', 80)));
+        Assert.Equal(NetPlayFeature.AddressLimit, door.Address.Length);
+        Assert.Equal((0, false), door.PasteAddress(null));
+    }
+
+    /// <summary>What a typed address splits into. A bare IPv6 address is all host, so its last
+    /// group is never read as a port. A bracketed one names its port after the bracket, and one
+    /// colon splits a host from its port. The board's port stands where the address names none.
+    /// </summary>
+    [Theory]
+    [InlineData("2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90", "2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90", 47600)]
+    [InlineData("[2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90]:47500", "2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90", 47500)]
+    [InlineData("[2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90]", "2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90", 47600)]
+    [InlineData("::1", "::1", 47600)]
+    [InlineData("[::1]:5000", "::1", 5000)]
+    [InlineData("fe80::1%12", "fe80::1%12", 47600)]
+    [InlineData("10.0.0.7", "10.0.0.7", 47600)]
+    [InlineData("10.0.0.7:5000", "10.0.0.7", 5000)]
+    [InlineData("[::1]:99999", "::1", 47600)]
+    public void ATypedAddressSplitsIntoTheHostAndPortTheJoinOpensOn(string typed, string host, int port)
+    {
+        Assert.Equal((host, port), NetPlayFeature.SplitAddress(typed, 47600));
+    }
+
+    /// <summary>The join reaches the carrier as the split host and port, and the board's words
+    /// write an IPv6 host back bracketed.</summary>
+    [Theory]
+    [InlineData("2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90", "2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90", 47500, "[2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90]:47500")]
+    [InlineData("[2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90]:47600", "2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90", 47600, "[2a04:6ec0:232:6640:feb1:ff80:9ed7:dd90]:47600")]
+    [InlineData("10.0.0.7:5000", "10.0.0.7", 5000, "10.0.0.7:5000")]
+    public void AJoinOpensOnTheSplitHostAndPort(string typed, string host, int port, string shown)
+    {
+        var mesh = LoopbackTransport.Mesh(2, Clean, new Random(29));
+        (string Host, int Port)? asked = null;
+        var door = new NetPlayFeature(
+            (_, _, _) => mesh[0],
+            (address, at) =>
+            {
+                asked = (address, at);
+                return mesh[1];
+            });
+        while (door.Address.Length > 0)
+        {
+            door.EraseAddress();
+        }
+
+        door.TypeAddress(typed);
+        door.OpenJoin();
+
+        Assert.Equal((host, port), asked);
+        Assert.Equal(shown, door.JoinTargetText);
+    }
+
     [Fact]
     public void HostingOpensTheSocketAndAsksTheRouterForThePortOnce()
     {

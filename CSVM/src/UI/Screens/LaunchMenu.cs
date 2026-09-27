@@ -1997,6 +1997,10 @@ public sealed partial class LaunchMenu : CanvasLayer
         {
             net.EraseAddress();
         }
+        else if (MenuInput.IsPasteChord(key))
+        {
+            net.PasteAddress(MenuInput.Clipboard());
+        }
         else if (key.Unicode > 0)
         {
             net.TypeAddress(((char)key.Unicode).ToString(CultureInfo.InvariantCulture));
@@ -4109,7 +4113,7 @@ public sealed partial class LaunchMenu : CanvasLayer
         {
             NetDoorStage.Hosting =>
                 $"Hosting on port {net.Port.ToString(CultureInfo.InvariantCulture)}{link}, {net.Peers.ToString(CultureInfo.InvariantCulture)} joined{mapped}",
-            NetDoorStage.Joining => $"Joining {net.Address}:{net.Port.ToString(CultureInfo.InvariantCulture)}{link}",
+            NetDoorStage.Joining => $"Joining {net.JoinTargetText}{link}",
             NetDoorStage.Joined => CoopDoorText.JoinedStatus(net, link, MissionName),
             NetDoorStage.Failed => $"That did not open: {net.Fault}",
             _ => "Host a match, or type an address and join one. The host picks the map.",

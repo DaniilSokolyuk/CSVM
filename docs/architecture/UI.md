@@ -200,7 +200,7 @@ plaques and flowed list widgets, each in draw order. The backdrop is its own lay
 sit over the background and stay under the page's pictures, where a selection bar goes. `BoardNote`
 is a widget's entries plus its wrap box (cut at a word where the box has no room for the rest, shrunk
 to a face the whole list fits in, or no box at all where the widget's own list stops nowhere), its
-marks, and `BoardCaret` an edit box's cursor on the line it follows, all placed by a caller that can measure text. A `BoardLine` carrying a `Height` names the box its block is fitted to, the renderer stepping its face down until the block fits, since only the renderer can measure; one marked `Marquee` stays on one line and scrolls inside its width when wider. `PlaqueFrame` and `PlaqueInk` are a plaque's states, and a plaque whose art leaves
+marks, and `BoardCaret` an edit box's cursor on the line it follows, all placed by a caller that can measure text. A `BoardLine` carrying a `Height` names the box its block is fitted to, the renderer stepping its face down until the block fits, since only the renderer can measure; one marked `Marquee` stays on one line and scrolls inside its width when wider, and one marked `KeepEnd`, an edit box's, is clipped to its width showing its end. `PlaqueFrame` and `PlaqueInk` are a plaque's states, and a plaque whose art leaves
 part of its frame empty carries its label's own baseline. `BoardArt` names a file and its frame count and the renderer resolves it; one of its libraries is a movie, so a background film reaches the backdrop with no engine type here, and one is an image already in memory (`Held`), a stunt photograph's thumbnail. `BoardCrop` takes a region of the source instead of the whole frame, which is a chart sheet's own window. A `BoardLine` carrying a `Glyph` names the pad button drawn where `GlyphSlot` stands in its text, the renderer owning the gap after the picture since only it can measure one, and a `BoardFill` carrying an `Ink` takes the palette's colour instead of three bytes, which is what a seat chip paints with.
 
 ## src/UI/Boards/BoardMarquee.cs
@@ -246,7 +246,7 @@ texture cache and the only art resolution there is, mission art and screen chrom
 extraction roots, and caches a miss so an absent extraction is probed once per name. A movie resolves
 to a `MovieSurface`, whose one texture the cache holds and the surface rewrites in place, so the
 picture animates with nothing invalidated; a held image gets one texture per image, dropped once a shown board stops drawing it; `AdvanceMovies` runs their clocks off the caller's own step and
-`AdvanceCaret` blinks a text cursor off it and `AdvanceMarquee` scrolls an overflowing marquee line, each saying whether to repaint; a marquee line is drawn through the text server with whole glyphs clipped to its box, so it keeps its place in the draw order under overlays and the pointer. A line naming a `LanguiFace` draws in that installed Windows face, cached per tag, and keeps the board's own where the machine lacks it; a pitched block honours authored line breaks and indents and justifies as a whole, its lines left-aligned under the widest. Supplies the font metric a flowed
+`AdvanceCaret` blinks a text cursor off it and `AdvanceMarquee` scrolls an overflowing marquee line, each saying whether to repaint; a marquee line is drawn through the text server with whole glyphs clipped to its box, so it keeps its place in the draw order under overlays and the pointer, and a `KeepEnd` line wider than its box is drawn the same way shifted left by `EndShift`, so the text's end and the caret after it show. A line naming a `LanguiFace` draws in that installed Windows face, cached per tag, and keeps the board's own where the machine lacks it; a pitched block honours authored line breaks and indents and justifies as a whole, its lines left-aligned under the widest. Supplies the font metric a flowed
 `BoardNote` and a caret cannot take, `Fitted` shrinking a note's face until its list fits its box rather than losing a row and stepping a `BoardLine` carrying a box height down a point at a time until its wrapped block fits, `Block` being that measurement on its own, the two-line hint band a pad needs, and `ArtSize` for a caller that must clip against a bitmap's own authored width. `PresentMoving` is the one repaint a caller holding the frame loop can still make: its pictures go on a canvas item of the view's own, fitted by the same maths and re-fitted on a resize, rather than through a queued redraw callback the blocked loop would never reach, so a load screen's build can move the bar it draws. A line carrying a glyph is drawn through `ControlLine`, the composition the flight prompts already use, so the picture and the gap around it are measured in one place and a board composer never spaces them itself.
 
 ## src/UI/Screens/CinemaScreen.cs
@@ -527,7 +527,16 @@ context (`src/Bindings/`) from three readings of one seat: keyboard live, keyboa
 typeable keys, and the pad alone. Its pad rows sit on the seat-local `SeatPads` identity, since a
 seat reads a set of pads and no binding may hold a connection index. `Typed` and `Erase` serve a
 text field, `PadMove`/`PadMoveX` are the axes such a screen reads instead, since W, A, S and D
-are letters there. `TypeableKeys` is deliberately wider than any box's accept rule, and Shift gives each key its US-layout shifted character. `Device` and `DeviceMoved` come from an `ActiveDevice` over a fourth reading, the keyboard half alone, so a board hint names the side the seat last used and knows the tick it changed; `Hint` composes one such line. Wrapped by `Menu/BuiltIn/BuiltInSeat.cs`, bound by `MenuSeatDevices`; it also serves the in-flight boards. Beside all of that stand three static raw pad reads, `JoinPressed`, `SignOnPressed` and `SignOffPressed` for Start, A and B: a pad no seat owns has no keymap, so nothing bound can answer for the join gesture or the join board's two. Player 1 also reads the flight sticks, and its menu stick rows follow the active profiles (`Sticks/StickProfileSet.cs`); a joined seat never reads a stick.
+are letters there. `Typed` is read off `TypedText`, so each character is the one the pilot's own layout produced, and `Paste` is a Ctrl+V or Shift+Insert chord whose text a box reads through the `Clipboard` seam; `TypeableKeys` names the US key positions text entry takes off the cursor bindings. `Device` and `DeviceMoved` come from an `ActiveDevice` over a fourth reading, the keyboard half alone, so a board hint names the side the seat last used and knows the tick it changed; `Hint` composes one such line. Wrapped by `Menu/BuiltIn/BuiltInSeat.cs`, bound by `MenuSeatDevices`; it also serves the in-flight boards. Beside all of that stand three static raw pad reads, `JoinPressed`, `SignOnPressed` and `SignOffPressed` for Start, A and B: a pad no seat owns has no keymap, so nothing bound can answer for the join gesture or the join board's two. Player 1 also reads the flight sticks, and its menu stick rows follow the active profiles (`Sticks/StickProfileSet.cs`); a joined seat never reads a stick.
+
+## src/UI/Screens/TypedText.cs
+The characters the keyboard typed as the pilot's own layout produced them, engine-free, which every
+`MenuInput.Typed` reads. A polled key code names a US key position, so a German ':' (Shift and the
+period key) read that way is '>'; only a key event's Unicode carries the character. The launcher
+feeds `Live` from `_Input`, where no screen marks a key handled, dropping releases, auto-repeat
+echoes and control codes, and counts paste chords apart as `Pastes`, since a paste is read off the
+clipboard by the box it lands in. Each reader keeps its own mark, so two seats polled on one frame
+both see a character, and one further behind than `Kept` is handed the newest.
 
 ## src/UI/Boards/HudLayers.cs
 The canvas-layer ordering for everything drawn over the 3D view, in one place, so "does the collider
@@ -866,7 +875,7 @@ definition persisted data.
 
 ## src/UI/Menu/MenuCommands.cs
 The device-neutral input seam: `MenuCommands` is one frame of one seat's semantic commands
-(auto-repeated cursor steps, edge presses, typed text, an optional window-pixel `MenuPointer` whose
+(auto-repeated cursor steps, edge presses, typed text and a paste, an optional window-pixel `MenuPointer` whose
 primary button arrives as a press and an edge and whose secondary as a held state driving no command
 of its own), and `IMenuInputSource` is the per-seat producer (`Poll`/`Prime`/`CapturingText`). A
 source is not synonymous with a pad: keyboard-plus-unclaimed-pads, one claimed pad, a mouse or a
@@ -1206,7 +1215,7 @@ so every corner is the scripts' own rather than the layout's. Only LAN TCP/IP, w
 network, and Internet, which joins the typed address, are offered; Build Custom Plane draws greyed,
 and Host and Create Game open `OriginalLobbyScreen` as a Dogfight's host. A join started here is followed on the shared messagebox over the page until it lands or
 fails. A game of another build version lists in grey with its version as its status, and Join
-Game refuses it in a box before any socket opens. Plaques draw as pictures, over a script's labels.
+Game refuses it in a box before any socket opens. Plaques draw as pictures, over a script's labels. The IP Address box cues each typed character and each paste with the edit box's keystroke or reject sound, and keeps the script's 150 pixels as a `KeepEnd` line that scrolls to the end of an IPv6 address.
 The geometry and strings: [../org/menu-inventory.md](../org/menu-inventory.md).
 
 ## src/UI/Menu/Original/OriginalLobbyScreen.cs
@@ -1337,7 +1346,7 @@ launcher's `Net/NetCarrier.cs`, or a suite's loopback mesh and no router); every
 carrier in a `Net/NetLobby.cs`. `OpenHost`, `OpenCoopHost` (whose `Offer` names the mission) and
 `OpenJoin` open; `Step` carries the link and moves `Revision` on news, which both menus repaint on; `Close` unmaps the lease. In co-op `ShowCoop` sends each
 guest the host's boards, `CoopAllReady` holds FLY MISSION until every guest is Ready, `CoopLaunchDue` tells a guest to follow, `TellSeatFits` sends every seat's fit before the opener, and
-`LeaveCoopMission` tells the host at once that a guest walked out. `OpenDogfightHost` opens a Dogfight lobby, and `Dogfight` is the `DogfightLobby` either end stands in, created on a guest when its host's advert names a Dogfight and unshown behind a Built-in host; `DogfightLaunchDue` tells a guest its host has launched, and a guest back from a match waits for the host's next round. `Version` is the build's `Net/NetBuildVersion.cs`: a host refuses a guest of another version, and a guest such a host, with both versions on `Fault`. Boards: `LaunchMenu.cs`.
+`LeaveCoopMission` tells the host at once that a guest walked out. `OpenDogfightHost` opens a Dogfight lobby, and `Dogfight` is the `DogfightLobby` either end stands in, created on a guest when its host's advert names a Dogfight and unshown behind a Built-in host; `DogfightLaunchDue` tells a guest its host has launched, and a guest back from a match waits for the host's next round. `Version` is the build's `Net/NetBuildVersion.cs`: a host refuses a guest of another version, and a guest such a host, with both versions on `Fault`. `TypeAddress` and `PasteAddress` take an address up to `AddressLimit`, brackets included, and `OpenJoin` opens on `JoinTarget`, the address split by `SplitAddress`: a port follows a closing bracket or a lone colon, so a bare IPv6 address is all host. `SessionSpec.ParseJoin` shares the rule. Boards: `LaunchMenu.cs`.
 
 ## src/UI/Menu/DogfightLobby.cs
 The Multiplayer Lobby's state over a `Net/NetLobby.cs`, engine-free, one class for both ends.

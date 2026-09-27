@@ -261,6 +261,7 @@
     "menu-original-lobby": 0.6,
     "menu-original-builtin-host": 0.2,
     "menu-original-version": 0.2,
+    "menu-original-ipv6-address": 0.3,
     "menu-original-coop-flow": 0.4,
     "lan-discovery": 0.1,
     "menu-screenshot-key": 0.074,

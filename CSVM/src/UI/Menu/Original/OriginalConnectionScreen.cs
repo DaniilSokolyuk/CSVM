@@ -6,6 +6,7 @@ using CSVM.Mech3;
 using CSVM.Net;
 using CSVM.UI.Boards;
 using CSVM.UI.Campaign;
+using CSVM.UI.Screens;
 
 namespace CSVM.UI.Menu.Original;
 
@@ -384,17 +385,30 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
     }
 
     /// <summary>Typed characters and Backspace into the IP Address box, which picks the Internet
-    /// way as the original's box does when typed into.</summary>
-    internal bool TypeAddress(MenuCommands commands)
+    /// way as the original's box does when typed into. Each character cues the edit box's
+    /// keystroke or reject sound. A paste inserts the clipboard and cues once, the reject when any
+    /// of it was left out.</summary>
+    internal bool TypeAddress(MenuCommands commands, List<string> cues)
     {
         ArgumentNullException.ThrowIfNull(commands);
-        if (!CapturingText || _net() is not { } net || (commands.Typed.Length == 0 && !commands.Erase))
+        ArgumentNullException.ThrowIfNull(cues);
+        if (!CapturingText || _net() is not { } net || (commands.Typed.Length == 0 && !commands.Erase && !commands.Paste))
         {
             return false;
         }
 
         string before = net.Address;
-        net.TypeAddress(commands.Typed);
+        foreach (char c in commands.Typed)
+        {
+            cues.Add(net.TypeAddress(c.ToString()) > 0 ? OriginalCues.Text : OriginalCues.TextError);
+        }
+
+        if (commands.Paste)
+        {
+            var (taken, dropped) = net.PasteAddress(MenuInput.Clipboard());
+            cues.Add(dropped || taken == 0 ? OriginalCues.TextError : OriginalCues.Text);
+        }
+
         if (commands.Erase)
         {
             net.EraseAddress();
@@ -680,7 +694,7 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
         switch (net.Stage)
         {
             case NetDoorStage.Joining:
-                text = $"Connecting to {net.Address}:{net.Port.ToString(CultureInfo.InvariantCulture)} ...";
+                text = $"Connecting to {net.JoinTargetText} ...";
                 answer = new(OriginalShell.DialogCancelKey, CampaignBoards.DialogCenterKey, Word(101, "Cancel"), () => EndJoin(net));
                 break;
             case NetDoorStage.Joined:
@@ -861,8 +875,13 @@ public sealed class OriginalConnectionScreen : IOriginalScreenModule
         var face = Regular(10006);
         float size = face?.Pixels ?? TextFallback;
         var caret = focused && !_host.DialogOpen ? new BoardCaret(0, 0, 0, 1f, row.Height - 4f) : (BoardCaret?)null;
+        // The box keeps the script's own 150 pixels, which an IPv6 address overflows. It scrolls to
+        // the end being typed, as a Windows edit box does, rather than shrink the face.
         layers.Lines.Add(new BoardLine(row.Label, row.X + 3f, row.Y + ((row.Height - size) / 2f) - 1f, row.Width - 6f, size,
-            BoardInk.Row, -1, Caret: caret, Face: face, Colour: Ink));
+            BoardInk.Row, -1, Caret: caret, Face: face, Colour: Ink)
+        {
+            KeepEnd = true,
+        });
     }
 
     private void ComposePlaque(

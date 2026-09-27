@@ -197,6 +197,25 @@ public sealed partial class ComposedBoardView : Control
         return Sized(line, MinBlockPoints * PixelsPerPoint);
     }
 
+    /// <summary>How far left of its box a <see cref="BoardLine.KeepEnd"/> line is drawn so its end
+    /// shows, in window pixels at <paramref name="points"/>. The cursor keeps
+    /// <paramref name="caret"/> pixels clear after the last glyph. A line that fits, or is not an
+    /// edit box's, answers 0 and draws as any other line.</summary>
+    public static float EndShift(Font font, BoardLine line, int points, float box, float caret)
+    {
+        ArgumentNullException.ThrowIfNull(font);
+        ArgumentNullException.ThrowIfNull(line);
+        if (!line.KeepEnd || line.Text.Length == 0)
+        {
+            return 0f;
+        }
+
+        // The same measurement DrawCaret places the cursor by, so the two agree on where the
+        // text ends.
+        float wide = font.GetStringSize(line.Text, HorizontalAlignment.Left, -1f, points).X;
+        return wide + caret <= box ? 0f : Mathf.Ceil(wide + caret - box);
+    }
+
     /// <summary>The note at the largest whole face size, its own or smaller, whose entries all fit
     /// its box. A note that may not shrink comes back unchanged. A block that still will not fit
     /// at <see cref="MinNoteFont"/> is drawn there rather than losing rows.</summary>
@@ -825,6 +844,11 @@ public sealed partial class ComposedBoardView : Control
             return;
         }
 
+        if (line.KeepEnd && DrawEnd(fit, font, line, points, at))
+        {
+            return;
+        }
+
         // Wrapped, because a description panel's text is a block. A row's own text may still be
         // longer than the widget it sits in, and a single-line draw would run off the board.
         var justify = line.Justify switch
@@ -867,6 +891,32 @@ public sealed partial class ComposedBoardView : Control
             float overflow = Mathf.Ceil(wide - box);
             // Whole window pixels, so a nearest-sampled face does not shimmer between two positions.
             float shift = Mathf.Min(overflow, Mathf.Round(fit.Length(BoardMarquee.Offset(overflow / fit.Scale, _marqueeClock))));
+            server.ShapedTextDraw(shaped, GetCanvasItem(), new Vector2(at.X - shift, at.Y), shift, shift + box, InkOf(line));
+        }
+        finally
+        {
+            server.FreeRid(shaped);
+        }
+
+        return true;
+    }
+
+    // An edit box's line wider than its box, drawn on one line with its end showing, answering
+    // true. One that fits answers false and draws as any other line.
+    private bool DrawEnd(BoardFit fit, Font font, BoardLine line, int points, Vector2 at)
+    {
+        float box = fit.Length(line.Width);
+        float shift = EndShift(font, line, points, box, line.Caret is { } caret ? fit.Length(caret.Width) : 0f);
+        if (shift <= 0f)
+        {
+            return false;
+        }
+
+        var server = TextServerManager.GetPrimaryInterface();
+        var shaped = server.CreateShapedText();
+        try
+        {
+            server.ShapedTextAddString(shaped, line.Text, font.GetRids(), points, font.GetOpentypeFeatures());
             server.ShapedTextDraw(shaped, GetCanvasItem(), new Vector2(at.X - shift, at.Y), shift, shift + box, InkOf(line));
         }
         finally

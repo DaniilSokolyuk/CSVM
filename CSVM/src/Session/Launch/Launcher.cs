@@ -970,6 +970,21 @@ public partial class Launcher : Node3D
 
     public override void _Input(InputEvent @event)
     {
+        // A typed character is the event's alone: the layout that produced it is not a held state
+        // any poll can read. Taken in _Input, where no screen marks a key handled, so none can
+        // hide a character from the menu seats.
+        if (@event is InputEventKey key)
+        {
+            if (UI.Screens.MenuInput.IsPasteChord(key))
+            {
+                UI.Screens.TypedText.Live.FeedPaste();
+            }
+            else
+            {
+                UI.Screens.TypedText.Live.Feed(key.Pressed, key.Echo, key.Unicode);
+            }
+        }
+
         // The wheel is an event, never a held state, so it is counted here and handed to the
         // menu seat's poll; nothing else about it is read while the menu is up.
         if (_menuHost is { Shown: true } && @event is InputEventMouseButton { Pressed: true } wheel)
@@ -1025,6 +1040,7 @@ public partial class Launcher : Node3D
 
     public override void _Process(double delta)
     {
+        UI.Screens.TypedText.Live.Stamp(Engine.GetProcessFrames());
         // The --run-tests clock is the only one this node owns; the session node advances its own
         // at the very top of the frame (ProcessPriority -1000, one notch ahead of this).
         if (_clock is { } clock)

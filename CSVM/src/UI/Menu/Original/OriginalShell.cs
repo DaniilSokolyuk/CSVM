@@ -765,7 +765,7 @@ public sealed partial class OriginalShell : IOriginalScreenHost
         _screen switch
         {
             OriginalScreen.CampaignRoster => Campaign.TypeName(commands, cues),
-            OriginalScreen.Connection => Connection.TypeAddress(commands),
+            OriginalScreen.Connection => Connection.TypeAddress(commands, cues),
             OriginalScreen.Lobby => Lobby.TypeText(commands),
             _ => Hangar?.TypeName(commands, cues) ?? false,
         };
