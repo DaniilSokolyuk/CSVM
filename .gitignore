@@ -2,6 +2,7 @@
 # must NEVER be committed. Code and documentation only.
 /CrimsonSkiesGame/
 /extracted/
+/_extracted/
 /tools/
 # Archives: every zip in this tree so far has been game data or an extraction of it
 # (CSVM-Complete.zip, the unzbd outputs). Ignored as a class rather than by name, so the
@@ -96,3 +97,11 @@ analysis/capture-rigs/*-log.txt
 .mcp.json
 .pi/mcp.json
 .claude/settings.local.json
+
+# A release build unpacked or exported into the repo root to play locally, and its logs.
+/CSVM.exe
+/data_CSVM_windows_x86_64/
+/Extract.cmd
+/LICENSE-thirdparty.txt
+/LICENSE-unzbd
+/logs/
