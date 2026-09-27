@@ -94,7 +94,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 11. ☑ Linux `unzbd`: WSL toolchain and a musl build called from `ExportRelease.ps1`
 12. ☑ Linux export preset and `.tar.gz` packaging with executable bits
 13. ☑ Linux README with an "On Steam Deck" section
-14. ☐ Pre-release Linux check in WSL: extract, then a headless mission load
+14. ☑ Pre-release Linux check in WSL: extract, then a headless mission load
 15. ☑ SDL2 stick bridge resolved per platform (after `PLAN-flight-sticks` lands)
 16. ☐ Steam Deck test pass and one release carrying the Windows zip and the Linux tarball
 
@@ -749,7 +749,73 @@ community-tested.
 
 **⚠ Traps.** The writing-style rules in CLAUDE.md apply to shipped READMEs.
 
-## B14 ☐ Pre-release Linux check in WSL: extract, then a headless mission load
+## B14 ☑ Pre-release Linux check in WSL: extract, then a headless mission load
+
+**Landed.** `sandbox\LinuxRelease.ps1` runs on the host and drives WSL Debian over the tarball
+`ExportRelease.ps1 -Linux` built, in three stages with one verdict and a nonzero exit on any
+failure. **payload**: the archive listing against `packaging/MANIFEST.md`'s Linux table, parsed
+from that file (every named entry present, nothing unlisted at the root, `CSVM.x86_64` and
+`tools/unzbd` at `-rwxr-xr-x`). **extract**: the unpacked exe's `--headless -- --extract=<install>`
+from `/mnt/z/.../CrimsonSkiesGame` into a fresh data root with the player's defaults, which must exit
+0 and stamp `VERSION.json`. **engine** (off with `-NoSuites`): the whole in-engine suite registry run
+headless from the exported build, `--run-tests=shard:<i>/<n>` in six parallel processes divided by
+`analysis/engine-suite-weights.json` (copied beside the exe, where an export's harness reads it), and
+merged RunTests-style: a missing report, a suite run twice, coverage short of the registry or an
+unexpected engine error line fails it. The suites that cannot pass headless on any platform are one
+table at the top of the script, `$HeadlessOnly`, with the reason for each (11: cloud-field-fade,
+clutter-card-depth, crater-carve, the four display-* suites, menu-original-tracer,
+menu-screenshot-key, muzzle-flash-rides-muzzle, trail-world-anchor); each was admitted because it
+fails identically from the same commit's Windows export run headless. They still run, and a pass is
+reported as a stale entry. Beside it, `$HeadlessEngineErrors` allows the two engine error lines a
+headless process prints on both platforms (the dummy renderer's `texture_2d_get`, the text server's
+size cache). Everything in the distro lives under `~/csvm-linux-check`, wiped per run, with
+`XDG_DATA_HOME`/`CONFIG`/`CACHE` per process; the logs and reports come back to
+`.scratch\linux-check\<timestamp>\`. `docs/tooling.md` has the section and `PROJECT_CONTEXT.md` the
+`sandbox/` pointer. Wiring into the release path is B16's `PublishRelease -Linux` (B12's
+recommendation); `PublicRelease.ps1` is likewise run by hand, not called by `PublishRelease.ps1`.
+
+**The headless flag (the Traps TODO, resolved).** `--run-tests` is the headless mission load: the
+suites build real chapter and mission worlds through `TestContext.WithWorld` and
+`WorldSession.Build`, and the `campaign-*` suites load missions end to end with objectives, anims
+and cutscenes, so running the registry covers more than one mission would. A headless `--fly` has no
+quit condition.
+
+**Found while landing (WSL and harness, handled in the script).** (1) The managed side of a Linux
+export does not see Godot's own flags in `Environment.GetCommandLineArgs`, so with `--log-file` the
+harness reports the engine log unscreened; the check passes no `--log-file` and the harness screens
+the per-process `user://logs/godot.log`. (2) A headless export process can crash in teardown after
+writing its report (139 on Linux, an access violation from the Windows export); the report is the
+verdict and the crash a note. (3) On a zips-only tree 55 suites throw `ObjectDisposedException` on
+`ZipArchive`, on Windows as on Linux: `ArchiveIntent.Suite` closes the texture archive after the
+build (`SessionArchives.cs:86`, `TestHarness.cs:1035`) and those suites read a texture later. The
+battery's tree hides it with unzipped folders, so the check extracts with player defaults for the
+extract stage and adds an `--extract-unzip` pass (about 10 s) before the suites. The harness issue
+itself is open, and not a Linux one. (4) Minimal WSL Debian lacks `libfontconfig1`, which Godot's
+Linux build loads for system fonts; one-time `apt install`, and the script refuses to start
+without it. (5) The manifest check cannot see a missing file inside `data_CSVM_linuxbsd_x86_64/`;
+the extract stage catches it (the launch fails).
+
+**Verified.** On the tarball from `0f46bd71` the check failed: payload and extract passed, the
+engine stage ran 363 of 384 passed with 10 failures, all Linux path-separator bugs. Six in
+cutscenes (blacke-drop-cameras, campaign-coop-dropoff, campaign-hangar-handover,
+cutscene-handoff-unposed, dropoff-placement, landings-hangar-drop-gate; `MissionCutscenes.cs:90-96`
+split mission paths on `\`, which `Path.GetFileName` does not split on Linux) and four in reader
+anims (chapter-census, campaign-persistence, carried-state-silent, persist-chain-kill;
+`AnimProgram.cs:313` `StemOf`, same cause, so the chapter reader files never matched their
+`ANIMATION_DEFINITION_FILE` lists). All ten pass from the Windows export. lp-paths' `da760393` fixes
+both; on the tarball rebuilt from it the check passes: payload 193 files against 8 manifest names,
+extract 21 s (1,668 files, 688 MB), engine 373 passed, 0 failed, 11 headless-only, 0 harness skips
+of 384 in 50 s, 79 s in all (`-NoSuites` 24 s). Seen able to fail, with `-NoSuites` on doctored
+copies of the good tarball: `tools/unzbd` at `0644` fails payload ("-rw-r--r-- in the archive") and
+extract ("Permission denied" starting `tools/unzbd`); `LICENSE-unzbd` removed fails payload;
+`GodotSharp.dll` removed fails extract (exit 139, the .NET plugin initialisation error).
+landings-hookup-airframe failed once in the Windows control and passed on Linux; it is flaky, not
+listed.
+Orchestrator, on linux-port with lp-paths merged: the check on that commit's tarball passes
+(payload 193 files, extract 21 s, engine 373 passed, 0 failed, 11 headless-only of 384, 80 s total);
+the Windows battery passes (units 5233 passed, 3 skipped; engine 384/384; goldens 19 identical).
+
+**Original approach (kept for reference).**
 
 **Goal.** Before a Linux release is published, the built tarball is unpacked in WSL, extracts from the
 author's install, and loads a mission headless; any failure stops the release.
@@ -760,12 +826,14 @@ the check is headless only.
 **Approach.** A `sandbox\LinuxRelease.ps1`, the Linux sibling of `sandbox\PublicRelease.ps1`, called
 by the release path. It uses `--extract` (A4) and a headless mission load.
 
-**Model recommendation.** <TODO: not settled in session>
+**Model recommendation.** Top tier: the triage needs a Windows headless control to separate
+headless-by-construction failures from Linux bugs.
 
 **Verify.** The check fails when `tools/unzbd` loses its executable bit and when a payload file is
 missing (seen able to fail), then passes on a good tarball.
 
-**⚠ Traps.** <TODO: which headless flag loads a mission end-to-end without a GPU>
+**⚠ Traps.** The headless mission load is `--run-tests` (see above). Engine flags go before the
+bare `--`; without it an export ignores the game flag and boots the menu.
 
 ## B15 ☑ SDL2 stick bridge resolved per platform (after `PLAN-flight-sticks` lands)
 

@@ -267,7 +267,8 @@ then `rustup target add --toolchain 1.91.1 x86_64-unknown-linux-musl`. The toolc
 musl `unzbd` of a given fork commit writes byte-identical archives to `unzbd.exe`'s. The engine csproj sets
 `InvariantGlobalization`, so the self-contained .NET runtime never loads `libicu`; without it, a
 system lacking that library (the author's WSL Debian among them) aborts at startup with "Couldn't
-find a valid ICU package installed on the system".
+find a valid ICU package installed on the system". `sandbox\LinuxRelease.ps1` checks the tarball
+this writes (see "The Linux release check in WSL" below).
 
 **The version has one home: `application/config/version` in `CSVM/project.godot`.** Bump it there
 and nowhere else. The engine reads it at startup for the log's first line and the menu's corner
@@ -478,6 +479,62 @@ boot card and then nothing: with game data present the intro film's first 4 MB v
 with `DXGI_ERROR_DEVICE_REMOVED` (`0x887a0005`) and the process dies of the same access violation a
 few seconds in, before any menu. Only the no-game-data screen survives on that machine, so a menu
 observed without data says nothing about the floor.
+
+## The Linux release check in WSL
+
+**`sandbox/LinuxRelease.ps1`** is the Linux sibling of `sandbox/PublicRelease.ps1`, run on the host
+rather than inside a sandbox: it drives WSL Debian over the tarball `ExportRelease.ps1 -Linux`
+built (`-Tarball` names another) and the author's install (`CrimsonSkiesGame\` under this tree or
+the one `CSVM_DATA_ROOT` names; `-Install` names another). It fails on any failure and prints
+RunTests.ps1-style stage lines and one verdict; a full run takes about 80 s (extraction 21 s, the
+unzip pass 10 s, the suites 50 s at six shards). Three stages, each run even when an earlier one
+failed, where it still can:
+
+- **payload**: the archive's listing against `packaging/MANIFEST.md`'s Linux table, read from that
+  file rather than restated: every named entry present (a folder name must hold a file), nothing
+  at the root the table does not name, and `CSVM.x86_64` and `tools/unzbd` at `-rwxr-xr-x`.
+- **extract**: the unpacked `CSVM.x86_64 --headless -- --extract=<install>` into a fresh data root
+  with the player's defaults (zips only), which must exit 0 and stamp `VERSION.json`. A `tools/unzbd`
+  without its bit fails here too ("Permission denied" starting the process), and a missing runtime
+  file in `data_CSVM_linuxbsd_x86_64/` fails the launch.
+- **engine** (skipped by `-NoSuites`): the same root re-extracted with `--extract-unzip`, the shape
+  the Windows battery reads, then `--run-tests=shard:<i>/<n>` in `-Shards` processes (default 6).
+  The suite list is the harness registry's and the division is `analysis/engine-suite-weights.json`,
+  copied in beside the exe where the harness looks for it; the merge refuses a missing report, a
+  suite run twice, a coverage short of the registry, and an unexpected engine error line.
+
+Everything in the distro sits under `~/csvm-linux-check`, wiped when the next run starts, with
+`XDG_DATA_HOME`, `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` set per process inside it, so no run
+touches the distro user's `~/.local/share/godot` and parallel shards share no `user://`. The
+listing, logs, reports and each shard's engine log are copied to `.scratch\linux-check\<timestamp>\`.
+
+What the check had to learn:
+
+- ⚠ **The engine flags go before the bare `--` and the game flags after it**, as everywhere else;
+  without the `--` an export ignores `--run-tests` and boots the menu.
+- ⚠ **Pass no `--log-file`.** On Linux the managed side of an export cannot read Godot's own flags
+  back (`Environment.GetCommandLineArgs` does not carry them there, where it does on Windows), so
+  the harness would report the engine log unscreened. Without the flag, each process logs to its
+  own `user://logs/godot.log` and the harness screens that.
+- **Some suites cannot pass headless on any platform.** They read back what only a renderer or a
+  display produces (mesh and MultiMesh instance data, viewport pixels, windows and screens). The
+  `$HeadlessOnly` table at the top of the script lists them with the reason each fails, beside
+  `$HeadlessEngineErrors`, the two engine error lines only a headless process prints. The same
+  suites and the same error counts come out of the Windows export run headless, which is how an
+  entry is admitted: a suite that fails on Linux alone is a Linux bug and never goes on the list.
+  Listed suites still run, and one that passes is reported so a stale entry is seen.
+- **The suites need an unzipped tree.** Under `ArchiveIntent.Suite` the harness closes a world's
+  texture archive after the build, and on a zips-only tree the suites that reach a texture later
+  throw `ObjectDisposedException` on both platforms; the battery's tree hides that with its
+  unzipped folders. The extraction stage keeps the player's shape, so the player path is still what
+  is checked.
+- A headless process can crash in its teardown after writing its report (a signal exit on Linux,
+  an access violation from the Windows export). The report is the verdict and the crash is
+  printed as a note.
+- One-time setup in WSL Debian: `sudo apt install libfontconfig1`. Godot's Linux build loads it for
+  system fonts and logs an engine error on every lookup without it; players' systems have it, a
+  minimal WSL Debian does not, and the script refuses to start without it. The goldens are not run,
+  since WSL cannot render them.
 
 ## `tools/` (git-ignored)
 
