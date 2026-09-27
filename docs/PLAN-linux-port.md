@@ -704,9 +704,17 @@ template's own build string, and a section 9 for musl 1.2.3, the C library Rust 
 target links statically, from `packaging/LICENSE-musl`. No SDL section, as the tarball ships no
 SDL2. Both headers stamp the runtime pack and crate target, and `ExportRelease.ps1`, the notices
 script and `sandbox\LinuxRelease.ps1`'s payload stage refuse a notice naming the other platform's
-pack, target or file names (`docs/tooling.md`). The zip's notice is unchanged apart from its two
-new stamp lines. (3) The Linux export log reports a completed shader bake;
-whether the baked pipelines are used on the Deck's driver is B16's to see.
+pack, target or file names (`docs/tooling.md`). (3) The Linux export log reports a completed shader
+bake; whether the baked pipelines are used on the Deck's driver is B16's to see. (4) Settled: both
+notices carry the Rust standard library as section 9 (musl moves to section 10 on Linux), which
+the notices script reads from the pinned toolchain: `COPYRIGHT-library.html` as plain text, the
+in-tree licence texts from `share/doc/rust/licenses/`, and the crates the target's rust-std rlibs
+name that the file omits (std's backtrace crates on musl, none on msvc) from their crates.io
+releases. A moved toolchain pin is a refusal. (5) Settled: the tarball's text files are LF, staged
+from the committed bytes by `ExportRelease.ps1`'s Linux path, while the zip keeps the checkout's
+CRLF; `packaging/LICENSE-musl` is `-text` in `.gitattributes`, byte-identical to musl 1.2.3's
+`COPYRIGHT` in every checkout; the Linux check's payload stage fails a top-level text file carrying
+a carriage return.
 
 **Verified.** The full battery passes on the merged branch: units 4,886 (3 data skips), engine 383 of 383, 19 golden shots hash-identical.
 

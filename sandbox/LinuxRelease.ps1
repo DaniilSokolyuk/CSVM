@@ -13,7 +13,8 @@
       payload      the archive's listing against packaging/MANIFEST.md's Linux table: every row
                    present, nothing at the root the table does not name, CSVM.x86_64 and
                    tools/unzbd marked -rwxr-xr-x, and LICENSE-thirdparty.txt stamped for the
-                   linux-x64 runtime pack and the musl crate tree, naming nothing of Windows'
+                   linux-x64 runtime pack and the musl crate tree, naming nothing of Windows',
+                   and no top-level text file (one without a NUL byte) carrying a CR
       extract      ./CSVM.x86_64 --headless -- --extract=<install> into a fresh data root, the
                    player's defaults (zips only): exit 0 and a stamped VERSION.json
       engine       (unless -NoSuites) --run-tests over that same zips-only data root, the shape
@@ -211,6 +212,13 @@ echo $? > "$out/listing.exit"
 tar --extract --gzip --file="$tarball" --directory="$game" > "$out/unpack.log" 2>&1
 echo $? > "$out/unpack.exit"
 [ -f "$game/LICENSE-thirdparty.txt" ] && cp -- "$game/LICENSE-thirdparty.txt" "$out/LICENSE-thirdparty.txt"
+# Each top-level file with no NUL byte is text; its carriage-return count goes to textfiles.txt.
+: > "$out/textfiles.txt"
+for f in "$game"/*; do
+  [ -f "$f" ] || continue
+  [ "$(tr -dc '\000' < "$f" | head -c 1 | wc -c)" = "0" ] || continue
+  printf '%s %s\n' "$(basename -- "$f")" "$(tr -dc '\r' < "$f" | wc -c)" >> "$out/textfiles.txt"
+done
 cd "$game" || exit 0
 
 xdg extract
@@ -346,10 +354,26 @@ if (Test-Path $noticePath) {
         }
     }
 }
+# Linux text is LF. A CRLF file reads with a stray ^M on every line in a terminal pager or editor,
+# and is what the autocrlf checkout hands the export unless it stages the committed bytes.
+$textFiles = Join-Path $OutDir "textfiles.txt"
+$textCount = 0
+if (Test-Path $textFiles) {
+    foreach ($line in [IO.File]::ReadAllLines($textFiles)) {
+        if ($line -notmatch '^(\S+) (\d+)$') { continue }
+        $textCount++
+        if ([int]$Matches[2] -gt 0) {
+            $problems += "$($Matches[1]) carries $($Matches[2]) carriage return(s): a Linux text file must be LF only"
+        }
+    }
+}
+if ($textCount -eq 0 -and (Read-Exit "unpack") -eq 0) {
+    $problems += "found no top-level text file to check for carriage returns (textfiles.txt is empty)"
+}
 $fileCount = @($listing | Where-Object { -not $_.IsDir }).Count
 foreach ($p in $problems) { Write-Host "  !! $p" -ForegroundColor Red }
 Add-Stage "payload" $(if ($problems.Count -eq 0) { "PASS" } else { "FAIL" }) 0 `
-    ("{0} file(s), {1} manifest name(s){2}" -f $fileCount, $Expected.Count, $(if ($problems.Count) { "; $($problems.Count) problem(s)" } else { "" }))
+    ("{0} file(s), {1} manifest name(s), {2} top-level text file(s){3}" -f $fileCount, $Expected.Count, $textCount, $(if ($problems.Count) { "; $($problems.Count) problem(s)" } else { "" }))
 
 # --- extract ------------------------------------------------------------------------------------
 

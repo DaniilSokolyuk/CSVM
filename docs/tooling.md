@@ -306,7 +306,7 @@ refuses a mismatched guest through `SessionClosed` with both versions named, and
 greys a game of another major.minor.
 
 The payload is `packaging/MANIFEST.md`'s table, copied from its repo sources on every export, which
-keeps it byte-identical.
+keeps it byte-identical (the tarball's text files as git stores them, LF; see below).
 
 **`packaging/README.md` is the whole of what a downloader is told**, written for someone who found
 the zip on the releases page and knows nothing else about the project: where the download comes
@@ -341,6 +341,16 @@ a throwaway project in `TEMP` and reads them back through `Engine.get_license_te
 draws from, not the machine-wide `dotnet` install, which is usually a newer build; and the crate
 half is `cargo metadata --offline --filter-platform x86_64-pc-windows-msvc` over the fork, with each
 crate's licence text taken from the registry checkout it was built from and deduplicated by content.
+Section 9 is the Rust standard library, which every Rust binary links (Apache-2.0 OR MIT, with
+third-party crates of its own) and which cargo's crate list does not include. Its part A is the pinned
+toolchain's `share/doc/rust/COPYRIGHT-library.html` as plain text, part B the licence texts that file
+names for the library's own sources from `share/doc/rust/licenses/`, and part C the crates the
+target's rust-std rlibs name as their sources (each rlib carries `/rust/deps/<crate>-<version>/`
+paths) that the file does not list: none for msvc, std's backtrace crates (`addr2line`, `adler2`,
+`memchr`, `miniz_oxide`, `object`) for musl, read from their crates.io releases, which the script
+fetches into the cargo registry when absent. ⚠ The converter accepts only the tags that file uses
+and refuses any other, and the script refuses an rlib that names neither a crates.io release nor an
+in-tree `library/` directory, so a changed layout stops the run instead of losing text.
 The file's header states the Godot build, the .NET runtime version, the runtime pack, the crate
 target and the `cs-anim` commit it was assembled for, and `ExportRelease.ps1` re-checks all of them
 against what it is packaging, so a stale notice is a build failure rather than a wrong claim inside
@@ -351,18 +361,31 @@ own code did not change, because the crate list enumerates that commit's depende
 `LICENSE-thirdparty.txt`, written beside the zip's by `BuildThirdPartyNotices.ps1 -Linux` (which
 rewrites both). Its .NET half is the `Microsoft.NETCore.App.Runtime.linux-x64` pack of the same
 version, its crate half is `--filter-platform x86_64-unknown-linux-musl` (the trees differ: `libc`,
-`addr2line`, `gimli` and `object` on Linux, `windows-sys` and its companions on Windows), and a
-section 9 carries the musl C library that Rust's musl target links statically into `tools/unzbd`,
-from `packaging/LICENSE-musl` (the musl-1.2.3 release's `COPYRIGHT`; the bundled `libc.a` carries
-no text). The Godot sections are the editor's, which is valid because the engine compiles its
+`addr2line`, `gimli` and `object` on Linux, `windows-sys` and its companions on Windows), its
+section 9 reads the WSL toolchain's files and musl rlibs, and a section 10 carries the musl C
+library that Rust's musl target links statically into `tools/unzbd`, from `packaging/LICENSE-musl`
+(the musl-1.2.3 release's `COPYRIGHT`, byte-identical; the bundled `libc.a` carries no text).
+`.gitattributes` marks that file `-text`, so every checkout is upstream's LF bytes and can be
+compared by hash. The Godot sections are the editor's, which is valid because the engine compiles its
 licence tables from one `COPYRIGHT.txt` on every platform; the script runs the Linux template's
 `--version` in WSL and refuses a template of another build. ⚠ The script also refuses a
 `rust-toolchain.toml` pin other than Rust 1.91.1, because a new toolchain can bundle another musl
-and section 9 would then name the wrong release. Neither notice may name the other platform's
+and section 10 would then name the wrong release, and section 9's converter was checked against
+that release's file only. Neither notice may name the other platform's
 runtime pack, crate target or file names: the script, `ExportRelease.ps1` and
 `sandbox\LinuxRelease.ps1`'s payload stage each refuse one that does, so the zip's notice cannot
 ship in the tarball. Neither notice has an SDL section; the zip carries SDL's own licence as
 `LICENSE-SDL2.txt`, and the tarball ships no SDL2.
+
+**The tarball's text files are LF.** Git stores every payload text file LF and `core.autocrlf`
+checks it out CRLF, so the zip, a plain copy, carries CRLF, the Windows convention. The Linux
+staging marks its text rows (`README.md`, `LICENSE`, `LICENSE-unzbd`, `LICENSE-thirdparty.txt`)
+`Lf` in `$LinuxReleaseFiles` and drops the CR of every CRLF pair as it copies them, which gives the
+committed bytes (`git hash-object` of the source equals `git hash-object --no-filters` of the staged
+copy); `BUILD-INFO.txt` is written LF. This is done at staging rather than by a `.gitattributes`
+`eol=lf` rule because `LICENSE` and `LICENSE-unzbd` also ship in the zip, and a rule would change
+what every worktree checks out. `sandbox\LinuxRelease.ps1`'s payload stage fails any top-level
+tarball file without a NUL byte that contains a CR.
 
 `BUILD-INFO.txt` is the one payload file generated rather than copied, because what it states is
 different on every run: the CSVM commit and the mech3ax `cs-anim` commit the two shipped binaries
@@ -534,7 +557,9 @@ can:
 
 - **payload**: the archive's listing against `packaging/MANIFEST.md`'s Linux table, read from that
   file rather than restated: every named entry present (a folder name must hold a file), nothing
-  at the root the table does not name, and `CSVM.x86_64` and `tools/unzbd` at `-rwxr-xr-x`.
+  at the root the table does not name, `CSVM.x86_64` and `tools/unzbd` at `-rwxr-xr-x`, the
+  notice stamped for the Linux payload, and no carriage return in any top-level text file (a file
+  with no NUL byte).
 - **extract**: the unpacked `CSVM.x86_64 --headless -- --extract=<install>` into a fresh data root
   with the player's defaults (zips only), which must exit 0 and stamp `VERSION.json`. A `tools/unzbd`
   without its bit fails here too ("Permission denied" starting the process), and a missing runtime

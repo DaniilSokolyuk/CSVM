@@ -17,7 +17,9 @@
 
     Copying is what keeps MANIFEST.md's "byte-identical to the repo source" rule true by
     construction: the READMEs and licences are taken from their one home in the
-    repo on every export, never forked into a package variant that can drift.
+    repo on every export, never forked into a package variant that can drift. The zip takes
+    the checkout's bytes (CRLF under autocrlf); the tarball's text files are staged with LF,
+    the bytes git stores.
 
     Two of the zip's files are about the build rather than part of it.
     LICENSE-thirdparty.txt is copied like any other payload row, but it names the Godot
@@ -129,11 +131,14 @@ $ReleaseFiles = @(
 
 # The tarball payload, packaging/MANIFEST.md's Linux table: the zip's list with the Linux README,
 # the Linux notices and the Linux unzbd. Both platforms extract from inside the game, so neither ships a script.
+# Lf rows are text: git stores them LF and this checkout's autocrlf hands them over CRLF, so they
+# are staged with the carriage returns taken out, which is the committed bytes. The zip keeps the
+# checkout's CRLF, the Windows convention, and no attribute changes what any tree checks out.
 $LinuxReleaseFiles = @(
-    @{ Source = $LinuxReadme;                                   Dest = "README.md" },
-    @{ Source = Join-Path $RepoRoot "packaging\LICENSE";        Dest = "LICENSE" },
-    @{ Source = Join-Path $RepoRoot "packaging\LICENSE-unzbd";  Dest = "LICENSE-unzbd" },
-    @{ Source = $LinuxThirdPartyNotices;                        Dest = "LICENSE-thirdparty.txt" },
+    @{ Source = $LinuxReadme;                                   Dest = "README.md"; Lf = $true },
+    @{ Source = Join-Path $RepoRoot "packaging\LICENSE";        Dest = "LICENSE"; Lf = $true },
+    @{ Source = Join-Path $RepoRoot "packaging\LICENSE-unzbd";  Dest = "LICENSE-unzbd"; Lf = $true },
+    @{ Source = $LinuxThirdPartyNotices;                        Dest = "LICENSE-thirdparty.txt"; Lf = $true },
     @{ Source = $LinuxUnzbd;                                  Dest = "tools\unzbd" }
 )
 
@@ -497,6 +502,16 @@ function Copy-ReleaseFiles($Files, [string] $Dir) {
         $destDir = Split-Path $dest -Parent
         if (-not (Test-Path $destDir)) {
             New-Item -ItemType Directory -Force $destDir | Out-Null
+        }
+        if ($file.Lf) {
+            # Through Latin-1, which maps each byte to one character and back, so the UTF-8 in
+            # the text passes through untouched: every CR that starts a CRLF pair is dropped and
+            # nothing else changes. A lone CR is left for sandbox\LinuxRelease.ps1 to refuse.
+            $latin1 = [System.Text.Encoding]::GetEncoding(28591)
+            $text = $latin1.GetString([System.IO.File]::ReadAllBytes($file.Source))
+            [System.IO.File]::WriteAllBytes($dest, $latin1.GetBytes($text.Replace("`r`n", "`n")))
+            Write-Host "  $($file.Dest) (LF)"
+            continue
         }
         Copy-Item $file.Source $dest -Force
         Write-Host "  $($file.Dest)"
