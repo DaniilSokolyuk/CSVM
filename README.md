@@ -114,14 +114,13 @@ the layout and [`docs/tooling.md`](docs/tooling.md) for the full export and pack
 ```
 
 `PublishRelease.ps1` is the publish itself, in one run: it reads the same version, runs
-`ExportRelease.ps1`, computes the zip's SHA-256, creates the annotated tag on the commit that
-was built, pushes it, and creates the GitHub release with the zip as its only asset, so the
-tag, the exe's version, the zip's name, the published checksum and the notes cannot disagree
-with each other. It needs `gh` installed and authenticated, and it refuses a dirty tree, a
-`tools/mech3ax` `cs-anim` that is dirty or unpushed, and a tag that already exists; a tag is
-never re-pointed. `-DryRun` runs every check and the export and stops before the tag. `-Linux`
-also exports the Linux tarball, runs `sandbox\LinuxRelease.ps1` on it (a failure stops the run
-before the tag), and attaches it to the same release beside the zip.
+`ExportRelease.ps1 -Linux`, runs `sandbox\LinuxRelease.ps1` on the tarball (a failure stops
+the run before the tag), computes both archives' SHA-256s, creates the annotated tag on the
+commit that was built, pushes it, and creates the GitHub release with the zip and the tarball,
+so the tag, the executables' version, the archives' names, the published checksums and the
+notes cannot disagree with each other. It needs `gh` installed and authenticated and the WSL
+Debian toolchain for the Linux export, and it refuses a dirty tree, a `tools/mech3ax`
+`cs-anim` that is dirty or unpushed, and a tag that already exists; a tag is never re-pointed. `-DryRun` runs every check and the export and stops before the tag.
 
 ## Format documentation
 

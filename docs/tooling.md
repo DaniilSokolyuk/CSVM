@@ -274,7 +274,7 @@ musl `unzbd` of a given fork commit writes byte-identical archives to `unzbd.exe
 `InvariantGlobalization`, so the self-contained .NET runtime never loads `libicu`; without it, a
 system lacking that library (the author's WSL Debian among them) aborts at startup with "Couldn't
 find a valid ICU package installed on the system". `sandbox\LinuxRelease.ps1` checks the tarball
-this writes (see "The Linux release check in WSL" below), and `PublishRelease.ps1 -Linux` publishes
+this writes (see "The Linux release check in WSL" below), and `PublishRelease.ps1` publishes
 it beside the zip ("Publishing a release").
 
 **The version has one home: `application/config/version` in `CSVM/project.godot`.** Bump it there
@@ -405,12 +405,14 @@ CWD** and no `CSVM_DATA_ROOT`; either can mask a broken default root.
 ## Publishing a release
 
 **`PublishRelease.ps1` (repo root)** is the publish, from one run: it reads the version from
-`CSVM/project.godot`, runs `ExportRelease.ps1`, checks the zip that came out, computes its SHA-256,
-creates the annotated tag on the commit that was built, pushes it, and creates the GitHub release
-with the zip as its only asset, or with the Linux tarball beside it under `-Linux`. The pre-release flag stays off, because a build that is hidden from
-the repository's Latest badge is not the one a visitor lands on. Because the tag, the exe's stamped
-version, the zip's name, the published checksum and the notes all come out of that single run, none
-of them can disagree with another.
+`CSVM/project.godot`, runs `ExportRelease.ps1 -Linux`, checks the zip and the tarball that came
+out, computes their SHA-256s, creates the annotated tag on the commit that was built, pushes it, and
+creates the GitHub release with both archives as its assets. Every release carries both platforms,
+so publishing needs the WSL Debian toolchain that `-Linux` above describes. The pre-release flag
+stays off, because a build that is hidden from the repository's Latest badge is not the one a
+visitor lands on. Because the tag, the executables' stamped version, the archives' names, the
+published checksums and the notes all come out of that single run, none of them can disagree with
+another.
 
 `-NotesFile` supplies the prose that goes above the generated sections; the script writes the
 verification and provenance sections itself, so the file never states a checksum or a commit of its
@@ -422,8 +424,8 @@ path, deleted afterwards with the `gh release delete ... --cleanup-tag` command 
 the release version's own tag is still minted exactly once. `-Yes` skips the confirmation prompt,
 which is otherwise the last point at which the tag and the upload can be called off.
 
-**`-Linux`** makes the same release carry the Linux tarball beside the zip: one tag, two assets.
-The export runs as `ExportRelease.ps1 -Linux`, and the tarball gets the zip's checks (it exists and
+**The Linux tarball** goes into the same release as the zip: one tag, two assets. It gets the
+zip's checks (it exists and
 postdates the run; its `BUILD-INFO.txt`, read out of the archive with Windows' own `tar.exe`, names
 both commits and records no qualifier). Then `sandbox\LinuxRelease.ps1` runs in full on the tarball
 (see "The Linux release check in WSL" below), and a failure ends the run before the tag with nothing
@@ -431,9 +433,8 @@ created. The tree and `HEAD` re-check comes after that check, so it covers its m
 generated notes then list both downloads with their sizes and SHA-256 (`Get-FileHash` for the zip,
 `sha256sum` for the tarball), link the Linux README's "On Steam Deck" section at the tagged commit
 rather than restating it, and name both executables and both `unzbd` builds under the two commits;
-the tag message carries both checksums and `gh release create` uploads both files. Without `-Linux`
-the run, its output and its notes are the Windows-only release. The Windows Sandbox run
-(`sandbox\PublicRelease.ps1`) is not part of either path; it is run by hand. The mech3ax checkout is
+the tag message carries both checksums and `gh release create` uploads both files. The Windows
+Sandbox run (`sandbox\PublicRelease.ps1`) is not part of the publish; it is run by hand. The mech3ax checkout is
 found the way `ExportRelease.ps1` finds its tools, from `CSVM_DATA_ROOT` in a worktree, so both
 scripts read the same `cs-anim` commit.
 
@@ -574,7 +575,7 @@ Everything in the distro sits under `~/csvm-linux-check`, wiped when the next ru
 `XDG_DATA_HOME`, `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` set per process inside it, so no run
 touches the distro user's `~/.local/share/godot` and parallel shards share no `user://`. The
 listing, logs, reports and each shard's engine log are copied to `.scratch\linux-check\<timestamp>\`.
-`PublishRelease.ps1 -Linux` runs this check on the tarball it just exported and stops before the tag
+`PublishRelease.ps1` runs this check on the tarball it just exported and stops before the tag
 when it fails.
 
 What the check had to learn:
