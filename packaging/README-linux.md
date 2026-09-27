@@ -25,7 +25,7 @@ terminal in the folder holding it and run this, with the name replaced by the ar
 actually have:
 
 ```
-sha256sum CSVM-v0.1.0-linux-x64.tar.gz
+sha256sum CSVM-v0.2.0-linux-x64.tar.gz
 ```
 
 The printed hash must match the one on the release page (upper and lower case do not
@@ -59,7 +59,7 @@ CSVM first and unpack into it. From a terminal:
 
 ```
 mkdir CSVM
-tar -xzf CSVM-v0.1.0-linux-x64.tar.gz -C CSVM
+tar -xzf CSVM-v0.2.0-linux-x64.tar.gz -C CSVM
 ```
 
 `tar` keeps the executable permission that `CSVM.x86_64` and `tools/unzbd` carry in the

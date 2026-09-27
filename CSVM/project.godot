@@ -10,7 +10,7 @@ config/name="CSVM"
 ; The build's one version number. The engine reads it at startup for the log's first line and the
 ; launchscreen's corner, ExportRelease.ps1 reads it back to name the zip, and the Windows export
 ; stamps it into the exe's file properties. Bump it here and nowhere else.
-config/version="0.1.0"
+config/version="0.2.0"
 run/main_scene="res://scenes/Main.tscn"
 config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 

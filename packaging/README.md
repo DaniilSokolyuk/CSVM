@@ -19,7 +19,7 @@ terminal in the folder holding the zip and run this, with the name replaced by t
 actually have:
 
 ```
-Get-FileHash CSVM-v0.1.0-win64.zip -Algorithm SHA256
+Get-FileHash CSVM-v0.2.0-win64.zip -Algorithm SHA256
 ```
 
 The printed hash must match the one on the release page (upper and lower case do not
