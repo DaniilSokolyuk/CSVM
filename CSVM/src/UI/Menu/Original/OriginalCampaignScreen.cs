@@ -32,9 +32,10 @@ public sealed class OriginalCampaignScreen : IOriginalScreenModule
     private const byte RosterFrameRed = 0xff;
 
     // The cabin's network door stands in the painting's empty top-left corner, clear of the
-    // authored buttons and the seat strip. The host's band is written above it.
+    // authored buttons and the seat strip. The host's band is written above it. The door
+    // sits below the band's two lines (status and guest address), whose ground ends at y 49.
     private const float CoopDoorX = 14f;
-    private const float CoopDoorY = 40f;
+    private const float CoopDoorY = 57f;
     private const float CoopBandY = 14f;
     private const float CoopBandSize = 13f;
     private const float CoopBandWidth = 520f;
