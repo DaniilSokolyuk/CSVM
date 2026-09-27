@@ -666,12 +666,21 @@ cannot run. The README is `packaging/README-linux.md` through `$LinuxReadme` (B1
 `packaging/MANIFEST.md` has the Linux table and `docs/tooling.md` the `-Linux` paragraph. In a
 worktree the script now takes `tools\` from `CSVM_DATA_ROOT`, as `RunTests.ps1` does.
 
-**PublishRelease (the TODO, resolved as a recommendation).** One release, two assets, one tag.
-`PublishRelease.ps1` gains a `-Linux` switch that passes `-Linux` to `ExportRelease.ps1`, checks the
-tarball exists and postdates the run like the zip, reads `BUILD-INFO.txt` out of it (Windows'
-`tar.exe` reads `.tar.gz`: `tar -xOf <tarball> BUILD-INFO.txt`) with the same refusals, runs B14's
-check before the tag, puts both SHA-256s in the notes and the tag message, and passes both paths to
-`gh release create`. Until then the Windows-only release path is unchanged.
+**PublishRelease (the TODO, resolved).** One release, two assets, one tag.
+`PublishRelease.ps1 -Linux` passes `-Linux` to `ExportRelease.ps1`, checks the tarball exists and
+postdates the run like the zip, runs B14's `sandbox\LinuxRelease.ps1` in full on it (a failure
+throws before the tag), re-checks the tree and `HEAD` after both, reads `BUILD-INFO.txt` out of the
+tarball with `%SystemRoot%\System32\tar.exe -xOf` under the zip's refusals, puts both sizes and
+SHA-256s in the generated notes (which link `packaging/README-linux.md#on-steam-deck` at the tagged
+commit) and both checksums in the tag message, and passes both paths to `gh release create`. Without
+`-Linux` the script's output and notes are unchanged. It finds `tools\mech3ax` from `CSVM_DATA_ROOT`
+in a worktree, as `ExportRelease.ps1` does. `sandbox\PublicRelease.ps1` is not called by either
+path. Verified with `-DryRun -TagSuffix dryrun` from `a72d203f`: `-Linux` printed both assets and
+hashes after the check passed (payload 193 files, extract 21 s, engine 414 passed, 0 failed, 11
+headless-only of 426) and exited 0; with a manifest row naming a file the tarball lacks, the payload
+stage failed and the run threw "The Linux release check failed ... Nothing was tagged or uploaded"
+(exit 1) before the notes; without `-Linux` the script's own lines and the notes matched the
+unmodified script's run apart from the zip's hash.
 
 **Open, found while landing.** (1) The self-contained .NET runtime aborts at startup on a system
 without `libicu` ("Couldn't find a valid ICU package"), which the author's WSL Debian lacks. Settled
@@ -771,8 +780,8 @@ headless process prints on both platforms (the dummy renderer's `texture_2d_get`
 size cache). Everything in the distro lives under `~/csvm-linux-check`, wiped per run, with
 `XDG_DATA_HOME`/`CONFIG`/`CACHE` per process; the logs and reports come back to
 `.scratch\linux-check\<timestamp>\`. `docs/tooling.md` has the section and `PROJECT_CONTEXT.md` the
-`sandbox/` pointer. Wiring into the release path is B16's `PublishRelease -Linux` (B12's
-recommendation); `PublicRelease.ps1` is likewise run by hand, not called by `PublishRelease.ps1`.
+`sandbox/` pointer. `PublishRelease.ps1 -Linux` runs it on the tarball it exported and stops before
+the tag when it fails (B12); `PublicRelease.ps1` is run by hand, not called by `PublishRelease.ps1`.
 
 **The headless flag (the Traps TODO, resolved).** `--run-tests` is the headless mission load: the
 suites build real chapter and mission worlds through `TestContext.WithWorld` and
@@ -925,8 +934,8 @@ changed while it is in testing.
 ## B16 ☐ Steam Deck test pass and one release carrying the Windows zip and the Linux tarball
 
 **Goal.** The author installs the tarball on the Deck with a copied install folder, extracts, flies,
-and publishes one release with both downloads (Decision 9, through `PublishRelease.ps1 -Linux` as
-B12 recommends); whatever looks wrong becomes backlog issues. That release is v0.2.0, which also
+and publishes one release with both downloads (Decision 9, through `PublishRelease.ps1 -Linux`,
+described in B12); whatever looks wrong becomes backlog issues. That release is v0.2.0, which also
 carries `PLAN-flight-sticks` and the Milestone 6 multiplayer work, so all three are on main before
 the export: flight sticks and multiplayer land first, this branch merges over them, and B15 fixes
 the SDL2 load on the merged tree.

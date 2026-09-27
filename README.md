@@ -119,7 +119,9 @@ was built, pushes it, and creates the GitHub release with the zip as its only as
 tag, the exe's version, the zip's name, the published checksum and the notes cannot disagree
 with each other. It needs `gh` installed and authenticated, and it refuses a dirty tree, a
 `tools/mech3ax` `cs-anim` that is dirty or unpushed, and a tag that already exists; a tag is
-never re-pointed. `-DryRun` runs every check and the export and stops before the tag.
+never re-pointed. `-DryRun` runs every check and the export and stops before the tag. `-Linux`
+also exports the Linux tarball, runs `sandbox\LinuxRelease.ps1` on it (a failure stops the run
+before the tag), and attaches it to the same release beside the zip.
 
 ## Format documentation
 
