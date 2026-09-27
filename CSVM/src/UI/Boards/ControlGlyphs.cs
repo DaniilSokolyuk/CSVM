@@ -114,6 +114,10 @@ public sealed class PromptFontGlyphs : ControlGlyphSet
     private static FontFile? _face;
     private static bool _loaded;
 
+    /// <summary>Gets the font's face for a caller drawing its own PromptFont characters, or null
+    /// when the font file is missing.</summary>
+    public static FontFile? Font => Face();
+
     /// <summary>What follows the flight stick for a stick control, or null for an axis, whose
     /// number names nothing a player can find on the stick. A button is its number counted from 1,
     /// as its caption counts, in the font's filled button digits. Button 28 is a filled 2 and a

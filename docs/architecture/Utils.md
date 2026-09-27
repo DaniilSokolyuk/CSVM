@@ -49,6 +49,12 @@ and the scoped `PushConsoleSink` redirect console lines, so a plain class that l
 without an engine. Categories, levels, the file-line grammar, the `--log=` filter and the sink
 path: [../org/logging.md](../org/logging.md). `HitchSidecar.cs` shares this sink's stem.
 
+## src/Utils/FolderOpener.cs
+Shows a folder in the system file browser: `Open` creates it if missing, hands it to
+`OS.ShellOpen` (a directory path opens the file browser on Windows and Linux alike) and logs the
+open or the failure under `core`. The two folder icons in `UI/Screens/BuildStamp.cs` and
+`Sticks/StickScreens.cs`'s profiles folder button go through it.
+
 ## src/Utils/LocalNetworks.cs
 The IPv4 networks this machine sits on, for the LAN search: `Ipv4()` lists the address and mask of
 every adapter that is up and not the loopback, and an empty list when the system will not say, so a

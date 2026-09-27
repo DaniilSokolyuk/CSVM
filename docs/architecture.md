@@ -384,7 +384,7 @@ else in `UI`, and nothing names `Labs`.
 - `src/UI/Screens/PausePreferences.cs`, the Preferences leaf over a paused mission: the Original Options screen hosted on the pause, its exit returning to the sheet with the settings applied.
 - `src/UI/Screens/MissionEndFade.cs`, the mission-end black-out, painting `CampaignDirector.LeavingFade` onto a full-screen rect every frame, one instance per rig.
 - `src/UI/Screens/SessionStartFade.cs`, the cover a session starts under, painting `StartCover`'s ramp over the HUD and the world until the session's first real frame, then up from dark.
-- `src/UI/Screens/BuildStamp.cs`, the build's version as `CSVM v<version>` in the menu's bottom-right corner, once for the window and over every presentation; hidden in flight.
+- `src/UI/Screens/BuildStamp.cs`, the build's version as `CSVM v<version>` in the menu's bottom-right corner, with mouse-only icons that open the logs and user folders, over every presentation and the extraction screen; hidden in flight.
 - `src/UI/Screens/NoGameDataScreen.cs`, the extraction screen shown instead of the menu when the data root holds no extraction, an unfinished one, or one stamped under another schema: the install folder, Extract, progress, failures.
 - `src/UI/Screens/ExtractionFlow.cs`, the extraction screen's engine-free state: the stale decision, the pre-fill, and a run on a worker marshalled to the main thread by a per-frame tick.
 - `src/UI/Screens/InstallPicker.cs`, the install folder picker: Godot's own directory dialog embedded in the window, with pad buttons to go up a folder and take the one shown.
@@ -518,6 +518,7 @@ determinism repo-wide; read `docs/verification.md` first.
 - `src/Utils/DisplayModeSetting.cs`, the window's display mode: the saved word against the shipped borderless default, and the one place the window mode is set.
 - `src/Utils/EffectPools.cs`, the `effect_pools.json` reader: how many copies of each effect-template root the two stages build, scaled by player count.
 - `src/Utils/EffectsLevel.cs`, the original's EffectsLevel option and the clutter fade's squared distance scale it drives, plus the remake's far-fade switch.
+- `src/Utils/FolderOpener.cs`, creates a folder if missing and shows it in the system file browser, logging the open or the failure; the stamp's icons and the profiles folder button use it.
 - `src/Utils/GameClock.cs`, the session sim clock every sim consumer takes dt from: run mode (realtime/fixed), halt and single-step, time scale, the holds.
 - `src/Utils/GraphicsMode.cs`, the opt-in enhanced-lighting setting, resolved once at launch into the one boolean every scene builder reads.
 - `src/Utils/HitchMonitor.cs`, the always-on frame-hitch detector: a frame far costlier than its recent neighbours gets a record; it logs nothing itself.

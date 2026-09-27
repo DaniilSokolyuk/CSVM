@@ -649,12 +649,12 @@ view of data collected elsewhere rather than a new sample. What a frame number p
 ## src/UI/Screens/BuildStamp.cs
 The build's version as `CSVM v<version>` in the menu's bottom-right corner, so a screenshot a
 stranger sends carries the build it was taken on and the number is not read as the original
-game's own. Built once by `Launcher` beside `PerfHud` and shown off the menu host's own "the
-menu is up", which is what puts it on every presentation at once: the stamp is a fact about the
-binary, not part of a presentation's screen graph, and Original draws decoded artwork with
-nowhere to put one. It draws on `HudLayers.PerfReadout`, above the boards, for the same reason
-that readout does. Hidden in flight, so no golden screenshot ever sees it. The number itself is
-`Utils/BuildVersion.cs`.
+game's own. Two PromptFont icons left of it open the logs folder (the open log file's directory)
+and Godot's user folder through `Utils/FolderOpener.cs`. They are mouse-only, never focusable,
+and `Launcher` keeps their clicks from Original's polled pointer. Built once by `Launcher` beside
+`PerfHud` and shown while the menu host or `NoGameDataScreen.cs` is up, so it covers every
+presentation at once. It draws on `HudLayers.PerfReadout`, above the boards, and is hidden in
+flight. Pinned by `build-stamp-icons` and `build-stamp-focus`; the number is `Utils/BuildVersion.cs`.
 
 ## src/UI/Overlays/NetReadout.cs
 The `--debug-net` corner readout: a network match's desync counters as

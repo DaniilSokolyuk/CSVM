@@ -142,6 +142,8 @@ part of what the community testing covers; report what you find.
 Logs are written to `logs/` next to `CSVM.x86_64`, one file per run, named for the mode and
 the time it started. The newest file there is the run you just did, and its first line
 states the build version. That same version is in the bottom-right corner of the menu.
+The small page icon beside it opens the logs folder, and the floppy disk icon opens the user
+folder, which holds your settings, controls, campaign profiles and custom planes.
 Starting `./CSVM.x86_64` from a terminal also shows the engine's own startup output, which
 includes messages from before the log file opens.
 

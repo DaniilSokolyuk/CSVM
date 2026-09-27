@@ -1,7 +1,6 @@
 using System;
 using CSVM.Bindings;
 using CSVM.Utils;
-using Godot;
 
 namespace CSVM.Sticks;
 
@@ -32,24 +31,5 @@ public static class StickScreens
 
     /// <summary>Creates the user profile folder if missing and opens it in the system file browser.
     /// Returns its OS path, or null with a log line when either step failed.</summary>
-    public static string? OpenUserFolder()
-    {
-        string path = System.IO.Path.GetFullPath(StickProfiles.UserPath());
-        var made = DirAccess.MakeDirRecursiveAbsolute(path);
-        if (made != Error.Ok && !DirAccess.DirExistsAbsolute(path))
-        {
-            Log.Warn("core", $"stick profiles folder {path} could not be created: {made}");
-            return null;
-        }
-
-        var opened = OS.ShellOpen(path);
-        if (opened != Error.Ok)
-        {
-            Log.Warn("core", $"stick profiles folder {path} could not be opened: {opened}");
-            return null;
-        }
-
-        Log.Info("core", $"stick profiles folder opened: {path}");
-        return path;
-    }
+    public static string? OpenUserFolder() => FolderOpener.Open(StickProfiles.UserPath(), "stick profiles folder");
 }
