@@ -818,7 +818,10 @@ public sealed class ClutterBuilder
             // The authored far fade: past it the card collapses to its planted point and costs no
             // fragments; inside the ramp the fragment stage dithers it out.
             v_alpha = csky_clutter_fade_alpha(origin, CAMERA_POSITION_WORLD, INSTANCE_CUSTOM);
-            float keep = step(0.004, v_alpha);
+            // The face below replaces the instance basis. A hidden or cratered stamp has a zero
+            // basis, so it is read off here, or the card keeps drawing.
+            float live = step(1e-12, dot(MODEL_MATRIX[1].xyz, MODEL_MATRIX[1].xyz));
+            float keep = step(0.004, v_alpha) * live;
         {{FaceBasisLines(spherical)}}
             VERTEX = (VIEW_MATRIX * vec4(origin + face * VERTEX * keep, 1.0)).xyz;
         }
