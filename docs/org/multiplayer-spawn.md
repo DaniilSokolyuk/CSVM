@@ -4,7 +4,8 @@ Where the original puts a pilot in a network match: the opening placement off th
 `net.zrd` table, and the different rule a respawn takes. The table's own file format is
 [`formats/net-spawns.md`](../formats/net-spawns.md); this page is what the executable does with it.
 What the same match counts and how it ends is
-[`multiplayer-scoring.md`](multiplayer-scoring.md).
+[`multiplayer-scoring.md`](multiplayer-scoring.md), and every message it puts on the wire is
+[`multiplayer-messages.md`](multiplayer-messages.md).
 
 All of it lives in `remote.cpp` (the source path string at `00628f50`): `FUN_00495310` is the
 session init and `FUN_004969b0` is the placement it ends with.
@@ -32,9 +33,14 @@ comes from a terrain query (`FUN_004c76e0`): the sampled height plus a margin wh
 ⚠ The radius and the margin (`00628f08`, `00628f0c`) are written at runtime by two other sites
 each, so their initialised values are not the values in play and are not recorded here.
 
-The bearing stepping by exactly 45 degrees per pilot index is the second independent sign that the
-match holds at most **eight** pilots; the first is the per-pilot colour table at `00628eb4`, which
-has exactly eight entries and is indexed by the same field.
+The bearing steps by exactly 45 degrees per pilot index, and the per-pilot colour table at
+`00628eb4`, indexed by the same field, has exactly eight entries, so the authored data serves
+eight pilots. ⚠ **That is not a player cap.** No coded bound exists: the pilot list is an STL list
+(head `0071c150`, count `0071c154`, walked by `FUN_0046f110`) whose count is never compared against
+a maximum. The only gate is DirectPlay's `dwMaxPlayers`, filled from the lobby's `nMaxPlayers`
+(string `006192e0`, global `00642f08`), which the code only ever resets to 0. The shipped lobby
+reads `Players (1 of 16)`, and the lobby's player and team arrays (`00645390`, `00645590`) hold 16
+entries each.
 
 ## The opening spawn does not use PLAYER_INIT
 
@@ -69,6 +75,20 @@ the one the `snd_CTF*` sound keys (`00628f94` onward) and the `score_return_flag
 `score_enemy_flag` score keys (`00627754`, `00627768`) belong to. Team ids are handed out from 1,
 which is what leaves block 0 of the table to the un-teamed match.
 
+## The per-pilot colour table
+
+`00628eb4` holds eight dwords and then zeros from `00628ed4`. It is indexed by the pilot's own
+index with no bound check at `00495893` (`MOV ECX, dword ptr [EDX*0x4 + 0x628eb4]`, `EDX` from the
+aircraft's `+0x3c`) and again at `00497ae6`, and each entry is stored to the aircraft at `+0x1060`.
+The stored bytes are `81 2d 2d 00`, `2d 2d 81 00`, `2d 81 2d 00`, `81 81 2d 00`, `81 2d 64 00`,
+`66 81 2d 00`, `45 7c 81 00`, `66 2d 81 00`. Which channel the consumer takes first is not decoded:
+a search for a reader of `+0x1060` finds only those two writers.
+
+The original's pilot index is 1-based here, so its eighth pilot reads the first zero dword past the
+table. `Net/NetSeats.cs` does not reproduce that: every seat gets a colour, seats 0 to 7 from the
+eight dwords read as red, green, blue, and seats 8 to 15 from the channel-wise complement of seat
+minus 8. Both readings are TUNE (`BL-1017`).
+
 ## What the remake takes
 
 The remake's Dogfight is the un-teamed match, so it takes the opening rule and the opening
@@ -78,3 +98,12 @@ puts a returning pilot next to the pack, which is the camping problem
 `Flight/Modes/VersusSpawnRotation.cs` exists to solve, and that rotation stays as it is. The stunt
 race's abreast starting grid is selected only when a race exists and never touches a Dogfight:
 four dogfighters 60 m apart on one heading is a head-on merge every round.
+
+Over a wire it departs from the original a second time, in who picks. The original has each
+client place its own pilot; here the host owns the rotation and a downed pilot asks for its
+return, because two rotations diverge on the first death. Only the return crosses the wire: the
+opening placement is the shared seed walking every peer onto the same entry, so a match start
+sends no spawn event at all. The block holds sixteen entries and the match admits at most
+sixteen pilots, so a full field still opens one seat per point and the 45-degree fan above has
+nothing to wrap past. A list shorter than the field is answered by the rotation relaxing its
+one-living-seat-per-point rule, never by computing a bearing.

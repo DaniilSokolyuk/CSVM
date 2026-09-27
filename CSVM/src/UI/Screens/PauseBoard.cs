@@ -30,7 +30,8 @@ public sealed partial class PauseBoard : Control
     private PanelContainer? _panel;
     private BoardMenuHost? _host;
 
-    /// <summary>Rerun the running mode in place, chosen from the menu.</summary>
+    /// <summary>Rerun the running mode in place, chosen from the menu. Null leaves the row off, as
+    /// <see cref="Preferences"/> does: a network guest cannot restart its host's flight.</summary>
     public Action? Restart { get; set; }
 
     /// <summary>Leave the session, chosen from the menu.</summary>
@@ -96,9 +97,9 @@ public sealed partial class PauseBoard : Control
             case BoardMenuItem.Preferences:
                 Preferences?.Invoke();  // and so is the options leaf, which stands over this board
                 break;
-            case BoardMenuItem.Restart:
+            case BoardMenuItem.Restart when Restart is { } restart:
                 _state.ForceResume();   // the rerun runs against a live clock, not a held one
-                Restart?.Invoke();
+                restart();
                 break;
             case BoardMenuItem.Exit:
                 Exit?.Invoke();
@@ -134,7 +135,11 @@ public sealed partial class PauseBoard : Control
             rows.Add((BoardMenuItem.Preferences, "Preferences"));
         }
 
-        rows.Add((BoardMenuItem.Restart, "Restart"));
+        if (Restart != null)
+        {
+            rows.Add((BoardMenuItem.Restart, "Restart"));
+        }
+
         rows.Add((BoardMenuItem.Exit, _exitLabel));
         var menu = new BoardMenu(dismissable: true, rows.ToArray());
         menu.Activated += OnActivated;

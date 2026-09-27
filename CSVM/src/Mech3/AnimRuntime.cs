@@ -226,6 +226,25 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
     /// of its own.</summary>
     public Action<string>? DestructibleKilled;
 
+    /// <summary>Raised when a spend moves a destructible to a new damage stage or kills it, after
+    /// the stage and the death have run. A network host sends each one at once.</summary>
+    public Action<DestructibleRegistry.Instance>? DestructibleDamaged;
+
+    /// <summary>Raised when a spend lowers a destructible's health without moving its stage or
+    /// killing it. A network host sends one sample per pool per tick. The target bar, a hull's injure
+    /// ladder and <c>ANIM_HEALTH</c> all read health between stages.
+    /// </summary>
+    public Action<DestructibleRegistry.Instance>? DestructibleChipped;
+
+    /// <summary>While set, <see cref="DamageAt"/> still reports a hit as landed but spends nothing.
+    /// A network guest's world runs this way, and its pools move only through
+    /// <see cref="ApplyReplicatedHealth"/>.</summary>
+    public bool DamageReplicated;
+
+    /// <summary>Where a replicated world sends health damage it asks the owning machine to spend,
+    /// with the pool and the amount. Null off the wire and on the host.</summary>
+    public Action<DestructibleRegistry.Instance, float>? DamageClaim;
+
     /// <summary>The world velocity a <c>Callback 16</c> hands the running instance, which is how a
     /// wreck inherits the aircraft's motion (docs/org/vehicleDamage.md). Supplied by the rig,
     /// because only the rig knows which vehicle is dying and how fast; null leaves the code
@@ -616,6 +635,10 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
     // True while Advance is walking the live instances, which is the one window where a start
     // belongs at the tail of the walk rather than inside the dispatch that asked for it.
     private bool _walkingInstances;
+
+    // The instances started since CollectLateStarts, which CatchUp advances on their own. Null
+    // outside a guest's catch-up, so an ordinary start costs one null test.
+    private HashSet<AnimInstance>? _lateStarts;
 
     // Nonzero while a death's own Start burst (RunDeathSequence) is on the call stack, a counter
     // because a chained CALL_ANIMATION can call again. It lets a death-triggered call relocate its
@@ -1512,6 +1535,53 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
         }
     }
 
+    /// <summary>Records every instance started from here until <see cref="CatchUp"/>. A guest
+    /// calls it before it applies a director event that arrived late.</summary>
+    public void CollectLateStarts() => _lateStarts ??= new HashSet<AnimInstance>();
+
+    /// <summary>Advances only the instances started since <see cref="CollectLateStarts"/>, with
+    /// their motions, by <paramref name="seconds"/>, then stops recording. It steps at the authored
+    /// frame so their timed events fire in order. A one-shot fired on the way starts as far into
+    /// its clip as it is late.</summary>
+    public void CatchUp(float seconds)
+    {
+        if (_lateStarts is not { } late)
+            return;
+        float wasLate = Sounds?.LateBy ?? 0f;
+        try
+        {
+            float left = float.IsFinite(seconds) ? seconds : 0f;
+            while (left > 0f && late.Any(_instances.Contains))
+            {
+                float step = MathF.Min(left, SequenceRunner.AnimFrame);
+                left -= step;
+                if (Sounds != null)
+                    Sounds.LateBy = left;
+                TickMotions(step, owner => late.Any(i => i.Def == owner.Def && i.Anchor == owner.Anchor));
+                WalkLateStarts(late, step);
+            }
+        }
+        finally
+        {
+            _lateStarts = null;
+            if (Sounds != null)
+                Sounds.LateBy = wasLate;
+        }
+    }
+
+    /// <summary>The playback position of a live instance of <paramref name="animName"/>, the
+    /// newest one's, or null when none is live.</summary>
+    public float? ClockOf(string animName)
+    {
+        for (int i = _instances.Count - 1; i >= 0; i--)
+        {
+            if (string.Equals(_instances[i].Def.AnimName, animName, StringComparison.OrdinalIgnoreCase))
+                return _instances[i].Clock;
+        }
+
+        return null;
+    }
+
     /// <summary>Stops every live instance of an animation name (optionally only on one anchor) and
     /// tears down the resources it created. Removing the instance alone would leave its motions
     /// driving nodes, its puffers emitting, its lights lit and its sounds playing;
@@ -1724,25 +1794,21 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
             return false;
         if (inst.Status == DestructibleRegistry.State.Destroyed)
             return true;   // already dead, the death sequence owns it from here
-        float before = inst.Health;
-        inst.Health = Math.Max(0f, inst.Health - Math.Max(0f, healthDamage));
-        ApplyDamageStages(inst);
-        bool destroyed = inst.Health <= 0f;
-        if (destroyed)
-        {
-            inst.Status = DestructibleRegistry.State.Destroyed;
-            if (HealthyNodeNameOf(inst.Def) is { } healthyNode)
-                DestructibleKilled?.Invoke(healthyNode);
-            RunDeathSequence(inst);
-        }
-        // ⚠ Never let the ceiling swallow a death. It exists to keep a firefight's chip hits out of
-        // the log, and which parts died is what a sortie is read back for.
-        if (destroyed || _damagesLogged < 12)
-        {
-            if (!destroyed)
-                _damagesLogged++;
-            Log.Info("anim", $"damage: -{healthDamage:0.##} on {NameOf(inst.Anchor)} HP {before:0.##}→{inst.Health:0.##}{(destroyed ? " DESTROYED, death sequence run" : $" [stage {inst.DamageStage}]")}");
-        }
+        if (DamageReplicated)
+            return true;   // struck, but another machine decides what it cost
+        SpendHealth(inst, inst.Health - Math.Max(0f, healthDamage), healthDamage);
+        return true;
+    }
+
+    /// <summary>Sets a destructible to the health another machine decided, through the same
+    /// stages and death a local hit takes. Only ever lowers it. False when the pool is out of the
+    /// world, already dead, or at or below <paramref name="health"/> already.</summary>
+    public bool ApplyReplicatedHealth(DestructibleRegistry.Instance inst, float health)
+    {
+        ArgumentNullException.ThrowIfNull(inst);
+        if (inst.Dormant || inst.Status == DestructibleRegistry.State.Destroyed || health >= inst.Health)
+            return false;
+        SpendHealth(inst, health, inst.Health - health);
         return true;
     }
 
@@ -1982,6 +2048,7 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
         if (inst.Finished)
             return;
         _instances.Add(inst);
+        _lateStarts?.Add(inst);
         OnInstanceStarted?.Invoke(def, anchor);
         // A call made by the tick's own walk hands its callee to the drain that closes the walk;
         // everything else fires whatever is due at t=0 immediately, so instantaneous sequences
@@ -3811,6 +3878,36 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
         return own;
     }
 
+    // The one place a destructible's pool is lowered, shared by a local hit and a replicated one
+    // so the two cannot stage or die differently.
+    private void SpendHealth(DestructibleRegistry.Instance inst, float health, float healthDamage)
+    {
+        float before = inst.Health;
+        int stageBefore = inst.DamageStage;
+        inst.Health = Math.Max(0f, health);
+        ApplyDamageStages(inst);
+        bool destroyed = inst.Health <= 0f;
+        if (destroyed)
+        {
+            inst.Status = DestructibleRegistry.State.Destroyed;
+            if (HealthyNodeNameOf(inst.Def) is { } healthyNode)
+                DestructibleKilled?.Invoke(healthyNode);
+            RunDeathSequence(inst);
+        }
+        // ⚠ Never let the ceiling swallow a death. It exists to keep a firefight's chip hits out of
+        // the log, and which parts died is what a sortie is read back for.
+        if (destroyed || _damagesLogged < 12)
+        {
+            if (!destroyed)
+                _damagesLogged++;
+            Log.Info("anim", $"damage: -{healthDamage:0.##} on {NameOf(inst.Anchor)} HP {before:0.##}→{inst.Health:0.##}{(destroyed ? " DESTROYED, death sequence run" : $" [stage {inst.DamageStage}]")}");
+        }
+        if (destroyed || inst.DamageStage != stageBefore)
+            DestructibleDamaged?.Invoke(inst);
+        else if (inst.Health < before)
+            DestructibleChipped?.Invoke(inst);
+    }
+
     // Runs a destructible's death the instant its HP reaches zero.
     // ⚠ Play ALL the def's Initial sequences through Start; never try to pick "the death sequence"
     // out by name. The swap sits in a sequence whose name varies and is only reliably Initial
@@ -4309,13 +4406,7 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
                 }
 
                 inst.Advance(this, step);
-                if (Retirable(inst) && _instances.Remove(inst))
-                {
-                    FinishInputGoverned(inst.Def, inst.Anchor);
-                    FinishEffectInstance(inst.Def, inst.Anchor);
-                    _templateStage.RetireWhenIdle(inst.Def, inst.Anchor);
-                    OnInstanceFinished?.Invoke(inst.Def, inst.Anchor);
-                }
+                RetireFromWalk(inst);
             }
 
             DrainQueuedStarts();
@@ -4327,13 +4418,53 @@ public sealed partial class AnimRuntime : Node, ISequenceHost
         }
     }
 
+    private void RetireFromWalk(AnimInstance inst)
+    {
+        if (Retirable(inst) && _instances.Remove(inst))
+        {
+            FinishInputGoverned(inst.Def, inst.Anchor);
+            FinishEffectInstance(inst.Def, inst.Anchor);
+            _templateStage.RetireWhenIdle(inst.Def, inst.Anchor);
+            OnInstanceFinished?.Invoke(inst.Def, inst.Anchor);
+        }
+    }
+
+    // One catch-up step of the late starts alone. It walks them in the ordinary walk's order and
+    // closes with the same drain. A call they make joins the late set.
+    private void WalkLateStarts(HashSet<AnimInstance> late, float step)
+    {
+        var walk = _instances.Where(late.Contains).ToList();
+        bool wasWalking = _walkingInstances;
+        _walkingInstances = true;
+        try
+        {
+            for (int i = walk.Count - 1; i >= 0; i--)
+            {
+                var inst = walk[i];
+                if (!_instances.Contains(inst) || _queuedStarts.Any(q => q.Inst == inst))
+                {
+                    continue;
+                }
+
+                inst.Advance(this, step);
+                RetireFromWalk(inst);
+            }
+
+            DrainQueuedStarts();
+        }
+        finally
+        {
+            _walkingInstances = wasWalking;
+        }
+    }
+
     // Advances every live motion, then dispatches whatever landed. ⚠ The two halves stay in one
-    // method, called from one statement in Advance, because the instance walk must not run between
+    // method, called from one statement in Advance and CatchUp, because no instance walk may run between
     // them: an instance whose only hold is a landed piece would be Finished with nothing owed, so
     // it retires and FinishEffectInstance SustainEnds the piece's trail emitter mid-flight.
-    private void TickMotions(float dt)
+    private void TickMotions(float dt, Func<(AnimDefinition Def, Node3D? Anchor), bool>? only = null)
     {
-        foreach (var landing in Motions.Tick(dt, FastForward))
+        foreach (var landing in Motions.Tick(dt, FastForward, only))
         {
             // ⚠ Count the miss here. A landing can outlive its own instance, and CallSequence then
             // has nothing to dispatch into and returns silently.

@@ -173,6 +173,29 @@ public sealed record SessionSpec
     /// <summary>Resolved. <c>--vs-time=</c> was spelled out, so the flag beats a time limit
     /// a menu screen chose (<see cref="FromMenu"/>).</summary>
     public bool VsTimeExplicit { get; private set; }
+    /// <summary><c>--vs-lives=N</c>: how many deaths a pilot has before it stays down for the rest
+    /// of the match. Default 0, no limit.</summary>
+    public int VsLives { get; private set; }
+    /// <summary>Resolved. <c>--vs-lives=</c> was spelled out, so the flag beats a lobby's lives.</summary>
+    public bool VsLivesExplicit { get; private set; }
+    /// <summary>False under <c>--vs-no-respawn</c>: a downed pilot comes back only on its own press,
+    /// the lobby's Auto Respawn unchecked. Default true.</summary>
+    public bool VsAutoRespawn { get; private set; } = true;
+    /// <summary>Resolved. <c>--vs-no-respawn</c> was spelled out, so the flag beats a lobby's box.</summary>
+    public bool VsAutoRespawnExplicit { get; private set; }
+    /// <summary><c>--net-host</c>, <c>--net-host=port</c> or <c>--net-host=address:port</c>: open
+    /// a listen server on that port and fly this session as its host. Null when the flag is
+    /// absent. A scripted smoke is what it is for; a player opens the same socket from the menu's
+    /// multiplayer door. Split with <see cref="ParseHost"/>.</summary>
+    public int? NetHostPort { get; private set; }
+    /// <summary>Which interface <c>--net-host=</c> binds, every one of them unless its value
+    /// named an address. ⚠ A scripted run names 127.0.0.1: a wildcard bind is what makes Windows
+    /// put a firewall dialog on somebody's screen.</summary>
+    public string NetHostBind { get; private set; } = "*";
+    /// <summary><c>--net-join=address</c>, or <c>address:port</c>: join the match at that address
+    /// and fly this session as a guest. Null when the flag is absent. Split with
+    /// <see cref="ParseJoin"/>.</summary>
+    public string? NetJoin { get; private set; }
     /// <summary><b>Resolved.</b> Open the aircraft's per-part HP sliders at launch, a modifier on
     /// <see cref="SessionMode.Viewer"/> (the parked plane) or <see cref="SessionMode.Fly"/> (the
     /// flown one), dropped by the modes that build no aircraft at all. The lab itself is always
@@ -713,6 +736,10 @@ public sealed record SessionSpec
 
     public bool DebugAnim { get; private set; }
     public bool DebugAnimUi { get; private set; }
+
+    /// <summary><c>--debug-net</c>: log a network match's desync counters once a second and draw
+    /// them in a corner of the screen. Nothing is shown outside a network match.</summary>
+    public bool DebugNet { get; private set; }
     public string? PlayAnim { get; private set; }
     public bool DebugDzPaths { get; private set; }
     /// <summary><c>--debug-ainets[=name,…]</c>: open the AI patrol-net overlay (F13) at
@@ -996,12 +1023,18 @@ public sealed record SessionSpec
             else if (arg == "--coop") { s.Coop = true; }
             else if (arg.StartsWith("--vs-kills=")) { s.VsKills = int.Parse(arg["--vs-kills=".Length..]); s.VsKillsExplicit = true; }
             else if (arg.StartsWith("--vs-time=")) { s.VsTimeMinutes = int.Parse(arg["--vs-time=".Length..]); s.VsTimeExplicit = true; }
+            else if (arg.StartsWith("--vs-lives=")) { s.VsLives = Math.Max(0, int.Parse(arg["--vs-lives=".Length..])); s.VsLivesExplicit = true; }
+            else if (arg == "--vs-no-respawn") { s.VsAutoRespawn = false; s.VsAutoRespawnExplicit = true; }
+            else if (arg == "--net-host") { s.NetHostPort = UI.Menu.NetPlayFeature.DefaultPort; }
+            else if (arg.StartsWith("--net-host=")) { var h = ParseHost(arg["--net-host=".Length..]); s.NetHostBind = h.Bind; s.NetHostPort = h.Port; }
+            else if (arg.StartsWith("--net-join=")) { s.NetJoin = arg["--net-join=".Length..]; }
             else if (arg == "--freecam") { s._freecamArg = true; s.HasContentArg = true; }
             else if (arg == "--anim-lab") { s._animLabArg = true; s.HasContentArg = true; }
             else if (arg.StartsWith("--play-anim=")) { s.PlayAnim = arg["--play-anim=".Length..]; s.HasContentArg = true; }
             else if (arg.StartsWith("--seed=")) { s.Seed = ulong.Parse(arg["--seed=".Length..]); }
             else if (arg == "--debug-anim-ui") { s.DebugAnimUi = true; s.HasContentArg = true; }
             else if (arg == "--debug-anim") { s.DebugAnim = true; }
+            else if (arg == "--debug-net") { s.DebugNet = true; }
             else if (arg == "--no-pads") { s.NoPads = true; }
             else if (arg == "--no-crash-loss") { s.NoCrashLoss = true; }
             else if (arg == "--det") { s._detArg = true; }
@@ -1521,16 +1554,37 @@ public sealed record SessionSpec
         return s;
     }
 
+    /// <summary>Splits a <see cref="NetJoin"/> value into the address and the port to join. A
+    /// value naming no port takes the door's own default. An IPv6 address is written in brackets,
+    /// which is what tells its colons from the port's.</summary>
+    public static (string Address, int Port) ParseJoin(string value) =>
+        UI.Menu.NetPlayFeature.SplitAddress(value, UI.Menu.NetPlayFeature.DefaultPort);
+
+    /// <summary>Splits a <see cref="NetHostPort"/> value: a bare port binds every interface, and
+    /// an <c>address:port</c> binds that one address, by the same rules as
+    /// <see cref="ParseJoin"/>.</summary>
+    public static (string Bind, int Port) ParseHost(string value)
+    {
+        string text = value ?? "";
+        if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int bare))
+        {
+            return ("*", bare is > 0 and < 65536 ? bare : UI.Menu.NetPlayFeature.DefaultPort);
+        }
+
+        var (address, port) = ParseJoin(text);
+        return (address.Length == 0 ? "*" : address, port);
+    }
+
     /// <summary>The spec for a launchscreen launch, one plane per player, derived from the pristine
     /// command line <paramref name="cli"/>, never the last session's spec. ⚠ Does not re-resolve:
     /// every menu-settable field must be written here, or the pristine base drops it. The 2-player
     /// Dogfight lock is <see cref="UI.Screens.LaunchMenu"/>'s job. An <paramref name="iaDef"/> decides
-    /// <see cref="Scenario"/> and <see cref="Stunt"/> instead. The two vs arguments are a screen's
-    /// match rules, null where none offers them (<see cref="VsKillsExplicit"/>).</summary>
+    /// <see cref="Scenario"/> and <see cref="Stunt"/> instead. The vs arguments are a screen's match
+    /// rules, null where none offers them (<see cref="VsKillsExplicit"/>); only the lobby sets lives.</summary>
     public static SessionSpec FromMenu(SessionSpec cli, string chapter, IReadOnlyList<string> planeNodes,
         MenuMode mode, InstantActionDef? iaDef = null, IReadOnlyList<LoadoutChoice?>? loadouts = null,
         IReadOnlyList<CustomPlaneDef?>? customPlanes = null, int? vsKills = null, int? vsTimeMinutes = null,
-        LoadoutChoice? iaWingmanLoadout = null)
+        int? vsLives = null, bool? vsAutoRespawn = null, LoadoutChoice? iaWingmanLoadout = null)
     {
         var names = planeNodes.ToArray();
         return cli with
@@ -1548,6 +1602,8 @@ public sealed record SessionSpec
             Versus = mode == MenuMode.Versus,
             VsKills = cli.VsKillsExplicit ? cli.VsKills : vsKills ?? cli.VsKills,
             VsTimeMinutes = cli.VsTimeExplicit ? cli.VsTimeMinutes : vsTimeMinutes ?? cli.VsTimeMinutes,
+            VsLives = cli.VsLivesExplicit ? cli.VsLives : vsLives ?? cli.VsLives,
+            VsAutoRespawn = cli.VsAutoRespawnExplicit ? cli.VsAutoRespawn : vsAutoRespawn ?? cli.VsAutoRespawn,
             Mode = SessionMode.Fly,
             WorldMode = true,
             Scenario = cli.ScenarioExplicit ? cli.Scenario : iaDef?.MissionType ?? mode switch

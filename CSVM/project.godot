@@ -34,6 +34,8 @@ textures/default_filters/anisotropic_filtering_level=4
 ; cross-node z-fight tie-break in SceneBuilder). Godot allocates 16 vec4 slots per
 ; instance, so the 65536 default caps at ~4096 mesh instances; C4 (4234) and C5 (4746)
 ; overflow it, flooding "Too many instances" errors AND silently dropping node_bias on
-; the overflow (decals z-fight again). 262144 = ~16384 instances, headroom for the
-; largest chapter plus item-7 border tiles. (M2-polish-2 item 2.)
-limits/global_shader_variables/buffer_size=262144
+; the overflow (decals z-fight again). 262144 (~16384 instances) held one world with
+; headroom, but a network harness suite holds three sessions' worlds in one process,
+; and inside a shard of sixty suites that overflowed it again. 1048576 = ~65536
+; instances, 16 MB, room for three of the largest chapter and the shard's residue.
+limits/global_shader_variables/buffer_size=1048576

@@ -4,12 +4,12 @@ using CSVM.Flight.Airframe;
 namespace CSVM.Flight.Modes;
 
 /// <summary>
-/// Who is holding the sim clock, and why: one instance shared by every human rig in the session
-/// (assigned to <see cref="FlightController.PauseState"/> the same way <see cref="VersusMatch"/>
-/// is), so any player's Start/P freezes the shared <c>GameClock</c> for everybody, but only the
-/// player who paused may resume it. Owns none of the halt itself, <see cref="FlightController"/>
-/// mirrors <see cref="Halted"/> into <c>GameClock.Halted</c> every frame; this class only decides
-/// who is allowed to flip it, and keeps a results board's halt separate from a player's.
+/// Who is holding the sim clock, and why. One instance is shared by every human rig in the session,
+/// assigned to <see cref="FlightController.PauseState"/> as <see cref="VersusMatch"/> is. Any
+/// player's Start/P freezes the shared <c>GameClock</c> for everybody, and only the pauser resumes.
+/// <see cref="FlightController"/> mirrors <see cref="ClockHeld"/> into <c>GameClock.Halted</c> every
+/// frame. This class only decides who may flip it, and keeps a results board's halt separate.
+/// In a network session the pause is an <see cref="Overlay"/>: the sheet goes up and the clock runs.
 /// </summary>
 public sealed class PauseState
 {
@@ -19,7 +19,17 @@ public sealed class PauseState
     /// <summary>The reasons currently holding the clock.</summary>
     public HaltReason Reasons { get; private set; }
 
+    /// <summary>A pause that stops nothing, set for a network session. ⚠ Do not let a pause halt
+    /// the clock there: the peers' world cannot stop, and a halted clock also stops the transport
+    /// step. A results board's reasons still halt.</summary>
+    public bool Overlay { get; init; }
+
+    /// <summary>Whether a board is up over the flight, a pause or a results board.</summary>
     public bool Halted => Reasons != HaltReason.None;
+
+    /// <summary>Whether the sim clock stops: <see cref="Halted"/>, less the pause when it is an
+    /// <see cref="Overlay"/>.</summary>
+    public bool ClockHeld => (Overlay ? Reasons & ~HaltReason.Paused : Reasons) != HaltReason.None;
 
     public bool Paused => (Reasons & HaltReason.Paused) != 0;
 

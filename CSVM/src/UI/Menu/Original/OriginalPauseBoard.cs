@@ -41,7 +41,9 @@ public sealed partial class OriginalPauseBoard : Control
     private Input.MouseModeEnum _mouseMode = Input.MouseModeEnum.Visible;
     private bool _tookCursor;
 
-    /// <summary>Rerun the running mission in place, chosen from RESTART.</summary>
+    /// <summary>Rerun the running mission in place, chosen from RESTART. Null where a network guest
+    /// flies its host's mission. The strip is authored and drawn either way, and the press then
+    /// does nothing, as a null <see cref="Preferences"/> does.</summary>
     public Action? Restart { get; set; }
 
     /// <summary>Leave the session, chosen from QUIT.</summary>
@@ -182,9 +184,9 @@ public sealed partial class OriginalPauseBoard : Control
             case BoardMenuItem.Photo:
                 PhotoMode?.Invoke();    // the halt stays: photo mode is a still frame, not a resume
                 break;
-            case BoardMenuItem.Restart:
+            case BoardMenuItem.Restart when Restart is { } restart:
                 _state.ForceResume();   // the rerun runs against a live clock, not a held one
-                Restart?.Invoke();
+                restart();
                 break;
             case BoardMenuItem.Preferences:
                 Preferences?.Invoke();

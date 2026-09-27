@@ -103,6 +103,12 @@ interactive menus (plane roster, chapter) and then `--fly`, flight flags prompt 
 missing, and the static views (`--plane=`, `--chapter=`, `--damage=`) pass through promptless
 apart from `--damage=`'s own plane prompt.
 
+**The Steam build flavour.** `dotnet build CSVM/CSVM.sln -p:CsvmSteam=true` defines `CSVM_STEAM`,
+which makes `CSVM/src/Net/NetCarrier.cs` select the Steam carrier instead of ENet and nothing
+else. The Steamworks SDK is not in this repo and cannot be, so that carrier throws at every way
+in; the flavour exists to keep the seam honest, and both flavours build clean and pass the unit
+suite. `RunTests.ps1` and every release build are the default flavour.
+
 **`RunTests.ps1`, the verification entry point.** One command, one summary block, one exit code.
 Stages, in order, each reported `PASS` / `FAIL` / `SKIP` / `TODO`:
 
@@ -282,7 +288,10 @@ the author's call that the remake stands in for the original end to end; until t
 stays `0.x`, and afterwards a major bump is reserved for a change that breaks saved profiles or
 replaces a subsystem wholesale. ⚠ A patch release never changes the format of anything written to
 `user://` and never changes the network protocol, so builds that differ only in the patch number
-read each other's profiles and can play in the same session.
+read each other's profiles and can play in the same session. The network half is enforced at the
+join: each lobby sends its major.minor of `BuildVersion` (`Net/NetBuildVersion.cs`), the host
+refuses a mismatched guest through `SessionClosed` with both versions named, and the LAN games list
+greys a game of another major.minor.
 
 The payload is `packaging/MANIFEST.md`'s table, copied from its repo sources on every export, which
 keeps it byte-identical.

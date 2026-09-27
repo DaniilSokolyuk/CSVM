@@ -152,10 +152,28 @@ internal sealed class FlightWorldBindings
 
 internal sealed class HumanRosterBindings
 {
+    /// <summary>Seats, not panes. A network match's remote guests are counted here too, which is
+    /// what sizes the spawn walk and the scoreboard over the whole field.</summary>
     public int RigCount { get; init; }
+
+    /// <summary>The network match's seat roster, indexed by seat, empty outside one (which reads
+    /// as every seat local). A seat that is not <see cref="Net.NetSeat.IsLocal"/> is assembled
+    /// with an aircraft, a spawn slot, a score row and a marker colour. It gets no pane, HUD,
+    /// camera, listener or input device. Where a seat names an airframe, the roster's pick beats
+    /// this machine's launch flags: every peer has to build the same field.</summary>
+    public IReadOnlyList<Net.NetSeat> NetSeats { get; init; } = Array.Empty<Net.NetSeat>();
+
+    /// <summary>The fit a seat flown elsewhere carries, by seat, or null for its stock fit.</summary>
+    public Func<int, LoadoutChoice?>? SeatFit { get; init; }
     public float MixGain { get; init; } = 1f;
+
+    /// <summary>The pads each of this machine's players reads, indexed by local player, never by
+    /// seat (<see cref="Net.NetSeats.LocalOrdinal"/>). Null reads every pad.</summary>
     public int[][]? PadAssignment { get; init; }
     public PauseState PauseState { get; init; } = null!;
+
+    /// <summary>The board reader for a roster seat. It maps the seat to the local player that sits
+    /// in it, so a guest's own seat drives its own cursor.</summary>
     public Func<int, MenuInput> MenuInputFor { get; init; } = null!;
     public bool ExitsToMenu { get; init; }
     public Action ExitSession { get; init; } = null!;

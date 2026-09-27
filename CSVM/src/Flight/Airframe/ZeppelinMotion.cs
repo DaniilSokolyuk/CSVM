@@ -134,6 +134,19 @@ public sealed class ZeppelinMotion
         _pitchRate = 0f;
     }
 
+    /// <summary>Takes a pose and speed decided elsewhere, a <see cref="ZeppelinReplica"/>'s, so every
+    /// reader of this motion sees where the hull is drawn. The law does not run; turn rates are
+    /// zeroed so a later <see cref="Step"/> starts from rest.</summary>
+    public void Follow(Vector3 position, float yawRad, float pitchRad, float speed)
+    {
+        Position = position;
+        YawRad = yawRad;
+        PitchRad = pitchRad;
+        Speed = speed;
+        _yawRate = 0f;
+        _pitchRate = 0f;
+    }
+
     /// <summary>One sim step: walk the net, steer yaw and pitch at the current node through the
     /// decoded steer law (<see cref="Steer"/>), accelerate toward the (engine-scaled) max speed,
     /// and move forward along the facing.</summary>

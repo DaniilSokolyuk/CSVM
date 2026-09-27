@@ -11,11 +11,11 @@ namespace CSVM.Tests;
 
 /// <summary>
 /// The d-pad shape driving every menu cursor, via <see cref="MenuInput.StepAxis"/> over a real
-/// <see cref="HoldToRepeat"/>: a fresh press fires immediately, a held direction repeats after the
-/// initial delay at the repeat interval, a direction flip fires immediately with a fresh delay,
+/// <see cref="HoldToRepeat"/>. A fresh press fires immediately, and a held direction repeats after
+/// the initial delay at the repeat interval. A direction flip fires immediately with a fresh delay,
 /// releasing resets the delay, and idle input produces nothing. Then the typed-text half over
-/// <see cref="MenuInput.TypedFrom"/>: the typeable set reaches past what a name box accepts, so a
-/// refused character arrives at the box and the box cues its reject sound. The device reads
+/// <see cref="TypedText"/>. A key event's own character arrives whatever the layout, once per
+/// reader, and a refused one still reaches the box for its reject sound. The device reads
 /// themselves are unreachable here; these are the two rules alone.
 /// </summary>
 public class MenuInputTests
@@ -86,74 +86,99 @@ public class MenuInputTests
     }
 
     [Fact]
-    public void APunctuationKeyTypesItsCharacterSoTheBoxHasSomethingToRefuse()
+    public void AColonFromAGermanLayoutArrivesAsTheColonTheLayoutTyped()
     {
-        bool[] prev = FreshEdges();
+        // Shift and the period key: a US key table reads that position as '>', the event says ':'.
+        var feed = new TypedText();
+        long mark = feed.Count;
 
-        Assert.Equal("/", MenuInput.TypedFrom(k => k == Key.Slash, shift: false, prev));
-        Assert.False(CampaignTextEntry.Accepts('/'));
-        // Still held on the next frame, so it types once per press like every other key.
-        Assert.Equal(string.Empty, MenuInput.TypedFrom(k => k == Key.Slash, shift: false, prev));
+        Assert.True(feed.Feed(pressed: true, echo: false, unicode: ':'));
+        Assert.Equal(":", feed.Since(ref mark));
+        Assert.Equal(string.Empty, feed.Since(ref mark));
     }
 
     [Fact]
-    public void EveryTypeableKeyHasItsOwnEdgeSlotAndItsOwnCharacter()
+    public void ReleasesEchoesAndControlCodesTypeNothing()
     {
-        var seen = new HashSet<char>();
-        foreach (var key in MenuInput.TypeableKeys)
+        var feed = new TypedText();
+        long mark = feed.Count;
+
+        Assert.False(feed.Feed(pressed: false, echo: false, unicode: 'a'));
+        Assert.False(feed.Feed(pressed: true, echo: true, unicode: 'a'));
+        Assert.False(feed.Feed(pressed: true, echo: false, unicode: 0));
+        Assert.False(feed.Feed(pressed: true, echo: false, unicode: '\r'));
+        Assert.False(feed.Feed(pressed: true, echo: false, unicode: '\b'));
+        Assert.False(feed.Feed(pressed: true, echo: false, unicode: 0x1F600));
+        Assert.True(feed.Feed(pressed: true, echo: false, unicode: 0xE4));
+        Assert.Equal("\u00e4", feed.Since(ref mark));
+    }
+
+    [Fact]
+    public void EveryReaderSeesEachCharacterOnceWhateverTheOthersRead()
+    {
+        var feed = new TypedText();
+        long first = feed.Count;
+        long second = feed.Count;
+
+        feed.Feed(true, false, 'a');
+        Assert.Equal("a", feed.Since(ref first));
+        feed.Feed(true, false, 'b');
+        Assert.Equal("ab", feed.Since(ref second));
+        Assert.Equal("b", feed.Since(ref first));
+    }
+
+    [Fact]
+    public void AReaderFarBehindIsHandedOnlyTheNewestCharacters()
+    {
+        var feed = new TypedText();
+        long mark = feed.Count;
+        for (int i = 0; i < TypedText.Kept + 10; i++)
         {
-            string typed = MenuInput.TypedFrom(k => k == key, shift: false, FreshEdges());
-            Assert.Single(typed);
-            Assert.True(seen.Add(typed[0]), $"{key} typed a character another key already typed");
+            feed.Feed(true, false, i < 10 ? 'x' : 'y');
         }
 
-        Assert.Equal(MenuInput.TypeableKeys.Count, seen.Count);
+        Assert.Equal(new string('y', TypedText.Kept), feed.Since(ref mark));
+        Assert.Equal(feed.Count, mark);
     }
 
     [Fact]
-    public void TheTypeableSetCoversTheAcceptedNameCharactersAndReachesPastThem()
+    public void APasteReachesEveryReaderOnceAndTypesNoCharacter()
     {
-        var typed = new HashSet<char>();
-        foreach (var key in MenuInput.TypeableKeys)
-        {
-            typed.Add(MenuInput.TypedFrom(k => k == key, shift: false, FreshEdges())[0]);
-            typed.Add(MenuInput.TypedFrom(k => k == key, shift: true, FreshEdges())[0]);
-        }
+        var feed = new TypedText();
+        long first = feed.Pastes;
+        long second = feed.Pastes;
+        long typed = feed.Count;
 
-        foreach (char c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 '`,-./;=[\\]")
-            Assert.Contains(c, typed);
-
-        Assert.Contains(typed, c => !CampaignTextEntry.Accepts(c));
+        feed.FeedPaste();
+        feed.FeedPaste();
+        Assert.True(feed.PastedSince(ref first));
+        Assert.False(feed.PastedSince(ref first));
+        Assert.True(feed.PastedSince(ref second));
+        Assert.Equal(string.Empty, feed.Since(ref typed));
     }
 
     [Fact]
-    public void ShiftGivesADigitOrPunctuationKeyTheSymbolItPrints()
+    public void APunctuationCharacterArrivesSoTheBoxHasSomethingToRefuse()
     {
-        Assert.Equal("!", MenuInput.TypedFrom(k => k == Key.Key1, shift: true, FreshEdges()));
-        Assert.Equal("1", MenuInput.TypedFrom(k => k == Key.Key1, shift: false, FreshEdges()));
+        var feed = new TypedText();
+        long mark = feed.Count;
+        feed.Feed(true, false, '/');
 
-        // The whole US-layout shifted row, in TypeableKeys order after the letters and the space.
-        var shifted = new List<char>();
-        foreach (var key in MenuInput.TypeableKeys)
-        {
-            if (key is >= Key.A and <= Key.Z || key == Key.Space)
-                continue;
-            shifted.Add(MenuInput.TypedFrom(k => k == key, shift: true, FreshEdges())[0]);
-        }
-
-        Assert.Equal(")!@#$%^&*(\"<_>?:+{|}~", new string(shifted.ToArray()));
-    }
-
-    [Fact]
-    public void TheUnlockingPilotNameCanBeTypedKeyByKeyIntoTheNameBox()
-    {
         var box = new CampaignTextEntry();
-        bool[] prev = FreshEdges();
+        Assert.False(box.Type(feed.Since(ref mark)));
+        Assert.False(CampaignTextEntry.Accepts('/'));
+    }
+
+    [Fact]
+    public void TheUnlockingPilotNameCanBeTypedIntoTheNameBox()
+    {
+        var feed = new TypedText();
+        var box = new CampaignTextEntry();
+        long mark = feed.Count;
         foreach (char c in CampaignCheats.UnlockName)
         {
-            (Key key, bool shift) = c == '!' ? (Key.Key1, true) : ((Key)char.ToUpperInvariant(c), false);
-            box.Type(MenuInput.TypedFrom(k => k == key, shift, prev));
-            MenuInput.TypedFrom(_ => false, shift: false, prev);
+            feed.Feed(true, false, c);
+            box.Type(feed.Since(ref mark));
         }
 
         Assert.Equal(CampaignCheats.UnlockName, box.Text);
@@ -161,13 +186,13 @@ public class MenuInputTests
     }
 
     [Fact]
-    public void EdgeStateOfTheWrongLengthIsRefusedRatherThanReadingTheWrongKey()
+    public void TheTypeableKeysAreTheLettersDigitsSpaceAndPunctuationTextEntryUnbinds()
     {
-        bool[] tooShort = new bool[MenuInput.TypeableKeys.Count - 1];
-
-        Assert.Throws<ArgumentException>(() => MenuInput.TypedFrom(_ => false, shift: false, tooShort));
+        Assert.Contains(Key.W, MenuInput.TypeableKeys);
+        Assert.Contains(Key.Key1, MenuInput.TypeableKeys);
+        Assert.Contains(Key.Space, MenuInput.TypeableKeys);
+        Assert.Contains(Key.Period, MenuInput.TypeableKeys);
+        Assert.DoesNotContain(Key.Enter, MenuInput.TypeableKeys);
+        Assert.Equal(MenuInput.TypeableKeys.Count, new HashSet<Key>(MenuInput.TypeableKeys).Count);
     }
-
-    // Nothing held, sized off the table so the parallel array cannot drift from it.
-    private static bool[] FreshEdges() => new bool[MenuInput.TypeableKeys.Count];
 }

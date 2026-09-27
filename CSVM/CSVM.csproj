@@ -6,6 +6,14 @@
     <RootNamespace>CSVM</RootNamespace>
   </PropertyGroup>
 
+  <!-- The Steam build flavour, off unless a build passes -p:CsvmSteam=true. It selects the Steam
+       carrier in src/Net/NetCarrier.cs and nothing else; the Steamworks SDK is not in this repo
+       and cannot be, so the carrier it selects throws until one is linked. Appended rather than
+       assigned: the Godot SDK fills DefineConstants with the symbols an engine build needs. -->
+  <PropertyGroup Condition=" '$(CsvmSteam)' == 'true' ">
+    <DefineConstants>$(DefineConstants);CSVM_STEAM</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- The unit project reads a member the engine has no shipped caller for, so the member stays
          off the public surface instead of being published for one test. -->

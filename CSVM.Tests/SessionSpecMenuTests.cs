@@ -124,6 +124,27 @@ public class SessionSpecMenuTests
         Assert.Equal(9, half.VsTimeMinutes);
     }
 
+    /// <summary>The lobby's lives rule reaches the spec the same way, and the two flags beat it.</summary>
+    [Fact]
+    public void TheLobbysLivesRuleReachesTheSpecAndTheFlagsStillBeatIt()
+    {
+        var bare = Cli();
+        Assert.Equal(0, bare.VsLives);
+        Assert.True(bare.VsAutoRespawn);
+
+        var chosen = SessionSpec.FromMenu(bare, "C1", new[] { "player_bhawk" }, MenuMode.Versus, vsLives: 2, vsAutoRespawn: false);
+        Assert.Equal(2, chosen.VsLives);
+        Assert.False(chosen.VsAutoRespawn);
+
+        // ABLE-TO-FAIL CONTROL: spelled-out flags win over the lobby's choice.
+        var pinned = Cli("--vs-lives=4", "--vs-no-respawn");
+        Assert.True(pinned.VsLivesExplicit);
+        Assert.True(pinned.VsAutoRespawnExplicit);
+        var beaten = SessionSpec.FromMenu(pinned, "C1", new[] { "player_bhawk" }, MenuMode.Versus, vsLives: 2, vsAutoRespawn: true);
+        Assert.Equal(4, beaten.VsLives);
+        Assert.False(beaten.VsAutoRespawn);
+    }
+
     /// <summary>A tester who pinned a scenario alongside a bare launch keeps it, in all three
     /// modes, the re-derivation is a default, not an override.</summary>
     [Fact]

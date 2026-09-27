@@ -71,13 +71,13 @@ internal sealed class MotionSet
             LaunchCount++;
     }
 
-    /// <summary>Advances every live motion by <paramref name="dt"/>, removes the finished ones, and
-    /// returns those that owed a <c>BOUNCE_SEQUENCE</c>, empty on almost every frame. The caller
-    /// dispatches them; this class holds no runtime back-reference, and returning them rather than
-    /// calling out makes remove-before-dispatch structural instead of a rule to remember.
-    /// <paramref name="rate"/> is the cutscene fast-forward, which scales a motion by what its own
-    /// owning definition runs at, so a sped-up shot's pose keeps step with its callbacks.</summary>
-    public IReadOnlyList<Landing> Tick(float dt, CutsceneFastForward? rate = null)
+    /// <summary>Advances the live motions <paramref name="only"/> accepts (all by default), removes
+    /// the finished ones, and returns those owing a <c>BOUNCE_SEQUENCE</c>. The caller dispatches
+    /// them. Returning them, not calling out, makes remove-before-dispatch structural. The
+    /// cutscene fast-forward <paramref name="rate"/> scales a motion by its owner's rate, so a
+    /// sped-up shot's pose keeps step with its callbacks.</summary>
+    public IReadOnlyList<Landing> Tick(float dt, CutsceneFastForward? rate = null,
+        Func<(AnimDefinition Def, Node3D? Anchor), bool>? only = null)
     {
         List<Landing>? landed = null;
         for (int i = _motions.Count - 1; i >= 0; i--)
@@ -90,6 +90,9 @@ internal sealed class MotionSet
                 _motions.RemoveAt(i);
                 continue;
             }
+
+            if (only != null && !only(_motions[i].Owner))
+                continue;
 
             _motions[i].Tick(dt * (rate?.RateFor(_motions[i].Owner.Def) ?? 1f));
             // Central, rather than in each motion class: every transform motion has the same
