@@ -2,3 +2,7 @@
 # only through `git diff`. With core.autocrlf=true a checkout would hand it CRLF while capture.ps1
 # writes LF, and every line of a 6000-line file would read as changed on any fresh clone.
 analysis/session-baseline/baseline.txt text eol=lf
+
+# The COPYRIGHT file of the musl-1.2.3 release, kept byte-identical (LF) so its checkout can be
+# compared with upstream's by hash. Git converts nothing in it, whatever core.autocrlf says.
+packaging/LICENSE-musl -text

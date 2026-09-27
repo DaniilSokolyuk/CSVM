@@ -79,6 +79,18 @@ body:
       placeholder: Drop the .log file here.
     validations:
       required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      description: Which system ran the build, the Windows zip or the Linux download.
+      options:
+        - Windows
+        - Linux
+        - Steam Deck
+        - Other
+    validations:
+      required: true
   - type: textarea
     id: machine
     attributes:
@@ -88,7 +100,7 @@ body:
         a glance which graphics driver ran the build, which is the first thing most reports
         turn on.
       value: |
-        Windows version (10 or 11):
+        System version (Windows 10 or 11, the Linux distribution, or the SteamOS version):
         The `[perf] gpu=` line from the log:
         Graphics card and driver version:
     validations:
@@ -99,9 +111,9 @@ body:
       label: Extraction
       description: The state of the `extracted` folder this build reads its content from.
       options:
-        - Extract.cmd finished and reported no errors
-        - Extract.cmd stopped with an error
-        - I have not run Extract.cmd
+        - The extraction finished and reported no errors
+        - The extraction stopped with an error
+        - I have not extracted yet
         - Not sure
     validations:
       required: true

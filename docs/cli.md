@@ -69,6 +69,9 @@ exactly how `PROJECT_CONTEXT.md`'s day-to-day table drifted from this page. One 
 **Data paths, override where the extraction is read from**
 `--data-root` · `--gamez` · `--textures` · `--zrdr` · `--interp` · `--sounds` · `--zip-assets` · `--messages`
 
+**Extraction, build `extracted/` from an original install and exit**
+`--extract` · `--extract-force` · `--extract-unzip` · `--unzbd`
+
 **Audio**
 `--mute` · `--volume` · `--sound-range-scale`
 
@@ -92,7 +95,7 @@ the shared selection (`--debug-select`), the node lab (`--debug-nodelab`), the w
 **Written exceptions to "one flag, one bullet":** `--spawn-dir` shares `--spawn-at`'s bullet, since
 the pair is one mechanism, so `Grep` the partner's name to find it; `--debug-nodelab` and
 `--debug-damage` each carry a short opener bullet plus the full behaviour under their lab's own
-section further down. The counts reconcile as **153 index entries, 153 parser flags and 154 bullet
+section further down. The counts reconcile as **157 index entries, 157 parser flags and 158 bullet
 lines**.
 
 ## Flags
@@ -146,7 +149,7 @@ lines**.
   surgery rather than a per-cell transform, and plain repeat shows no step at the shipped block
   depths)
 - `--plane=` (a comma-separated list gives one plane per splitscreen player, `--plane=player_bhawk,player_fury`, and implies that player count unless `--players=` says otherwise)
-- `--rof=` (default `extracted/rof`, the extracted UI archive holding the paint patterns; run `ExtractRof.ps1` to produce it)
+- `--rof=` (default `extracted/rof`, the extracted UI archive holding the paint patterns; `--extract` produces it)
 - `--paint=<pattern|random|none>` (aircraft livery: a pattern name, `random`, or `none`. **Patterns are per aircraft**, and naming one the plane lacks logs its actual set and paints decals only; `random` draws from that plane's set. Comma-separated per player like `--plane=`, the last covering the rest. **The default everywhere is `player_fortune`**, the only pattern covering all eleven airframes; `--paint=none` asks for the bare shipped skins. Instant Action's enemies keep their own militia skins rather than the player militia's colours)
 - `--paint-color=R,G,B/R,G,B/R,G,B` (override the scheme's three colours, slot 1 body, 2 dark trim, 3 light trim; integer 0–255, fewer than three repeats the last)
 - `--paint-decal=nose,tail,wing` (override the three decal indices into the chapter archive's 00–49 set: 00–20 squadron logos, 21–49 nose art)
@@ -250,10 +253,10 @@ lines**.
   to `./.scratch/ai_dump.txt`, then quits, exiting nonzero on a parse failure or an unknown
   chapter)
 - `--dump-sticks` (does **not** imply `--det`, whose `--no-pads` would empty the Godot roster the
-  gap-filler subtracts; load `SDL2.dll`, log Godot's pad models, the stick roster (name, model,
+  gap-filler subtracts; load SDL2 (`SDL2.dll`, or `libSDL2-2.0.so.0` on Linux), log Godot's pad models, the stick roster (name, model,
   GUID, axis/button/hat counts) and each stick's resting axes, held buttons and hats, then quit.
   Axes print corrected by the model's polarity quirks, named on the line (`quirks=[axis 5 flipped]`).
-  Exits nonzero only when no `SDL2.dll` loads. Under `--no-pads` it prints `reads blocked` instead
+  Exits nonzero only when no SDL2 library loads. Under `--no-pads` it prints `reads blocked` instead
   of the readings. Run it through `RunProbe.ps1`)
 - `--dump-sticks=<seconds>` (the `--dump-sticks` report, then a watch of 1 to 120 seconds that
   logs `sticks watch:` lines: an axis each time it travels 0.25 from its last logged value, a
@@ -300,6 +303,7 @@ lines**.
 - `--destroy=<name>` (kill a named world destructible at build, unattended. `<name>` is a case-insensitive substring of a destructible's def, animation or anchor `cs_name`; every distinct match dies, capped at 64, and a dormant pool (a deactivated zeppelin's parts) refuses the hit and is logged as refused, not counted. It reuses the weapon-hit path, so debris, effects and audio match a rocket kill. It needs a `--chapter` world, forces no mode, and is a no-op in `--viewer`. In `--freecam` it auto-frames the object unless `--pos`/`--direction` placed the camera. `--damage-test` lists the names)
 - `--crash[=frame]` (force the flying players' crash rig at a fixed sim frame, default 5: `FlightController.DebugForceCrash()` fires on every rig when the clock reaches it, which is the only headless route to a crash. A no-op past the first fire, and inert without `--fly`/`--stunt`. The wreck scatters off the `Rng.Crash` stream, so pin `--seed` and the player count. It needs a `--chapter` world, the crash def coming from the mission's `AnimProgram`, so it is inert under `--stage=empty` unless `--zep=` grafts a program in. Spawned AI planes crash too, indexing the `ai_crash_*` family)
 - `--menu[=<screen>]` (forces the launchscreen with other args, else bare only. A value opens it, an unknown one the top level, Instant Action's the Mode pick. A `:` suffix is its argument: `campaign-briefing` seconds, `join-board` pads, `keys` a category, `loadboard-campaign` a mission, `pauseboard` a mission and a marked count, `pauseboard-ia` a chapter and type, else a `CampaignAidScript`: counted `dulrab` moves and confirms (`4da`), a number steps. `x` is Built-in's; Original refuses it: exit 1, no shot. Campaign aids use scratch stores bar `campaign-fly`; see `docs/org/menu-inventory.md`)
+- `--menu=extract-picker[:<folder>]`, `--menu=extract-run[:<install>]` (screenshot aids for the **extraction screen**, which a launch reaches instead of the menu when the data root holds no extraction or a stale stamp; with a good tree they do nothing. `extract-picker` opens the install folder picker, on `<folder>` when given. `extract-run` puts `<install>` in the field and presses Extract, so a pair with `--data-root=` at a scratch folder and `--screenshot=` catches the progress view or, with a bad `--unzbd=`, the failure view. A scripted run never remembers the install)
 - `--skip-intro` (no boot sequence on this launch. A bare launch plays `msopen1`, `zipper` and `chap0` over the whole window before the launchscreen, in `fmv.zrd`'s own order, and any key or a left click ends the one playing and starts the next. Any argument at all already suppresses the sequence, so no test, golden or perf run sees it; this flag is for the one launch that carries no other argument, a desktop shortcut whose owner has watched the movies. It selects no content, forces no mode and still shows the launchscreen, so a launch carrying it alone is the bare launch minus the movies)
 - `--intro` (a dev flag, `--skip-intro`'s opposite: play the boot sequence although this launch carries other arguments. It exists because `RunGame.ps1` and `RunDev.ps1` prepend `--volume=1.0` unless you pass a volume or `--mute`, which suppresses it, so without this flag the sequence is unreachable through the repo's launch scripts and judgeable only from an exported build. `--skip-intro` beats it, since a suppressor another flag can overrule is not one. It selects no content and forces no mode, so pair it with `--menu` on a launch that would otherwise build content, or it plays nothing)
 - `--movie=<name>` (play that one cinema over the whole window, then quit; any key or a left click ends it early. The name resolves case-blind under `extracted/rof/ASSETS/GRAPHICS/MPG/` and takes `.mpg` when none is spelled, so `--movie=zipper` and `--movie=CrimFlag.MPG` both work; a name nothing matches names the folder and quits 0. No world, menu or session is built and the sound rides the Voice bus. It does **not** imply `--det`: the picture is clocked by what the audio device played. ⚠ A repo run's gain is 0, so pass `--volume=1.0` or it plays silent and says so)
@@ -322,8 +326,12 @@ lines**.
 - `--zrdr=` (default extracted/zrdr.zip)
 - `--interp=` (default extracted/interp.json, the boot scripts naming each chapter's clutter templates; every world build stamps them via `ClutterBuilder`, logged as `clutter: N sprites`, solid only in `--fly`)
 - `--sounds=` (default extracted/soundsh.zip)
-- `--zip-assets` (**read the `.zip` archives even where `ExtractAssets.ps1 -Unzip` left an unpacked sibling folder**, the asset shape an exported build ships. Process-wide: it flips `SessionPaths.ForceZipped` before the first path resolves, so the chapter gamez, texture and zrdr paths, the sounds archive and the menu pages' own lookups all take it. A path that only ever had the folder still resolves to the folder: the flag narrows the choice rather than adding a requirement. **Use it before shipping a build**, since the two shapes do not fail alike (INSTR-46))
+- `--zip-assets` (**read the `.zip` archives even where `--extract-unzip` left an unpacked sibling folder**, the asset shape an exported build ships. Process-wide: it flips `SessionPaths.ForceZipped` before the first path resolves, so the chapter gamez, texture and zrdr paths, the sounds archive and the menu pages' own lookups all take it. A path that only ever had the folder still resolves to the folder: the flag narrows the choice rather than adding a requirement. **Use it before shipping a build**, since the two shapes do not fail alike (INSTR-46))
 - `--messages=` (default extracted/messages.json, the string table resolving targets.json `MSG_*` keys for objective marker text)
+- `--extract=<install>` (**extract an original install into `<data-root>/extracted/` and exit**, before any world or menu is built: the ZBD archives through unzbd, then the `.rof` UI resources, both stamped. Prints a summary and exits 0, or 1 on any failure, including a folder that is not an install. A ZBD failure stops the run before the `.rof` half. Scripted, so the window stays hidden even without `--headless`. Does not remember the install for the menu. `ExtractionRun`, `docs/architecture/Extraction.md`)
+- `--extract-force` (with `--extract`, **re-extract archives the stamp calls up to date**; without it an unchanged archive is skipped. Ignored with a warning when `--extract` is absent)
+- `--extract-unzip` (with `--extract`, **also expand every extracted `.zip` into a sibling folder**, the dev tree's shape. The root `rimage.zip` is expanded either way, since the HUD font, the reticle and the board art read its PNGs loose. Ignored with a warning when `--extract` is absent)
+- `--unzbd=<path>` (with `--extract`, **the unzbd executable to run**. Default: next to the executable in an exported build, else `tools/mech3ax/target/release/` under the repo root, which a worktree lacks, so a worktree run passes this flag. A missing tool fails the run before anything is written. The in-game extraction screen runs the same tool, so the flag applies there too and is not warned about without `--extract`)
 - `--mips=authored|generated` (**which mip levels a texture gets**, default `authored`. A chapter ships hand-drawn half- and quarter-resolution siblings (`cblock1_1`, `cblock1_2`) that no gamez material references, the original's own mip chain (`docs/formats/gamez.md`). `authored` installs those siblings as levels 1 and 2 wherever one exists, box-filtering the rest; a texture with no sibling is untouched. `generated` runs `Image.GenerateMipmaps()` all the way down. A sibling whose size disagrees with the level it claims is refused with a warning, never installed. Measure it with `--dump-mips`)
 - `--graphics=original|enhanced` (the opt-in lit-world mode, default `original`. Precedence: **this flag**, then the **saved `graphicsMode` option** (`user://options.json`), then the **`graphics.mode`** config key, then `original`. Under `--det` only the flag survives, so it is the one way to ask for the enhanced path in a scripted or golden capture. It resolves once at launch (`GraphicsMode.Resolve`), announced on the `[world] graphics mode:` line, so a choice applied in Options reaches the world on the next start. An unrecognised word at any layer warns and falls back to `original`)
 - `--no-ssao` (**enhanced bisect door**: leave the ambient-occlusion pass out of the `--graphics=enhanced` build. The four doors here accumulate on one command line and reach enhanced alone, the faithful path building none of these passes; together they bisect a full-screen artefact to the pass that draws it, one pose per closed door. ⚠ Read the result on a plain `--screenshot=`, never a `--shots` burst, whose frames carry `--jitter`'s camera dither)

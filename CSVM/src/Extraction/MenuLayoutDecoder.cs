@@ -1,8 +1,4 @@
-// Decoder for the Crimson Skies menu layout, shared by ExtractRof.ps1 (Add-Type -Path) and
-// CSVM.Tests. It must stay inside the C# 5 / .NET Framework subset PowerShell 5.1's Add-Type
-// accepts: no interpolated strings, no expression-bodied members, no null-conditional operator,
-// no file-scoped namespace, no System.Text.Json. The format it decodes is documented in
-// docs/formats/menu-layout.md.
+// The format is in docs/formats/menu-layout.md.
 
 using System;
 using System.Collections.Generic;

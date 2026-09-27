@@ -34,10 +34,10 @@ there is no runtime or framework to install.
 1. Download the `CSVM-v<version>-win64.zip` asset from the
    [latest release](https://github.com/Laeresh/CSVM/releases/latest).
 2. Unzip it wherever you like.
-3. Double-click **`Extract.cmd`** and point it at your Crimson Skies install, the folder
-   holding the `ZBD` and `GOSDATA` subfolders. This is done once, and your install is only
-   read, never modified.
-4. Double-click **`CSVM.exe`** and pick a mode, chapter and plane in the menu.
+3. Double-click **`CSVM.exe`**. With no game data yet it offers to extract it: point it at
+   your Crimson Skies install, the folder holding the `ZBD` and `GOSDATA` subfolders. This is
+   done once, and your install is only read, never modified.
+4. Pick a mode, chapter and plane in the menu.
 
 [`packaging/README.md`](packaging/README.md) is the long form of those four steps and ships in
 the zip as the `README.md` beside `CSVM.exe`: the SHA-256 to check the download against, the
@@ -52,7 +52,7 @@ The form asks for the build version and the newest log file from the `logs\` fol
 worked on in its own issue; this repository's `backlog.md` is the author's internal list and
 is not mirrored, so the issue is the thread to follow.
 
-Small self-contained pull requests are welcome for `packaging/`, the extraction scripts,
+Small self-contained pull requests are welcome for `packaging/`, the repo scripts,
 the documentation and typo fixes. A change under `CSVM/src` needs an issue first, because
 engine changes land through a golden-image tier a contributor cannot run.
 [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) has the detail. Security problems go through
@@ -67,7 +67,7 @@ git clone https://github.com/Laeresh/CSVM.git
 ```
 
 You need a legally-owned copy of Crimson Skies, [Godot 4.7 (.NET)](https://godotengine.org/)
-and the .NET 8 SDK. Extract your install's assets with `ExtractAssets.ps1`, then see
+and the .NET 8 SDK. Extract your install's assets with `.\Extract.ps1 -Unzip`, then see
 [`CSVM/README.md`](CSVM/README.md) to build and run.
 
 Extraction is done by our fork of mech3ax, which is where the Crimson Skies format support
@@ -100,10 +100,8 @@ Godot export templates are user-global, not part of the repo. One-time setup: ex
 `ExportRelease.ps1` builds, imports, and exports the release preset to `.scratch\export\CSVM.exe`,
 checking the export templates are installed and clearing `.scratch\export\` before it starts.
 This produces a self-contained `CSVM.exe` (the .NET runtime is bundled, so a recipient installs
-nothing) plus its data folder. It then copies the rest of the release in beside it,
-`packaging/Extract.cmd` and `packaging/Extract.ps1` (what a recipient double-clicks, and the
-dispatcher it runs against their own game install), the unmodified `ExtractAssets.ps1` /
-`ExtractRof.ps1` / `ExtractRof.MenuLayout.cs`, the built `unzbd.exe`, and `packaging/README.md`
+nothing) plus its data folder. It then copies the rest of the release in beside it, the built
+`unzbd.exe` the engine runs to extract a recipient's own game install, and `packaging/README.md`
 / `LICENSE` / `LICENSE-unzbd` / `LICENSE-thirdparty.txt`, generates `BUILD-INFO.txt`, and zips
 the folder to
 `.scratch\CSVM-v<version>-win64.zip`, the archive to hand over. The version is
@@ -121,7 +119,9 @@ was built, pushes it, and creates the GitHub release with the zip as its only as
 tag, the exe's version, the zip's name, the published checksum and the notes cannot disagree
 with each other. It needs `gh` installed and authenticated, and it refuses a dirty tree, a
 `tools/mech3ax` `cs-anim` that is dirty or unpushed, and a tag that already exists; a tag is
-never re-pointed. `-DryRun` runs every check and the export and stops before the tag.
+never re-pointed. `-DryRun` runs every check and the export and stops before the tag. `-Linux`
+also exports the Linux tarball, runs `sandbox\LinuxRelease.ps1` on it (a failure stops the run
+before the tag), and attaches it to the same release beside the zip.
 
 ## Format documentation
 

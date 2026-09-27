@@ -41,32 +41,22 @@ project published, rather than something a third party rebuilt or altered.
 
 ## Setup: extract, then fly
 
-**1. Extract your game's assets.** This is done once. Double-click **`Extract.cmd`** in
-this folder. It looks for your Crimson Skies install where the game is normally installed,
-offers you a folder picker either way, and holds its window open at the end so you can
-read what it did. Dragging your Crimson Skies install folder onto `Extract.cmd` uses that
-folder directly.
+**1. Extract your game's assets.** This is done once. Double-click **`CSVM.exe`**. With no
+game data yet, CSVM opens a screen that offers to extract it. The install folder is filled
+in with the best guess it found (the last folder you used, then the places Crimson Skies is
+normally installed), and you can choose another folder instead.
 
 The folder it wants is the one containing the `ZBD` and `GOSDATA` subfolders. Open your
-install until you see those two side by side, and use that folder. Your install is only
-read, never modified. The extracted data lands in an `extracted` folder next to
-`CSVM.exe`.
+install until you see those two side by side, and use that folder; if you choose a folder
+inside it or a folder that holds it, CSVM names the folder it expected. Your install is only
+read, never modified. The extracted data lands in an `extracted` folder next to `CSVM.exe`,
+and the menu opens when it is done.
 
-To do the same from a terminal, with the path given directly:
+**2. Fly.** Pick a mode, chapter and plane in the menu.
 
-```
-powershell -ExecutionPolicy Bypass -File Extract.ps1 "C:\Program Files (x86)\Microsoft Games\Crimson Skies"
-```
-
-Use exactly that command spelling: Windows' default script policy blocks a plain
-`.\Extract.ps1`, and the `-ExecutionPolicy Bypass -File` form is the supported way around
-it for this one script.
-
-**2. Fly.** Double-click **`CSVM.exe`** and pick a mode, chapter and plane in the menu.
-
-Starting `CSVM.exe` before the extraction is not a silent failure: it puts a screen up
-naming the step that produces the data, instead of loading a world it has nothing to build
-it from.
+A later CSVM version may need the data extracted again. When it does, the same screen
+appears at startup with the folder you used last filled in, and one confirmation extracts
+it again.
 
 ## Disk space and time
 
@@ -75,15 +65,11 @@ safe) and takes **well under a minute** on an SSD, around 15 seconds on a fast m
 
 ## Windows SmartScreen
 
-**Nothing in this zip is code-signed.** The first time you run something out of this
-folder, Windows will likely show a blue **"Windows protected your PC"** screen. Click
-**"More info"**, then **"Run anyway"**.
+**Nothing in this zip is code-signed.** The first time you start `CSVM.exe`, Windows will
+likely show a blue **"Windows protected your PC"** screen. Click **"More info"**, then
+**"Run anyway"**.
 
-`Extract.cmd` raises a different, smaller prompt: an **"Open File - Security Warning"**
-box saying the publisher could not be verified, with **Run** and **Cancel** buttons. Click
-**Run**.
-
-Both prompts mean Windows does not recognise the publisher, which is true of every
+That prompt means Windows does not recognise the publisher, which is true of every
 unsigned download and says nothing about what the file does. The check that does mean
 something is the SHA-256 above, taken against the release page. If this zip reached you
 from anywhere other than <https://github.com/Laeresh/CSVM/releases>, do that check before
@@ -107,11 +93,11 @@ worked on in its issue rather than answered to a schedule.
 
 Three failures answer themselves:
 
-- **Extraction stopped with an error.** The extraction window prints which step failed and
-  on which folder. That text is the useful part of a report about extraction.
-- **The game warns about the extraction when it starts.** Re-run `Extract.cmd`. The warning
-  names `ExtractAssets.ps1` and `ExtractRof.ps1`, which are the two scripts `Extract.cmd`
-  runs for you.
+- **Extraction stopped with an error.** The message names the step that failed and the
+  folder it was working on. That text is the useful part of a report about extraction.
+- **The game asks to extract again when it starts.** This build reads the game data in a
+  way the data you extracted earlier does not match. Confirm, and it extracts again from
+  the folder you used last.
 - **The game disappears after it starts.** Read on.
 
 ### The game disappears after it starts
@@ -153,9 +139,7 @@ CSVM has written; your Crimson Skies install is never modified.
 
 - `CSVM.exe` and the `data_CSVM_windows_x86_64` folder beside it are the engine. They
   belong together; moving one without the other breaks the build.
-- `Extract.cmd`, `Extract.ps1`, `ExtractAssets.ps1`, `ExtractRof.ps1`,
-  `ExtractRof.MenuLayout.cs` and `tools\unzbd.exe` are the extraction step. It needs all
-  six.
+- `tools\unzbd.exe` is the extraction tool the engine runs to unpack the game's archives.
 - `LICENSE` is the GNU GPL v3 the engine is under, and `LICENSE-unzbd` the EUPL-1.2 the
   bundled extraction tool is under.
 - `LICENSE-thirdparty.txt` carries the copyright notices for the software built into those

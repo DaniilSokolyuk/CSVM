@@ -119,7 +119,7 @@ next. Authored side: [../formats/paint.md](../formats/paint.md); decode: [../org
 
 ## src/Mech3/PatternLibrary.cs
 Decodes the original's `.BM` paint patterns from `extracted/rof/ASSETS/GRAPHICS/<PATTERN>/`, which
-`ExtractRof.ps1` produces. `PatternsFor(prefix)` lists the patterns shipping skins for one
+the extraction produces. `PatternsFor(prefix)` lists the patterns shipping skins for one
 aircraft, a pattern being per plane; `Skin()` caches per (pattern, skin) so several aircraft in one
 session share a decode. `.BM` layout: [../formats/rof.md](../formats/rof.md).
 
@@ -208,6 +208,12 @@ read. Schema, offsets, the per-chapter census and the keying rules: [../formats/
 Zrdr extraction reader (zip or unpacked dir): `LoadFile`, `LoadFileOrEmpty`, content-sniffing
 `LoadMatchingFiles`, name-predicate `LoadFilesNamed` (for families with nothing to sniff, e.g. the
 `ne0*` nets), and `ZrdrDict`, the key/[values…] view over a reader's alternating list.
+
+## src/Mech3/GamePath.cs
+Splits a path the game's data names (`..\data\c1\m02\zrdr\cutscenes\cabpickup.zrd`) on `\` and `/`
+alike on every host: `FileName` for the leaf, `HasFolder` for a folder segment. `System.IO.Path`
+splits `\` on Windows only, so it keeps our own disk paths and never a game one. Callers:
+`MissionCutscenes` (the `cutscenes\` entries), `AnimProgram` (the scope gates' stems).
 
 ## src/Mech3/LandingApproaches.cs
 A chapter's `landings.zrd` approach table resolved against the gamez: each row names an animation
@@ -708,12 +714,12 @@ builder, so `Paint` gives it its stand-in's livery. Decode: docs/formats/anim-de
 ## src/Mech3/SessionArchives.cs
 `OpenFor(ArchiveIntent, gamezPath, texturesPath, soundsPath, zrdrPath, mute)` opens the five
 archives one chapter build needs (gamez, textures, sounds, sound defs, sound groups) and returns
-them alongside the `WorldSession.Options.TexturesOutliveBuild`/`SoundsOutliveBuild` pair the intent
-implies: `Session` and `Lab` let textures outlive the build, only `Lab` lets sounds, `Suite`
-neither. One seam for `GameSession`, the anim lab and the test harness, so none of them hand-sets
-those flags. `StartupProfile.Mark`/`Record` calls are unconditional, a no-op with no session under
-measurement, which is what lets the test harness drive the same code blind. The optional `decode`
-argument makes only the returned `Gamez` a shared read-only instance.
+the `WorldSession.Options.TexturesOutliveBuild`/`SoundsOutliveBuild` pair the intent implies:
+`Session` and `Lab` set the texture flag, only `Lab` the sound flag, `Suite` neither, though the
+harness's `TestWorld` owns its texture archive until the world is destroyed. One seam for
+`GameSession`, the anim lab and the harness, so none hand-sets those flags. `StartupProfile` calls
+are unconditional, a no-op with no session under measurement, so the harness drives the same code
+blind. The optional `decode` argument makes only the returned `Gamez` a shared read-only instance.
 
 ## src/Mech3/DecodeCache.cs
 The decoded inputs a world build can reuse, keyed by the absolute paths they were decoded from:

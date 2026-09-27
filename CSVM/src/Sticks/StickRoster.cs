@@ -26,7 +26,12 @@ public sealed class StickRoster : IDisposable
     /// TUNE; <c>--dump-sticks</c> waits as many polls.</summary>
     public const int SettleUpdates = 10;
 
+    /// <summary>Valve's USB vendor id: the Steam Deck's built-in controls, the Steam Controller and
+    /// Steam Input's virtual pad. None is a flight stick; see <see cref="GapFill"/>.</summary>
+    public const ushort ValveVendor = 0x28DE;
+
     private readonly IStickNative _native;
+    private readonly bool _godotReadsGamepads;
     private readonly Func<IReadOnlyCollection<StickModel>> _godotModels;
     private readonly Func<bool> _inputBlocked;
     private readonly List<Stick> _sticks = new();
@@ -40,11 +45,14 @@ public sealed class StickRoster : IDisposable
     /// <param name="godotModels">The models of Godot's pad roster. Returning the same instance
     /// while it is unchanged spares a re-list every frame.</param>
     /// <param name="inputBlocked">The read gate, <see cref="Pads.InputBlocked"/> in the game.</param>
-    public StickRoster(IStickNative native, Func<IReadOnlyCollection<StickModel>> godotModels, Func<bool> inputBlocked)
+    /// <param name="godotReadsGamepads">True off Windows: <see cref="GapFill"/>'s Linux rules.</param>
+    public StickRoster(
+        IStickNative native, Func<IReadOnlyCollection<StickModel>> godotModels, Func<bool> inputBlocked, bool godotReadsGamepads = false)
     {
         _native = native ?? throw new ArgumentNullException(nameof(native));
         _godotModels = godotModels ?? throw new ArgumentNullException(nameof(godotModels));
         _inputBlocked = inputBlocked ?? throw new ArgumentNullException(nameof(inputBlocked));
+        _godotReadsGamepads = godotReadsGamepads;
     }
 
     /// <summary>The opened sticks, in the order they were opened.</summary>
@@ -57,9 +65,12 @@ public sealed class StickRoster : IDisposable
     public bool InputBlocked => _inputBlocked();
 
     /// <summary>The gap-filler: the listed devices whose model Godot's roster lacks, in list order.
-    /// A model is dropped whole when Godot has it, so a pad never gets a second reader. A future
-    /// Godot that sees a stick therefore silences this path for it on its own.</summary>
-    public static StickListing[] GapFill(IReadOnlyList<StickListing> listed, IReadOnlyCollection<StickModel> godot)
+    /// A model is dropped whole when Godot has it, so a pad never gets a second reader. With
+    /// <paramref name="godotReadsGamepads"/> (Linux, where Godot's SDL3 reads every gamepad) a
+    /// device SDL maps as a gamepad, or any <see cref="ValveVendor"/> device, is dropped too.
+    /// Rules and reasons: <c>docs/tooling.md</c>, "SDL2 for flight sticks".</summary>
+    public static StickListing[] GapFill(
+        IReadOnlyList<StickListing> listed, IReadOnlyCollection<StickModel> godot, bool godotReadsGamepads = false)
     {
         ArgumentNullException.ThrowIfNull(listed);
         ArgumentNullException.ThrowIfNull(godot);
@@ -67,7 +78,7 @@ public sealed class StickRoster : IDisposable
         var kept = new List<StickListing>(listed.Count);
         foreach (var listing in listed)
         {
-            if (!models.Contains(listing.Model))
+            if (SkipReason(listing, models, godotReadsGamepads) is null)
             {
                 kept.Add(listing);
             }
@@ -198,6 +209,14 @@ public sealed class StickRoster : IDisposable
         _native.Dispose();
     }
 
+    // Why the gap-filler leaves a listing out, as the skip log line prints it; null keeps it.
+    private static string? SkipReason(StickListing listing, HashSet<StickModel> godot, bool godotReadsGamepads) =>
+        godot.Contains(listing.Model) ? "Godot's pad roster has this model"
+        : !godotReadsGamepads ? null
+        : listing.Gamepad ? "SDL maps it as a gamepad, which Godot reads on this platform"
+        : listing.Model.Vendor == ValveVendor ? "a Valve device (Steam Deck controls, Steam Controller or Steam Input)"
+        : null;
+
     // ⚠ Do not read _native.Axis anywhere else. This is where a model's flipped axis is corrected,
     // so a read that bypasses it would disagree with every profile token.
     private float Read(Stick stick, int axis)
@@ -264,7 +283,8 @@ public sealed class StickRoster : IDisposable
 
     private bool Reconcile(IReadOnlyList<StickListing> listed, IReadOnlyCollection<StickModel> godot)
     {
-        var wanted = GapFill(listed, godot);
+        var wanted = GapFill(listed, godot, _godotReadsGamepads);
+        var godotSet = new HashSet<StickModel>(godot);
         var wantedIds = new HashSet<int>();
         foreach (var listing in wanted)
         {
@@ -292,7 +312,7 @@ public sealed class StickRoster : IDisposable
             listedIds.Add(listing.Instance);
             if (!wantedIds.Contains(listing.Instance) && _skipped.Add(listing.Instance))
             {
-                Log.Info("core", $"stick skipped: \"{listing.Name}\" {listing.Model}, Godot's pad roster has this model");
+                Log.Info("core", $"stick skipped: \"{listing.Name}\" {listing.Model}, {SkipReason(listing, godotSet, _godotReadsGamepads)}");
             }
         }
 

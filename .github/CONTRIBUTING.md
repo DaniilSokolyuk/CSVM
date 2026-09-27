@@ -30,8 +30,8 @@ Security problems do not go in an issue at all. See [`SECURITY.md`](SECURITY.md)
 **Small, self-contained pull requests are welcome** in the parts of the tree a contributor
 can actually verify:
 
-- `packaging/` and the extraction scripts (`Extract.cmd`, `Extract.ps1`,
-  `ExtractAssets.ps1`, `ExtractRof.ps1`)
+- `packaging/` and the repo-root scripts (extraction itself is engine code under
+  `CSVM/src/Extraction/`; `Extract.ps1` only launches it)
 - documentation, including the format reference in `docs/formats/`
 - typo, spelling and broken-link fixes anywhere
 

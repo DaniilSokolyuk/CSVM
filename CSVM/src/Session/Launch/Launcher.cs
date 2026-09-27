@@ -370,6 +370,8 @@ public partial class Launcher : Node3D
     // Constructed once the base paths above are settled; every --dump-*/--run-tests/--*-test/
     // --destroy= probe wrapper delegates to it (see src/Tooling/ProbeRunner.cs).
     private Tooling.ProbeRunner _probeRunner = null!;
+    // The screen a menu launch stops at over missing or stale data, null once it hands back.
+    private UI.Screens.NoGameDataScreen? _extractionScreen;
 
     // Alt-tabbing away silences the game; alt-tabbing back restores it, via an AudioServer
     // master-bus mute rather than a factor threaded through the audio code. See this file's
@@ -473,8 +475,13 @@ public partial class Launcher : Node3D
         _messagesPath = _spec.Messages ?? Path.Combine(_dataRoot, "extracted", "messages.json");
         _rofPath = _spec.Rof ?? Path.Combine(_dataRoot, "extracted", "rof");
 
-        // The extraction tree's provenance check, at most one warning line, never a block.
-        ExtractionStamp.Check(_dataRoot);
+        // The extraction tree's provenance check, at most one warning line, never a block. An
+        // --extract run is about to write that tree, and a missing one has no stamp to read. A
+        // warning about either would only mislead.
+        if (_spec.ExtractInstall == null && !UI.Screens.NoGameDataScreen.Missing(_dataRoot))
+        {
+            ExtractionStamp.Check(_dataRoot);
+        }
 
         // The drop-in writes statics every material built afterwards reads, so it is applied here
         // rather than carried as a session value.
@@ -518,9 +525,8 @@ public partial class Launcher : Node3D
         RenderingServer.ViewportSetMeasureRenderTime(_viewportRid, true);
 
 
-        // The window is created without focus (no_focus in project.godot); an interactive
-        // session asks for it explicitly instead, since setting the flag at runtime measured
-        // not to hand focus back. See docs/verification.md's SHELL-13.
+        // An editor run's window is created without focus (no_focus in project.godot). An
+        // interactive session asks for it here. See docs/verification.md's SHELL-13.
         if (!_spec.IsScripted)
         {
             DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.NoFocus, false);
@@ -605,6 +611,13 @@ public partial class Launcher : Node3D
             ?? Path.Combine(Log.DirectoryFor(_repoRoot, _exported), $"{_spec.ModeName}-nolog.hitches.jsonl");
         _hitchSidecar = new HitchSidecar(hitchLogPath, _hitchMonitor.Last.Ring.Length);
 
+        // --extract builds no world and no menu: it writes the data root's extracted/ and quits.
+        if (_spec.ExtractInstall is { } extractInstall)
+        {
+            StartHeadlessExtraction(extractInstall);
+            return;
+        }
+
         // --headless + --screenshot can never produce a frame: the dummy renderer's GetImage()
         // never returns, so the capture loop never counts down. Reject the combo here, before
         // any session builds, rather than let it hang as an orphan holding the log handle.
@@ -671,7 +684,7 @@ public partial class Launcher : Node3D
         {
             Log.Info("core", $"assets: --zip-assets, reading .zip archives, ignoring unpacked folders");
         }
-        // Prefer the unpacked sibling folder from ExtractAssets.ps1 -Unzip when it exists (loose
+        // Prefer the unpacked sibling folder from --extract-unzip when it exists (loose
         // JSON/PNG/WAV: no zip decompression at load). Base (chapter-independent) paths resolve now;
         // the chapter-dependent gamez/texture/mission paths resolve per-session in StartSession.
         _planesGamezPath = SessionPaths.PreferUnzipped(planesGamezPath);
@@ -789,7 +802,7 @@ public partial class Launcher : Node3D
             return;
         }
         // --dump-sticks: the SDL2 stick roster with each stick's counts and resting reads; fails
-        // only when no SDL2.dll loads, since zero sticks is a valid answer.
+        // only when no SDL2 loads, since zero sticks is a valid answer.
         string? sdlRepoRoot = _exported ? null : _repoRoot;
         string? sdlDataRoot = string.IsNullOrEmpty(dataRootEnv) ? null : dataRootEnv;
         if (_spec.DumpSticks)
@@ -888,6 +901,16 @@ public partial class Launcher : Node3D
             AddChild(_netReadout);
         }
 
+        // Only on the path a recipient takes. Every other entry carries a content arg, which is a
+        // developer's launch, and the log is where that reader already looks. ⚠ Keep this ahead of
+        // BuildMusic: a stale tree is rewritten by the screen, and an open sound archive would hold it.
+        if (_spec.ShowsMenu && _spec.MovieName == null
+            && UI.Screens.ExtractionFlow.ProblemAt(_dataRoot) is var problem && problem != UI.Screens.DataProblem.None)
+        {
+            ShowExtractionScreen(problem);
+            return;
+        }
+
         // The music channel, once per process and after every early-quit probe: one player that
         // outlives every session, over a sound archive of its own for the same reason (D37's
         // wiring contract, step 1).
@@ -906,22 +929,7 @@ public partial class Launcher : Node3D
         // path; Esc from a menu-launched flight returns here (ReturnToMenu).
         if (_spec.ShowsMenu)
         {
-            // Only on the path a recipient takes. Every other entry carries a content arg, which
-            // is a developer's launch, and the log is where that reader already looks.
-            if (UI.Screens.NoGameDataScreen.Missing(_dataRoot))
-            {
-                ShowNoGameData();
-                return;
-            }
-
-            _menuDriven = true;
-            if (_spec.PlaysBootSequence)
-            {
-                PlayBootSequence(() => ShowMenu(MenuReturnDestination.TopLevel));
-                return;
-            }
-
-            ShowMenu(MenuReturnDestination.TopLevel);
+            EnterMenu();
             return;
         }
 
@@ -1109,7 +1117,7 @@ public partial class Launcher : Node3D
         _music?.Tick((float)delta, _musicRng);
 
         _captureDirector.Tick(GetViewport(), GetTree(), _spec, ClockNow, _orbit, _camera,
-            _session?.Plane, _menuHost is { Shown: true });
+            _session?.Plane, _menuHost is { Shown: true } || _extractionScreen != null);
         _gltfExporter.Tick(_session?.Plane, GetTree(), _spec);
 
         // A campaign mission that ended during the session's own step: free it and reopen the
@@ -1328,6 +1336,34 @@ public partial class Launcher : Node3D
     // ⚠ Keep it internal rather than private. Nothing instantiates a Launcher headlessly, so the
     // launch-return suite pins this round trip on the live node or not at all.
     internal void LaunchedFrom(MenuExit exit) => ExitDestination = MenuReturnDestination.ForLaunch(exit);
+
+    // Runs on a worker thread, since the extraction must not hold the main thread. The per-frame
+    // callbacks are switched off until the quit, because _Ready returned before building what they read.
+    private void StartHeadlessExtraction(string install)
+    {
+        SetProcess(false);
+        SetPhysicsProcess(false);
+        SetProcessInput(false);
+        SetProcessUnhandledInput(false);
+        string unzbd = _spec.UnzbdPath is { } named ? Path.GetFullPath(named) : Extraction.ExtractionRun.DefaultUnzbd(_repoRoot, _exported);
+        var request = new Extraction.ExtractionRequest(install, _dataRoot, unzbd, _spec.ExtractForce, _spec.ExtractUnzip);
+        System.Threading.Tasks.Task.Run(() =>
+        {
+            int code;
+            try
+            {
+                code = Extraction.ExtractionRun.RunToConsole(request, Log.Raw, line => Log.Error("core", $"{line}"));
+            }
+            catch (System.Exception e)
+            {
+                // Anything unforeseen still ends the process with a verdict, never a hang.
+                Log.Error("core", $"extraction crashed", e);
+                code = 1;
+            }
+
+            Callable.From(() => GetTree().Quit(code)).CallDeferred();
+        });
+    }
 
     // The boot sequence in fmv.zrd's own order, its card and waits and fade included: the reader's
     // eight actions live in BootSequence and not one of them is written down here. A press ends the
@@ -1958,13 +1994,133 @@ public partial class Launcher : Node3D
     // bisects a full-screen artefact to the pass that draws it; docs/cli.md holds them.
     private bool Skipped(EnhancedPasses pass) => (_spec.SkippedPasses & pass) != 0;
 
-    // The dead end for a launch with no extraction under the data root: the screen goes up and
-    // nothing else is built, so the window carries the answer instead of the log. Esc leaves
-    // through _UnhandledInput, which quits with neither a menu nor a session up.
-    private void ShowNoGameData()
+    // The launchscreen, after the boot sequence when this launch plays one. Both a boot with data
+    // and the extraction screen's hand-back come through here, so they reach the same menu.
+    private void EnterMenu()
     {
-        Log.Error("core", $"no extracted game data path={Path.Combine(_dataRoot, "extracted")}, {UI.Screens.NoGameDataScreen.Instruction(_exported)}");
-        AddChild(UI.Screens.NoGameDataScreen.Build(_dataRoot, _exported));
+        _menuDriven = true;
+        if (_spec.PlaysBootSequence)
+        {
+            PlayBootSequence(() => ShowMenu(MenuReturnDestination.TopLevel));
+            return;
+        }
+
+        ShowMenu(MenuReturnDestination.TopLevel);
+    }
+
+    // The screen a menu launch stops at when the data root holds no extraction, or one stamped under
+    // another schema. Nothing that reads the tree is built yet. Esc leaves through _UnhandledInput,
+    // which quits with neither a menu nor a session up; the screen keeps Esc while a run is going.
+    private void ShowExtractionScreen(UI.Screens.DataProblem problem)
+    {
+        string extracted = Path.Combine(_dataRoot, Extraction.ExtractionRun.ExtractedFolder);
+        if (problem == UI.Screens.DataProblem.Missing)
+        {
+            Log.Error("core", $"no extracted game data path={extracted}, {UI.Screens.NoGameDataScreen.Instruction}");
+        }
+        else if (problem == UI.Screens.DataProblem.Incomplete)
+        {
+            Log.Warn("core", $"the last extraction did not finish path={extracted}, asking to extract again");
+        }
+        else
+        {
+            ExtractionStamp.Standing(_dataRoot, out int? found);
+            Log.Warn("core", $"extraction stamp schema={found} but this build reads schema={ExtractionStamp.Schema} path={extracted}, asking to re-extract ({problem})");
+        }
+
+        // The screen honours --unzbd= as --extract does, which is how a worktree names a tool.
+        string unzbd = _spec.UnzbdPath is { } named ? Path.GetFullPath(named) : Extraction.ExtractionRun.DefaultUnzbd(_repoRoot, _exported);
+        string? remembered = Extraction.RememberedInstall.Get();
+        var candidates = Extraction.InstallLocator.Candidates(Extraction.InstallSearchRoots.ForThisMachine(), remembered);
+        string preFill = UI.Screens.ExtractionFlow.PreFill(remembered, candidates);
+        Log.Info("core", $"extraction screen: problem={problem} remembered={remembered ?? "none"} candidates={candidates.Count} prefill={(preFill.Length == 0 ? "none" : preFill)} unzbd={unzbd}");
+
+        // ⚠ A run that drives itself never writes the player's options, the rule --run-tests keeps.
+        System.Action<string> remember = _spec.IsScripted
+            ? _ => { }
+        : Extraction.RememberedInstall.Set;
+        var flow = new UI.Screens.ExtractionFlow(problem, _dataRoot, unzbd, preFill,
+            (request, progress, cancel) => RunExtraction(request, progress, cancel), remember);
+        _extractionScreen = UI.Screens.NoGameDataScreen.Build(flow, LeaveExtractionScreen, BlankAndQuit);
+        AddChild(_extractionScreen);
+        Callable.From(() => ApplyExtractionAid(_cli.MenuStartScreen)).CallDeferred();
+    }
+
+    // The worker's side of the screen: the one pipeline, with its console lines in the log.
+    private Extraction.ExtractionResult RunExtraction(Extraction.ExtractionRequest request,
+        System.Action<Extraction.ExtractionProgress> progress, System.Threading.CancellationToken cancel)
+    {
+        foreach (string line in Extraction.ExtractionRun.Header(request))
+        {
+            Log.Raw(line);
+        }
+
+        var result = Extraction.ExtractionRun.Run(request, report =>
+        {
+            foreach (string line in report.Lines)
+            {
+                Log.Raw(line);
+            }
+
+            progress(report);
+        }, cancel);
+        foreach (string line in result.Summary(request.Unzip))
+        {
+            Log.Raw(line);
+        }
+
+        return result;
+    }
+
+    // The screen's hand-back, after a run or the stale screen's Play anyway. The base paths were
+    // resolved against a tree that has since changed, so they and the music are resolved again.
+    private void LeaveExtractionScreen()
+    {
+        if (_extractionScreen is { } screen)
+        {
+            foreach (string warning in screen.Flow.Warnings)
+            {
+                Log.Warn("core", $"extraction: {warning}");
+            }
+
+            RemoveChild(screen);
+            screen.QueueFree();
+            _extractionScreen = null;
+        }
+
+        _planesGamezPath = SessionPaths.PreferUnzipped(Path.Combine(_dataRoot, "extracted", "planes.zip"));
+        if (_spec.Zrdr == null) { _zrdrPath = SessionPaths.PreferUnzipped(Path.Combine(_dataRoot, "extracted", "zrdr.zip")); }
+        if (_spec.Sounds == null) { _soundsPath = SessionPaths.PreferUnzipped(Path.Combine(_dataRoot, "extracted", "soundsh.zip")); }
+        BuildMusic();
+        EnterMenu();
+    }
+
+    // The screen's screenshot doors, through --menu= like the menu's own: extract-picker[:<folder>]
+    // opens the picker, and extract-run:<install> fills the field and presses Extract.
+    private void ApplyExtractionAid(string aid)
+    {
+        if (_extractionScreen is not { } screen)
+        {
+            return;
+        }
+
+        int colon = aid.IndexOf(':');
+        string name = colon < 0 ? aid : aid[..colon];
+        string? argument = colon < 0 ? null : aid[(colon + 1)..];
+        switch (name)
+        {
+            case "extract-picker":
+                screen.OpenPicker(argument);
+                break;
+            case "extract-run":
+                if (argument != null)
+                {
+                    screen.Flow.InstallPath = argument;
+                }
+
+                screen.Extract();
+                break;
+        }
     }
 
     // Shows the menu at a semantic destination, building the host on first use. Re-shown by
@@ -2042,7 +2198,7 @@ public partial class Launcher : Node3D
         // would make that run's mix a function of the walk; --no-det with a scripted flag is still
         // such a run, which is why both halves are read rather than Det alone.
         _menuAudio = new MenuAudioService(_music, wav => _musicArchive?.Find(wav, false, warn: false),
-            Path.Combine(_rofPath, "ASSETS", "SOUNDS"), previews: !_spec.Det && _spec.ScriptedBy.Length == 0);
+            Extraction.RofTree.Member(_rofPath, "ASSETS/SOUNDS"), previews: !_spec.Det && _spec.ScriptedBy.Length == 0);
         AddChild(_menuAudio);
         var seatInput = new MenuInput { Keyboard = true };
         // Seat 0 is player 1, so it navigates on the menu keymap that player saved.

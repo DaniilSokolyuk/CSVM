@@ -13,6 +13,7 @@ internal sealed class FakeStickNative : IStickNative
     private readonly Dictionary<(int, int), short> _axes = new();
     private readonly HashSet<(int, int)> _buttons = new();
     private readonly Dictionary<(int, int), byte> _hats = new();
+    private readonly HashSet<int> _gamepads = new();
     private bool _plugged;
 
     public HashSet<int> Opened { get; } = new();
@@ -27,9 +28,14 @@ internal sealed class FakeStickNative : IStickNative
 
     public string LastError => "refused";
 
-    public void Plug(int instance, string name, StickModel model, int axes = 8, int buttons = 128, int hats = 1)
+    public void Plug(int instance, string name, StickModel model, int axes = 8, int buttons = 128, int hats = 1, bool gamepad = false)
     {
         _devices.Add(new Stick(instance, name, model, "guid" + instance, axes, buttons, hats));
+        if (gamepad)
+        {
+            _gamepads.Add(instance);
+        }
+
         _plugged = true;
     }
 
@@ -64,7 +70,7 @@ internal sealed class FakeStickNative : IStickNative
     public IReadOnlyList<StickListing> List()
     {
         ListCalls++;
-        return _devices.ConvertAll(d => new StickListing(d.Instance, d.Name, d.Model, d.Guid));
+        return _devices.ConvertAll(d => new StickListing(d.Instance, d.Name, d.Model, d.Guid, _gamepads.Contains(d.Instance)));
     }
 
     public Stick? Open(StickListing listing)

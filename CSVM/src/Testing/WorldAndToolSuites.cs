@@ -166,6 +166,64 @@ internal static class WorldAndToolSuites
         }
     }
 
+    // A build that throws part way must free what it already made. An orphaned mesh instance outlives
+    // the renderer, and a release build then crashes in its teardown, after the verdict is written.
+    // Counted on ObjectDB rather than on orphan ids, which a release export does not track. Able to
+    // fail: with BuildSubtree's catch removed, the parent and its mesh instance stay alive.
+    [Suite("scene-build-throw-frees",
+        "a subtree build that throws below a meshed node frees that node and its mesh instance before the exception leaves, so no render instance outlives the renderer and crashes the process at exit")]
+    internal static void SceneBuildThrowFrees(TestContext ctx)
+    {
+        ctx.RequireData(ctx.PlanesGamezPath, $"planes gamez");
+        string texturesPath = SessionPaths.ChapterTextures(ctx.DataRoot, "C1");
+        ctx.RequireData(texturesPath, $"C1 textures");
+
+        var gamez = GameZ.Load(ctx.PlanesGamezPath);
+        using var textures = new TextureArchive(texturesPath);
+        var scene = new SceneBuilder(gamez, textures, cullBackfaces: true);
+        GameZNode? parent = null;
+        int throwAt = -1;
+        foreach (var node in gamez.Nodes)
+        {
+            int child = node.Children.FirstOrDefault(i => i >= 0 && i < gamez.Nodes.Count, -1);
+            if (node.MeshIndex < 0 || child < 0)
+            {
+                continue;
+            }
+            // The full build also fills the mesh and material caches, so the count below sees nodes only.
+            var warm = scene.BuildSubtree(node);
+            bool meshed = warm?.GetNodeOrNull("mesh") is MeshInstance3D;
+            warm?.Free();
+            if (meshed)
+            {
+                parent = node;
+                throwAt = gamez.Nodes[child].Index;
+                break;
+            }
+        }
+        ctx.Check(parent != null, $"the planes gamez has a meshed node with a child to throw at");
+        if (parent == null)
+        {
+            return;
+        }
+
+        double before = Performance.GetMonitor(Performance.Monitor.ObjectCount);
+        bool threw = false;
+        try
+        {
+            scene.BuildSubtree(parent, skip: n => n.Index == throwAt
+                ? throw new System.InvalidOperationException("staged build failure")
+                : false);
+        }
+        catch (System.InvalidOperationException)
+        {
+            threw = true;
+        }
+        double after = Performance.GetMonitor(Performance.Monitor.ObjectCount);
+        ctx.Check(threw, $"the staged failure at node {throwAt} under {parent.Name} reached the caller");
+        ctx.Same((long)before, (long)after, $"objects alive across the failed build of {parent.Name}");
+    }
+
     // The distinct Shader resources every ShaderMaterial in the subtree points at, by reference:
     // two builds sharing one memo hand back the same instances, two builds with their own hand back
     // equal text on different resources.

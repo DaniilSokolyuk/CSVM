@@ -41,8 +41,8 @@ person's project. If you would like to be named in the advisory, say so.
   animation and mission data, reached by pointing a build at a prepared `extracted` folder.
 - The per-user state files under `%APPDATA%\Godot\app_userdata\CSVM` (settings, bindings,
   campaign profiles, scores, custom planes), and the optional `config.json`.
-- The extraction scripts (`Extract.cmd`, `Extract.ps1`, `ExtractAssets.ps1`,
-  `ExtractRof.ps1`) and how they handle the path they are given.
+- The extraction (the in-game Extract screen, the `--extract` flag and the repo's
+  `Extract.ps1` that launches it) and how it handles the install path it is given.
 - The release zip's contents differing from what the release page's SHA-256 says they are.
 - The multiplayer listener while a player is hosting: what a peer can send a host over the
   match's own messages, and the port mapping the host asks its router for.

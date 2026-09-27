@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using CSVM.Extraction;
 
 namespace CSVM.UI.Menu.Original;
 
@@ -23,9 +24,8 @@ public enum OriginalAssetNeed
 public sealed record OriginalAsset(
     string Name, string RelativePath, OriginalAssetNeed Need, string Section, string Row, string Note)
 {
-    /// <summary>Where the file sits under a data root.</summary>
-    public string PathUnder(string dataRoot) =>
-        Path.Combine(dataRoot, "extracted", "rof", RelativePath.Replace('/', Path.DirectorySeparatorChar));
+    /// <summary>Where the file sits under a data root, in the case the extraction writes it.</summary>
+    public string PathUnder(string dataRoot) => RofTree.Under(dataRoot, RelativePath);
 }
 
 /// <summary>One entry the check refused, and what is wrong with it.</summary>
@@ -237,7 +237,7 @@ public sealed class OriginalAssetManifest
             }
 
             string name = asset.Path[(asset.Path.LastIndexOf('/') + 1)..];
-            Add(assets, index, new OriginalAsset(name, asset.Path, OriginalAssetNeed.Optional,
+            Add(assets, index, new OriginalAsset(name, RofTree.Canonical(asset.Path), OriginalAssetNeed.Optional,
                 asset.Script, "script", "named by a script, drawn or played by no composed screen"));
         }
 
@@ -369,11 +369,11 @@ public sealed class OriginalAssetManifest
         {
             if (asset.Kind == "file" && asset.Path.EndsWith(name, StringComparison.OrdinalIgnoreCase))
             {
-                return asset.Path;
+                return RofTree.Canonical(asset.Path);
             }
         }
 
-        return "ASSETS/GRAPHICS/" + name;
+        return RofTree.Canonical("ASSETS/GRAPHICS/" + name);
     }
 
     // One entry per distinct name, the first row that named it. A file a composed row and an

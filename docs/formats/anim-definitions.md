@@ -1148,6 +1148,11 @@ applies this rule to the shared scope when a compiled mission manifest is presen
 `N shared reader file(s) no ANIMATION_DEFINITION_FILE list of this mission names, not loaded`
 is the census.
 
+The listed values are Windows install paths (`..\data\common\zrdr\anim.zrd`) whatever the host,
+so a reader splits them on `\` and `/` alike to reach the stem. A path API that splits on `/` only
+(`System.IO.Path` on Linux) takes the whole value for one name, no stem matches, and the census
+reads every shared and chapter file skipped with no reader def loaded.
+
 **The chapter scope carries the same rule**, gated the same way (present only when a compiled
 mission manifest loaded) by `AnimProgram.ListedChapterFiles`: a chapter file is listed by its own
 `cam_anim.zrd`, or added directly by an individual mission's `mis_anim.zrd`, exactly as the shared

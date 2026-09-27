@@ -925,6 +925,24 @@ void fragment() {
             collidable = false;
 
         var n3d = new Node3D { Name = Sanitize(node.Name) };
+        try
+        {
+            FillSubtree(n3d, node, skip, collisionSkip, collidable, forceDoubleSided, forceLit, zoneGate, applyActive);
+        }
+        catch
+        {
+            // ⚠ Do not let a throw orphan the half-built node. A mesh instance nobody frees outlives
+            // the renderer, and a release build crashes in its teardown freeing it.
+            n3d.Free();
+            throw;
+        }
+        return n3d;
+    }
+
+    private void FillSubtree(Node3D n3d, GameZNode node, Predicate<GameZNode>? skip,
+        Predicate<GameZNode>? collisionSkip, bool collidable, bool forceDoubleSided, bool forceLit,
+        bool zoneGate, bool applyActive)
+    {
         // The ORIGINAL gamez name, for name-based resolution (AnimRuntime): Godot both
         // sanitizes ('.'→'_') and auto-renames duplicate siblings, so Name is unreliable.
         n3d.SetMeta(AnimRuntime.NameMeta, node.Name);
@@ -1017,7 +1035,6 @@ void fragment() {
             if (child != null)
                 n3d.AddChild(child);
         }
-        return n3d;
     }
 
     // One static trimesh body PER (SURFACE CLASS, SOIL) pair actually present in the mesh, not one

@@ -27,7 +27,7 @@ public sealed partial class StickPump : Node
     private StickProfileSet? _profiles;
 
     /// <summary>The live roster, or null when sticks are off: <c>--no-pads</c> (so <c>--det</c>),
-    /// or no loadable <c>SDL2.dll</c>. Every stick read in the game goes through this one.</summary>
+    /// or no loadable SDL2 (<c>SDL2.dll</c>, <c>libSDL2-2.0.so.0</c>). Every stick read in the game goes through this one.</summary>
     public static StickRoster? Roster { get; private set; }
 
     /// <summary>Loads the library and builds the roster for this process, or logs why not and
@@ -125,7 +125,8 @@ public sealed partial class StickPump : Node
     private static StickRoster? Open(string? repoRoot, string? dataRoot)
     {
         string exeDir = Path.GetDirectoryName(OS.GetExecutablePath()) ?? string.Empty;
-        var candidates = Sdl2Sticks.Candidates(exeDir, repoRoot, dataRoot);
+        bool windows = OperatingSystem.IsWindows();
+        var candidates = Sdl2Sticks.ForPlatform(windows, exeDir, repoRoot, dataRoot);
         var native = Sdl2Sticks.Load(candidates, out string outcome);
         if (native is null)
         {
@@ -134,7 +135,7 @@ public sealed partial class StickPump : Node
         }
 
         Log.Info("core", $"sticks: {outcome}");
-        return new StickRoster(native, GodotModels, () => Pads.InputBlocked);
+        return new StickRoster(native, GodotModels, () => Pads.InputBlocked, godotReadsGamepads: !windows);
     }
 
     // Godot's pad models, recomputed only when Pads hands back a new roster: GetJoyInfo marshals a

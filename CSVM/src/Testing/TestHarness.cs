@@ -667,9 +667,9 @@ public sealed class SuiteSkippedException : Exception
     public SuiteSkippedException(string why) : base(why) { }
 }
 
-/// <summary>One built chapter world, held for the suites that need one. The archives are closed
-/// as soon as the build is done (<see cref="WorldSession"/>'s disposal-lifetime contract), so what
-/// survives here is the scene subtree and its bound runtime.</summary>
+/// <summary>One built chapter world, held for the suites that need one: the scene subtree, its
+/// bound runtime, and the texture archive that scene still reads. The sound archive closes with
+/// the build (<see cref="ArchiveIntent.Suite"/>).</summary>
 public sealed class TestWorld
 {
     public required string Chapter { get; init; }
@@ -678,10 +678,14 @@ public sealed class TestWorld
     public required Node3D Stage { get; init; }
 
     /// <summary>The chapter's parsed gamez, kept past the build so a suite can build real geometry
-    /// of its own from it, the effect-template stage the world-effects runtime stages,
-    /// which is meshes and cannot be faked with named empty nodes. Not disposable, and
-    /// not the texture archive, which IS and is closed with the build.</summary>
+    /// of its own from it. That geometry is the effect-template stage the world-effects runtime
+    /// stages, which is meshes and cannot be faked with named empty nodes.</summary>
     public required GameZ Gamez { get; init; }
+
+    /// <summary>The texture archive this world was built over, owned here and disposed by
+    /// <see cref="Destroy"/>. ⚠ Do not close it with the build. The built scene reads it later, for
+    /// a library root's first copy, an effect stage, a flyout body or a decal.</summary>
+    public required TextureArchive Textures { get; init; }
 
     public AnimRuntime Runtime => Session.Runtime;
 
@@ -691,6 +695,7 @@ public sealed class TestWorld
         // Free, not QueueFree: the harness runs to completion inside one _Ready call, so a queued
         // free would only happen after every suite had already built its own world.
         Stage.Free();
+        Textures.Dispose();
     }
 }
 
@@ -1024,15 +1029,15 @@ public sealed class TestContext
         var profile = new StartupProfile("test-suite", bootMs: 0);
         var previousProfile = StartupProfile.Current;
         StartupProfile.Current = profile;
+        TextureArchive? textures = null;
         try
         {
             var stage = new Node3D { Name = $"TestWorld_{chapter}" };
             Host.AddChild(stage);
-            // The archives are this scope's: WorldSession clears the puffer factory and the sound
-            // loader after its bootstrap precisely so they can close here.
+            // The sound archive is this scope's, the texture archive the returned world's.
             var archives = SessionArchives.OpenFor(ArchiveIntent.Suite, gamezPath, texturesPath,
                 SoundsPath, ZrdrPath, Mute, _decode);
-            using var textures = archives.Textures;
+            textures = archives.Textures;
             using var sounds = archives.Sounds;
             var ambience = Ambience;
 
@@ -1071,7 +1076,14 @@ public sealed class TestContext
                 Session = session,
                 Stage = stage,
                 Gamez = archives.Gamez,
+                Textures = textures,
             };
+        }
+        catch
+        {
+            // No world took the archive over, so nothing else would ever close it.
+            textures?.Dispose();
+            throw;
         }
         finally
         {

@@ -58,6 +58,7 @@ internal static class DisplaySettingsSuites
         ("AudioMusic", 100, false),
         ("AudioEffects", 50, false),
         ("AudioVoice", 25, false),
+        ("InstallPath", Path.GetFullPath(Path.GetTempPath()), false),
     };
 
     [Suite("display-vsync",

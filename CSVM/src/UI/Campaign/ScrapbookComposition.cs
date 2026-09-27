@@ -113,8 +113,7 @@ public static class ScrapbookComposition
     /// extraction lacks the file, or the spread has no item 1.</summary>
     public static IReadOnlyList<ScrapbookScrap> Items(string? dataRoot, int mission, int spread)
     {
-        var rows = dataRoot == null ? null : Load(Path.Combine(
-            dataRoot, "extracted", "rof", "ASSETS", "SCRAPBOOK.CSV"));
+        var rows = dataRoot == null ? null : Load(Extraction.RofTree.Under(dataRoot, "ASSETS/SCRAPBOOK.CSV"));
         if (rows == null)
         {
             return Array.Empty<ScrapbookScrap>();
@@ -223,8 +222,7 @@ public static class ScrapbookComposition
             return null;
         }
 
-        var symbols = LoadSymbols(Path.Combine(
-            dataRoot, "extracted", "rof", "ASSETS", "SCRIPTS", "RESRC1.H"));
+        var symbols = LoadSymbols(Extraction.RofTree.Under(dataRoot, "ASSETS/SCRIPTS/RESRC1.H"));
         return symbols != null && symbols.TryGetValue(symbol, out int id) ? id : null;
     }
 
@@ -233,8 +231,8 @@ public static class ScrapbookComposition
     /// included.</summary>
     public static ScrapbookZoomFamily? ZoomFamily(string? dataRoot, char letter)
     {
-        var families = dataRoot == null ? null : LoadZoomFamilies(Path.Combine(
-            dataRoot, "extracted", "rof", "ASSETS", "LAYOUT.CSV"));
+        var families = dataRoot == null ? null
+            : LoadZoomFamilies(Extraction.RofTree.Under(dataRoot, "ASSETS/LAYOUT.CSV"));
         return families != null && families.TryGetValue(letter, out var family) ? family : null;
     }
 

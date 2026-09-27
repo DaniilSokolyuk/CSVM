@@ -68,10 +68,9 @@ public sealed class AnimProgram
     public int ReaderCount { get; private set; }
     public int ScriptPoolCount { get; private set; }
 
-    /// <summary>Loads the animation program for one mission, from the three zrdr scopes (shared
-    /// / chapter / mission) plus the chapter's <c>cam_anim</c> and the mission's <c>mis_anim</c>
-    /// extractions. Any of them may be missing: a user who has not re-run ExtractAssets.ps1 gets
-    /// the reader-only behaviour this project had before compiled animations landed.</summary>
+    /// <summary>Loads one mission's animation program from the three zrdr scopes (shared,
+    /// chapter, mission) and the <c>cam_anim</c> and <c>mis_anim</c> extractions. Any of them
+    /// may be missing: a tree without the anim archives gets reader-only behaviour.</summary>
     public static AnimProgram Load(string sharedZrdr, string chapterZrdr, string missionZrdr,
         string chapterAnimPath, string missionAnimPath)
     {
@@ -148,9 +147,9 @@ public sealed class AnimProgram
         return program;
     }
 
-    /// <summary>The chapter/mission compiled-archive paths for a session, preferring the
-    /// unpacked sibling directory ExtractAssets.ps1 -Unzip leaves next to each zip (loose
-    /// JSON: no decompression per def), exactly like every other loader in this project.</summary>
+    /// <summary>The chapter/mission compiled-archive paths for a session. Like every other
+    /// loader, it prefers the unpacked sibling directory <c>--extract-unzip</c> leaves next to
+    /// each zip, since loose JSON needs no decompression per def.</summary>
     public static (string Chapter, string Mission) ArchivePaths(string repoRoot, string chapter, string mission)
     {
         static string Prefer(string zipPath)
@@ -159,8 +158,8 @@ public sealed class AnimProgram
                 Path.GetFileNameWithoutExtension(zipPath));
             return Directory.Exists(dir) ? dir : zipPath;
         }
-        return (Prefer(Path.Combine(repoRoot, "extracted", chapter, "cam_anim.zip")),
-                Prefer(Path.Combine(repoRoot, "extracted", chapter, mission, "mis_anim.zip")));
+        return (Prefer(Extraction.ZbdTree.Under(repoRoot, chapter + "/cam_anim.zip")),
+                Prefer(Extraction.ZbdTree.Under(repoRoot, $"{chapter}/{mission}/mis_anim.zip")));
     }
 
     /// <summary>Definitions an ANIMATION_NAME refers to (startanims entries, CALL_ANIMATION
@@ -246,6 +245,26 @@ public sealed class AnimProgram
         return program;
     }
 
+    /// <summary>True when a listed reader path sits under the shared <c>common\zrdr</c> tree.</summary>
+    internal static bool IsSharedPath(string path) => GamePath.HasFolder(path, "common/zrdr");
+
+    /// <summary>A reader file's stem as the <c>ANIMATION_DEFINITION_FILE</c> lists name it: the
+    /// leaf without <c>.zrd</c>/<c>.json</c> and without a duplicate's <c>-N</c> suffix. The
+    /// extraction writes <c>planes\player.zrd</c> as <c>player-1.zrd.json</c>, beside an unrelated
+    /// <c>player.zrd.json</c>. ⚠ Split through <see cref="GamePath"/>: a listed path is a Windows
+    /// path on every host.</summary>
+    internal static string StemOf(string pathOrFile)
+    {
+        var leaf = GamePath.FileName(pathOrFile);
+        while (leaf.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+            || leaf.EndsWith(".zrd", StringComparison.OrdinalIgnoreCase))
+            leaf = leaf[..leaf.LastIndexOf('.')];
+        int dash = leaf.LastIndexOf('-');
+        if (dash > 0 && dash < leaf.Length - 1 && leaf.AsSpan(dash + 1).ToString().All(char.IsDigit))
+            leaf = leaf[..dash];
+        return leaf;
+    }
+
     /// <summary>The shared-scope reader files a mission sees, by stem: the closure of the shared
     /// <c>anim.zrd</c> index plus the shared entries of the chapter's <c>cam_anim.zrd</c> and the
     /// mission's <c>mis_anim.zrd</c>. Null when the index is absent, which leaves the scope
@@ -301,24 +320,6 @@ public sealed class AnimProgram
             return Array.Empty<string>();
         }
         return MissionCutscenes.ListedPaths(root);
-    }
-
-    private static bool IsSharedPath(string path) =>
-        path.Replace('/', '\\').Contains("\\common\\zrdr\\", StringComparison.OrdinalIgnoreCase);
-
-    // A reader file's stem as the ANIMATION_DEFINITION_FILE lists name it: the leaf without
-    // ".zrd"/".json", and without the "-N" suffix the extraction appends to a duplicate name
-    // (planes\player.zrd is extracted as player-1.zrd.json beside an unrelated player.zrd.json).
-    private static string StemOf(string pathOrFile)
-    {
-        var leaf = Path.GetFileName(pathOrFile.Replace('/', '\\'));
-        while (leaf.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
-            || leaf.EndsWith(".zrd", StringComparison.OrdinalIgnoreCase))
-            leaf = Path.GetFileNameWithoutExtension(leaf);
-        int dash = leaf.LastIndexOf('-');
-        if (dash > 0 && dash < leaf.Length - 1 && leaf.AsSpan(dash + 1).ToString().All(char.IsDigit))
-            leaf = leaf[..dash];
-        return leaf;
     }
 
     // Definition identity: (anchor name, animation name), exactly how the compiled

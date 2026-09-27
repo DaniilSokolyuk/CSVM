@@ -4,6 +4,9 @@
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <Nullable>enable</Nullable>
     <RootNamespace>CSVM</RootNamespace>
+    <!-- No ICU: a Linux system without libicu aborts .NET at start-up, and every format and
+         comparison here is invariant or ordinal already, which CSVM.Tests proves under de-DE. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <!-- The Steam build flavour, off unless a build passes -p:CsvmSteam=true. It selects the Steam
