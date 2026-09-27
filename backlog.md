@@ -484,51 +484,6 @@ look for) · *Cross-refs:* (related `BL-nnn`/`CAP-nn`/docs, with why).
   entry that drives it "plausibly an authoring leftover", present on 1 of 11 aircraft, so the
   capture may delete the feature rather than tune it.
 
-- `BL-285` `[Bug]` `[S]` `[Next: look]` `[Impact: low]` `[Evidence: decoded]` **The exhaust
-  smoke now darkens its background within a few points of the original at a matched slam, but
-  still draws at about 0.7 of its width.**
-  *Verdict at the controls:* against CAP-21, "its a lot denser in the original"; the AI aircraft's
-  trails (`git log --grep=BL-969`) draw and read right. That verdict predates the blend fix below,
-  so the plume, and every other near-black mixed puffer, is owed a fresh look. *Evidence:* the original's exhaust
-  smoke is its one code-built puffer, a near-black 0.4 m trail per `exhaust%d` marker whose opacity
-  charges from the commanded lever running ahead of the live one and decays at 1.5/s
-  (`FUN_004afa20`, `FUN_004afbc0`, fed from `FUN_0048e580`; decode in `docs/formats/effects.md`,
-  "Aircraft throttle-rise exhaust"). `Flight.Airframe.ExhaustSmoke` ports it in place of the borrowed
-  `nitropuffN` puffers and the invented 0.25 threshold gate, which had no counterpart: every
-  constant is now decoded and none is left to tune. The decode reproduces both ends CAP-21 bounds,
-  a 1/8 step peaking at opacity 0.013 and an idle-to-full slam at 0.356, out 3.9 sim-s later (the
-  footage's plume is gone about 2.8 wall-s after the slam, 3.9 sim-s at the capture's 1.39 ratio).
-  *Measured at matched speed:* `--lever=` (`docs/cli.md`) presses the throttle digit row on a
-  schedule, so a headless capture can fly the footage's own input history: idle from the spawn, one
-  `8` press at 10 sim-s, the chase camera 0.8 s after it, a Bloodhawk as CAP-21 flies, 1280x720.
-  The control is the same sim frame rendered again with the trail suppressed, so the difference
-  between the two frames is the plume and nothing else, and the footage is read the same way
-  against a background estimated per row from the band's own margins. Over the hundred rows a
-  hundred pixels below the wing line, the original darkens its background by 41% and 39% in its two
-  plumes, peaking at 62% and 72%, over median widths of 77 px and 60 px. *The draw path,
-  decoded* (`docs/org/puffer.md`, "What the mixed sprite puts on screen"): the three renderer
-  candidates are all settled as not the carrier. The quad is `2r` with no rim treatment, so the
-  radius-to-diameter 2 is right; the texture stage is texture × diffuse in colour and alpha, as the
-  port draws it; the rim fade measures no change on this plume. The carrier was the blend space:
-  DX7 mixes framebuffer bytes and Godot's `blend_mix` mixes linear values, which for a black sprite
-  darkens a bright background far less. The mixed layer now computes the byte-space mix, and the
-  ramp colour is the drawn byte 1 rather than the installed 7. The port now darkens by 37% and 39%,
-  peaking at 62% and 69%, over 46 px and 50 px, against 21% and 23% over 42 px and 46 px before.
-  *The question:* the width. The emitter and the draw path are decoded end to end, so the remaining
-  factor is in what the two frames show rather than in a constant: the footage's Bloodhawk spans
-  about 520 px of the 1280 against the port's 600, so relative to the airframe the port's plume is
-  narrower still, which points at the chase camera's distance or field of view, or at the
-  original's lower render resolution being scaled to the capture. ⚠ Traps: slam with a digit key, not the
-  throttle-up key. A held key moves the commanded lever at the slew's own rate, so the gap stays
-  one step's slew and the original shows nothing for it either. A scripted `--hold` feeds the
-  smoke no gap, since it bypasses the lever; `--lever=` is the capture flag that reaches the
-  plume. *Playtest after fix:* from idle at a steady
-  cruise, slam to full with the `8` digit key and watch from the chase camera as CAP-21 does around
-  12.5 s: near-black smoke from each exhaust, strongest about a second after the slam and gone
-  about four seconds after it, as wide and as dark near the tail as the footage's at the same
-  speed; a single 1/8 step at most a faint wisp, idle to 5/8 a plume about half as dark.
-  *Cross-refs:* `git log --grep=BL-285` (the port), `git log --grep=BL-969` (the AI trails).
-
 - `BL-934` `[Bug]` `[M]` `[Next: look]` `[Impact: high]` `[Evidence: feel]` **The dynamic enemy and
   ally voice lines dispatch in the suite and are now heard at the controls, but far more rarely
   than the original's: one friendly line in a squadron fight and no enemy line, where the

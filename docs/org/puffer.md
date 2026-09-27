@@ -404,7 +404,8 @@ The rest of the draw path, from particle state to the pixel, on the hardware pat
 framebuffer, so `SRCALPHA, INVSRCALPHA` mixes the gamma-encoded bytes. Godot's `blend_mix` mixes
 linear values, and for a dark sprite over a bright background that is a much weaker darkening: a
 black sprite at alpha 0.5 takes a byte-200 sky to byte 100 in the original and to byte 146 in a
-linear mix. The exhaust plume measured at about half the original's darkening that way.
+linear mix. Mixed linearly, the exhaust plume darkens its background about half as much as the
+original's.
 `MultiMeshEmitterRenderer` therefore keeps `blend_mix` for the mixed layer and replaces its alpha:
 against the opaque background it reads from `hint_screen_texture`, the source and the background go
 to bytes and mix there, and the alpha written is the one at which a linear mix lands on that result
