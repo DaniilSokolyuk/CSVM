@@ -6,13 +6,12 @@ namespace CSVM.Flight.Weapons;
 
 /// <summary>
 /// The ordnance hanging under a plane's wings: one <c>FLYOUT MODEL</c> body instanced at each
-/// loaded pylon and hidden the moment that pylon runs dry. The mounted body is the same gamez
-/// prototype the round flies, instanced through <see cref="ProjectilePool.BuildFlyoutBody"/> and
-/// parented to the pylon marker at an identity local transform. Built once at session setup and
-/// rides the plane; freed with it.
+/// loaded pylon and hidden the moment that pylon runs dry. The body is the round's own prototype
+/// from <see cref="ProjectilePool.BuildFlyoutBody"/> in its <c>RESET_STATE</c> pose, hung at the
+/// pylon marker. Its root shows only while the pylon is armed. Built once at
+/// session setup, it rides the plane and is freed with it.
 /// ⚠ One model per pylon, never one per <c>CLUSTER_SIZE</c> round, the original shows a single
-/// rocket per hardpoint. No plane model carries static ordnance mesh of its own (every
-/// rocket/missile/bomb/torpedo name search is empty, and pylon nodes are all <c>model_index -1</c>
+/// rocket per hardpoint. No plane model carries ordnance mesh (pylons are all <c>model_index -1</c>
 /// markers), so there is no double-up to guard against.</summary>
 public sealed class PylonOrdnance
 {

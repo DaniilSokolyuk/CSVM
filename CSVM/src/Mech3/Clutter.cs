@@ -152,6 +152,10 @@ public sealed class ClutterBuilder
     /// <summary>The decoration kinds of the last Build (null until Build placed something).</summary>
     public IReadOnlyList<KindExport>? ExportedKinds { get; private set; }
 
+    /// <summary>The last Build's stamps bound to the world nodes they were stamped from, null until
+    /// <see cref="FollowActivation"/> ran or when nothing was exported.</summary>
+    public ClutterActivation? Activation { get; private set; }
+
     /// <summary>Of <see cref="SolidCollisionTriangles"/>, those from a polygon clearing
     /// <c>SHOW_BACKFACE</c>: the size of the divergence left by these shapes staying two-sided while
     /// the world's honour the flag. The reason they do is on <c>BuildSolidCollision</c>.</summary>
@@ -407,6 +411,7 @@ public sealed class ClutterBuilder
         var parts = new List<string>();
         var exported = new List<KindExport>();
         var exportedMesh = new List<int>();   // parallel: each export's decoration MeshIndex
+        var exportedFrom = new List<(Kind Kind, int Part)>();   // parallel: 0 its own mesh, 1+ ExtraParts
         var solidKinds = new List<Kind>();
         InstanceCount = SolidCount = SolidCollisionTriangles = 0;
         BlendCardKinds = ScissorCardKinds = 0;
@@ -434,16 +439,20 @@ public sealed class ClutterBuilder
                 CullMargin = CullMarginOf(kind),
                 Placements = kind.Instances,
                 Fades = kind.Fades,
+                Owners = kind.Owners,
+                Instances = mmi.Multimesh,
             });
             exportedMesh.Add(kind.MeshIndex);
+            exportedFrom.Add((kind, 0));
             if (kind.Solid)
             {
                 SolidCount += kind.Instances.Count;
                 solidKinds.Add(kind);
                 // The rest of the decoration's own chain, one MultiMesh each over the same stamps.
                 // Exported too, so MapEdgeExtender's copies past the map edge are whole buildings.
-                foreach (var (meshIndex, local) in kind.ExtraParts)
+                for (int part = 0; part < kind.ExtraParts.Count; part++)
                 {
+                    var (meshIndex, local) = kind.ExtraParts[part];
                     var placements = Composed(kind.Instances, local);
                     if (BuildSolidPart(kind, meshIndex, placements) is not { } partMmi)
                         continue;
@@ -460,8 +469,11 @@ public sealed class ClutterBuilder
                         CullMargin = CullMarginOf(kind),
                         Placements = placements,
                         Fades = kind.Fades,
+                        Owners = kind.Owners,
+                        Instances = partMmi.Multimesh,
                     });
                     exportedMesh.Add(meshIndex);
+                    exportedFrom.Add((kind, part + 1));
                 }
             }
             else
@@ -472,18 +484,29 @@ public sealed class ClutterBuilder
         }
         if (collision && solidKinds.Count > 0)
         {
-            BuildSolidCollision(root, solidKinds);
-            // Hand each solid export its shared shape, so MapEdgeExtender can attach the same
-            // one to its mirrored placements past the map edge.
-            if (_solidShapes != null)
-                for (int i = 0; i < exported.Count; i++)
-                    if (exported[i].Solid && _solidShapes.TryGetValue(exportedMesh[i], out var s))
-                        exported[i].CollisionShape = s;
+            var slots = BuildSolidCollision(root, solidKinds);
+            // Each solid export gets its shared shape, which MapEdgeExtender attaches to its copies
+            // past the map edge. It also gets its attachment slots, so a hidden stamp stops being solid.
+            for (int i = 0; i < exported.Count; i++)
+            {
+                if (!exported[i].Solid)
+                    continue;
+                if (_solidShapes != null && _solidShapes.TryGetValue(exportedMesh[i], out var s))
+                    exported[i].CollisionShape = s;
+                if (slots.TryGetValue(exportedFrom[i].Kind, out var kindSlots))
+                    exported[i].Colliders = kindSlots[exportedFrom[i].Part];
+            }
         }
         Summary = string.Join(", ", parts);
         ExportedKinds = exported.Count > 0 ? exported : null;
         return InstanceCount == 0 && SolidCount == 0 ? null : root;
     }
+
+    /// <summary>Hides each stamp of the last Build while its stamping world node is not visible.
+    /// It shows again when that node is (<see cref="ClutterActivation"/>).
+    /// <paramref name="world"/> is the built world the stamping nodes live under.</summary>
+    public void FollowActivation(Node3D world) =>
+        Activation = ClutterActivation.Bind(world, ExportedKinds);
 
     // Any billboard kind is a placeable card: C1's CylindricalY trees and bushes, and C5's
     // SphericalY poleflare glows beside their CylindricalY lightpole posts.
@@ -511,8 +534,8 @@ public sealed class ClutterBuilder
     // ⚠ Never introduce a world grid here. Stamping per integer texture repeat is what makes the
     // clutter rotate and stretch with the painted ground, and a fixed grid loses C1 most of its trees.
     private static void PlaceOnTriangle(Template template, Vector3 a, Vector3 b, Vector3 c,
-        Vector2 uva, Vector2 uvb, Vector2 uvc, HashSet<(int, int, int)> seen, LatticeStats stats,
-        Random rng, Random fadeRng)
+        Vector2 uva, Vector2 uvb, Vector2 uvc, int owner, HashSet<(int, int, int)> seen,
+        LatticeStats stats, Random rng, Random fadeRng)
     {
         // ⚠ Guard world area and UV area independently. Neither implies the other, and a strip
         // artifact with healthy UVs and no world area plants a row of trees along a line.
@@ -606,6 +629,7 @@ public sealed class ClutterBuilder
                         target.Instances.Add(target.Solid
                             ? new Transform3D(basis, new Vector3(p.X, p.Y + cell.OnQuad.Origin.Y, p.Z) + lift)
                             : new Transform3D(basis, p + lift));
+                        target.Owners.Add(owner);
                     }
                 }
     }
@@ -794,7 +818,10 @@ public sealed class ClutterBuilder
             // The authored far fade: past it the card collapses to its planted point and costs no
             // fragments; inside the ramp the fragment stage dithers it out.
             v_alpha = csky_clutter_fade_alpha(origin, CAMERA_POSITION_WORLD, INSTANCE_CUSTOM);
-            float keep = step(0.004, v_alpha);
+            // The face below replaces the instance basis. A hidden or cratered stamp has a zero
+            // basis, so it is read off here, or the card keeps drawing.
+            float live = step(1e-12, dot(MODEL_MATRIX[1].xyz, MODEL_MATRIX[1].xyz));
+            float keep = step(0.004, v_alpha) * live;
         {{FaceBasisLines(spherical)}}
             VERTEX = (VIEW_MATRIX * vec4(origin + face * VERTEX * keep, 1.0)).xyz;
         }
@@ -1090,7 +1117,7 @@ public sealed class ClutterBuilder
             if (node.Local is { } local)
                 xf *= local;
             if (node.MeshIndex >= 0 && node.MeshIndex < _gamez.Meshes.Count)
-                PlaceOnMesh(_gamez.Meshes[node.MeshIndex], xf, templates, seen, rng, fadeRng);
+                PlaceOnMesh(_gamez.Meshes[node.MeshIndex], xf, nodeIndex, templates, seen, rng, fadeRng);
             foreach (var c in node.Children)
                 Walk(c, xf);
         }
@@ -1101,7 +1128,8 @@ public sealed class ClutterBuilder
                 Walk(idx, Transform3D.Identity);
     }
 
-    private void PlaceOnMesh(GameZMesh mesh, Transform3D xf,
+    // `owner` is the gamez node whose mesh is stamped; every stamp carries it (ClutterActivation).
+    private void PlaceOnMesh(GameZMesh mesh, Transform3D xf, int owner,
         Dictionary<string, Template> templates, HashSet<(int, int, int)> seen, Random rng,
         Random fadeRng)
     {
@@ -1139,7 +1167,7 @@ public sealed class ClutterBuilder
                         xf * mesh.Vertices[poly.VertexIndices[i]],
                         xf * mesh.Vertices[poly.VertexIndices[i + 1]],
                         xf * mesh.Vertices[poly.VertexIndices[i + 2]],
-                        uvs[i], uvs[i + 1], uvs[i + 2], seen, _stats, rng, fadeRng);
+                        uvs[i], uvs[i + 1], uvs[i + 2], owner, seen, _stats, rng, fadeRng);
             }
             else
             {
@@ -1148,7 +1176,7 @@ public sealed class ClutterBuilder
                         xf * mesh.Vertices[poly.VertexIndices[0]],
                         xf * mesh.Vertices[poly.VertexIndices[i]],
                         xf * mesh.Vertices[poly.VertexIndices[i + 1]],
-                        uvs[0], uvs[i], uvs[i + 1], seen, _stats, rng, fadeRng);
+                        uvs[0], uvs[i], uvs[i + 1], owner, seen, _stats, rng, fadeRng);
             }
         }
     }
@@ -1266,7 +1294,8 @@ public sealed class ClutterBuilder
         return mmi;
     }
 
-    private void BuildSolidCollision(Node3D root, List<Kind> kinds)
+    // Returns each kind's attachment slots, its own mesh first and then each of ExtraParts in order.
+    private Dictionary<Kind, List<(Rid, int)?[]>> BuildSolidCollision(Node3D root, List<Kind> kinds)
     {
         // One shape per distinct decoration mesh, keyed by MeshIndex, a decoration's further
         // meshes included. That over-counts C5's mesh duplicates, but at about 40 triangles a
@@ -1281,8 +1310,9 @@ public sealed class ClutterBuilder
         }
 
         SolidCollisionShapes = shapes.Count;
+        var slots = new Dictionary<Kind, List<(Rid, int)?[]>>();
         if (shapes.Count == 0)
-            return;
+            return slots;
 
         // The shapes are referenced by the physics server through their RIDs only, which does
         // not keep the Godot Ref alive. Anchor them on the clutter root so their lifetime is
@@ -1293,12 +1323,14 @@ public sealed class ClutterBuilder
         root.SetMeta(SharedShapeMeta, anchor);
 
         var regions = new Dictionary<(int, int), StaticBody3D>();
+        var shapeCounts = new Dictionary<StaticBody3D, int>();
         foreach (var kind in kinds)
         {
-            Attach(kind.MeshIndex, kind.Instances);
+            var parts = slots[kind] = new List<(Rid, int)?[]> { Attach(kind.MeshIndex, kind.Instances) };
             foreach (var (meshIndex, local) in kind.ExtraParts)
-                Attach(meshIndex, Composed(kind.Instances, local));
+                parts.Add(Attach(meshIndex, Composed(kind.Instances, local)));
         }
+        return slots;
 
         void Shape(int meshIndex)
         {
@@ -1317,13 +1349,16 @@ public sealed class ClutterBuilder
             SolidCollisionOneSidedTriangles += oneSided;
         }
 
-        void Attach(int meshIndex, List<Transform3D> placements)
+        // Returns, per placement, the body and shape slot it was attached at.
+        (Rid, int)?[] Attach(int meshIndex, List<Transform3D> placements)
         {
+            var attached = new (Rid, int)?[placements.Count];
             if (!shapes.TryGetValue(meshIndex, out var shape))
-                return;
+                return attached;
             var shapeRid = shape.GetRid();
-            foreach (var xf in placements)
+            for (int i = 0; i < placements.Count; i++)
             {
+                var xf = placements[i];
                 var key = (Mathf.FloorToInt(xf.Origin.X / CollisionRegion),
                            Mathf.FloorToInt(xf.Origin.Z / CollisionRegion));
                 if (!regions.TryGetValue(key, out var body))
@@ -1334,9 +1369,13 @@ public sealed class ClutterBuilder
                         key.Item1 * CollisionRegion, key.Item2 * CollisionRegion, CollisionRegion, CollisionRegion));
                     root.AddChild(body);
                 }
+                int slot = shapeCounts.GetValueOrDefault(body);
+                shapeCounts[body] = slot + 1;
                 PhysicsServer3D.BodyAddShape(body.GetRid(), shapeRid, xf);
+                attached[i] = (body.GetRid(), slot);
                 SolidCollisionInstances++;
             }
+            return attached;
         }
     }
 
@@ -1387,6 +1426,17 @@ public sealed class ClutterBuilder
         public Shape3D? CollisionShape;
         public IReadOnlyList<Transform3D> Placements = null!;
         public IReadOnlyList<Color> Fades = null!;   // parallel: each placement's fade custom data
+
+        // Parallel to Placements: the gamez node each placement was stamped from, which is what
+        // ClutterActivation hides it with.
+        public IReadOnlyList<int> Owners = null!;
+
+        // The map's own MultiMesh of these placements, indexed as Placements is.
+        public MultiMesh? Instances;
+
+        // Parallel to Placements, solid kinds in a collidable build only: the region body and
+        // shape slot each placement's shared shape was attached at.
+        public (Rid Body, int Shape)?[]? Colliders;
     }
 
     /// <summary>One world triangle as the original's stamper sees it: the integer UV lattice its
@@ -1618,6 +1668,9 @@ public sealed class ClutterBuilder
         // that node down to the mesh it draws, and every stamp carries it, sprite or solid.
         public readonly List<(Transform3D OnQuad, Vector3 MeshLift)> CellPlacements = new();
         public readonly List<Transform3D> Instances = new(); // world placements
+
+        // Parallel to Instances: the gamez node each stamp was stamped from.
+        public readonly List<int> Owners = new();
 
         // Parallel to Instances: each stamp's (near², far², 1/(far² − near²), 0) as the MultiMesh
         // custom data the fade shader reads; zero for a stamp that never fades.

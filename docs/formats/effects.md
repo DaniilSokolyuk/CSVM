@@ -152,7 +152,8 @@ state.** A sprite draws additively exactly when bit 2 of its texture's render-fl
 which makes the verdict per particle and per flipbook frame rather than per emitter; the decode is
 [`../org/textures.md`](../org/textures.md). No texture any puffer in this install names carries the
 bit, so every authored emitter alpha-mixes. Neither the `COLORS` ramp nor the sprite's own
-brightness enters into it.
+brightness enters into it. The mix runs on the framebuffer's gamma-encoded bytes, which CSVM
+reproduces in its linear target (see [`../org/puffer.md`](../org/puffer.md)).
 
 ## Aircraft speed-cue wisps
 
@@ -199,6 +200,14 @@ colour ramp: RGB `(7, 7, 9)/255` with alpha `min(intensity, 1)` at age 0.2, tran
 age 1. The ramp container is refcounted and each particle holds the one current at its birth
 (`FUN_0054f8b0`, particle `[0x1d]`; `FUN_0054f6d0` drops the emitter's reference on a rewrite), so
 the opacity is fixed per particle at spawn.
+
+The draw puts byte 1, not 7, in each colour channel. The ramp holds framebuffer bytes, and the
+per-particle draw (`FUN_0054e6e0`, `0054e9e5`–`0054ea7d`) rounds each channel as it stands without
+scaling it by 255, so the installed `7/255` rounds to 1. The plume is therefore black mixed with
+`SRCALPHA, INVSRCALPHA` over the framebuffer's gamma-encoded bytes, on a `2r` quad with no rim
+treatment, from a 4444 surface of the smoke texture's alpha plane. That draw path and what CSVM
+changes to reproduce it are in [`../org/puffer.md`](../org/puffer.md), "What the mixed sprite puts
+on screen".
 
 What follows from the constants at a 60 Hz step: an idle-to-full digit slam peaks at intensity
 0.356 about 0.9 s in and is off 3.9 s after the command; idle to 5/8 peaks at 0.18; a single 1/8

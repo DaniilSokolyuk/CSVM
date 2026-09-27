@@ -316,6 +316,11 @@ public sealed record SessionSpec
     /// <summary>The <c>:&lt;seq&gt;</c> half of <c>--campaign=</c>; null when it was omitted or
     /// unparseable, in which case a warning is recorded and only the profile name is kept.</summary>
     public int? CampaignMissionSeq { get; private set; }
+    /// <summary><c>--profiles=&lt;dir&gt;</c>: the campaign profile store this process reads and
+    /// writes in place of <c>user://Profiles/</c>, so a probe never touches a player's own
+    /// profiles. Null when the flag was absent. Kept as the raw value; resolving it is
+    /// <see cref="Session.Campaign.CampaignProfileStore.ForSession"/>'s job.</summary>
+    public string? ProfilesDir { get; private set; }
     /// <summary><c>--no-crash-loss</c>: losing the aircraft leaves the campaign mission running,
     /// so a session being debugged can fly on past a crash. The game default is the original's
     /// rule, which ends the mission lost (<c>docs/formats/objectives.md</c>, "Win and loss").
@@ -1404,6 +1409,7 @@ public sealed record SessionSpec
                 }
                 s.HasContentArg = true;
             }
+            else if (arg.StartsWith("--profiles=")) { s.ProfilesDir = arg["--profiles=".Length..]; }
             else if (arg.StartsWith("--spawn=")) { s.SpawnIndex = int.Parse(arg["--spawn=".Length..]); }
             else if (arg.StartsWith("--spawn-at=")) { s.SpawnAt = ParseVec3(arg["--spawn-at=".Length..]); Deprecate("--spawn-at", "--pos"); }
             else if (arg.StartsWith("--spawn-dir=")) { s.SpawnDir = ParseVec3(arg["--spawn-dir=".Length..]); Deprecate("--spawn-dir", "--direction"); }

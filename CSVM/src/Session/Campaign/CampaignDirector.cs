@@ -315,7 +315,7 @@ public sealed class CampaignDirector
     public static SessionSpec ResolveSeatedPlane(SessionSpec spec)
     {
         if (spec.CampaignProfile is not { Length: > 0 }
-            || CampaignProfileStore.UserProfiles().Load(spec.CampaignProfile) is not { } profile
+            || CampaignProfileStore.ForSession(spec.ProfilesDir).Load(spec.CampaignProfile) is not { } profile
             || profile.Planes.Count == 0)
         {
             return spec;
@@ -360,7 +360,12 @@ public sealed class CampaignDirector
         // A co-op guest flies its host's mission with no profile of its own. The director keeps its
         // result in memory, and with no store behind it nothing reaches the guest's disk.
         bool guest = spec.CampaignProfile.Length == 0;
-        var store = guest ? null : CampaignProfileStore.UserProfiles();
+        var store = guest ? null : CampaignProfileStore.ForSession(spec.ProfilesDir);
+        if (!guest && spec.ProfilesDir is { } profilesDir)
+        {
+            Log.Info("core", $"campaign: profile store {System.IO.Path.GetFullPath(profilesDir)} (--profiles)");
+        }
+
         if ((guest ? CampaignProfileDef.NewProfile(CoopGuestPilot) : store!.Load(spec.CampaignProfile)) is not { } profile)
         {
             GD.PushWarning($"--campaign={spec.CampaignProfile}: " +
@@ -1250,7 +1255,7 @@ public sealed class CampaignDirector
     // The seated profile's own directory, where the scrapbook resolves a Snap_ capture. Null with
     // no store bound, which is every suite that builds a director without one.
     private string? ProfileDirectory() =>
-        _store is { } store && _profile.Name.Length > 0 ? store.DirFor(_profile.Name) : null;
+        _store is { } store && _profile.Name.Length > 0 ? store.DirOf(_profile) : null;
 
     // The far end of the leaving hold: the world has stood still for its length and the session may
     // go. The original reaches here when its fade over the last flown frame has run out and the next

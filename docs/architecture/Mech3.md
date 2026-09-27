@@ -38,7 +38,7 @@ trimesh per surface class and soil and by sidedness, both halves on one body reg
 `WorldCollision`; `MissionStructureTeamMeta` is the channel `DestructibleRegistry` reads a pool's
 team through. A textured surface takes `csky_world_light` on its `lighting` flag alone, and every
 mip-mapped arm fetches through `SampleAlbedo`, the one `csky_sample_albedo` carrying the chapter's
-LOD bias, reused by `Clutter` and `MeshLab`. `AlphaOf` reads back the transparency verdict a built material's shader was generated for, the registry `HiddenAlpha` (`--hide-alpha`) drops a class by, dropping the surface rather than the instance so the classes isolate from each other. A `sunVertexLit` builder (the in-flight aircraft) draws original mode's shaded arm unshaded, with the original's per-vertex sun term, whose ambient half is the Danger Zone photograph's fill at an armed `PhotoEyeParam` eye. Arms and selection: [Root.md](Root.md), [../formats/gotchas.md](../formats/gotchas.md), [../org/vertexLighting.md](../org/vertexLighting.md), [../org/textures.md](../org/textures.md).
+LOD bias, reused by `Clutter` and `MeshLab`. `AlphaOf` reads back the transparency verdict a built material's shader was generated for, the registry `HiddenAlpha` (`--hide-alpha`) drops a class by, dropping the surface rather than the instance so the classes isolate from each other. A blended world surface lying within `GroundLayerMinUp` of level (a terrain strip, a road, a shadow decal; never the caller's blend list, the cloud deck and sky) takes `GroundLayerRenderPriority` and draws ahead of every other transparent draw, so a clutter card standing on it composites over it: the card kinds are chapter-wide MultiMeshes whose one sort key is the forest's centre, so the depth sort put a nearer strip over the card's soft edge. A `sunVertexLit` builder (the in-flight aircraft) draws original mode's shaded arm unshaded, with the original's per-vertex sun term, whose ambient half is the Danger Zone photograph's fill at an armed `PhotoEyeParam` eye. Arms and selection: [Root.md](Root.md), [../formats/gotchas.md](../formats/gotchas.md), [../org/vertexLighting.md](../org/vertexLighting.md), [../org/textures.md](../org/textures.md).
 
 ## src/Mech3/ZoneGate.cs
 The original's per-node visibility gate (`FUN_0056c430`). `FUN_004d62d0` arms the camera each frame
@@ -159,8 +159,9 @@ term, so left and right settle at different angles. Decode: [../org/flightModel.
 Single source of truth for wingtip nav lights: the flare-node predicate (wing_flare1/2), the glow
 texture (oil_liteflare), the warm-amber flash colour (0.88, 0.78, 0.36 = wing_light.json's
 LIGHT_STATE COLOR), the blink period (1.5 s = its LOOP SEQUENCE_OFFSET) and the point-light range
-(0.5-1.25 m, also LIGHT_STATE). PlaneBuilder hides and re-skins the flares (additive tint, one-sided
-as authored, no billboard); WingLightBlinker flashes them and emits a matching OmniLight3D per side.
+(0.5-1.25 m, also LIGHT_STATE). PlaneBuilder hides and re-skins the flares (additive tint, posed
+through `csky_facade_spherical` as the SphericalY facade model 1261 is, never Godot's billboard
+mode); WingLightBlinker flashes them and emits a matching OmniLight3D per side.
 
 ## src/Mech3/WorldBuilder.cs
 Builds a chapter world (fullbright): the World node's children plus every partition-referenced
@@ -179,7 +180,8 @@ helpers (`HorizonZonesOf`, `CloudDeckAltitudeOf`, `DomeZonesToBuild`, `DetachedW
 ## src/Mech3/MapEdgeExtender.cs
 A rolling window of repeated border tiles and clutter continuing the world past the map edge, one
 window per session shared by every player camera and diffed only on a cell crossing. Clutter copies
-grow from `ClutterBuilder.ExportedKinds`, each keeping its source stamp's fade thresholds.
+grow from `ClutterBuilder.ExportedKinds`, each keeping its source stamp's fade thresholds and
+drawing only while `ClutterActivation` shows that stamp.
 `ClassifyGroundMesh`, `IsCompletionStrip` and `FoldAxis` are pure statics pinned by
 `MapEdgeTileTests`/`MapEdgeFoldTests`; `--dump-tilegrid` writes the per-cell acceptance census
 `WriteCensus` builds. The original's own continuation behaviour and the per-chapter fold
@@ -194,6 +196,14 @@ data under `EffectsLevel`, and samples through `SceneBuilder.SampleAlbedo` for t
 which patch a district dresses; `OverrideTemplateNames` is `--clutter-templates=`'s replacement.
 A decoration is a node chain, and `FirstWithMesh` hands back the translation down to the node carrying the mesh, so a stamp lands where the chain puts the drawn card: C5's lamp glow rides 4.75 m up its post. A solid decoration's chain carries SEVERAL meshes, which `ExtraMeshes` collects (nearest LOD only, each in the drawn mesh's frame) so `Kind.ExtraParts` draws and collides the whole building: 12 of C5's city blocks hold two street walls and a roof cap on further nodes, and drawing the first mesh alone leaves them open on two sides.
 Placement runtime: [../org/clutter.md](../org/clutter.md); authored side: [../formats/clutter.md](../formats/clutter.md), [../formats/templates.md](../formats/templates.md).
+
+## src/Mech3/ClutterActivation.cs
+Keeps every clutter stamp drawn exactly while the world node it was stamped from is visible in the
+tree. Each `KindExport` carries its stamps' owner indices; `Bind` finds the built node per index and
+syncs on its `VisibilityChanged` and `TreeEntered`, so a mission script's area verb, a
+`NodeSetActive` or a record born inactive hides the trees with the ground. A hidden stamp collapses
+its basis and switches off its shared shape as a crater's victim does, and a show restores only
+what this hid. `Version` lets `MapEdgeExtender`'s copies follow their source stamps. Read `ClutterCull.cs`.
 
 ## src/Mech3/ClutterTemplates.cs
 The chapter's `templates.zrd` (`ClutterTemplateSpec.Load`/`.Parse`): one `ClutterKindProps` per
@@ -549,6 +559,15 @@ container, while the tick spine stays in `AnimRuntime.Advance`. The two `AT_NODE
 and the SI-script duration rules are on their own members. Spellings and census:
 docs/formats/anim-definitions/cutscenes.md.
 
+## src/Mech3/Anim/OpacityWriter.cs
+Writes a subtree's opacity per instance: the `csky_opacity` instance shader parameter on every
+geometry node, and a translucent twin of a material with no alpha path, installed as that
+instance's surface override while the opacity is partial and removed at 1. It owns the twin caches.
+`PoseChannel.SetSubtreeOpacity` writes through one (adding the dedup and the faded-collider rule),
+and so do the projectile pool's flyout fades (`ProjectileFlyoutAnim.cs`), so a round's fade never
+edits the prototype material the rack copies share. The fade shader itself is
+`SceneBuilder.FadeShaderFor`.
+
 ## src/Mech3/Anim/NameResolver.cs
 Name to node resolution as one public module, generic over the node type (`NameResolver<TNode>`):
 the index, the wildcard `Matcher`, the memoized `FindAll`, the scoped tier chain
@@ -593,9 +612,9 @@ anchor)` pair seeded from the authored `HEALTH`, plus a coarse healthy/damaged/d
 `DamageStage`. Built in `AnimRuntime`'s bootstrap, read by `ANIM_HEALTH` evaluation, escalated by `ApplyDamageStages`,
 damaged via `DamageAt`. `Resolve(struck)` climbs to the nearest claiming pool, which answers for its damage node and
 everything under it (what the original stamps its handler over) and, through its anchor alone, for nothing. `Instance`
-carries what a mission record authors (`Team`, `Owner`, `Gasbag`, `Dormant`, `Reseed`) and caches the anchor's gamez
-ancestor names for `TargetPool.CollectOwners` under the parent's id, so an authored re-parent re-walks them and a
-per-tick ranking ask does not. Schema: docs/formats/destructibles.md; teams docs/org/targeting.md.
+carries what a mission record authors (`Team`, `Owner`, `Gasbag`, `Dormant`, `Reseed`) and caches the anchor's own name and its gamez
+ancestor names for `TargetPool` under the parent's id, so an authored re-parent re-reads them and a per-tick ranking
+ask does not. Schema: docs/formats/destructibles.md; teams docs/org/targeting.md.
 
 ## src/Mech3/WavFile.cs
 Pure-C# WAV parser with an MS ADPCM to PCM16 decoder (`DecodeMsAdpcm`), no Godot dependencies:

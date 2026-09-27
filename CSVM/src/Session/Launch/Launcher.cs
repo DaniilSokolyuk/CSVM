@@ -1719,7 +1719,7 @@ public partial class Launcher : Node3D
     private string SeatedMemento() =>
         CampaignMementos.BitmapFor(
             _spec.CampaignProfile is { } name
-                ? CampaignProfileStore.UserProfiles().Load(name)
+                ? CampaignProfileStore.ForSession(_spec.ProfilesDir).Load(name)
                 : null);
 
     // What the load screen calls this flight: an Instant Action mission by the wizard's own name
@@ -2212,12 +2212,19 @@ public partial class Launcher : Node3D
         // The factories read the aid when they run, which is inside a Show: the cold start's
         // instance gets it, and the fresh instance a switch creates gets none.
         _menuAid = _cli.MenuStartScreen;
+        // --profiles= names the cabin's store as well as the flight's. A cabin launch carries the
+        // flag into the flight, and the profile the cabin seated must load there.
+        var profiles = _cli.ProfilesDir is { } profilesDir ? CampaignProfileStore.ForSession(profilesDir) : null;
         registry.Register(PresentationId.BuiltIn,
-            () => new BuiltInPresentation(this, _zrdrPath, _dataRoot, _menuAid ?? string.Empty, builtInSeat.Input));
+            () => new BuiltInPresentation(this, _zrdrPath, _dataRoot, _menuAid ?? string.Empty, builtInSeat.Input)
+            {
+                CampaignProfiles = profiles,
+            });
         registry.Register(PresentationId.Original,
             () => new OriginalPresentation(this, _dataRoot, _originalLayout!, _menuAid ?? string.Empty, builtInSeat.Input, _spec.DebugJoin)
             {
                 DebugPointer = _spec.DebugPointer,
+                CampaignProfiles = profiles,
             });
         var host = new MenuHost(registry, _menuAudio, OnMenuExit);
         host.Availability = OriginalAvailable;

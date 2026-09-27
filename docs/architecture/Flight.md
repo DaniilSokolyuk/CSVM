@@ -82,8 +82,8 @@ death disappears with no extra plumbing. It walks the aim assist's aeroplanes an
 sites arrive through `objectives` under their record's flag, `objective` on the Enemy cycle and `other_target` on the
 Non-Aircraft, and a roster block's own flag marks its aeroplane's candidate. Sub-parts arrive through `subParts` only
 while `selectedWeapon` carries `LOCK_ON`; a gun emplacement is on no cycle. The gamez ancestor chain `CollectOwners`
-hands the `rating_biases` match is cached per destructible instance: each name read allocates a finalizable
-`StringName`. Read `TargetSelection.cs`; decode: [../org/targeting.md](../org/targeting.md).
+hands the `rating_biases` match, and a pool's own anchor name `NameOf` returns, are cached per destructible instance:
+each name read allocates a finalizable `StringName`. Read `TargetSelection.cs`; decode: [../org/targeting.md](../org/targeting.md).
 
 ## src/Flight/Weapons/TargetSelection.cs
 One pilot's target selection: the sticky choice, the eleven actions and the lifecycle. One instance
@@ -339,9 +339,9 @@ runs its own `AnimInstance` of the weapon's def (`he_rocket`, `sonic`, `torpedo_
 sequence interpreter with the pool standing in as the `ISequenceHost`: `StartFlyoutAnim` poses
 `RESET_STATE` and fires the t=0 events inside `Spawn`, and `AdvanceFlyoutAnim` runs the instance
 each sim step once the round has moved. `Dispatch` covers the kinds these defs author (node
-visibility and scale, from-to tweens, spins, puffer trails, sounds, sequence and animation calls)
+visibility and scale, from-to tweens, opacity fades through `OpacityWriter`, spins, puffer trails, sounds, sequence and animation calls)
 and logs anything else once. The trail puffers, the sonic's body roll and the torpedo's launch look
-all come off this instance. Decode: [../org/ordnanceTypes.md](../org/ordnanceTypes.md).
+all come off this instance; `PoseAtResetState` gives every `BuildFlyoutBody` body the reset pose. Decode: [../org/ordnanceTypes.md](../org/ordnanceTypes.md).
 
 ## src/Flight/Hud/WarningShotCue.cs
 The incoming-fire shield's shipped accumulator (player.json `warning_shot_max` / `_dissipation` /
@@ -1037,9 +1037,9 @@ skipped in `Advance`. Advanced each `_Process`, frozen while paused or crashed; 
 
 ## src/Flight/Weapons/PylonOrdnance.cs
 The rockets mounted under a plane's wings. `Build` instances ONE flyout model body per loaded pylon
-through `ProjectilePool.BuildFlyoutBody` (the same gamez prototype the round flies) and parents it
-to that pylon marker at identity local transform, which is the launch pose; `Update` shows or hides
-each per its live `Hardpoint.Ammo`. `FlightController` drives `Update` after the rockets, and the
+through `ProjectilePool.BuildFlyoutBody` (the same gamez prototype the round flies, posed at its
+def's `RESET_STATE`) and parents it to that pylon marker at identity local transform, which is the
+launch pose; `Update` shows or hides each per its live `Hardpoint.Ammo`, the root's only owner. `FlightController` drives `Update` after the rockets, and the
 mounted body rides the plane and is freed with it. `Unmount` takes the set back off, detaching each
 body from its pylon immediately rather than queueing it, so the weapon lab's rebuild-on-swap cannot
 leave the old ordnance hanging beside the new. `--fly` only.

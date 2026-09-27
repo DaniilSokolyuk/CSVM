@@ -40,7 +40,7 @@ internal static class MenuPlayerSetupSuites
         ctx.RequireData(ctx.ZrdrPath, $"zrdr archive");
         var exits = new List<MenuExit>();
         var host = MenuSuiteHost.Bare(exits, ctx.DataRoot, out var seat);
-        var menu = LaunchMenu.Build(ctx.ZrdrPath, ctx.DataRoot, host, seat.Input);
+        var menu = MenuSuiteHost.Build(ctx, host, seat, "menu-player-setup-journey");
         ctx.Host.AddChild(menu);
         var launches = new Exits<LaunchExit>(exits);
         try
@@ -106,7 +106,7 @@ internal static class MenuPlayerSetupSuites
             written.Add(player);
             BindingStore.UserBindings().Save(player, profile);
         });
-        var menu = LaunchMenu.Build(ctx.ZrdrPath, ctx.DataRoot, host, seat.Input);
+        var menu = MenuSuiteHost.Build(ctx, host, seat, "menu-controls-seats");
         ctx.Host.AddChild(menu);
         try
         {
@@ -317,7 +317,7 @@ internal static class MenuPlayerSetupSuites
 
         // Rebuilt on one seat: Deactivate is the only thing that drops a seat, so a fresh
         // launchscreen stands in for it here.
-        var lone = MenuSuiteHost.Menu(ctx);
+        var lone = MenuSuiteHost.Menu(ctx, "menu-player-setup-journey");
         ctx.Host.AddChild(lone);
         try
         {
@@ -371,7 +371,7 @@ internal static class MenuPlayerSetupSuites
         var exits = new List<MenuExit>();
         var host = MenuSuiteHost.Bare(exits, ctx.DataRoot, out var seat);
         var setup = host.Features.Get<PlayerSetupFeature>();
-        var menu = LaunchMenu.Build(ctx.ZrdrPath, ctx.DataRoot, host, seat.Input);
+        var menu = MenuSuiteHost.Build(ctx, host, seat, "menu-player-setup-seats");
         ctx.Host.AddChild(menu);
         var launches = new Exits<LaunchExit>(exits);
         try
@@ -471,10 +471,17 @@ internal static class MenuPlayerSetupSuites
         var exits = new List<MenuExit>();
         var seat0 = new ScriptedSeat();
         var registry = new PresentationRegistry();
+        var planes = MenuSuiteHost.ScratchPlanes(ctx, "menu-player-setup-seats");
         registry.Register(PresentationId.BuiltIn, () => new CSVM.UI.Menu.BuiltIn.BuiltInPresentation(
-            ctx.Host, ctx.ZrdrPath, ctx.DataRoot, string.Empty, new MenuInput { Keyboard = true }));
+            ctx.Host, ctx.ZrdrPath, ctx.DataRoot, string.Empty, new MenuInput { Keyboard = true })
+        {
+            Planes = planes,
+        });
         registry.Register(PresentationId.Original, () => new CSVM.UI.Menu.Original.OriginalPresentation(
-            ctx.Host, ctx.DataRoot, layout, string.Empty, new MenuInput { Keyboard = true }));
+            ctx.Host, ctx.DataRoot, layout, string.Empty, new MenuInput { Keyboard = true })
+        {
+            Planes = planes,
+        });
         var host = new MenuHost(registry, new MenuSuiteHost.SilentMenuAudio(), exits.Add);
         MenuSuiteHost.AddFeatures(host, ctx.DataRoot);
         host.AddSeat(seat0);

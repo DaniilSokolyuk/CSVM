@@ -366,7 +366,8 @@ public sealed class WorldEffectsFactory
             int started = rigRuntime.Play(anim, planeModel, applyReset: false).Count;
             // ⚠ started is instances, not emitters, PufferState events dispatch on the
             // runtime's next tick, so sample the puffer count later, not off this delta.
-            Log.Info("anim", $"damage stage anim={anim} started={started} rig_puffers_total={rigRuntime.PuffersBuilt}");
+            // Keep it at Debug: it runs inside the contact tick (docs/verification.md PERF-35).
+            Log.Debug("anim", $"damage stage anim={anim} started={started} rig_puffers_total={rigRuntime.PuffersBuilt}");
             // player_fuelleak's ELSE branch deactivates wing_flare2 for the rest of
             // the leak (the def never re-activates it), hand that lamp to the leak so
             // WingLightBlinker's 1.5 s cycle stops re-asserting the blink over it.

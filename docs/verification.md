@@ -367,7 +367,9 @@ member, and it does not go here.
   report to `Debug`, which keeps the file-sink record and drops the console write. The same
   measurement also inflates the instrument reading it: with `hitchMonitor.floorMs` low enough to
   trip most frames, every `[perf] hitch` line is itself a console write on the frame that follows.
-  PERF-23 is the per-frame form of this.
+  PERF-23 is the per-frame form of this. A player's part destruction on CM11 read as a 29 ms
+  first-time damage-presentation start; a second destruction in the same sortie cost the same,
+  because nine console lines were 22 to 28 ms of it and the stage starts themselves 0.7 to 6.7 ms.
 - **PERF-36**, **An in-engine suite that bars a per-frame cost reads it on the stepping thread's own
   CPU time (`QueryThreadCycleTime`), never on the wall clock: in the sharded engine stage the wall
   clock measures the neighbouring shards, and even alone half of a launch frame's wall time is a
@@ -404,8 +406,8 @@ member, and it does not go here.
   another worktree before believing an error census.** The signature is a repeating per-frame
   `NullReferenceException` and two `viewport is null` lines.
 - **LOG-20**, **Every tree of this project shares one `user://`, so a probe reads and writes the
-  real saved profiles; copy a profile under a new name before naming it in `--campaign=`, and
-  delete the copy.**
+  real saved profiles unless it names its own store; pass `--profiles=` with an absolute path under
+  `.scratch/` alongside every `--campaign=`.**
 - **LOG-22**, **A `*.godot.log` mirror is not that run's log: exclude it when sweeping
   `.scratch/logs/` for what a run did or did not print.** Every quit copies Godot's shared log, so
   one deliberate probe was replayed by every later mirror.
@@ -860,6 +862,16 @@ member, and it does not go here.
   clock of zero to both guests over a whole harness match, so `NetClockSlew.Snaps` and `Target`
   stayed at zero and said nothing about the feed; one `_Process(6.0)` on the host alone moved its
   clock six seconds and the next ordinary tick landed a target of 6.000 s and one snap on both.
+- **INSTR-94**, **A suite that reads a `user://` store passes on what the machine holds, not on what
+  the suite set up: hand the presentation a scratch store, and prove nothing reads the production
+  one by making its accessor throw for one run, with an unconverted suite failing as the
+  control.** `menu-original-tracer`'s aircraft column scrolled only on a profile holding a saved
+  custom plane, because the eleven stock airframes exactly fill the column's eleven-row window.
+- **INSTR-95**, **A draw-order overpaint is measured against the same pose with the suspect surface
+  forced to draw first, never by counting pixels where the composite equals the backdrop exactly: a
+  blended surface whose alpha is below one paints over a card's soft edge without erasing it, and an
+  equality count reads that as zero.** A C1 ground strip sorted after a tree card read 0 erased
+  pixels and 1125 reordered ones in the same pane.
 
 ## SRC, sources and documents
 

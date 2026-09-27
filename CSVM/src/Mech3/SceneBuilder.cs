@@ -61,6 +61,13 @@ public sealed class SceneBuilder
     /// from every pane's, which never stands two and a half chase distances ahead of the nose.</summary>
     public const float PhotoEyeReach = 0.5f;
 
+    /// <summary>The render priority of a blended world surface lying on the ground: a terrain
+    /// transition strip, a road, a shadow decal. The ground layer draws ahead of every other
+    /// transparent draw, so a clutter card standing on it composites over it.
+    /// ⚠ Not the depth sort. A card kind is one chapter-wide MultiMesh sorted on the forest's
+    /// centre, and a strip sorted nearer paints over the card's soft edge.</summary>
+    public const int GroundLayerRenderPriority = -1;
+
     /// <summary>Meta key a collider carries when its surface class is water or buildings.
     /// StringName, not <c>const string</c>, as every meta key here (see <c>AnimRuntime.NameMeta</c>).</summary>
     public static readonly StringName SurfaceMeta = "csky_surface";
@@ -289,6 +296,10 @@ void fragment() {
     // its base's capped rank and z-fights it. A tenth of a level out-ranks the whole rank budget
     // and still sits under NoClutterLayerBias, so a stacked overlay stays below a flagged layer.
     private const float OverlayPassBias = DepthBiasPerLevel * 0.1f;
+    // How far from level a blended polygon may tilt and still be ground: cos 53 degrees. C1's plains
+    // strips sit at 0.84 or flatter. The sloping zeppelin cable reaches 0.58, and a card behind a
+    // strand in the air must not paint over it.
+    private const float GroundLayerMinUp = 0.6f;
     // The ceiling on the whole bias AFTER DepthBiasScale has multiplied it. ⚠ Clamp there and not
     // before the scale: 25x (the cockpit interior's) applied to the +-0.05 priority-level clamp
     // reaches 1.25, and a bias of 1 puts the surface exactly on the eye. A quarter of the view
@@ -372,6 +383,9 @@ void fragment() {
     // tiles have exclusive model indices), so this is defence. `ForceLit` is the deck-underside
     // exception (`WorldBuilder.Add`); `ClutterFade` is ClutterBuilder's 3D-decoration build.
     private readonly Dictionary<(int Model, bool Force, bool ForceLit, bool ClutterFade), ArrayMesh?> _meshCache = new();
+    // The ground-layer twin of a blended _materialCache entry, under the same key. It is a twin, not
+    // a key component, so no opaque or scissored material is ever split in two.
+    private readonly Dictionary<(int Material, int Priority, int Rank, bool NoClutter, bool DoubleSided, float ScrollU, float ScrollV, bool ClampUv, UvClampAxes EdgeClamp, bool Lit, bool Fogged, int Pass, bool ClutterFade), Material> _groundLayerCache = new();
     private readonly Dictionary<int, Vector3> _meshPivotCache = new(); // billboard meshes only: local quad center
     private readonly Dictionary<int, ArrayMesh> _lightMeshCache = new();
     private readonly Dictionary<int, List<(string Name, string? Surface, int SurfaceId, List<ConcavePolygonShape3D> Shapes)>> _colliderCache = new();
@@ -485,6 +499,10 @@ void fragment() {
 
     /// <inheritdoc cref="BlendSurfaceCount"/>
     public int ScissorSurfaceCount { get; private set; }
+
+    /// <summary>The blended world surfaces drawn as the ground layer (<see cref="GroundLayerRenderPriority"/>),
+    /// a subset of <see cref="BlendSurfaceCount"/>, counted the same way.</summary>
+    public int GroundLayerSurfaceCount { get; private set; }
 
     /// <summary>Polygons dropped because their material names a texture the retail data lacks and
     /// the original draws nothing for (<see cref="TextureArchive.IsAbsentAndUndrawn"/>). Expected
@@ -903,6 +921,21 @@ void fragment() {
         return normal;
     }
 
+    // Whether every polygon of a group faces within GroundLayerMinUp of straight up or down, in the
+    // model's own frame. A polygon with no area says nothing either way.
+    private static bool LiesFlat(GameZMesh mesh, List<GameZPolygon> polys)
+    {
+        foreach (var poly in polys)
+        {
+            var n = NewellNormal(mesh, poly);
+            if (n.LengthSquared() < 1e-12f)
+                continue;
+            if (Mathf.Abs(n.Normalized().Y) < GroundLayerMinUp)
+                return false;
+        }
+        return true;
+    }
+
     private static string Sanitize(string name)
     {
         // Godot node names must not contain . : @ / " %
@@ -1221,7 +1254,8 @@ void fragment() {
         // hang off their poles, and a muzzle flash sits at the barrel tip, not the gun's pivot.
         var cylAxis = GetCylindricalAxis(mesh);
         var offset = Vector3.Zero;
-        if ((UsesBillboardTexture(mesh) || glowSprite) && mesh.Vertices.Count > 0)
+        bool billboardMesh = UsesBillboardTexture(mesh);
+        if ((billboardMesh || glowSprite) && mesh.Vertices.Count > 0)
         {
             foreach (var v in mesh.Vertices)
                 offset += v;
@@ -1354,10 +1388,13 @@ void fragment() {
             // carry no clutter fade: no 3D decoration in the install is a glow or a facade.
             var surfaceMaterial = glowSprite ? GetGlowMaterial(materialIndex, fogged, clampUv)
                 : cylAxis != CylAxis.None ? GetCylindricalMaterial(materialIndex, cylAxis, lit, fogged, clampUv)
-                : GetMaterial(materialIndex, priority, rank, noClutter, doubleSided, scroll, clampUv, lit, fogged, pass, edgeClamp, clutterFade);
+                : GetMaterial(materialIndex, priority, rank, noClutter, doubleSided, scroll, clampUv, lit, fogged, pass, edgeClamp, clutterFade,
+                    groundLayer: _fullbright && !clutterFade && !forceLit && !doubleSided && !billboardMesh && LiesFlat(mesh, polys));
             var alpha = _materialAlpha.TryGetValue(surfaceMaterial, out var known) ? known : TransparencyClass.None;
             if (alpha == TransparencyClass.BlendSurface)
                 BlendSurfaceCount++;
+            if (alpha == TransparencyClass.BlendSurface && surfaceMaterial.RenderPriority == GroundLayerRenderPriority)
+                GroundLayerSurfaceCount++;
             else if (alpha == TransparencyClass.ScissorSurface)
                 ScissorSurfaceCount++;
             // ⚠ Drop the surface, never hide the instance. The group is one of several on a shared
@@ -1479,16 +1516,32 @@ void fragment() {
 
     private Material GetMaterial(int materialIndex, int priority, int rank, bool noClutter, bool doubleSided,
         Vector2 scroll = default, bool clampUv = false, bool lit = true, bool fogged = true, int pass = 0,
-        UvClampAxes edgeClamp = UvClampAxes.None, bool clutterFade = false)
+        UvClampAxes edgeClamp = UvClampAxes.None, bool clutterFade = false, bool groundLayer = false)
     {
         rank = Math.Min(rank, SurfaceRankCap);
         var key = (materialIndex, priority, rank, noClutter, doubleSided, scroll.X, scroll.Y, clampUv, edgeClamp, lit, fogged, pass, clutterFade);
-        if (_materialCache.TryGetValue(key, out var cached))
-            return cached;
-        var mat = BuildMaterial(materialIndex, priority, rank, noClutter, doubleSided, scroll, clampUv, lit, fogged, pass, edgeClamp, clutterFade);
-        _materialCache[key] = mat;
-        return mat;
+        if (!_materialCache.TryGetValue(key, out var mat))
+        {
+            mat = BuildMaterial(materialIndex, priority, rank, noClutter, doubleSided, scroll, clampUv, lit, fogged, pass, edgeClamp, clutterFade);
+            _materialCache[key] = mat;
+        }
+        if (!groundLayer || AlphaOf(mat) != TransparencyClass.BlendSurface || OnBlendList(materialIndex))
+            return mat;
+        if (!_groundLayerCache.TryGetValue(key, out var layered))
+        {
+            layered = BuildMaterial(materialIndex, priority, rank, noClutter, doubleSided, scroll, clampUv, lit, fogged, pass, edgeClamp, clutterFade);
+            layered.RenderPriority = GroundLayerRenderPriority;
+            _groundLayerCache[key] = layered;
+        }
+        return layered;
     }
+
+    // A texture the caller's blend list names (the world's cloud deck and sky) rather than the
+    // archive's soft-alpha verdict. The deck lies flat and blends, but it hangs in the air, and a card
+    // below it must not paint over it.
+    private bool OnBlendList(int materialIndex) =>
+        _blendTexture != null && materialIndex >= 0 && materialIndex < _gamez.Materials.Count
+        && _gamez.Materials[materialIndex].TextureName is { } texName && _blendTexture(texName);
 
     // The archive lookup every material goes through, plus the caller's optional substitution
     // (aircraft paint). ⚠ Find() must still run even when a substitute exists: it is what sets

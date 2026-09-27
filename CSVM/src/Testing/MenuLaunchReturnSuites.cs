@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using CSVM.Flight.Hangar;
 using CSVM.Session.Campaign;
 using CSVM.Session.Launch;
 using CSVM.UI.Boards;
@@ -70,11 +71,12 @@ internal static class MenuLaunchReturnSuites
         // user://Profiles. Seeded with the pilot, so the cabin is one Accept away from the roster.
         var store = new CampaignProfileStore(Path.Combine(root, "Profiles"));
         store.Save(CampaignProfileDef.NewProfile(Pilot));
+        var planes = MenuSuiteHost.ScratchPlanes(ctx, "menu-launch-return");
         try
         {
-            BuiltInProcess(ctx, store);
-            OriginalProcess(ctx, layout, store);
-            OriginalPlayerDoor(ctx, layout, store);
+            BuiltInProcess(ctx, store, planes);
+            OriginalProcess(ctx, layout, store, planes);
+            OriginalPlayerDoor(ctx, layout, store, planes);
         }
         finally
         {
@@ -117,7 +119,7 @@ internal static class MenuLaunchReturnSuites
         }
 
         var store = new CampaignProfileStore(Path.Combine(root, "Profiles"));
-        var run = new Run(ctx, string.Empty, layout, store);
+        var run = new Run(ctx, string.Empty, layout, store, MenuSuiteHost.ScratchPlanes(ctx, "menu-backdrop"));
         try
         {
             Switch(ctx, run, env, sky);
@@ -211,9 +213,9 @@ internal static class MenuLaunchReturnSuites
 
     // A process started under Built-in with --menu=chapter: the factory reads the aid while it is
     // set and the first show consumes it, as the launcher does.
-    private static void BuiltInProcess(TestContext ctx, CampaignProfileStore store)
+    private static void BuiltInProcess(TestContext ctx, CampaignProfileStore store, CustomPlaneStore planes)
     {
-        var run = new Run(ctx, "chapter", null, store);
+        var run = new Run(ctx, "chapter", null, store, planes);
         var host = run.Host;
         try
         {
@@ -419,9 +421,9 @@ internal static class MenuLaunchReturnSuites
     }
 
     // A process started under Original with --menu=free-flight, Built-in registered beside it.
-    private static void OriginalProcess(TestContext ctx, MenuLayout layout, CampaignProfileStore store)
+    private static void OriginalProcess(TestContext ctx, MenuLayout layout, CampaignProfileStore store, CustomPlaneStore planes)
     {
-        var run = new Run(ctx, "free-flight", layout, store);
+        var run = new Run(ctx, "free-flight", layout, store, planes);
         var host = run.Host;
         try
         {
@@ -587,9 +589,9 @@ internal static class MenuLaunchReturnSuites
 
     // A process started under Original with --menu=campaign, the player's door: the profile screen
     // over the presentation's own store, once, and the top level on the return.
-    private static void OriginalPlayerDoor(TestContext ctx, MenuLayout layout, CampaignProfileStore store)
+    private static void OriginalPlayerDoor(TestContext ctx, MenuLayout layout, CampaignProfileStore store, CustomPlaneStore planes)
     {
-        var run = new Run(ctx, CampaignAidProfiles.PlayerDoor, layout, store);
+        var run = new Run(ctx, CampaignAidProfiles.PlayerDoor, layout, store, planes);
         var host = run.Host;
         try
         {
@@ -735,18 +737,22 @@ internal static class MenuLaunchReturnSuites
         private string? _aid;
         private int _taken;
 
-        public Run(TestContext ctx, string aid, MenuLayout? layout, CampaignProfileStore store)
+        public Run(TestContext ctx, string aid, MenuLayout? layout, CampaignProfileStore store, CustomPlaneStore planes)
         {
             _aid = aid;
             var registry = new PresentationRegistry();
             registry.Register(PresentationId.BuiltIn, () => new BuiltInPresentation(
-                ctx.Host, ctx.ZrdrPath, ctx.DataRoot, _aid ?? string.Empty, new MenuInput { Keyboard = true }));
+                ctx.Host, ctx.ZrdrPath, ctx.DataRoot, _aid ?? string.Empty, new MenuInput { Keyboard = true })
+            {
+                Planes = planes,
+            });
             if (layout != null)
             {
                 registry.Register(PresentationId.Original, () => new OriginalPresentation(
                     ctx.Host, ctx.DataRoot, layout, _aid ?? string.Empty, new MenuInput { Keyboard = true })
                 {
                     CampaignProfiles = store,
+                    Planes = planes,
                 });
             }
 

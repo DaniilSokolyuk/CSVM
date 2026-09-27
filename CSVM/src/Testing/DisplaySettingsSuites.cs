@@ -582,7 +582,7 @@ internal static class DisplaySettingsSuites
     private static void BuiltInCustomSizeRow(TestContext ctx)
     {
         var host = MenuSuiteHost.Bare(new List<MenuExit>(), ctx.DataRoot, out var seat);
-        var menu = CSVM.UI.Screens.LaunchMenu.Build(ctx.ZrdrPath, ctx.DataRoot, host, seat.Input);
+        var menu = MenuSuiteHost.Build(ctx, host, seat, "display-resolution");
         ctx.Host.AddChild(menu);
         try
         {

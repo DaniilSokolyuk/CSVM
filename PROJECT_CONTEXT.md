@@ -147,6 +147,16 @@ One line each, **the extraction pipeline, the launch scripts and the mech3ax for
 - **Before landing any change under `CSVM/`, run the complete `.\RunTests.ps1`.** Targeted and quick
   runs are partial by design and never satisfy that landing gate. `CSVM.Tests/`-only,
   documentation, and tooling changes do not require the full run.
+- **A landing over a red battery carries a waiver in its own commit body**, one line per failing
+  suite: `Waiver: <suite> (owned by <BL-NNN or #N>): <why the landing does not wait for it>`. The
+  owner is the open item that tracks the failure, filed before the landing if nothing tracks it
+  yet. The waiver is a record, not a permission: a known red suite still makes every later battery
+  ambiguous, so its owner keeps its priority and a waiver is never the way past fixing it. The
+  content gate (`CheckWaiver.ps1`, reached from `CheckCommitContent.ps1`) checks only the form of a
+  `Waiver:` line in a message given by `-m` or `-F`, and that a `BL-` owner is still open in
+  `backlog.md`. It cannot know whether the battery was red, so a red landing with no waiver line
+  passes it; whoever lands the change (the orchestrator, for a run) checks the reported battery
+  result and refuses a red one without a waiver.
 - **Every stage prints its wall time against a budget from `analysis/verification-budgets.json`.**
   An `over budget` marker is awareness only and never changes the exit code, because a busy
   workstation must not fail correct code; `docs/tooling.md` holds the rule that set the numbers.

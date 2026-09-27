@@ -308,4 +308,96 @@ public class CampaignProfileStoreTests
         Assert.Equal("Nathan Zachary", store.LastPlayed);
         Assert.Null(store.LastPlayedPilotName);
     }
+
+    /// <summary>A copied profile folder whose file still names the original, the copy a probe
+    /// makes. It lists and loads under its folder's name and says so. A save after a change lands
+    /// in its own folder, and the original's file stays byte-identical.</summary>
+    [Fact]
+    public void CopiedFolder_KeepingTheOriginalsName_SavesIntoItsOwnFolder()
+    {
+        var dir = TestData.TempDir();
+        var store = new CampaignProfileStore(dir);
+        var original = CampaignProfileDef.NewProfile("X1");
+        original.Funds = 700;
+        string originalPath = store.Save(original);
+        byte[] originalBytes = File.ReadAllBytes(originalPath);
+        Directory.CreateDirectory(Path.Combine(dir, "probe copy"));
+        File.Copy(originalPath, Path.Combine(dir, "probe copy", "profile.json"));
+
+        var lines = new System.Collections.Generic.List<string>();
+        CampaignProfileDef? copy;
+        using (CSVM.Utils.Log.PushConsoleSink(lines.Add))
+        {
+            Assert.Equal(new[] { "probe copy", "X1" }, store.List());
+            copy = store.Load("probe copy");
+        }
+
+        Assert.NotNull(copy);
+        Assert.Equal("probe copy", copy!.Name);
+        Assert.Equal("probe copy", copy.Folder);
+        Assert.Equal(700, copy.Funds);
+        Assert.Contains(lines, l => l.Contains("names itself 'X1'") && l.Contains("'probe copy'"));
+
+        copy.Funds = 1;
+        copy.MissionResults.Add(new MissionResult { Seq = 10 });
+        string savedTo = store.Save(copy);
+
+        Assert.Equal(Path.Combine(dir, "probe copy", "profile.json"), savedTo);
+        Assert.Equal(originalBytes, File.ReadAllBytes(originalPath));
+        Assert.Equal(700, store.Load("X1")!.Funds);
+        var reread = store.Load("probe copy")!;
+        Assert.Equal(1, reread.Funds);
+        Assert.Equal("probe copy", CampaignProfileStore.Deserialize(File.ReadAllText(savedTo))!.Name);
+        Assert.Equal(new[] { "X1", "probe copy" }, Directory.GetDirectories(dir).Select(Path.GetFileName).OrderBy(n => n, StringComparer.Ordinal).ToArray());
+    }
+
+    /// <summary>A loaded profile saves back to the folder it came from, even after a rename. Only a
+    /// profile no store has loaded is placed by its name.</summary>
+    [Fact]
+    public void Save_OfALoadedProfile_WritesTheFolderItCameFrom()
+    {
+        var dir = TestData.TempDir();
+        var store = new CampaignProfileStore(dir);
+        store.Save(CampaignProfileDef.NewProfile("Nathan"));
+        var loaded = store.Load("Nathan")!;
+        loaded.Name = "Zachary";
+
+        Assert.Equal(Path.Combine(dir, "Nathan", "profile.json"), store.Save(loaded));
+        Assert.False(Directory.Exists(store.DirFor("Zachary")));
+        Assert.Equal(store.DirFor("Nathan"), store.DirOf(loaded));
+        Assert.Equal(store.DirFor("Fresh"), store.DirOf(CampaignProfileDef.NewProfile("Fresh")));
+    }
+
+    /// <summary>A profile whose name matches its folder, the only shape the menu writes, loads
+    /// unchanged and silently. A name the directory rule sanitises still counts as matching.</summary>
+    [Fact]
+    public void MatchingNames_LoadUnchangedAndSilently()
+    {
+        var store = new CampaignProfileStore(TestData.TempDir());
+        store.Save(CampaignProfileDef.NewProfile("Nathan Zachary"));
+        store.Save(CampaignProfileDef.NewProfile("Red/Blue: One"));
+
+        var lines = new System.Collections.Generic.List<string>();
+        using (CSVM.Utils.Log.PushConsoleSink(lines.Add))
+        {
+            Assert.Equal("Nathan Zachary", store.Load("Nathan Zachary")!.Name);
+            Assert.Equal("Red/Blue: One", store.Load("Red/Blue: One")!.Name);
+            Assert.Equal(new[] { "Nathan Zachary", "Red/Blue: One" }, store.List());
+        }
+
+        Assert.Empty(lines);
+    }
+
+    /// <summary>The session's store is the named directory when a launch gives one. It is resolved
+    /// to an absolute path, so a relative <c>--profiles=</c> is accepted.</summary>
+    [Fact]
+    public void ForSession_UsesTheNamedDirectory()
+    {
+        var dir = TestData.TempDir();
+        new CampaignProfileStore(dir).Save(CampaignProfileDef.NewProfile("Scratch"));
+
+        Assert.Equal("Scratch", CampaignProfileStore.ForSession(dir).Load("Scratch")!.Name);
+        string relative = Path.GetRelativePath(Environment.CurrentDirectory, dir);
+        Assert.Equal("Scratch", CampaignProfileStore.ForSession(relative).Load("Scratch")!.Name);
+    }
 }

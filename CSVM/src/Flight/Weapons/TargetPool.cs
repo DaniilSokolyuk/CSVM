@@ -129,7 +129,7 @@ public sealed class TargetPool
         TurretController t => t.Label,
         ProjectilePool.Flyout f => f.Name,
         DestructibleRegistry.Instance inst =>
-            GodotObject.IsInstanceValid(inst.Anchor) ? inst.Anchor.Name : inst.Def.Name,
+            GodotObject.IsInstanceValid(inst.Anchor) ? AnchorNameOf(inst) : inst.Def.Name,
         _ => "",
     };
 
@@ -201,6 +201,24 @@ public sealed class TargetPool
         inst.CachedOwnerTree = names;
         inst.CachedOwnerTreeParent = parentId;
         return names;
+    }
+
+    // ⚠ Held on the instance rather than read per ask, for OwnerTreeOf's reason. The AI ranking asks
+    // for every structure candidate's name on every physics tick. Each Godot read is a fresh string
+    // plus a finalizable StringName (docs/verification.md PERF-20).
+    private static string AnchorNameOf(DestructibleRegistry.Instance inst)
+    {
+        var parent = inst.Anchor.GetParent();
+        ulong parentId = parent != null ? parent.GetInstanceId() : 0UL;
+        if (inst.CachedAnchorName is { } cached && inst.CachedAnchorNameParent == parentId)
+        {
+            return cached;
+        }
+
+        string name = inst.Anchor.Name;
+        inst.CachedAnchorName = name;
+        inst.CachedAnchorNameParent = parentId;
+        return name;
     }
 
     /// <summary>Wraps one classed candidate as a <see cref="TargetRef"/>. The KIND picks the shape

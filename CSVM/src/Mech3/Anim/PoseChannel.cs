@@ -40,15 +40,7 @@ internal sealed class PoseChannel
     // lesson as LightState's per-light host cache, which cost ~7 ms/frame before it existed.
     private readonly Dictionary<Node3D, float> _opacity = new();
 
-    // The fade twins a genuine partial opacity installs per instance (see EnsureOpacityPath):
-    // source material -> its translucent twin (null = cannot be made translucent), the twin
-    // set for recognising an override this runtime installed, and the shader-level cache so
-    // materials sharing one generated shader share one twin shader.
-    private readonly Dictionary<ShaderMaterial, ShaderMaterial?> _fadeTwinCache = new();
-
-    private readonly HashSet<Material> _fadeTwins = new();
-
-    private readonly Dictionary<Shader, Shader?> _fadeShaderCache = new();
+    private readonly OpacityWriter _opacityWriter = new();
 
     // Nodes that have just landed by contact, whose NEXT ballistic launch must start from where
     // they came to rest rather than the authored rest pose (MotionRuntime.Create's re-home rule).
@@ -369,12 +361,10 @@ internal sealed class PoseChannel
     /// <c>ground-contact</c> suite, which drives a motion set directly.</summary>
     internal void MarkLandingResume(Node3D target) => _resumeFromLanding.Add(target);
 
-    // OBJECT_OPACITY_STATE applies to the whole subtree, as a per-instance shader parameter
-    // rather than a material edit: SceneBuilder's materials are cached and shared, so writing
-    // alpha into one would fade every other node that happens to use it. A partial opacity
-    // landing on an opaque-variant mesh (no alpha path in the shader) swaps that instance's
-    // surfaces to a fade-capable twin material for the duration, see EnsureOpacityPath;
-    // anything still without a path after that is counted, not swallowed.
+    // OBJECT_OPACITY_STATE applies to the whole subtree per instance, never as a material edit.
+    // SceneBuilder's materials are cached and shared, so alpha written into one fades every user.
+    // A partial opacity on a mesh with no alpha path gets a fade-capable twin (OpacityWriter).
+    // Anything still without a path after that is counted, not swallowed.
     internal void SetSubtreeOpacity(Node3D node, float alpha)
     {
         if (_opacity.TryGetValue(node, out float prev) && Mathf.IsEqualApprox(prev, alpha))
@@ -393,7 +383,7 @@ internal sealed class PoseChannel
             Utils.Log.Debug("anim", $"anim: fade {(collidable ? "restored" : "dropped")} colliders under '{node.Name}'");
         }
 
-        int applied = ApplyOpacity(node, alpha);
+        int applied = _opacityWriter.Apply(node, alpha);
         if (applied == 0 && !Mathf.IsEqualApprox(alpha, 1f))
             _count("ObjectOpacityState(no alpha path)");
     }
@@ -466,75 +456,5 @@ internal sealed class PoseChannel
         var rest = _rt.RestOf(target);
         target.Basis = rest.Basis.Orthonormalized().Scaled(AnimRuntime.NonSingularScale(scale));
         return 1;
-    }
-
-    // Whether this mesh's shader reads the opacity parameter, and if not, whether a fade twin can
-    // give it one. A partial opacity installs a per-surface override on THIS instance only.
-    // ⚠ Never edit the shared material or mesh; both are cached across nodes. Opacity 1 removes
-    // the override again. ⚠ Test for the USE (SceneBuilder.OpacityTerm), never the uniform name or
-    // the include line: the uniform is declared in the shared preamble, so a name test is true even
-    // with no alpha path, and the declaration is not textually in sh.Code.
-    private bool EnsureOpacityPath(GeometryInstance3D g, float alpha)
-    {
-        if (g is not MeshInstance3D mi || mi.Mesh is not { } mesh)
-            return false;
-        bool fading = !Mathf.IsEqualApprox(alpha, 1f);
-        bool any = false;
-        for (int i = 0; i < mesh.GetSurfaceCount(); i++)
-        {
-            if (mi.GetSurfaceOverrideMaterial(i) is { } installed && _fadeTwins.Contains(installed))
-            {
-                if (fading)
-                    any = true;
-                else
-                    mi.SetSurfaceOverrideMaterial(i, null);
-                continue;
-            }
-            if (mesh.SurfaceGetMaterial(i) is not ShaderMaterial { Shader: { } sh } sm)
-                continue;
-            if (sh.Code.Contains(SceneBuilder.OpacityTerm, StringComparison.Ordinal))
-            {
-                any = true;
-                continue;
-            }
-            if (fading && FadeTwinOf(sm, sh) is { } twin)
-            {
-                mi.SetSurfaceOverrideMaterial(i, twin);
-                any = true;
-            }
-        }
-        return any;
-    }
-
-    private ShaderMaterial? FadeTwinOf(ShaderMaterial source, Shader shader)
-    {
-        if (_fadeTwinCache.TryGetValue(source, out var twin))
-            return twin;
-        if (!_fadeShaderCache.TryGetValue(shader, out var fadeShader))
-            _fadeShaderCache[shader] = fadeShader = SceneBuilder.FadeShaderFor(shader);
-        if (fadeShader != null)
-        {
-            twin = (ShaderMaterial)source.Duplicate();
-            twin.Shader = fadeShader;
-            _fadeTwins.Add(twin);
-        }
-        _fadeTwinCache[source] = twin;
-        return twin;
-    }
-
-    private int ApplyOpacity(Node node, float alpha)
-    {
-        int n = 0;
-        if (node is GeometryInstance3D g)
-        {
-            g.SetInstanceShaderParameter(SceneBuilder.OpacityParam, alpha);
-            if (EnsureOpacityPath(g, alpha))
-                n++;
-        }
-        // Walked by index: GetChildren() allocates a finalizable engine array per node, and this
-        // runs over the whole subtree every frame of a fade (PERF-20).
-        for (int i = 0, count = node.GetChildCount(); i < count; i++)
-            n += ApplyOpacity(node.GetChild(i), alpha);
-        return n;
     }
 }

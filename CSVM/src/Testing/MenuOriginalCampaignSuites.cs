@@ -87,16 +87,21 @@ internal static class MenuOriginalCampaignSuites
         }
 
         var store = new CampaignProfileStore(Path.Combine(root, "Profiles"));
+        var planes = MenuSuiteHost.ScratchPlanes(ctx, "menu-original-campaign");
         var exits = new List<MenuExit>();
         var audio = new RecordingAudio();
         var seat = new ScriptedSeat();
         var registry = new PresentationRegistry();
         registry.Register(PresentationId.BuiltIn, () => new BuiltInPresentation(
-            ctx.Host, ctx.ZrdrPath, ctx.DataRoot, string.Empty, new MenuInput { Keyboard = true }));
+            ctx.Host, ctx.ZrdrPath, ctx.DataRoot, string.Empty, new MenuInput { Keyboard = true })
+        {
+            Planes = planes,
+        });
         registry.Register(PresentationId.Original, () => new OriginalPresentation(
             ctx.Host, ctx.DataRoot, layout, string.Empty, new MenuInput { Keyboard = true })
         {
             CampaignProfiles = store,
+            Planes = planes,
         });
         var host = new MenuHost(registry, audio, exits.Add);
         MenuSuiteHost.AddFeatures(host, ctx.DataRoot);

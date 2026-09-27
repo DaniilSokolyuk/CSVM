@@ -540,7 +540,7 @@ public sealed class CampaignFeature : IMenuFeature
             return null;
         }
 
-        string path = Path.Combine(store.DirFor(profile.Name), fileName);
+        string path = Path.Combine(store.DirOf(profile), fileName);
         return File.Exists(path) ? path : null;
     }
 

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using CSVM.Bindings;
+using CSVM.Flight.Hangar;
 using CSVM.Flight.Weapons;
 using CSVM.Mech3;
 using CSVM.Session.Campaign;
@@ -75,11 +77,56 @@ internal static class MenuSuiteHost
         };
 
     /// <summary>A launchscreen over a bare host, for a suite that drives the screens and reads
-    /// nothing back from the host.</summary>
-    internal static LaunchMenu Menu(TestContext ctx)
+    /// nothing back from the host. Its saved planes are <paramref name="suite"/>'s scratch store,
+    /// as <see cref="Build"/> sets them.</summary>
+    internal static LaunchMenu Menu(TestContext ctx, string suite)
     {
         var host = Bare(new List<MenuExit>(), ctx.DataRoot, out var seat);
-        return LaunchMenu.Build(ctx.ZrdrPath, ctx.DataRoot, host, seat.Input);
+        return Build(ctx, host, seat, suite);
+    }
+
+    /// <summary>A launchscreen over <paramref name="host"/> for <paramref name="seat"/>, reading and
+    /// writing its saved planes in a fresh <see cref="ScratchPlanes"/> store for
+    /// <paramref name="suite"/> and never in the player's <c>user://Planes</c>. The store makes its
+    /// folder only on a save, so only a suite that saves a plane needs
+    /// <see cref="DropScratchPlanes"/> after.</summary>
+    internal static LaunchMenu Build(TestContext ctx, MenuHost host, BuiltInSeat seat, string suite)
+    {
+        var menu = LaunchMenu.Build(ctx.ZrdrPath, ctx.DataRoot, host, seat.Input);
+        // Before the first ShowMenu: the roster refresh there is the store's first read.
+        menu.PlaneStore = ScratchPlanes(ctx, suite);
+        return menu;
+    }
+
+    /// <summary>A saved-plane store over a fresh <c>Planes</c> folder in <paramref name="suite"/>'s
+    /// scratch directory, holding <paramref name="customs"/> builds written through the store's own
+    /// writer. A launchscreen or presentation handed it reads this roster, not the player's
+    /// <c>user://Planes</c>, whose contents would otherwise decide what the suite sees.
+    /// <see cref="DropScratchPlanes"/> removes it.</summary>
+    internal static CustomPlaneStore ScratchPlanes(TestContext ctx, string suite, int customs = 0)
+    {
+        DropScratchPlanes(ctx, suite);
+        var store = new CustomPlaneStore(Path.Combine(ctx.ScratchDir, suite, "Planes"));
+        for (int i = 0; i < customs; i++)
+        {
+            store.Save(new CustomPlaneDef
+            {
+                Name = $"Scratch Build {i + 1:D2}",
+                Airframe = i % (CustomPlaneDef.MaxAirframe + 1),
+            });
+        }
+
+        return store;
+    }
+
+    /// <summary>Deletes the folder <see cref="ScratchPlanes"/> made for <paramref name="suite"/>.</summary>
+    internal static void DropScratchPlanes(TestContext ctx, string suite)
+    {
+        string dir = Path.Combine(ctx.ScratchDir, suite, "Planes");
+        if (Directory.Exists(dir))
+        {
+            Directory.Delete(dir, recursive: true);
+        }
     }
 
     /// <summary>An audio service that plays nothing and records nothing: a scripted run has no

@@ -726,7 +726,7 @@ public partial class GameSession : Node3D
 
         // Resolved once here rather than per death: a kill must not reach the disk.
         _pilotName = _campaign?.PilotName
-            ?? (_spec.Det ? null : CampaignProfileStore.UserProfiles().LastPlayedPilotName);
+            ?? (_spec.Det ? null : CampaignProfileStore.ForSession(_spec.ProfilesDir).LastPlayedPilotName);
 
         // The cutscene host, before the world build hands it to the animation runtime. Its world
         // hold stops the objectives update as well as the per-step world update (callback 20).

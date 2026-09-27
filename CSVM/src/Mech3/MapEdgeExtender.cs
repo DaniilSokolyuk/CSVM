@@ -63,7 +63,8 @@ public sealed partial class MapEdgeExtender : Node3D
     // Per source cell: its ground-tile nodes (with the accumulated ancestor transform,
     // identity for every observed tile, kept for correctness) and its clutter sprites.
     private readonly Dictionary<(int, int), List<(GameZNode Node, Transform3D ParentXf)>> _tiles = new();
-    private readonly Dictionary<(int, int), List<(int Kind, Transform3D Xf, Color Fade)>> _sprites = new();
+    // Source is the placement's index in its export, which is what its activation is read by.
+    private readonly Dictionary<(int, int), List<(int Kind, Transform3D Xf, Color Fade, int Source)>> _sprites = new();
     // Gamez node index -> its map cell, for every in-map ground tile. Lets the tile-grid overlay
     // colour the real world's own tiles through the same grid maths the extension uses, keyed on
     // the same AnimRuntime.IndexMeta stamp the built scene already carries.
@@ -82,9 +83,17 @@ public sealed partial class MapEdgeExtender : Node3D
     private readonly IReadOnlyList<ClutterBuilder.KindExport>? _clutter;
 
     private readonly Dictionary<(int, int), Node3D> _live = new();
+
+    // The map's stamp activation, which each copy follows, and the live copies per extension cell.
+    private readonly ClutterActivation? _activation;
+    private readonly Dictionary<(int, int), List<ClutterCopy>> _copies = new();
+
     // The focus cells the current window was built around, one per player (splitscreen serves
     // every pane from one window). Empty until the first Update.
     private readonly List<(int, int)> _centerCells = new();
+
+    // The activation version the live copies last followed.
+    private int _activationVersion;
 
     // --dump-tilegrid's raw material: one row per node ScanTiles CONSIDERED, every Object3d with
     // a mesh it reached, accepted or rejected, with the reason. Null unless the census was asked
@@ -101,11 +110,13 @@ public sealed partial class MapEdgeExtender : Node3D
     private bool _foldChanged = true;
 
     private MapEdgeExtender(GameZ gamez, SceneBuilder scene, GameZNode world,
-        IReadOnlyList<ClutterBuilder.KindExport>? clutter)
+        IReadOnlyList<ClutterBuilder.KindExport>? clutter, ClutterActivation? activation)
     {
         _gamez = gamez;
         _scene = scene;
         _clutter = clutter;
+        _activation = activation;
+        _activationVersion = activation?.Version ?? 0;
         _x0 = world.AreaLeft;
         _z0 = world.AreaTop;
         _cols = world.PartitionCols;
@@ -289,6 +300,7 @@ public sealed partial class MapEdgeExtender : Node3D
         foreach (var (_, node) in _live)
             node.QueueFree();
         _live.Clear();
+        _copies.Clear();
         // Forces the next Update past its no-op check, which rebuilds the window around the
         // unchanged focus.
         _centerCells.Clear();
@@ -317,6 +329,8 @@ public sealed partial class MapEdgeExtender : Node3D
     {
         if (focuses.Count == 0)
             return;
+        // Before the no-op check: a stamp switched while the window stands still must still follow.
+        SyncActivation();
         // No-op unless some focus changed cell (the common case, every frame).
         bool moved = focuses.Count != _centerCells.Count;
         for (int i = 0; !moved && i < focuses.Count; i++)
@@ -348,7 +362,10 @@ public sealed partial class MapEdgeExtender : Node3D
             }
         if (drop != null)
             foreach (var cell in drop)
+            {
                 _live.Remove(cell);
+                _copies.Remove(cell);
+            }
 
         // A fold change (F15/F16) drops the whole window and rebuilds it here, which is ~10x a
         // normal crossing's diff. Time it and say so rather than leaving the stutter unexplained:
@@ -385,7 +402,7 @@ public sealed partial class MapEdgeExtender : Node3D
         if (!world.HasArea || world.PartitionCols <= 0 || world.PartitionRows <= 0
             || world.AreaRight <= world.AreaLeft || world.AreaBottom <= world.AreaTop)
             return null;
-        var ext = new MapEdgeExtender(gamez, scene, world, clutter?.ExportedKinds);
+        var ext = new MapEdgeExtender(gamez, scene, world, clutter?.ExportedKinds, clutter?.Activation);
         ext._blockCells = Math.Clamp(blockCells, 1, ext.MaxBlockCells);
         ext._repeat = repeat;
         if (census)
@@ -409,6 +426,23 @@ public sealed partial class MapEdgeExtender : Node3D
         _tileCell.TryGetValue(gamezNodeIndex, out var cell)
             ? new Color(TintFor(cell.Item1, cell.Item2), TintStrength)
             : null;
+
+    /// <summary>The clutter copies the live window holds, and how many of them draw nothing, read
+    /// off the MultiMeshes themselves. The census a stamp's activation is checked against.</summary>
+    internal (int Copies, int Hidden) ClutterCopyCensus()
+    {
+        int copies = 0, hidden = 0;
+        foreach (var list in _copies.Values)
+        {
+            foreach (var copy in list)
+            {
+                copies++;
+                if (copy.Mm.GetInstanceTransform(copy.Index).Basis.Determinant() == 0f)
+                    hidden++;
+            }
+        }
+        return (copies, hidden);
+    }
 
     /// <summary>The <c>--dump-tilegrid</c> report: every tile candidate with its
     /// <see cref="TileVerdict"/>, plus a per-cell roll-up, as indented JSON. Answers three
@@ -474,7 +508,7 @@ public sealed partial class MapEdgeExtender : Node3D
         }
 
         if (_clutter != null && _sprites.TryGetValue((sx, sz), out var sprites))
-            AddCellClutter(cell, mirror, sprites);
+            _copies[(ix, iz)] = AddCellClutter(cell, mirror, sprites);
         if (_tinted)
             ApplyTint(cell, ix, iz);
         return cell;
@@ -521,22 +555,25 @@ public sealed partial class MapEdgeExtender : Node3D
         return dark ? baseColor.Darkened(0.35f) : baseColor;
     }
 
-    // A 3D decoration carries the mirror's reflection in its own basis (a sprite mirrors as
-    // position alone, re-faced by the billboard shader), so the export carries whole transforms.
+    // A 3D decoration carries the mirror's reflection in its own basis, so the export carries whole
+    // transforms. A sprite mirrors as position alone, re-faced by the billboard shader.
     // ⚠ Extension 3D decorations ARE collidable, one PhysicsServer3D.BodyAddShape per building
     // against ClutterBuilder's one shared shape per mesh. Do not merge into one region trimesh;
     // that would have to rebuild on the frame the camera crosses a cell boundary.
-    private void AddCellClutter(Node3D cell, Transform3D mirror, List<(int Kind, Transform3D Xf, Color Fade)> sprites)
+    // Returns every copy it made, so a later activation change can reach it (SyncActivation).
+    private List<ClutterCopy> AddCellClutter(Node3D cell, Transform3D mirror,
+        List<(int Kind, Transform3D Xf, Color Fade, int Source)> sprites)
     {
+        var copies = new List<ClutterCopy>();
         // Group the cell's decorations per kind (kept in kind order for determinism). Each copy
         // keeps its source stamp's fade thresholds, so the continuation fades where the map does.
-        var byKind = new Dictionary<int, List<(Transform3D Xf, Color Fade)>>();
-        foreach (var (kind, xf, fade) in sprites)
+        var byKind = new Dictionary<int, List<(Transform3D Xf, Color Fade, int Source)>>();
+        foreach (var (kind, xf, fade, source) in sprites)
         {
             if (!byKind.TryGetValue(kind, out var list))
-                byKind[kind] = list = new List<(Transform3D, Color)>();
+                byKind[kind] = list = new List<(Transform3D, Color, int)>();
             list.Add((_clutter![kind].Solid ? mirror * xf
-                : new Transform3D(Basis.Identity, mirror * xf.Origin), fade));
+                : new Transform3D(Basis.Identity, mirror * xf.Origin), fade, source));
         }
 
         // One body for the whole cell's buildings, named so a crash log locates the cell.
@@ -546,6 +583,8 @@ public sealed partial class MapEdgeExtender : Node3D
         foreach (var (kindIndex, placements) in byKind)
         {
             var kind = _clutter![kindIndex];
+            var bodyRid = default(Rid);
+            int firstSlot = -1;
             if (kind.Solid && kind.CollisionShape is { } shape)
             {
                 if (solidBody == null)
@@ -553,9 +592,10 @@ public sealed partial class MapEdgeExtender : Node3D
                     solidBody = new StaticBody3D { Name = "clutter_bld_ext" };
                     cell.AddChild(solidBody);
                 }
-                var bodyRid = solidBody.GetRid();
+                bodyRid = solidBody.GetRid();
+                firstSlot = PhysicsServer3D.BodyGetShapeCount(bodyRid);
                 var shapeRid = shape.GetRid();
-                foreach (var (xf, _) in placements)
+                foreach (var (xf, _, _) in placements)
                     PhysicsServer3D.BodyAddShape(bodyRid, shapeRid, xf);
             }
             var mm = new MultiMesh
@@ -569,6 +609,11 @@ public sealed partial class MapEdgeExtender : Node3D
             {
                 mm.SetInstanceTransform(i, placements[i].Xf);
                 mm.SetInstanceCustomData(i, placements[i].Fade);
+                var copy = new ClutterCopy(mm, i, kindIndex, placements[i].Source, placements[i].Xf,
+                    bodyRid, firstSlot < 0 ? -1 : firstSlot + i);
+                copies.Add(copy);
+                if (_activation != null && _activation.IsHidden(kindIndex, copy.Source))
+                    Show(copy, false);
             }
             var mmi = new MultiMeshInstance3D
             {
@@ -585,6 +630,28 @@ public sealed partial class MapEdgeExtender : Node3D
                 mmi.SetInstanceShaderParameter("node_bias", kind.NodeBias);
             cell.AddChild(mmi);
         }
+        return copies;
+    }
+
+    // Every live copy re-reads its source stamp, once per change the activation reports. Copies
+    // are never cratered, so a copy's state is exactly its source's.
+    private void SyncActivation()
+    {
+        if (_activation == null || _activation.Version == _activationVersion)
+            return;
+        _activationVersion = _activation.Version;
+        foreach (var copies in _copies.Values)
+            foreach (var copy in copies)
+                Show(copy, !_activation.IsHidden(copy.Kind, copy.Source));
+    }
+
+    // A hidden copy collapses as a cratered stamp does, and its shape slot is switched off.
+    private void Show(ClutterCopy copy, bool shown)
+    {
+        copy.Mm.SetInstanceTransform(copy.Index, shown
+            ? copy.Xf : new Transform3D(copy.Xf.Basis.Scaled(Vector3.Zero), copy.Xf.Origin));
+        if (copy.Shape >= 0)
+            PhysicsServer3D.BodySetShapeDisabled(copy.Body, copy.Shape, !shown);
     }
 
     // ---------------------------------------------------------------- source scan
@@ -763,8 +830,8 @@ public sealed partial class MapEdgeExtender : Node3D
                 if (cx < 0 || cx >= _cols || cz < 0 || cz >= _rows)
                     continue;
                 if (!_sprites.TryGetValue((cx, cz), out var list))
-                    _sprites[(cx, cz)] = list = new List<(int, Transform3D, Color)>();
-                list.Add((k, xf, fades[i]));
+                    _sprites[(cx, cz)] = list = new List<(int, Transform3D, Color, int)>();
+                list.Add((k, xf, fades[i], i));
             }
         }
     }
@@ -893,6 +960,11 @@ public sealed partial class MapEdgeExtender : Node3D
         };
         return JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
     }
+
+    // One extension copy of a map stamp: where it sits in its cell's MultiMesh and body, and which
+    // export placement it copies.
+    private readonly record struct ClutterCopy(MultiMesh Mm, int Index, int Kind, int Source,
+        Transform3D Xf, Rid Body, int Shape);
 
     // A census row. A class rather than a tuple because it is serialized straight to JSON, and the
     // property names ARE the report's column names.

@@ -863,11 +863,11 @@ from flight lands on the screens as they were left; `Tick` runs it only while `S
 The Built-in presentation (`CSVM.UI.Menu.BuiltIn`): `LaunchMenu` registered under
 `PresentationId.BuiltIn`. `Activate` builds the launchscreen under the parent node on the first
 call and maps the return destination onto it, the top level being the Mode screen, `InstantAction`
-the wizard's first screen over the setup that flew, `CabinReturn`
-the profile's cabin and `DebriefReturn` the scrapbook on the flown mission; the `--menu=` aid is
-consumed on that first call, so a return from flight lands on Mode with the cursors kept. `Tick`
-runs the menu's frame, `Hide` takes it off screen and `Deactivate` frees the node. `Menu` exposes
-the launchscreen for what is Built-in's alone. Read `src/UI/Screens/LaunchMenu.cs` next.
+the wizard's first screen over the setup that flew, `CabinReturn` the profile's cabin and
+`DebriefReturn` the scrapbook on the flown mission; the `--menu=` aid is consumed on that first
+call, so a return from flight lands on Mode with the cursors kept. `Tick` runs the menu's frame,
+`Hide` takes it off screen and `Deactivate` frees the node. `Menu` exposes the launchscreen;
+`Planes` and `CampaignProfiles` hand it a scratch plane store and profile store. Read `LaunchMenu.cs` next.
 
 ## src/UI/Menu/BuiltIn/BuiltInSeat.cs
 A pad-side `IMenuInputSource`: wraps one `MenuInput`, polls it and translates the result into a
@@ -1247,7 +1247,7 @@ Leave Game closes the door and lands on the Connection page. The shell follows a
 ## src/UI/Menu/Original/OriginalPresentation.cs
 The Original presentation node, registered under `PresentationId.Original`: a `CanvasLayer` on the board layer holding one
 `ComposedBoardView`, so every screen scales as the campaign boards do. `Activate` builds the shell and the device
-bookkeeping once, refreshes the roster from the saved-plane store on every call, stands the shell on the top level, maps the
+bookkeeping once, refreshes the roster from the saved-plane store on every call (`user://Planes`, or the scratch store a suite sets on `Planes`), stands the shell on the top level, maps the
 return destination onto it and applies the `--menu=` aid on the first show. `Tick` keeps the pads in step (the board's sign-on scan
 while the shell stands on the join board, and that frame's presses dropped from seat 0's commands, since seat 0 borrows every unheld pad and would otherwise read the same A as Accept), polls every seat, maps a window-pixel pointer into the
 authored space, steps the shell, requests its cues, states the AUDIO page's mix while that page is open and ends the

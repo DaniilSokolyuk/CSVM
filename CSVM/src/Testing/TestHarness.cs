@@ -147,6 +147,13 @@ public static class TestHarness
                 ctx.Failures.Add(detail);
                 Log.Error("test", $"suite threw name={suite.Name}", e);
             }
+            finally
+            {
+                // A cached collidable world's colliders stay in the one physics space. The next
+                // suite's aircraft would strike them though it never asked for a world. Inside the
+                // watch, so the disposal is charged to the suite that built the world.
+                ctx.EvictCollidableWorlds();
+            }
             watch.Stop();
             double wallSeconds = watch.Elapsed.TotalSeconds;
             double buildSeconds = ctx.WorldBuildSeconds;
@@ -976,11 +983,11 @@ public sealed class TestContext
         WorldsBuilt = 0;
     }
 
-    /// <summary>Destroys every cached collidable world. A suite that builds its own physics lab
-    /// under the host without a world calls this first: the cache keeps the default chapter's
-    /// collidable world standing across suites, and its sea collider sits at the origin, so a
-    /// splash or a ray fired there reads the previous suite's scenery. The same rule a collidable
-    /// build applies before it opens its own space.</summary>
+    /// <summary>Destroys every cached collidable world. <see cref="TestHarness.Run"/> calls it after
+    /// every suite, so only a non-collidable world crosses suites. A suite that builds a physics lab
+    /// under the host after its own collidable world calls it first. That world's sea collider sits
+    /// at the origin, and its scenery answers any ray or aircraft there. A collidable build applies
+    /// the same rule before it opens its own space.</summary>
     internal void EvictCollidableWorlds()
     {
         var evicted = new List<string>();
