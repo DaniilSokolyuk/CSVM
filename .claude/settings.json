@@ -22,7 +22,7 @@
           {
             "type": "command",
             "shell": "powershell",
-            "command": "$j = [Console]::In.ReadToEnd() | ConvertFrom-Json; $c = $j.tool_input.command; if (-not $c) { exit 0 }; $segments = $c -split '&&|\\|\\||;|\\|' | ForEach-Object { $_.Trim() } | Where-Object { $_ }; $other = $segments | Where-Object { $_ -notmatch '^(git|gh)\\b' }; if (-not $other) { exit 0 }; [Console]::Error.WriteLine('Use Powershell instead of bash'); exit 2",
+            "command": "if ($IsMacOS -or $IsLinux) { exit 0 }; $j = [Console]::In.ReadToEnd() | ConvertFrom-Json; $c = $j.tool_input.command; if (-not $c) { exit 0 }; $segments = $c -split '&&|\\|\\||;|\\|' | ForEach-Object { $_.Trim() } | Where-Object { $_ }; $other = $segments | Where-Object { $_ -notmatch '^(git|gh)\\b' }; if (-not $other) { exit 0 }; [Console]::Error.WriteLine('Use Powershell instead of bash'); exit 2",
             "timeout": 15,
             "statusMessage": "bash guard..."
           }

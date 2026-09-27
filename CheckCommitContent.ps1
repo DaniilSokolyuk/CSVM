@@ -32,12 +32,14 @@
 #   <hook payload on stdin> | ./CheckCommitContent.ps1
 #   ./CheckCommitContent.ps1 -Command 'git -C ../wt commit -m x'
 #   ./CheckCommitContent.ps1 -Root <path>      check one tree, no derivation
+#   ./CheckCommitContent.ps1 -Root . -Against <base>   CI: the comment caps' sentence scope is the PR
 #   ./CheckCommitContent.ps1 -ShowRoots -Command '...'   which tree that command would check
 #   ./CheckCommitContent.ps1 -SelfTest         exercise the whole gate against fixtures
 [CmdletBinding()]
 param(
     [string]$Command,
     [string[]]$Root,
+    [string]$Against,
     [switch]$ShowRoots,
     [switch]$SelfTest
 )
@@ -103,12 +105,14 @@ function Get-NamedTree {
     return ''
 }
 
-# git speaks forward slashes and PowerShell speaks backslashes; a trailing separator makes two
-# spellings of the same tree compare unequal, which is how a swept root gets checked twice.
+# git speaks forward slashes and Windows PowerShell speaks backslashes; a trailing separator makes
+# two spellings of the same tree compare unequal, which is how a swept root gets checked twice. The
+# separator is the OS's own, since a backslash path on macOS or Linux names nothing.
 function ConvertTo-NormalPath {
     param([string]$Path)
     if (-not $Path) { return '' }
-    return ($Path -replace '/', '\').TrimEnd('\')
+    $sep = [IO.Path]::DirectorySeparatorChar
+    return ($Path -replace '[\\/]', $sep).TrimEnd($sep)
 }
 
 function Resolve-Toplevel {
@@ -263,7 +267,13 @@ function Invoke-Checks {
         foreach ($c in $checks) {
             $script = Join-Path $scriptRoot $c.Script
             if (-not (Test-Path -LiteralPath $script -PathType Leaf)) { continue }
-            $out = & $script -Root $r 2>&1
+            # A CI checkout has no uncommitted lines, so the comment caps' sentence scope is read
+            # against the PR's base instead of HEAD.
+            $out = if ($Against -and $c.Script -eq 'CheckCommentCaps.ps1') {
+                & $script -Root $r -Against $Against 2>&1
+            } else {
+                & $script -Root $r 2>&1
+            }
             if ($LASTEXITCODE -eq 0) { continue }
             $failures += [pscustomobject]@{
                 Root  = $r

@@ -101,7 +101,8 @@ function Resolve-Toplevel {
     if (-not (Test-Path -LiteralPath $Path)) { return '' }
     $top = git -C $Path rev-parse --show-toplevel 2>$null
     if (-not $top) { return '' }
-    return (([string]$top) -replace '/', '\').TrimEnd('\')
+    $sep = [IO.Path]::DirectorySeparatorChar
+    return (([string]$top) -replace '[\\/]', $sep).TrimEnd($sep)
 }
 
 # The tree to format and build, or empty when the command invokes nothing. The invocation's own

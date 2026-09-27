@@ -18,7 +18,8 @@ landing gate for any change under `CSVM/`.
   rejects a PowerShell here-string (`@'…'@`) sent to the **Bash** tool, and a heredoc or
   `/dev/null` sent to the **PowerShell** tool. (2) The **Bash** tool is blocked outright with
   "Use Powershell instead of bash", the one exception is a command whose every `&&`/`||`/`;`/`|`
-  segment starts with `git` or `gh`, since those behave identically in either shell.
+  segment starts with `git` or `gh`, since those behave identically in either shell. The block
+  applies on Windows only: on macOS and Linux (under `pwsh`) Bash is the native shell.
   (3) The format gate, [`FormatBeforeTests.ps1`](FormatBeforeTests.ps1): `dotnet format` and a
   `-t:Rebuild` that blocks on remaining StyleCop warnings, before an *invocation* of
   `RunTests.ps1`, `dotnet test`, or `git commit`. A command segment counts only when it begins

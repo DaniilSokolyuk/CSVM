@@ -53,6 +53,46 @@ Contributions are accepted under the licence of the file they touch: **GPL-3.0-o
 for code, and **CC-BY-4.0** for `docs/formats/`. Opening a pull request is how you agree to
 that.
 
+## Checks you can run yourself
+
+Every pull request runs the **Checks** workflow on Windows, Linux and macOS. It covers what
+does not need the retail game, so a green run means the change is ready for the part only
+the author can run (the in-engine suites and goldens). On a first contribution the workflow
+waits until a maintainer approves the run; that is GitHub's rule for outside pull requests,
+not a verdict on yours.
+
+The same checks run locally with the [.NET 8 SDK](https://dotnet.microsoft.com/download) and
+PowerShell. Windows ships PowerShell 5.1, which works; on macOS and Linux install
+[PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell)
+(`brew install powershell` on macOS) and run the scripts with `pwsh`. From the repository
+root, with `-Against` naming the commit your branch starts from (`upstream/main` in a fork
+whose `upstream` remote is this repository):
+
+```powershell
+./CheckCommitContent.ps1 -Root (Get-Location).Path -Against upstream/main # the content gate
+dotnet format CSVM/CSVM.csproj --verify-no-changes                        # formatting
+dotnet build CSVM/CSVM.csproj -t:Rebuild                                  # StyleCop, read the SA warnings
+dotnet test CSVM/CSVM.sln                                                 # unit tests
+```
+
+The content gate runs five checks, each also a script of its own:
+
+- `CheckEncoding.ps1`: no double-encoded UTF-8 anywhere in the tree.
+- `CheckItemIds.ps1`: no item id defined twice in `backlog.md` or `playtest.md`.
+- `CheckGoldenProse.ps1`: the golden manifest's descriptions stay short and current.
+- `CheckCommentCaps.ps1`: comment length caps under `CSVM/src` and `CSVM.Tests`, and
+  sentence length in the comments you changed. The caps are in `PROJECT_CONTEXT.md`'s coding
+  conventions. A comment over cap usually explains too much: keep the reason the code is the
+  way it is, and move a longer explanation into `docs/`.
+- `CheckDocEntries.ps1`: the size and coverage of the module entries in `docs/architecture/`.
+
+Unit tests that need an extracted install report as skipped rather than failing, so a
+checkout without the game passes them.
+
+If you work with Claude Code, `.claude/settings.json` runs the same gate before each commit
+and runs `dotnet format` before tests. Its hooks are PowerShell commands, so they need
+`pwsh` installed on macOS and Linux.
+
 ## What is never accepted
 
 This project's legal position is that it ships **code and documentation only**, and reads

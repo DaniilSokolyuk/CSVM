@@ -14,7 +14,7 @@
 # commit on it.
 #
 # The line caps cover the whole scope. The sentence caps cover only the comment blocks with a
-# changed line in the working tree (every block of a file named on the command line): the rule
+# changed line in the working tree against HEAD, or against -Against (every block of a file named on the command line): the rule
 # is older than its check, the tree carries the debt, and a block is fixed by whoever next
 # edits it.
 #
@@ -25,6 +25,7 @@
 #   ./CheckCommentCaps.ps1                 the whole scope
 #   ./CheckCommentCaps.ps1 -Summary        one line per file, worst first
 #   ./CheckCommentCaps.ps1 -Root <path>    another worktree, with this copy's rules
+#   ./CheckCommentCaps.ps1 -Against <ref>  sentence scope is what changed since <ref> (CI: the PR base)
 #   ./CheckCommentCaps.ps1 a.cs b.cs       just these files
 # PositionalBinding off: with it on, a bare file argument binds to -Root, the scan then finds no
 # files under that "root", and the run reports clean without reading anything.
@@ -32,6 +33,7 @@
 param(
     [switch]$Summary,
     [string]$Root,
+    [string]$Against = 'HEAD',
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$Path
 )
@@ -54,6 +56,9 @@ if (-not $Root) { $Root = $PSScriptRoot }
 if (-not $Root) { $Root = git rev-parse --show-toplevel 2>$null }
 if (-not $Root) { $Root = (Get-Location).Path }
 $root = $Root
+# A git path joined with a hardcoded backslash names nothing on macOS or Linux, and a file that is
+# not found is a file that is not checked.
+$sep = [IO.Path]::DirectorySeparatorChar
 
 function Get-Scope {
     param([string]$Root)
@@ -172,8 +177,8 @@ function Get-LongSentences {
 # old debt across every file it touched; the lines the merge author actually wrote, the conflict
 # resolutions, differ from both parents and stay in scope.
 function Get-ChangedLines {
-    param([string]$Root)
-    $map = Get-AddedRanges -Root $Root -Against 'HEAD'
+    param([string]$Root, [string]$Against)
+    $map = Get-AddedRanges -Root $Root -Against $Against
     $mergeHead = & git -C $Root rev-parse -q --verify MERGE_HEAD 2>$null
     if ($mergeHead) {
         $theirs = Get-AddedRanges -Root $Root -Against $mergeHead
@@ -194,7 +199,7 @@ function Get-ChangedLines {
     $untracked = & git -C $Root ls-files --others --exclude-standard -- CSVM/src CSVM.Tests 2>$null
     foreach ($p in @($untracked)) {
         if ($p -notmatch '\.cs$') { continue }
-        $map[(Join-Path $Root ($p -replace '/', '\'))] = @(,@(1, [int]::MaxValue))
+        $map[(Join-Path $Root ($p -replace '/', $sep))] = @(,@(1, [int]::MaxValue))
     }
     $map
 }
@@ -207,7 +212,7 @@ function Get-AddedRanges {
     $diff = & git -C $Root diff $Against -U0 -- CSVM/src CSVM.Tests 2>$null
     foreach ($row in @($diff)) {
         if ($row -match '^\+\+\+ b/(.*\.cs)$') {
-            $file = (Join-Path $Root ($Matches[1] -replace '/', '\'))
+            $file = (Join-Path $Root ($Matches[1] -replace '/', $sep))
             if (-not $map.ContainsKey($file)) { $map[$file] = @() }
             continue
         }
@@ -234,7 +239,7 @@ function Test-BlockChanged {
 
 $targets = if ($Path) { $Path } else { Get-Scope -Root $root }
 # Named files are checked whole; without names, the sentence scope is the changed lines.
-$changed = if ($Path) { $null } else { Get-ChangedLines -Root $root }
+$changed = if ($Path) { $null } else { Get-ChangedLines -Root $root -Against $Against }
 $sentenceSet = @{}
 if ($Path) {
     foreach ($f in $Path) {
@@ -264,7 +269,7 @@ foreach ($f in $targets) {
         Get-LongSentences -File $full -Ranges $sentenceSet[$full]
     })
     if ($bad.Count -eq 0 -and $long.Count -eq 0) { continue }
-    $rel = $full.Replace($root + '\', '')
+    $rel = $full.Replace($root + $sep, '')
     $excess = ($bad | ForEach-Object { $_.Length - $caps[$_.Kind] } | Measure-Object -Sum).Sum
     $totalBlocks += $bad.Count
     $totalExcess += $excess

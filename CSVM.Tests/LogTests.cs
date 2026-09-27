@@ -92,12 +92,21 @@ public class LogTests
     }
 
     /// <summary>The literal paths matter both ways: the toolchain reads <c>.scratch/logs/</c> by
-    /// name, and a top-level <c>logs/</c> in a development tree would be committed.</summary>
+    /// name, and a top-level <c>logs/</c> in a development tree would be committed. Each OS gets
+    /// its own literals because the host separator is part of the answer.</summary>
     [Fact]
     public void AnExportedBuildLogsBesideItsExeAndARepoRunStaysUnderScratch()
     {
-        Assert.Equal(@"C:\Games\CSVM\logs", Log.DirectoryFor(@"C:\Games\CSVM", exported: true));
-        Assert.Equal(@"Z:\CSVM\.scratch\logs", Log.DirectoryFor(@"Z:\CSVM", exported: false));
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Equal(@"C:\Games\CSVM\logs", Log.DirectoryFor(@"C:\Games\CSVM", exported: true));
+            Assert.Equal(@"Z:\CSVM\.scratch\logs", Log.DirectoryFor(@"Z:\CSVM", exported: false));
+        }
+        else
+        {
+            Assert.Equal("/opt/csvm/logs", Log.DirectoryFor("/opt/csvm", exported: true));
+            Assert.Equal("/home/u/CSVM/.scratch/logs", Log.DirectoryFor("/home/u/CSVM", exported: false));
+        }
     }
 
     [Fact]
