@@ -87,7 +87,7 @@ Statuses: ☐ open · ◐ in progress · ☑ done · ❌ closed/disproven. **Kee
 4. ☑ Headless `--extract=<install>` and its development options
 5. ☑ Extraction UI: Extract button, picker, progress, and the out-of-date-data screen
 6. ☑ Retire the scripts: `Extract.ps1` wrapper, one stamp constant, release payload, docs, bug form
-7. ☐ Windows build with in-engine extraction, tested locally by the author and in the Sandbox
+7. ☑ Windows build with in-engine extraction, tested locally by the author and in the Sandbox
 
 ### Wave B, Linux build
 
@@ -564,7 +564,7 @@ The full `.\RunTests.ps1`.
 
 **⚠ Traps.** None known yet.
 
-## A7 ☐ Windows build with in-engine extraction, tested locally by the author and in the Sandbox
+## A7 ☑ Windows build with in-engine extraction, tested locally by the author and in the Sandbox
 
 **Goal.** An exported Windows zip, built by `ExportRelease.ps1` and not published, in which a clean
 machine extracts and flies with no script. It ships in B16's release (Decision 9).
@@ -593,7 +593,7 @@ sandbox\PublicRelease.ps1 -MapReadOnly <install> -Networking` on the zip exporte
 propagates it, SmartScreen is recorded on each shell launch, `CSVM.exe` with no data draws its own
 window with no app dialog (the screen that offers to extract), `--headless -- --extract` exits 0 in
 15 s with 1,668 files and the stamp, and the menu and a C1 flight run on the machine's own
-extraction. The author's local Extract flow and flight are still owed.
+extraction. The author's local run of the same zip extracts from the in-game screen and flies.
 
 # Wave B, Linux build
 
@@ -978,3 +978,9 @@ in this item unless they block the release.
 **Verify.** The author's judgement on the Deck.
 
 **⚠ Traps.** Look judgements are the author's; do not park a visible problem on a measurement alone.
+
+**Deck test pass (author, at the controls).** The 16:10 layout, the controllers (the Deck's own and
+an 8BitDo pad) and a LAN match between the Deck and the Windows build work, and
+the original presentation in single player holds 60 fps. Enhanced graphics and splitscreen fall
+well below that (New York about 15 fps with enhanced graphics in single player), filed as
+`BL-1051`. Publishing is still owed.

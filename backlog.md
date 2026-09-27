@@ -1118,6 +1118,23 @@ usual.
   pair stays red every battery result is ambiguous, since a 1-failed run has to be re-read by hand
   to tell this pairing from a real regression. *Cross-refs:* `git log --grep=BL-951`.
 
+- `BL-1051` `[Perf]` `[M]` `[Next: data]` `[Impact: high]` `[Evidence: trace]` **On the Steam Deck,
+  enhanced graphics and splitscreen fall well below 60 fps: New York (C5) flies at about 15 fps
+  with enhanced graphics in single player, and Hawaii (C3) splitscreen with enhanced graphics at
+  about 22 to 45.** The original presentation in single player holds 60 at the controls.
+  *Evidence:* the Deck's own `[perf] rate` lines (10 s windows, vsync off, `AMD Custom GPU 0405
+  (RADV VANGOGH)`, Vulkan Forward+) in the v0.2.0 candidate's `logs\`: C5 enhanced single player,
+  median 15.0 fps over 9 windows, low 10.2 (11,438 gamez nodes, 4,827 mesh instances); C3 enhanced
+  splitscreen over missions 1 to 4, per-flight medians 22 to 45 fps, lows 10 to 23; C3 original
+  single player 58 to 60. Not measured: C5 in the original presentation, and original splitscreen
+  (that log ends at the load). *Fix shape:* measure first, per pass: fly C5 and a C3 splitscreen on
+  the Deck in both presentations with `--debug-fps`, then leave out one enhanced pass at a time
+  (`--no-ssao`, `--no-ssr`, `--no-glow`, and the sun shadow) to find the cost; decide from that whether the
+  answer is a cheaper pass, a Deck-sized default, or a second pane that skips the costly passes.
+  *⚠ Traps:* the `[perf] rate` fps is work done with vsync off, not a refresh cap; the first
+  window after a load includes the load hitch (the 2.4 and 2.8 fps windows are that, not flight).
+  *Playtest after fix:* C5 and a C3 splitscreen on the Deck with `--debug-fps`, both presentations.
+
 ## Misc
 
 - `BL-1018` `[Tuning]` `[S]` `[Next: code]` `[Impact: low]` `[Evidence: trace]` **The guest clock
